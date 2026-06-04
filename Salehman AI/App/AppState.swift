@@ -8,6 +8,9 @@ import Combine
 final class AppState: ObservableObject {
     static let shared = AppState()
 
+    /// Which top-level tab is showing (Chat or Markets).
+    @Published var selectedTab: AppTab = .chat
+
     @Published var newChatRequested = false
     @Published var stopRequested = false
     @Published var showSettingsRequested = false

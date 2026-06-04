@@ -6,7 +6,7 @@ struct AgentInput: Sendable {
     let mission: String
     let history: String
     let context: String     // built from MissionMemory.buildContext(...)
-    let onStream: (@Sendable (String) -> Void)?
+    let onStream: @Sendable (String) -> Void   // no-op for non-final agents
 }
 
 /// Registry of agent handlers. Each handler turns an `AgentInput` into that
@@ -22,20 +22,25 @@ struct AgentRegistry {
     nonisolated(unsafe) private static var handlers: [String: AgentHandler] = [:]
     nonisolated(unsafe) private static var didRegister = false
 
-    static func register(name: String, handler: @escaping AgentHandler) {
+    // All accessors are `nonisolated` so the pipeline's concurrent task group
+    // can look up handlers without hopping to the main actor. The dictionary
+    // is mutated exactly once during `registerDefaultsOnce()` (before any
+    // pipeline runs), which is why the `nonisolated(unsafe)` annotation above
+    // is honest rather than dangerous.
+    nonisolated static func register(name: String, handler: @escaping AgentHandler) {
         guard handlers[name] == nil else { return }
         handlers[name] = handler
     }
 
-    static func handler(for name: String) -> AgentHandler? { handlers[name] }
+    nonisolated static func handler(for name: String) -> AgentHandler? { handlers[name] }
 
-    static func isRegistered(_ name: String) -> Bool { handlers[name] != nil }
+    nonisolated static func isRegistered(_ name: String) -> Bool { handlers[name] != nil }
 
-    static func registeredAgents() -> [String] { handlers.keys.sorted() }
+    nonisolated static func registeredAgents() -> [String] { handlers.keys.sorted() }
 
     /// Register a handler for every agent in the team. Each handler captures its
     /// spec and picks the right LocalLLM call (tools / streamed final / terse note).
-    static func registerDefaultsOnce() {
+    nonisolated static func registerDefaultsOnce() {
         guard !didRegister else { return }
         didRegister = true
         for spec in AgentDefinitions.pipeline {
@@ -47,7 +52,7 @@ struct AgentRegistry {
                                                        history: input.history, context: input.context)
                 if spec.isFinal {
                     return await LocalLLM.generateStreaming(prompt, maxTokens: 700) { partial in
-                        input.onStream?(partial)
+                        input.onStream(partial)
                     }
                 }
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)

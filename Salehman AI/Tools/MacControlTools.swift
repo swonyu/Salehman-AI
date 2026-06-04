@@ -7,15 +7,18 @@ import FoundationModels
 
 /// Mouse & keyboard control via CGEvent. Requires Accessibility permission
 /// (System Settings → Privacy & Security → Accessibility).
+///
+/// All methods are `nonisolated`: CGEvent posting is thread-safe and these are
+/// called from `ControlMacTool.call()` which runs off the main actor.
 enum MacControl {
-    static func accessibilityGranted() -> Bool { AXIsProcessTrusted() }
+    nonisolated static func accessibilityGranted() -> Bool { AXIsProcessTrusted() }
 
-    static func promptAccessibility() {
+    nonisolated static func promptAccessibility() {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
     }
 
-    static func click(x: CGFloat, y: CGFloat, double: Bool = false) {
+    nonisolated static func click(x: CGFloat, y: CGFloat, double: Bool = false) {
         let pos = CGPoint(x: x, y: y)
         move(to: pos)
         let src = CGEventSource(stateID: .combinedSessionState)
@@ -28,12 +31,12 @@ enum MacControl {
         }
     }
 
-    static func move(to pos: CGPoint) {
+    nonisolated static func move(to pos: CGPoint) {
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pos, mouseButton: .left)?
             .post(tap: .cghidEventTap)
     }
 
-    static func type(_ text: String) {
+    nonisolated static func type(_ text: String) {
         let src = CGEventSource(stateID: .combinedSessionState)
         for scalar in text.unicodeScalars {
             var ch = UniChar(scalar.value > 0xFFFF ? 0x20 : UInt16(scalar.value))
@@ -46,7 +49,7 @@ enum MacControl {
         }
     }
 
-    static func keyPress(_ keyCode: CGKeyCode) {
+    nonisolated static func keyPress(_ keyCode: CGKeyCode) {
         let src = CGEventSource(stateID: .combinedSessionState)
         CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)?.post(tap: .cghidEventTap)
         CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)?.post(tap: .cghidEventTap)

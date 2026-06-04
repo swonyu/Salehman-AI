@@ -11,15 +11,21 @@ struct Salehman_AIApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .frame(minWidth: 720, minHeight: 560)
         }
         .defaultSize(width: 980, height: 720)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Chat") { app.newChatRequested = true }
+                Button("New Chat") { app.selectedTab = .chat; app.newChatRequested = true }
                     .keyboardShortcut("n", modifiers: .command)
+            }
+            CommandMenu("View") {
+                Button("Chat") { app.selectedTab = .chat }
+                    .keyboardShortcut("1", modifiers: .command)
+                Button("Markets") { app.selectedTab = .markets }
+                    .keyboardShortcut("2", modifiers: .command)
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { app.showSettingsRequested = true }

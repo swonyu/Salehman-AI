@@ -129,14 +129,20 @@ enum AgentPipeline {
             let results = await withTaskGroup(of: (Int, String).self) { group in
                 for i in indices {
                     let spec = specs[i]
-                    // Extract the streaming callback so the compiler can pick the
-                    // right `Task.init` — embedding it inside a ternary defeats
-                    // closure-argument type inference.
-                    let stream: ((String) -> Void)? = spec.isFinal
-                        ? { partial in
-                            Task { @MainActor in MissionProgress.shared.stream(partial) }
+                    // Non-final agents get a no-op sink. `if/else` (not a ternary):
+                    // Swift's type-checker ICEs ("failed to produce diagnostic")
+                    // unifying a `@Sendable` closure literal across branches inside
+                    // `withTaskGroup`; pulling the assignment apart sidesteps it.
+                    let stream: @Sendable (String) -> Void
+                    if spec.isFinal {
+                        stream = { (partial: String) in
+                            Task { @MainActor in
+                                MissionProgress.shared.stream(partial)
+                            }
                         }
-                        : nil
+                    } else {
+                        stream = { _ in }
+                    }
                     let input = AgentInput(
                         mission: mission, history: history, context: phaseContext,
                         onStream: stream)
@@ -221,7 +227,9 @@ enum AgentPipeline {
         return map
     }
 
-    static func buildPrompt(spec: AgentSpec, mission: String, history: String, context: String) -> String {
+    // `nonisolated` because the AgentRegistry's handlers (concurrent task
+    // group) need to build prompts off the main actor. Pure string work.
+    nonisolated static func buildPrompt(spec: AgentSpec, mission: String, history: String, context: String) -> String {
         var ctx = ""
         if !history.isEmpty { ctx += "Recent conversation:\n\(history)\n\n" }
         if !context.isEmpty { ctx += context + "\n\n" }

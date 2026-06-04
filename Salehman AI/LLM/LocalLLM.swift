@@ -6,7 +6,11 @@ import FoundationModels
 /// On-device generation via Apple Intelligence (Foundation Models). Falls back
 /// gracefully when Apple Intelligence isn't available.
 enum LocalLLM {
-    static var isAvailable: Bool {
+    // All of these are `nonisolated` so actor-isolated callers (ChatSession,
+    // AgentPipeline tasks, the Ollama-fallback path) can probe brain
+    // availability without hopping to the main actor. The underlying APIs are
+    // thread-safe — there's no shared mutable state behind any of them.
+    nonisolated static var isAvailable: Bool {
         #if canImport(FoundationModels)
         if case .available = SystemLanguageModel.default.availability { return true }
         #endif
@@ -14,11 +18,10 @@ enum LocalLLM {
     }
 
     /// User's master switch from Settings (distinct from hardware availability).
-    /// `nonisolated` so the model layer can read it off the main actor.
     nonisolated static var isEnabledByUser: Bool { AppSettings.appleIntelligenceEnabled }
 
     /// Truly usable right now: the hardware supports it AND the user left it on.
-    static var isActive: Bool { isEnabledByUser && isAvailable }
+    nonisolated static var isActive: Bool { isEnabledByUser && isAvailable }
 
     /// Shown when neither brain is reachable (Apple Intelligence off **and**
     /// Ollama unreachable). The pipeline now transparently falls back to
@@ -27,7 +30,10 @@ enum LocalLLM {
     nonisolated static let offMessage =
         "No model is reachable right now. Turn Apple Intelligence back on in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled."
 
-    static var statusNote: String {
+    // `nonisolated` because actor-isolated callers (e.g. `ChatSession`) read
+    // this for error messages. The underlying availability check is itself
+    // thread-safe, so there's no shared state to guard.
+    nonisolated static var statusNote: String {
         #if canImport(FoundationModels)
         switch SystemLanguageModel.default.availability {
         case .available: return "Apple Intelligence (on-device)"

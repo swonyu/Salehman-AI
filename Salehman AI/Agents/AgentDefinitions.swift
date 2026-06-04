@@ -4,7 +4,9 @@ import Foundation
 /// every agent applies its specialty to whatever the user actually asked.
 enum AgentDefinitions {
 
-    static let pipeline: [AgentSpec] = [
+    // `nonisolated` because the registry (which runs off the main actor)
+    // iterates this list during `registerDefaultsOnce()`.
+    nonisolated static let pipeline: [AgentSpec] = [
         // Phase 0 — understand & do the work (run concurrently).
         AgentSpec(name: "Grok Victor", icon: "crown.fill",
                   role: "Lead orchestrator. Read the request, decide the best approach, and briefly assign what the team should focus on for THIS specific message.",

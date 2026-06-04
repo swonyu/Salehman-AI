@@ -50,15 +50,18 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
     }
 
+    // UserDefaults keys — `nonisolated` so the policy layer (which runs off
+    // the main actor) can read them without an actor hop. They're just
+    // immutable string constants, so no isolation is needed.
     enum Keys {
         nonisolated static let appleIntelligence = "set_appleIntelligence"
-        static let autoSpeak = "set_autoSpeak"
-        static let webAccess = "set_webAccess"
-        static let codeModel = "set_useCodeModel"
-        static let vision    = "set_useVision"
-        static let hideCapture = "set_hideCapture"
-        static let speechRate = "set_speechRate"
-        static let speechVoiceID = "set_speechVoiceID"
+        nonisolated static let autoSpeak = "set_autoSpeak"
+        nonisolated static let webAccess = "set_webAccess"
+        nonisolated static let codeModel = "set_useCodeModel"
+        nonisolated static let vision    = "set_useVision"
+        nonisolated static let hideCapture = "set_hideCapture"
+        nonisolated static let speechRate = "set_speechRate"
+        nonisolated static let speechVoiceID = "set_speechVoiceID"
     }
 
     /// Thread-safe read of the Apple Intelligence master switch for the model

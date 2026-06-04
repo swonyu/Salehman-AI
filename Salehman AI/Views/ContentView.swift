@@ -58,8 +58,6 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            background
-
             VStack(spacing: 0) {
                 header
                 Divider().overlay(Color.white.opacity(0.06))
@@ -103,9 +101,6 @@ struct ContentView: View {
             if v { withAnimation(DS.Motion.snappy) { searching.toggle(); if !searching { searchQuery = "" } }; app.toggleSearchRequested = false }
         }
     }
-
-    // MARK: Background
-    private var background: some View { BackgroundView() }
 
     // MARK: Header
     private var header: some View {
@@ -632,24 +627,6 @@ private struct ConfirmationChip: View {
     }
 }
 
-// MARK: - Background (state-free so SwiftUI keeps it stable across body redraws)
-private struct BackgroundView: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Theme.bgTop, Theme.bgBottom],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            // Soft glows for depth. Smaller blur than before — 160px convolves
-            // every frame and was the dominant GPU cost on integrated Macs.
-            Circle().fill(Theme.accent.opacity(0.18)).frame(width: 480).blur(radius: 90)
-                .offset(x: -220, y: -260)
-            Circle().fill(Theme.accent2.opacity(0.16)).frame(width: 420).blur(radius: 90)
-                .offset(x: 260, y: 300)
-        }
-        .ignoresSafeArea()
-        .drawingGroup()
-    }
-}
-
 // MARK: - Running progress (isolates MissionProgress observation so streaming
 // tokens don't invalidate ContentView's body and rerun the LazyVStack diff)
 private struct RunningProgressView: View {
@@ -687,7 +664,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
 
 /// Saves/loads the conversation so it survives quitting the app.
 enum ChatStore {
-    private static var fileURL: URL {
+    nonisolated private static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent("SalehmanAI", isDirectory: true)
@@ -695,13 +672,16 @@ enum ChatStore {
         return dir.appendingPathComponent("chat_history.json")
     }
 
-    static func load() -> [ChatMessage] {
+    // `nonisolated` so the debounced save can hand off to a detached, utility-
+    // priority background Task without crossing main-actor boundaries. Both
+    // load and save touch only the file system — no shared mutable state.
+    nonisolated static func load() -> [ChatMessage] {
         guard let data = try? Data(contentsOf: fileURL),
               let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return [] }
         return msgs
     }
 
-    static func save(_ messages: [ChatMessage]) {
+    nonisolated static func save(_ messages: [ChatMessage]) {
         guard let data = try? JSONEncoder().encode(messages) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }

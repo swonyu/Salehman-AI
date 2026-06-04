@@ -19,7 +19,7 @@ enum ToolPolicy {
 
     /// The policy in effect right now. Computed from `override` if set,
     /// otherwise from the user's web-access toggle in Settings.
-    static var current: ToolPolicy {
+    nonisolated static var current: ToolPolicy {
         if let override { return override }
         return isWebAccessEnabled ? .allowExternalTools : .localOnly
     }
@@ -30,7 +30,11 @@ enum ToolPolicy {
     /// Tools to hand to a fresh `LanguageModelSession`. Settings changes take
     /// effect on the next session — call `ChatSession.reset()` (or start a new
     /// chat) for a new policy to apply mid-conversation.
-    static func activeTools() -> [any Tool] {
+    ///
+    /// `nonisolated` so `ChatSession` (an actor) can build its tool list
+    /// without hopping to the main actor. Only reads `nonisolated` settings
+    /// accessors, so this is safe.
+    nonisolated static func activeTools() -> [any Tool] {
         var tools: [any Tool] = []
 
         // Always-on, local-only core.
@@ -49,7 +53,7 @@ enum ToolPolicy {
         }
 
         // External web access — only when the policy says so.
-        if current == .allowExternalTools {
+        if isExternalAllowed {
             tools.append(WebSearchTool())
             tools.append(FetchURLTool())
         }
@@ -70,7 +74,7 @@ enum ToolPolicy {
     /// Short, human-readable summary of the *currently enabled* tools. Inject
     /// into the chat instructions so the model doesn't promise web access (or
     /// any other gated tool) when the user has it turned off.
-    static func instructionsToolMenu() -> String {
+    nonisolated static func instructionsToolMenu() -> String {
         var lines: [String] = []
         lines.append("• run_terminal_command — run a macOS shell command (asks the user before risky ones).")
         lines.append("• remember_fact — save durable facts about the user.")
@@ -83,7 +87,7 @@ enum ToolPolicy {
         if isVisionEnabled {
             lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
         }
-        if current == .allowExternalTools {
+        if isExternalAllowed {
             lines.append("• web_search — search the web (DuckDuckGo).")
             lines.append("• fetch_url — read a specific web page.")
         } else {
@@ -107,5 +111,15 @@ enum ToolPolicy {
 
     nonisolated static var isVisionEnabled: Bool {
         AppSettings.boolDefaultTrue(AppSettings.Keys.vision)
+    }
+
+    // Pre-computed predicate to avoid `==` on `ToolPolicy` from nonisolated
+    // contexts (which would drag the main-actor Equatable conformance across
+    // the actor boundary — a Swift-6 error).
+    nonisolated static var isExternalAllowed: Bool {
+        switch current {
+        case .allowExternalTools: return true
+        case .localOnly:          return false
+        }
     }
 }

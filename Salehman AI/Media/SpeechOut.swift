@@ -13,7 +13,6 @@ final class SpeechOut: ObservableObject {
 
     private init() {
         synth.delegate = delegate
-        delegate.owner = self
     }
 
     func toggle(_ text: String, id: UUID) {
@@ -49,15 +48,16 @@ final class SpeechOut: ObservableObject {
 
     fileprivate func didFinish() { speakingID = nil }
 
-    /// AVSpeechSynthesizerDelegate is not @MainActor-typed, so we keep an inner
-    /// NSObject delegate that hops back to the main actor before updating state.
+    /// AVSpeechSynthesizerDelegate is not @MainActor-typed, so we hop back to
+    /// the main actor before updating state. We address the SpeechOut singleton
+    /// directly instead of carrying a `weak var owner` — that removes the
+    /// `Sendable`-mutable-property warning and the cycle/initialization dance.
     private final class Delegate: NSObject, AVSpeechSynthesizerDelegate {
-        weak var owner: SpeechOut?
         func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-            Task { @MainActor in self.owner?.didFinish() }
+            Task { @MainActor in SpeechOut.shared.didFinish() }
         }
         func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-            Task { @MainActor in self.owner?.didFinish() }
+            Task { @MainActor in SpeechOut.shared.didFinish() }
         }
     }
 }
