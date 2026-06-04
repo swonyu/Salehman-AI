@@ -14,13 +14,13 @@ enum AnthropicClient {
     private static let apiVersion = "2023-06-01"
     static let maxTokens = 1024
 
-    /// True once the user has entered an Anthropic API key in Settings.
-    nonisolated static var isConfigured: Bool {
-        !AppSettings.anthropicAPIKeyCurrent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    /// True once the user has stored an Anthropic API key (in the Keychain, like
+    /// every other cloud brain). Sync — no HTTP probe.
+    nonisolated static var isConfigured: Bool { KeychainStore.has(.anthropicAPIKey) }
 
     private static func makeRequest(stream: Bool, prompt: String, system: String?) -> URLRequest? {
-        let key = AppSettings.anthropicAPIKeyCurrent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = (KeychainStore.read(.anthropicAPIKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let url = URL(string: endpoint) else { return nil }
 
         var body: [String: Any] = [

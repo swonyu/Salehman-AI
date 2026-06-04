@@ -283,14 +283,9 @@ enum LocalLLM {
     static func chat(_ message: String) async -> String {
         if claudeAllowed {
             // Claude Haiku (cloud), single-turn, no local tools.
-            let system = """
-            You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
-            Answer directly and clearly. If the user writes in Arabic, reply in Arabic; \
-            otherwise reply in English. You don't have access to this Mac's terminal or \
-            local tools in this mode — if a task needs running a command, say so and \
-            suggest the command as text.
-            """
-            if let reply = await AnthropicClient.chat(prompt: message, system: system) { return reply }
+            if let reply = await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
+                return reply
+            }
             return offMessage
         }
         if grokAllowed {

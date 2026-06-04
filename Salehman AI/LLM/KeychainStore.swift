@@ -37,6 +37,7 @@ enum KeychainStore {
         case groqAPIKey     = "groq-api-key"
         case mistralAPIKey  = "mistral-api-key"
         case cerebrasAPIKey = "cerebras-api-key"
+        case anthropicAPIKey = "anthropic-api-key"
         case openAIAPIKey   = "openai-api-key"
         /// GitHub OAuth access token for the Copilot brain (from the device flow).
         /// The short-lived Copilot token derived from it is cached in memory only.

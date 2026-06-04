@@ -45,11 +45,6 @@ final class AppSettings: ObservableObject {
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
-    /// Anthropic API key for the optional Claude Haiku (cloud) brain. Empty = not
-    /// configured. Stored locally; only sent to Anthropic when Claude is the brain.
-    @Published var anthropicAPIKey: String {
-        didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: Keys.anthropicAPIKey) }
-    }
     /// OpenAI model id for the "Codex" (OpenAI) cloud brain. The API **key**
     /// lives in the Keychain (`KeychainStore.Account.openAIAPIKey`), matching the
     /// other cloud brains — never here.
@@ -104,18 +99,12 @@ final class AppSettings: ObservableObject {
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
         nonisolated static let brainPreference = "set_brainPreference"
-        nonisolated static let anthropicAPIKey = "set_anthropicAPIKey"
         nonisolated static let openAIModel     = "set_openAIModel"
         nonisolated static let grokModel       = "set_grokModel"
         nonisolated static let geminiModel     = "set_geminiModel"
         nonisolated static let groqModel       = "set_groqModel"
         nonisolated static let mistralModel    = "set_mistralModel"
         nonisolated static let cerebrasModel   = "set_cerebrasModel"
-    }
-
-    /// `nonisolated` read of the Anthropic key for the model layer (off main actor).
-    nonisolated static var anthropicAPIKeyCurrent: String {
-        UserDefaults.standard.string(forKey: Keys.anthropicAPIKey) ?? ""
     }
 
     /// `nonisolated` read of the selected OpenAI/Codex model (key is in Keychain).
@@ -205,7 +194,6 @@ final class AppSettings: ObservableObject {
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
-        anthropicAPIKey = d.string(forKey: Keys.anthropicAPIKey) ?? ""
         let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
         openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
         let storedGrok = d.string(forKey: Keys.grokModel) ?? ""

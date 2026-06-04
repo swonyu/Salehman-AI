@@ -14,6 +14,9 @@ struct SettingsView: View {
     // Grok key entry state. `grokKeyDraft` only holds what the user is typing
     // *right now* — once they hit Save it's written to Keychain and cleared.
     // The literal key never lives in `@State` after Save.
+    @State private var anthropicKeyDraft: String = ""
+    @State private var anthropicKeySaved: Bool = AnthropicClient.isConfigured
+
     @State private var grokKeyDraft: String = ""
     @State private var grokTestStatus: String? = nil  // nil = idle, "" = OK, "msg" = error
     @State private var grokTesting: Bool = false
@@ -202,10 +205,11 @@ struct SettingsView: View {
             ollamaUp = await OllamaClient.isUp()
             hasVision = await OllamaClient.hasModel(OllamaClient.visionModel)
             hasCoder = await OllamaClient.hasModel(OllamaClient.codeModel)
-            await testActiveBrain()
+            if activeBrainIsLocal { await testActiveBrain() }
         }
         .onChange(of: settings.brainPreference) { _, _ in
-            Task { await testActiveBrain() }
+            activeBrainWorking = nil                      // clear stale result on switch
+            if activeBrainIsLocal { Task { await testActiveBrain() } }
         }
     }
 
@@ -259,7 +263,7 @@ struct SettingsView: View {
             case .auto:        return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
             case .apple:       return appleOK && settings.useAppleIntelligence
             case .ollama:      return ollamaUp && hasCoder
-            case .claudeHaiku: return !settings.anthropicAPIKey.trimmingCharacters(in: .whitespaces).isEmpty
+            case .claudeHaiku: return AnthropicClient.isConfigured
             case .grok:        return GrokClient.hasKey()
             case .gemini:      return GeminiClient.hasKey()
             case .groq:        return GroqClient.shared.hasKey()
@@ -451,7 +455,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Is “\(settings.brainPreference.title)” working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("Live check — sends a tiny ‘ping’ through the selected brain.")
+                Text(activeBrainIsLocal
+                     ? "Live check — auto-pings the selected brain."
+                     : "Tap ↻ to check (sends one small paid request).")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -464,15 +470,30 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
+    /// Whether the pinned brain runs on this Mac (free to ping). Cloud brains
+    /// cost money per request, so we only auto-check local ones and make the
+    /// cloud check on-demand (the refresh button).
+    private var activeBrainIsLocal: Bool {
+        switch settings.brainPreference {
+        case .auto, .apple, .ollama: return true
+        default:                     return false
+        }
+    }
+
     /// Ping the pinned brain and decide if it actually answered. Failure
-    /// sentinels: empty, the canonical off-message, or a bracketed cloud error
-    /// like "[Claude Haiku error 401: …]".
+    /// sentinels: empty reply, the canonical off-message, or the Anthropic
+    /// error string (which `AnthropicClient` returns verbatim on a non-200).
+    /// We match the specific "[Claude Haiku …" prefix rather than any "[" so a
+    /// legitimate reply that begins with a bracket (code, a JSON array) isn't
+    /// mistaken for a failure.
     private func testActiveBrain() async {
         activeBrainTesting = true
         activeBrainWorking = nil
         let reply = await LocalLLM.generate("ping", maxTokens: 5)
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        let failed = trimmed.isEmpty || reply == LocalLLM.offMessage || trimmed.hasPrefix("[")
+        let failed = trimmed.isEmpty
+                  || reply == LocalLLM.offMessage
+                  || trimmed.hasPrefix("[Claude Haiku")
         activeBrainWorking = !failed
         activeBrainTesting = false
     }
@@ -724,17 +745,40 @@ struct SettingsView: View {
     }
 
     /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.
+    /// Anthropic key entry — Keychain-backed Save/Clear, same pattern as the
+    /// other cloud brains (the literal key only lives in `anthropicKeyDraft`
+    /// while the user is typing).
     private var claudeKeyRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Anthropic API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("Needed only for Claude Haiku. Stored on this Mac.").font(.caption2).foregroundStyle(.secondary)
+                Text(anthropicKeySaved ? "Saved in macOS Keychain · paste a new one to replace"
+                                       : "Needed only for Claude Haiku. Get one at console.anthropic.com.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            SecureField("sk-ant-…", text: $settings.anthropicAPIKey)
-                .textFieldStyle(.plain).frame(width: 150)
+            SecureField("sk-ant-…", text: $anthropicKeyDraft)
+                .textFieldStyle(.plain).frame(width: 130)
                 .multilineTextAlignment(.trailing).foregroundStyle(.white)
+            Button("Save") {
+                let trimmed = anthropicKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .anthropicAPIKey)
+                anthropicKeyDraft = ""
+                anthropicKeySaved = AnthropicClient.isConfigured
+                Task { await BrainStatus.shared.refresh() }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(anthropicKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if anthropicKeySaved {
+                Button("Clear") {
+                    _ = KeychainStore.delete(.anthropicAPIKey)
+                    anthropicKeySaved = false
+                    Task { await BrainStatus.shared.refresh() }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
