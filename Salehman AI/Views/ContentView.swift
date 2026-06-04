@@ -89,9 +89,9 @@ struct ContentView: View {
             if messages.isEmpty { messages = ChatStore.load() }
             AppSettings.shared.applyCapturePrivacy()
         }
-        .onChange(of: messages) { _ in ChatStore.scheduleSave(messages) }
+        .onChange(of: messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
-        .onChange(of: speechIn.transcript) { t in if speechIn.isListening { mission = t } }
+        .onChange(of: speechIn.transcript) { _, t in if speechIn.isListening { mission = t } }
         // Menu-bar command bridges (two-parameter onChange: $1 is the NEW value).
         .onChange(of: app.newChatRequested) { _, v in if v { startNewChat(); app.newChatRequested = false } }
         .onChange(of: app.stopRequested) { _, v in if v { stop(); app.stopRequested = false } }
@@ -205,8 +205,8 @@ struct ContentView: View {
                         .padding(.vertical, 22)
                     }
                 }
-                .onChange(of: messages.count) { _ in scrollToBottom(proxy) }
-                .onChange(of: isRunning) { _ in scrollToBottom(proxy) }
+                .onChange(of: messages.count) { _, _ in scrollToBottom(proxy) }
+                .onChange(of: isRunning) { _, _ in scrollToBottom(proxy) }
             }
         }
     }
@@ -908,8 +908,13 @@ struct TypingIndicator: View {
                         .frame(width: 7, height: 7)
                         .scaleEffect(animating ? 1.0 : 0.5)
                         .opacity(animating ? 1 : 0.4)
-                        .animation(.easeInOut(duration: 0.6).repeatForever().delay(Double(i) * 0.2),
-                                   value: animating)
+                        // Custom cubic-bezier instead of stock easeInOut so the
+                        // dot pulse matches the rest of the app's motion language.
+                        .animation(
+                            .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
+                                .repeatForever()
+                                .delay(Double(i) * 0.2),
+                            value: animating)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 13)

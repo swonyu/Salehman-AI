@@ -66,7 +66,12 @@ enum OllamaClient {
                                  system: String? = nil, images: [Data] = [],
                                  timeout: TimeInterval = 300) async -> String? {
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
-        var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false]
+        // `keep_alive: 30s` evicts the model from RAM ~30s after it goes idle,
+        // instead of Ollama's default 5 minutes. A 32B model is ~20 GB resident,
+        // so this is the single biggest idle-RAM win on a laptop. Rapid follow-up
+        // messages still reuse the loaded model inside the window.
+        var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
+                                   "keep_alive": "30s"]
         if let system { body["system"] = system }
         if !images.isEmpty { body["images"] = images.map { $0.base64EncodedString() } }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -127,7 +132,8 @@ enum OllamaClient {
                            onUpdate: @escaping (String) -> Void) async -> String? {
         guard await isUp(), await hasModel(codeModel) else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
-        var body: [String: Any] = ["model": codeModel, "prompt": prompt, "stream": true]
+        var body: [String: Any] = ["model": codeModel, "prompt": prompt, "stream": true,
+                                   "keep_alive": "30s"]   // evict from RAM ~30s after idle
         if let system { body["system"] = system }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 

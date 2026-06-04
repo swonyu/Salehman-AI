@@ -78,16 +78,28 @@ enum AgentPipeline {
         // LocalLLM layer transparently falls back to Ollama qwen-coder so the
         // agents keep working with the local brain. We only bail out when
         // neither brain is reachable.
-        if await LocalLLM.currentBrain() == .none { return LocalLLM.offMessage }
+        let brain = await LocalLLM.currentBrain()
+        if brain == .none { return LocalLLM.offMessage }
 
         // Speed mode controls how many agents run.
         let mode = await MainActor.run { AppSettings.shared.responseMode }
         let all = AgentDefinitions.pipeline
         let specs: [AgentSpec]
-        switch mode {
-        case .fast:     specs = all.filter { $0.usesTools }                    // just Reasoning Strategist
-        case .balanced: specs = all.filter { $0.usesTools || $0.isFinal }      // reason + final (streamed)
-        case .full:     specs = all                                            // all 15
+        if brain == .ollamaCoder {
+            // SAFETY: the Ollama fallback brain is qwen2.5-coder:32b — each agent
+            // is a full ~20 GB 32B inference, and agents in a phase run
+            // CONCURRENTLY. Running the multi-agent team on Ollama can exhaust RAM
+            // and freeze the whole Mac. So when we're on the heavy local brain we
+            // ALWAYS run a single agent (one sequential inference), regardless of
+            // the user's response-mode setting. Apple Intelligence is lightweight
+            // and OS-managed, so it still honors fast/balanced/full below.
+            specs = all.filter { $0.usesTools }
+        } else {
+            switch mode {
+            case .fast:     specs = all.filter { $0.usesTools }                    // just Reasoning Strategist
+            case .balanced: specs = all.filter { $0.usesTools || $0.isFinal }      // reason + final (streamed)
+            case .full:     specs = all                                            // all 15
+            }
         }
         await MainActor.run { MissionProgress.shared.begin(specs) }
 

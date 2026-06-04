@@ -33,6 +33,12 @@ struct SettingsView: View {
                                "apple.logo", $settings.useAppleIntelligence)
                     }
 
+                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety.") {
+                        ForEach(BrainPreference.allCases) { pref in
+                            brainRow(pref)
+                        }
+                    }
+
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
                         HStack(spacing: 10) {
                             Image(systemName: "sparkle.magnifyingglass").foregroundStyle(Color.accentColor)
@@ -122,6 +128,43 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if settings.responseMode == mode {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Brain-preference row. The trailing pill shows whether the pinned brain
+    /// is actually reachable right now — so a user who picks "Ollama" while
+    /// the server is down can see immediately why they're getting no replies.
+    private func brainRow(_ pref: BrainPreference) -> some View {
+        let selected = settings.brainPreference == pref
+        let ready: Bool = {
+            switch pref {
+            case .auto:   return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+            case .apple:  return appleOK && settings.useAppleIntelligence
+            case .ollama: return ollamaUp && hasCoder
+            }
+        }()
+        return Button { settings.brainPreference = pref } label: {
+            HStack(spacing: 12) {
+                Image(systemName: pref.icon)
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(pref.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                    Text(pref.subtitle).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(ready ? "Ready" : "Unavailable")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(ready ? Color.green : Color.orange.opacity(0.9))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background((ready ? Color.green : Color.orange).opacity(0.12), in: Capsule())
+                if selected {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 }
             }

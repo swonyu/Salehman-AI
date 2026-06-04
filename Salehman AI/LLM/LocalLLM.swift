@@ -48,15 +48,36 @@ enum LocalLLM {
     /// UI to label the current state honestly.
     enum Brain: Equatable { case appleIntelligence, ollamaCoder, none }
 
-    /// Best brain available right now. Apple Intelligence wins when both
-    /// enabled and hardware-available; otherwise we fall back to Ollama
-    /// qwen-coder if the local server is up.
+    /// Best brain available right now, honoring the user's `BrainPreference`:
+    ///   * `.apple`  → return Apple Intelligence if active, else `.none`.
+    ///   * `.ollama` → return Ollama qwen-coder if reachable, else `.none`.
+    ///   * `.auto`   → Apple Intelligence wins when active, otherwise fall
+    ///                 back to Ollama if the local server is up.
+    /// Returning `.none` short-circuits the pipeline with the canonical
+    /// "no brain reachable" message instead of silently using the other side.
     static func currentBrain() async -> Brain {
-        if isActive { return .appleIntelligence }
-        if await OllamaClient.isUp(), await OllamaClient.hasModel(OllamaClient.codeModel) {
-            return .ollamaCoder
+        let pref = AppSettings.brainPreferenceCurrent
+
+        switch pref {
+        case .apple:
+            return isActive ? .appleIntelligence : .none
+
+        case .ollama:
+            if await ollamaReady() { return .ollamaCoder }
+            return .none
+
+        case .auto:
+            if isActive { return .appleIntelligence }
+            if await ollamaReady() { return .ollamaCoder }
+            return .none
         }
-        return .none
+    }
+
+    /// Two-step probe (server up, then model pulled) hoisted out of
+    /// `currentBrain` because three call sites use the same pair.
+    nonisolated private static func ollamaReady() async -> Bool {
+        guard await OllamaClient.isUp() else { return false }
+        return await OllamaClient.hasModel(OllamaClient.codeModel)
     }
 
     /// Short label for the current brain, shown in the header subtitle.
@@ -68,15 +89,34 @@ enum LocalLLM {
         }
     }
 
+    /// Whether the Ollama fallback may be tried given the user's preference.
+    /// `.auto` and `.ollama` allow it; `.apple` pins to Apple Intelligence only.
+    nonisolated private static var ollamaAllowed: Bool {
+        switch AppSettings.brainPreferenceCurrent {
+        case .auto, .ollama: return true
+        case .apple:         return false
+        }
+    }
+
+    /// Whether the Apple-Intelligence path may be tried given the preference.
+    /// `.auto` and `.apple` allow it; `.ollama` pins to Ollama only.
+    nonisolated private static var appleAllowed: Bool {
+        switch AppSettings.brainPreferenceCurrent {
+        case .auto, .apple:  return true
+        case .ollama:        return false
+        }
+    }
+
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
     ///
-    /// Fallback chain: Apple Intelligence (if enabled + available) → Ollama
-    /// qwen-coder (if the local server is up) → off-message. The Ollama path
-    /// ignores `maxTokens` since `/api/generate` doesn't expose a clean cap.
+    /// Brain order honors the user's `BrainPreference` (auto/apple/ollama).
+    /// Within `.auto` we still try Apple Intelligence first because it's
+    /// lighter; pinned modes skip the other brain entirely instead of falling
+    /// back silently — silent fallback would defeat the purpose of pinning.
     static func generate(_ prompt: String, maxTokens: Int? = nil) async -> String {
         #if canImport(FoundationModels)
-        if isActive {
+        if appleAllowed, isActive {
             let session = LanguageModelSession()
             let options = GenerationOptions(maximumResponseTokens: maxTokens)
             if let response = try? await session.respond(to: prompt, options: options) {
@@ -84,16 +124,15 @@ enum LocalLLM {
             }
         }
         #endif
-        if let reply = await OllamaClient.chat(prompt: prompt) { return reply }
+        if ollamaAllowed, let reply = await OllamaClient.chat(prompt: prompt) { return reply }
         return offMessage
     }
 
-    /// Streaming one-shot generation. Same Apple → Ollama → off fallback as
-    /// `generate`, with `onUpdate` invoked for every cumulative chunk.
+    /// Streaming one-shot generation. Same brain order as `generate`.
     static func generateStreaming(_ prompt: String, maxTokens: Int? = nil,
                                   onUpdate: @escaping (String) -> Void) async -> String {
         #if canImport(FoundationModels)
-        if isActive {
+        if appleAllowed, isActive {
             let session = LanguageModelSession()
             let options = GenerationOptions(maximumResponseTokens: maxTokens)
             var last = ""
@@ -110,7 +149,8 @@ enum LocalLLM {
             }
         }
         #endif
-        if let reply = await OllamaClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
+        if ollamaAllowed,
+           let reply = await OllamaClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
             return reply
         }
         let msg = offMessage
@@ -119,21 +159,20 @@ enum LocalLLM {
     }
 
     /// Multi-turn chat that remembers prior messages. Routes through the
-    /// tool-enabled `ChatSession` when Apple Intelligence is active; otherwise
-    /// falls back to Ollama qwen-coder *without* tools (the model can answer
-    /// from knowledge, but can't run terminal commands or self-improve until
-    /// you re-enable Apple Intelligence).
+    /// tool-enabled `ChatSession` when Apple Intelligence is the active brain;
+    /// otherwise falls back to Ollama qwen-coder *without* tools.
     static func chat(_ message: String) async -> String {
-        if isActive {
+        if appleAllowed, isActive {
             return await ChatSession.shared.respond(to: message)
         }
+        guard ollamaAllowed else { return offMessage }
         let system = """
         You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
-        Apple Intelligence is off, so you cannot call tools (no terminal, no web \
-        search, no self-improve) right now — just answer from your knowledge as \
-        clearly and briefly as you can. If the user writes in Arabic, reply in \
-        Arabic; otherwise reply in English. If a question really requires running \
-        a command on this Mac, say so plainly and suggest the command as text.
+        Apple Intelligence is off (or not selected), so you cannot call tools (no \
+        terminal, no web search, no self-improve) right now — just answer from your \
+        knowledge as clearly and briefly as you can. If the user writes in Arabic, \
+        reply in Arabic; otherwise reply in English. If a question really requires \
+        running a command on this Mac, say so plainly and suggest the command as text.
         """
         if let reply = await OllamaClient.chat(prompt: message, system: system) {
             return reply

@@ -37,6 +37,14 @@ final class AppSettings: ObservableObject {
     /// the assistant politely declines to generate; vision, transcription and
     /// dictation keep working. Defaults ON so the app works out of the box.
     @Published var useAppleIntelligence: Bool { didSet { UserDefaults.standard.set(useAppleIntelligence, forKey: Keys.appleIntelligence) } }
+
+    /// User's preferred brain. `.auto` picks Apple Intelligence when it's
+    /// available, otherwise Ollama qwen-coder. `.apple` / `.ollama` force a
+    /// specific brain — useful for testing, or when the user prefers one over
+    /// the other for quality / speed reasons. Defaults to `.auto`.
+    @Published var brainPreference: BrainPreference {
+        didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
+    }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
     /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
@@ -62,6 +70,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let hideCapture = "set_hideCapture"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
+        nonisolated static let brainPreference = "set_brainPreference"
     }
 
     /// Thread-safe read of the Apple Intelligence master switch for the model
@@ -113,7 +122,17 @@ final class AppSettings: ObservableObject {
         useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
+        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         installCaptureObservers()
+    }
+
+    /// `nonisolated` accessor so `LocalLLM` (which decides which brain to use
+    /// from an actor context) can read the user's preference without an
+    /// actor hop. Falls back to `.auto` when the stored value is missing or
+    /// unrecognized — never crashes the chain on a typo.
+    nonisolated static var brainPreferenceCurrent: BrainPreference {
+        let raw = UserDefaults.standard.string(forKey: Keys.brainPreference) ?? ""
+        return BrainPreference(rawValue: raw) ?? .auto
     }
 
     /// Thread-safe reads for tools running off the main actor.
@@ -122,6 +141,43 @@ final class AppSettings: ObservableObject {
     }
 
     func applyRecommendedMode() { responseMode = MachineInfo.recommendedMode }
+}
+
+/// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
+/// which model is asked for the next response.
+///
+/// * `.auto` — try Apple Intelligence first, then fall back to Ollama. This is
+///   the right default: lightweight when it works, graceful when it doesn't.
+/// * `.apple` — pin to Apple Intelligence. If unavailable (hardware doesn't
+///   support it, or the master switch is off), no fallback happens.
+/// * `.ollama` — pin to Ollama qwen-coder. Heavier per-turn but free of
+///   Apple Intelligence's content guardrails. The pipeline automatically
+///   collapses to a single agent on this brain (see AgentPipeline).
+enum BrainPreference: String, CaseIterable, Identifiable {
+    case auto, apple, ollama
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .auto:   return "Auto"
+        case .apple:  return "Apple Intelligence"
+        case .ollama: return "Ollama qwen-coder"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .auto:   return "Apple if available, otherwise Ollama"
+        case .apple:  return "On-device · lightweight · 15-agent pipeline"
+        case .ollama: return "Local · heavier · single-agent for safety"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .auto:   return "sparkles"
+        case .apple:  return "apple.logo"
+        case .ollama: return "cpu"
+        }
+    }
 }
 
 /// Detects the Mac's capability to recommend a performance tier.

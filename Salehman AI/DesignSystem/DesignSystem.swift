@@ -158,30 +158,6 @@ struct Card<Content: View>: View {
     }
 }
 
-// MARK: - Chip
-// The tappable suggestion chips in the empty state.
-struct Chip: View {
-    let text: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.9))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, DS.Space.md).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-                    .stroke(Color.white.opacity(hovering ? 0.20 : 0.08), lineWidth: 1))
-                .scaleEffect(hovering ? 1.02 : 1.0)
-        }
-        .buttonStyle(.plain)
-        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
-    }
-}
-
 // MARK: - Button styles (dedupe the Approval card buttons)
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration c: Configuration) -> some View {
