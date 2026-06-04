@@ -27,8 +27,26 @@ enum LocalLLM {
     /// Ollama unreachable). The pipeline now transparently falls back to
     /// Ollama qwen-coder when Apple Intelligence is off, so this only fires
     /// when there's no local model at all.
-    nonisolated static let offMessage =
-        "No model is reachable right now. Turn Apple Intelligence back on in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled."
+    /// Shown when the selected brain can't answer. **Context-aware**: it names
+    /// the brain the user actually pinned and the exact remedy — so it never
+    /// tells you to "turn Apple Intelligence back on" when that's already on and
+    /// a *different* pinned brain is the thing that's down. Deterministic per
+    /// preference, so the equality checks that use it as a sentinel still hold.
+    nonisolated static var offMessage: String {
+        let pref = AppSettings.brainPreferenceCurrent
+        switch pref {
+        case .auto:
+            return "No model is reachable right now. Turn on Apple Intelligence in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled."
+        case .apple:
+            return "Apple Intelligence is your selected brain, but it's unavailable right now. Turn it on in Settings, or pick another brain."
+        case .ollama:
+            return "Ollama qwen-coder is your selected brain, but the Ollama server isn't reachable. Start it with `ollama serve` (with qwen2.5-coder pulled), or switch to Auto in Settings."
+        case .copilot:
+            return "GitHub Copilot is your selected brain, but you're not signed in. Sign in under Settings → GitHub Copilot, or switch brains."
+        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex:
+            return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
+        }
+    }
 
     // `nonisolated` because actor-isolated callers (e.g. `ChatSession`) read
     // this for error messages. The underlying availability check is itself
@@ -114,7 +132,15 @@ enum LocalLLM {
         case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
         case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
         case .copilot:           return "Cloud · GitHub Copilot"
-        case .none:              return "No brain available"
+        case .none:
+            // Name the pinned-but-down brain so the header matches the chat message.
+            switch AppSettings.brainPreferenceCurrent {
+            case .ollama:  return "Ollama selected · not running"
+            case .apple:   return "Apple Intelligence selected · off"
+            case .copilot: return "Copilot selected · sign in needed"
+            case .auto:    return "No brain available"
+            default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
+            }
         }
     }
 
