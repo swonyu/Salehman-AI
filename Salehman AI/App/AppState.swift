@@ -8,7 +8,7 @@ import Combine
 final class AppState: ObservableObject {
     static let shared = AppState()
 
-    /// Which top-level tab is showing (Chat or Markets).
+    /// Which top-level tab is showing (Chat / Agents / Markets).
     @Published var selectedTab: AppTab = .chat
 
     @Published var newChatRequested = false
@@ -19,4 +19,26 @@ final class AppState: ObservableObject {
     @Published var focusInputRequested = false
 
     private init() {}
+}
+
+/// The three top-level surfaces.
+enum AppTab: String, CaseIterable, Identifiable {
+    case chat, agents, markets
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .chat:    return "Chat"
+        case .agents:  return "Agents"
+        case .markets: return "Markets"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .chat:    return "bubble.left.and.bubble.right.fill"
+        case .agents:  return "person.3.fill"
+        case .markets: return "chart.line.uptrend.xyaxis"
+        }
+    }
 }

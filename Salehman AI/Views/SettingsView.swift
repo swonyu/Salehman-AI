@@ -169,6 +169,10 @@ struct SettingsView: View {
                         toggle("Web access", "Search & read the web", "globe", $settings.webAccess)
                         toggle("Local coding model", "Use qwen2.5-coder:32b for code", "chevron.left.forwardslash.chevron.right", $settings.useCodeModel)
                         toggle("Image vision", "Understand images with qwen2.5vl", "eye", $settings.useVision)
+                        toggle("Autonomous Mode",
+                               "Agents can chain tasks, self-correct, and continue working with minimal input",
+                               "sparkles",
+                               $settings.autonomousMode)
                         toggle("Confirm terminal commands", "Ask before running each command", "lock.shield", $approval.confirmationEnabled)
                     }
 

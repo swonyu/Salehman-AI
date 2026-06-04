@@ -82,6 +82,9 @@ final class AppSettings: ObservableObject {
     @Published var webAccess: Bool    { didSet { UserDefaults.standard.set(webAccess, forKey: Keys.webAccess) } }
     @Published var useCodeModel: Bool { didSet { UserDefaults.standard.set(useCodeModel, forKey: Keys.codeModel) } }
     @Published var useVision: Bool    { didSet { UserDefaults.standard.set(useVision, forKey: Keys.vision) } }
+    /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
+    /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
+    @Published var autonomousMode: Bool { didSet { UserDefaults.standard.set(autonomousMode, forKey: Keys.autonomousMode) } }
     @Published var hideFromCapture: Bool {
         didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
     }
@@ -95,6 +98,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let webAccess = "set_webAccess"
         nonisolated static let codeModel = "set_useCodeModel"
         nonisolated static let vision    = "set_useVision"
+        nonisolated static let autonomousMode = "set_autonomousMode"
         nonisolated static let hideCapture = "set_hideCapture"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
@@ -192,6 +196,7 @@ final class AppSettings: ObservableObject {
         webAccess    = AppSettings.boolDefaultTrue(Keys.webAccess)
         useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
+        autonomousMode = d.bool(forKey: Keys.autonomousMode)   // default off
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""

@@ -125,3 +125,10 @@ and update this file.** When you start touching a file, claim it here.
   - `AppSettings`: dropped my early UserDefaults `openAIAPIKey` (key now in Keychain like the others); kept `openAIModel` (validated against `OpenAIClient.allModels`).
   - `SettingsView`: added "Codex / OpenAI" section (your `cloudKeyRow`/`cloudModelRow`/`cloudTestRow`) + "GitHub Copilot" section (sign-in/out + live Working badge) + sign-in sheet.
   - Now 9 brains. Next: a live "is the selected brain actually working" check in Settings + a cleanup pass (user-requested).
+- **2026-06-04 Chat A — added the Agents tab + Autonomous Mode (v8 spec from the user), build green.** Shared-file touches (heads up):
+  - `App/AppState.swift`: moved the `AppTab` enum here from RootView and added a `.agents` case (Chat / Agents / Markets). Flags unchanged.
+  - `Views/RootView.swift`: dropped the duplicate `AppTab` def (now in AppState); renders `AgentsView()` lazily (visitedAgents), same opacity pattern as Markets.
+  - NEW `Views/AgentsView.swift`: lists all `AgentDefinitions.pipeline` agents with a live ProgressView when that agent is `.running` (reads `MissionProgress.shared`), an Autonomous Mode toggle + "Start Autonomous Run" (Orchestrator.runAndReturnResult), and a direct-command field (AgentPipeline.run).
+  - `App/AppSettings.swift`: `autonomousMode` Bool (Keys.autonomousMode, default off).
+  - `Views/SettingsView.swift`: Autonomous Mode toggle in the Capabilities section.
+  - `TabSwitcherBar` iterates `AppTab.allCases`, so the 3rd pill appears automatically — no change needed there.
