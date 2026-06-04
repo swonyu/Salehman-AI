@@ -45,6 +45,11 @@ final class AppSettings: ObservableObject {
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
+    /// Anthropic API key for the optional Claude Haiku (cloud) brain. Empty = not
+    /// configured. Stored locally; only sent to Anthropic when Claude is the brain.
+    @Published var anthropicAPIKey: String {
+        didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: Keys.anthropicAPIKey) }
+    }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
     /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
@@ -71,6 +76,12 @@ final class AppSettings: ObservableObject {
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
         nonisolated static let brainPreference = "set_brainPreference"
+        nonisolated static let anthropicAPIKey = "set_anthropicAPIKey"
+    }
+
+    /// `nonisolated` read of the Anthropic key for the model layer (off main actor).
+    nonisolated static var anthropicAPIKeyCurrent: String {
+        UserDefaults.standard.string(forKey: Keys.anthropicAPIKey) ?? ""
     }
 
     /// Thread-safe read of the Apple Intelligence master switch for the model
@@ -123,6 +134,7 @@ final class AppSettings: ObservableObject {
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
+        anthropicAPIKey = d.string(forKey: Keys.anthropicAPIKey) ?? ""
         installCaptureObservers()
     }
 
@@ -154,28 +166,31 @@ final class AppSettings: ObservableObject {
 ///   Apple Intelligence's content guardrails. The pipeline automatically
 ///   collapses to a single agent on this brain (see AgentPipeline).
 enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, apple, ollama
+    case auto, apple, ollama, claudeHaiku
 
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .auto:   return "Auto"
-        case .apple:  return "Apple Intelligence"
-        case .ollama: return "Ollama qwen-coder"
+        case .auto:        return "Auto"
+        case .apple:       return "Apple Intelligence"
+        case .ollama:      return "Ollama qwen-coder"
+        case .claudeHaiku: return "Claude Haiku (Cloud)"
         }
     }
     var subtitle: String {
         switch self {
-        case .auto:   return "Apple if available, otherwise Ollama"
-        case .apple:  return "On-device · lightweight · 15-agent pipeline"
-        case .ollama: return "Local · heavier · single-agent for safety"
+        case .auto:        return "Apple if available, otherwise Ollama"
+        case .apple:       return "On-device · lightweight · 15-agent pipeline"
+        case .ollama:      return "Local · heavier · single-agent for safety"
+        case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
         }
     }
     var icon: String {
         switch self {
-        case .auto:   return "sparkles"
-        case .apple:  return "apple.logo"
-        case .ollama: return "cpu"
+        case .auto:        return "sparkles"
+        case .apple:       return "apple.logo"
+        case .ollama:      return "cpu"
+        case .claudeHaiku: return "cloud.fill"
         }
     }
 }

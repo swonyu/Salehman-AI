@@ -138,8 +138,19 @@ enum AgentPipeline {
             // Immutable context snapshot for this phase (shared by its concurrent agents).
             let phaseContext = memory.buildContext(for: "")
 
+            // RAM-aware concurrency cap. `MemoryManager` reads two cheap
+            // kernel-pushed signals (memory pressure + thermal state) and
+            // returns a recommended in-flight task count for *right now* —
+            // re-read per phase so a long pipeline tracks current reality.
+            let cap = max(1, await MemoryManager.shared.concurrencyLimit())
+            let batches = stride(from: 0, to: indices.count, by: cap).map { start -> [Int] in
+                Array(indices[start..<min(start + cap, indices.count)])
+            }
+
+            var phaseResults: [(Int, String)] = []
+            for batch in batches {
             let results = await withTaskGroup(of: (Int, String).self) { group in
-                for i in indices {
+                for i in batch {
                     let spec = specs[i]
                     // Non-final agents get a no-op sink. `if/else` (not a ternary):
                     // Swift's type-checker ICEs ("failed to produce diagnostic")
@@ -179,6 +190,9 @@ enum AgentPipeline {
                 for await r in group { collected.append(r) }
                 return collected
             }
+                phaseResults.append(contentsOf: results)
+            }
+            let results = phaseResults
 
             // Fold this phase's outputs into MissionMemory (in spec order).
             for (i, output) in results.sorted(by: { $0.0 < $1.0 }) {

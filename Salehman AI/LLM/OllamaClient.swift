@@ -2,11 +2,21 @@ import Foundation
 
 /// Talks to the local Ollama server (http://localhost:11434). Free, local, private.
 ///   • Vision  → qwen2.5vl  (true image understanding)
-///   • Coding  → qwen2.5-coder:32b  (strong local code model)
+///   • Coding  → qwen2.5-coder:7b (Q4_K_M, ~4.7 GB resident) — the sweet-spot
+///     default. The 32B variant (~19 GB resident) can still be picked
+///     explicitly via `heavyCodeModel`, but no code path defaults to it.
+///
+/// Why 7B-by-default: on an 8/16 GB Mac the 32B model alone can exhaust
+/// available RAM, especially with macOS + Xcode + Safari already resident. 7B
+/// is small enough to stay loaded comfortably while still answering well for
+/// chat/code-edit workloads.
 enum OllamaClient {
-    static let visionModel = "qwen2.5vl"
-    static let codeModel   = "qwen2.5-coder:32b"
-    private static let base = "http://localhost:11434"
+    // `nonisolated` so the policy/cleanup paths (which run off the main actor)
+    // can read these without a hop. They're immutable string constants.
+    nonisolated static let visionModel     = "qwen2.5vl"
+    nonisolated static let codeModel       = "qwen2.5-coder:7b"       // ← sweet-spot default
+    nonisolated static let heavyCodeModel  = "qwen2.5-coder:32b"      // opt-in only
+    nonisolated private static let base = "http://localhost:11434"
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
     // (vision() and code() check it twice per request); 30s caching is fine and
@@ -61,17 +71,38 @@ enum OllamaClient {
     /// Is a given model available locally? (Cached for 30s.)
     static func hasModel(_ name: String) async -> Bool { await Reachability.shared.hasModel(name) }
 
+    /// Default context window. 2048 tokens is plenty for chat-style turns and
+    /// keeps Ollama's KV cache small. `Generation.full` (below) widens it for
+    /// tasks that genuinely need long context.
+    nonisolated static let defaultNumCtx: Int = 2048
+
+    /// Per-call generation knobs. Defaults are tuned for the 7B sweet-spot
+    /// model on a laptop; bump `numCtx` for genuinely long context.
+    struct Generation: Sendable {
+        var keepAlive: String   = "30s"
+        var numCtx: Int         = OllamaClient.defaultNumCtx
+        var numGPU: Int?        = nil          // nil = let Ollama decide
+        nonisolated static let `default`    = Generation()
+        nonisolated static let tight        = Generation(keepAlive: "10s", numCtx: 1024)
+        nonisolated static let full         = Generation(keepAlive: "30s", numCtx: 8192)
+    }
+
     /// Core call to /api/generate (non-streaming).
-    private static func generate(model: String, prompt: String,
-                                 system: String? = nil, images: [Data] = [],
-                                 timeout: TimeInterval = 300) async -> String? {
+    nonisolated private static func generate(model: String, prompt: String,
+                                             system: String? = nil, images: [Data] = [],
+                                             timeout: TimeInterval = 300,
+                                             gen: Generation = .default) async -> String? {
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
-        // `keep_alive: 30s` evicts the model from RAM ~30s after it goes idle,
-        // instead of Ollama's default 5 minutes. A 32B model is ~20 GB resident,
-        // so this is the single biggest idle-RAM win on a laptop. Rapid follow-up
-        // messages still reuse the loaded model inside the window.
+        // `keep_alive` controls how long Ollama keeps the model resident in RAM
+        // after the request completes (default in the server is 5 minutes —
+        // 30 s on a laptop is the single biggest idle-RAM win). `num_ctx` caps
+        // the KV cache size: a smaller context window literally allocates less
+        // GPU/CPU RAM per request, so 2048 (default) is dramatically lighter
+        // than the server default of 4096.
+        var options: [String: Any] = ["num_ctx": gen.numCtx]
+        if let n = gen.numGPU { options["num_gpu"] = n }
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
-                                   "keep_alive": "30s"]
+                                   "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
         if !images.isEmpty { body["images"] = images.map { $0.base64EncodedString() } }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -88,6 +119,32 @@ enum OllamaClient {
               let text = json["response"] as? String else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    // MARK: - Eviction
+
+    /// Immediately evict the loaded model from RAM. Ollama recognizes
+    /// `keep_alive: 0` with an empty prompt as "drop right now" — useful when
+    /// the OS reports memory pressure or the user backgrounds the app.
+    /// Idempotent and silent: failure is fine (we'll just keep the model
+    /// loaded a little longer).
+    nonisolated static func unloadAll() async {
+        for name in [codeModel, heavyCodeModel, visionModel] {
+            await unload(model: name)
+        }
+    }
+
+    /// Evict a specific model. Falls through silently if Ollama isn't reachable.
+    nonisolated static func unload(model: String) async {
+        guard await isUp(), let url = URL(string: "\(base)/api/generate") else { return }
+        let body: [String: Any] = ["model": model, "prompt": "", "keep_alive": 0, "stream": false]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = payload
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     /// Ask the vision model about an image. Returns nil if unavailable.

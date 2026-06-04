@@ -46,7 +46,7 @@ enum LocalLLM {
 
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
-    enum Brain: Equatable { case appleIntelligence, ollamaCoder, none }
+    enum Brain: Equatable { case appleIntelligence, ollamaCoder, claudeHaiku, none }
 
     /// Best brain available right now, honoring the user's `BrainPreference`:
     ///   * `.apple`  → return Apple Intelligence if active, else `.none`.
@@ -65,6 +65,10 @@ enum LocalLLM {
         case .ollama:
             if await ollamaReady() { return .ollamaCoder }
             return .none
+
+        case .claudeHaiku:
+            // Cloud brain — "reachable" simply means the user has entered a key.
+            return AnthropicClient.isConfigured ? .claudeHaiku : .none
 
         case .auto:
             if isActive { return .appleIntelligence }
@@ -85,6 +89,7 @@ enum LocalLLM {
         switch await currentBrain() {
         case .appleIntelligence: return "On-device · Apple Intelligence"
         case .ollamaCoder:       return "Local · Ollama qwen-coder"
+        case .claudeHaiku:       return "Cloud · Claude Haiku"
         case .none:              return "No brain available"
         }
     }
@@ -93,17 +98,27 @@ enum LocalLLM {
     /// `.auto` and `.ollama` allow it; `.apple` pins to Apple Intelligence only.
     nonisolated private static var ollamaAllowed: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .auto, .ollama: return true
-        case .apple:         return false
+        case .auto, .ollama:      return true
+        case .apple, .claudeHaiku: return false
         }
     }
 
     /// Whether the Apple-Intelligence path may be tried given the preference.
-    /// `.auto` and `.apple` allow it; `.ollama` pins to Ollama only.
+    /// `.auto` and `.apple` allow it; `.ollama`/`.claudeHaiku` pin elsewhere.
     nonisolated private static var appleAllowed: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .auto, .apple:  return true
-        case .ollama:        return false
+        case .auto, .apple:        return true
+        case .ollama, .claudeHaiku: return false
+        }
+    }
+
+    /// Whether the Claude Haiku (cloud) path may be tried. Only when the user
+    /// explicitly pins `.claudeHaiku` — `.auto` stays local-first so we never
+    /// silently spend on the cloud API.
+    nonisolated private static var claudeAllowed: Bool {
+        switch AppSettings.brainPreferenceCurrent {
+        case .claudeHaiku:          return true
+        case .auto, .apple, .ollama: return false
         }
     }
 
@@ -115,6 +130,7 @@ enum LocalLLM {
     /// lighter; pinned modes skip the other brain entirely instead of falling
     /// back silently — silent fallback would defeat the purpose of pinning.
     static func generate(_ prompt: String, maxTokens: Int? = nil) async -> String {
+        if claudeAllowed, let reply = await AnthropicClient.chat(prompt: prompt) { return reply }
         #if canImport(FoundationModels)
         if appleAllowed, isActive {
             let session = LanguageModelSession()
@@ -131,6 +147,10 @@ enum LocalLLM {
     /// Streaming one-shot generation. Same brain order as `generate`.
     static func generateStreaming(_ prompt: String, maxTokens: Int? = nil,
                                   onUpdate: @escaping (String) -> Void) async -> String {
+        if claudeAllowed,
+           let reply = await AnthropicClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
+            return reply
+        }
         #if canImport(FoundationModels)
         if appleAllowed, isActive {
             let session = LanguageModelSession()
@@ -162,6 +182,18 @@ enum LocalLLM {
     /// tool-enabled `ChatSession` when Apple Intelligence is the active brain;
     /// otherwise falls back to Ollama qwen-coder *without* tools.
     static func chat(_ message: String) async -> String {
+        if claudeAllowed {
+            // Claude Haiku (cloud), single-turn, no local tools.
+            let system = """
+            You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
+            Answer directly and clearly. If the user writes in Arabic, reply in Arabic; \
+            otherwise reply in English. You don't have access to this Mac's terminal or \
+            local tools in this mode — if a task needs running a command, say so and \
+            suggest the command as text.
+            """
+            if let reply = await AnthropicClient.chat(prompt: message, system: system) { return reply }
+            return offMessage
+        }
         if appleAllowed, isActive {
             return await ChatSession.shared.respond(to: message)
         }

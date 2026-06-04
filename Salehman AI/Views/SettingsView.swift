@@ -33,10 +33,11 @@ struct SettingsView: View {
                                "apple.logo", $settings.useAppleIntelligence)
                     }
 
-                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety.") {
+                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety; Claude Haiku runs in the cloud (~zero local RAM).") {
                         ForEach(BrainPreference.allCases) { pref in
                             brainRow(pref)
                         }
+                        claudeKeyRow
                     }
 
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
@@ -144,9 +145,10 @@ struct SettingsView: View {
         let selected = settings.brainPreference == pref
         let ready: Bool = {
             switch pref {
-            case .auto:   return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
-            case .apple:  return appleOK && settings.useAppleIntelligence
-            case .ollama: return ollamaUp && hasCoder
+            case .auto:        return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+            case .apple:       return appleOK && settings.useAppleIntelligence
+            case .ollama:      return ollamaUp && hasCoder
+            case .claudeHaiku: return !settings.anthropicAPIKey.trimmingCharacters(in: .whitespaces).isEmpty
             }
         }()
         return Button { settings.brainPreference = pref } label: {
@@ -172,6 +174,22 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.
+    private var claudeKeyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Anthropic API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text("Needed only for Claude Haiku. Stored on this Mac.").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("sk-ant-…", text: $settings.anthropicAPIKey)
+                .textFieldStyle(.plain).frame(width: 150)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
     private func toggle(_ title: String, _ subtitle: String, _ icon: String, _ binding: Binding<Bool>) -> some View {

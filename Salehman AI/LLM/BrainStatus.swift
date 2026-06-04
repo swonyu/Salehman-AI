@@ -61,6 +61,7 @@ final class BrainStatus: ObservableObject {
         switch brain {
         case .appleIntelligence: return .green
         case .ollamaCoder:       return Color(red: 0.4, green: 0.7, blue: 1.0)
+        case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
         case .none:              return .orange
         }
     }
