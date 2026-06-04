@@ -85,6 +85,31 @@ enum LocalLLM {
     static func resetChat() async {
         await ChatSession.shared.reset()
     }
+
+    /// Result Synthesis Lead — a second pass that turns a working draft into a
+    /// clear, friendly final answer. Preserves all facts and results.
+    static func synthesize(userMessage: String, draft: String) async -> String {
+        guard isAvailable else { return draft }
+        let prompt = """
+        You are the Result Synthesis Lead for Salehman AI. Rewrite the DRAFT
+        answer so it responds to the user clearly, directly, and in a warm,
+        concise tone. Keep ALL factual details, numbers, file paths, and command
+        results from the draft. Do not invent anything new. If the draft already
+        reads well, just lightly polish it. Reply in the user's language. Output
+        ONLY the final answer, with no preamble.
+
+        USER MESSAGE:
+        \(userMessage)
+
+        DRAFT:
+        \(draft)
+
+        FINAL ANSWER:
+        """
+        let refined = await generate(prompt)
+        // If synthesis somehow failed, fall back to the draft.
+        return refined.hasPrefix("[no on-device model") ? draft : refined
+    }
 }
 
 /// Holds a persistent Foundation Models session so the assistant remembers
