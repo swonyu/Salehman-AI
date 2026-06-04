@@ -46,7 +46,13 @@ enum LocalLLM {
 
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
-    enum Brain: Equatable { case appleIntelligence, ollamaCoder, claudeHaiku, grok, none }
+    enum Brain: Equatable {
+        case appleIntelligence, ollamaCoder
+        case claudeHaiku, grok                       // cloud, pre-existing
+        case gemini, groq, mistral, cerebras         // cloud, free-tier
+        case codex, copilot                          // cloud, OpenAI + GitHub Copilot
+        case none
+    }
 
     /// Best brain available right now, honoring the user's `BrainPreference`:
     ///   * `.apple`  → return Apple Intelligence if active, else `.none`.
@@ -66,20 +72,22 @@ enum LocalLLM {
             if await ollamaReady() { return .ollamaCoder }
             return .none
 
-        case .claudeHaiku:
-            // Cloud brain — "reachable" simply means the user has entered a key.
-            return AnthropicClient.isConfigured ? .claudeHaiku : .none
-
-        case .grok:
-            // Same contract as Claude: "reachable" = key present in Keychain.
-            // We deliberately don't probe the network here to keep the call
-            // sub-millisecond.
-            return GrokClient.hasKey() ? .grok : .none
+        // Cloud brains: "reachable" simply means the user has entered a key.
+        // We never probe the network here — that would burn an HTTP request
+        // every 10s while BrainStatus polls.
+        case .claudeHaiku: return AnthropicClient.isConfigured ? .claudeHaiku : .none
+        case .grok:        return GrokClient.hasKey()          ? .grok        : .none
+        case .gemini:      return GeminiClient.hasKey()        ? .gemini      : .none
+        case .groq:        return GroqClient.shared.hasKey()   ? .groq        : .none
+        case .mistral:     return MistralClient.shared.hasKey()  ? .mistral    : .none
+        case .cerebras:    return CerebrasClient.shared.hasKey() ? .cerebras   : .none
+        case .codex:       return OpenAIClient.hasKey()         ? .codex       : .none
+        case .copilot:     return CopilotClient.isAuthed()      ? .copilot     : .none
 
         case .auto:
             // `.auto` stays strictly local-first: we never silently spend on
-            // a cloud API. The user has to explicitly pin `.grok` or
-            // `.claudeHaiku` to leave the Mac.
+            // a cloud API. The user has to explicitly pin a cloud brain to
+            // leave the Mac.
             if isActive { return .appleIntelligence }
             if await ollamaReady() { return .ollamaCoder }
             return .none
@@ -100,45 +108,47 @@ enum LocalLLM {
         case .ollamaCoder:       return "Local · Ollama qwen-coder"
         case .claudeHaiku:       return "Cloud · Claude Haiku"
         case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
+        case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
+        case .groq:              return "Cloud · Groq \(AppSettings.groqModelCurrent)"
+        case .mistral:           return "Cloud · Mistral \(AppSettings.mistralModelCurrent)"
+        case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
+        case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
+        case .copilot:           return "Cloud · GitHub Copilot"
         case .none:              return "No brain available"
         }
     }
 
-    /// Whether the Ollama fallback may be tried given the user's preference.
-    nonisolated private static var ollamaAllowed: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .auto, .ollama:                    return true
-        case .apple, .claudeHaiku, .grok:       return false
-        }
-    }
+    /// Single accessor for the current preference. Used by every gate below
+    /// — kept as a computed property (no caching) because callers expect to
+    /// see the user's edits without restarting.
+    nonisolated private static var pref: BrainPreference { AppSettings.brainPreferenceCurrent }
 
-    /// Whether the Apple-Intelligence path may be tried given the preference.
-    nonisolated private static var appleAllowed: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .auto, .apple:                     return true
-        case .ollama, .claudeHaiku, .grok:      return false
-        }
-    }
+    /// Shared system prompt for every cloud brain when used in single-turn
+    /// `chat(...)`. Each cloud brain prints exactly the same constraints
+    /// (no local tools, language-mirror reply, suggest-commands-as-text),
+    /// so defining the string once prevents drift between providers.
+    nonisolated static let cloudSystemPrompt = """
+    You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
+    Answer directly and clearly. If the user writes in Arabic, reply in Arabic; \
+    otherwise reply in English. You don't have access to this Mac's terminal or \
+    local tools in this mode — if a task needs running a command, say so and \
+    suggest the command as text.
+    """
 
-    /// Whether the Claude Haiku (cloud) path may be tried. Only when the user
-    /// explicitly pins `.claudeHaiku` — `.auto` stays local-first so we never
-    /// silently spend on the cloud API.
-    nonisolated private static var claudeAllowed: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .claudeHaiku:                      return true
-        case .auto, .apple, .ollama, .grok:     return false
-        }
-    }
-
-    /// Whether the xAI Grok (cloud) path may be tried. Same discipline as
-    /// Claude: explicit `.grok` only, never `.auto` — the user has to opt in
-    /// to leaving the Mac.
-    nonisolated private static var grokAllowed: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .grok:                                 return true
-        case .auto, .apple, .ollama, .claudeHaiku:  return false
-        }
-    }
+    // Brain-gate predicates. Each cloud brain is *only* tried when the user
+    // explicitly pins it — `.auto` stays strictly local-first so we never
+    // silently spend on a cloud API. Apple/Ollama get a `||` to opt into
+    // `.auto`'s local fallback chain.
+    nonisolated private static var appleAllowed:    Bool { pref == .auto || pref == .apple }
+    nonisolated private static var ollamaAllowed:   Bool { pref == .auto || pref == .ollama }
+    nonisolated private static var claudeAllowed:   Bool { pref == .claudeHaiku }
+    nonisolated private static var grokAllowed:     Bool { pref == .grok }
+    nonisolated private static var geminiAllowed:   Bool { pref == .gemini }
+    nonisolated private static var groqAllowed:     Bool { pref == .groq }
+    nonisolated private static var mistralAllowed:  Bool { pref == .mistral }
+    nonisolated private static var cerebrasAllowed: Bool { pref == .cerebras }
+    nonisolated private static var codexAllowed:    Bool { pref == .codex }
+    nonisolated private static var copilotAllowed:  Bool { pref == .copilot }
 
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
@@ -154,6 +164,32 @@ enum LocalLLM {
                                              model: AppSettings.grokModelCurrent) {
             return reply
         }
+        if geminiAllowed,
+           let reply = await GeminiClient.chat(prompt: prompt,
+                                               model: AppSettings.geminiModelCurrent) {
+            return reply
+        }
+        if groqAllowed,
+           let reply = await GroqClient.shared.chat(prompt: prompt,
+                                                    model: AppSettings.groqModelCurrent) {
+            return reply
+        }
+        if mistralAllowed,
+           let reply = await MistralClient.shared.chat(prompt: prompt,
+                                                       model: AppSettings.mistralModelCurrent) {
+            return reply
+        }
+        if cerebrasAllowed,
+           let reply = await CerebrasClient.shared.chat(prompt: prompt,
+                                                        model: AppSettings.cerebrasModelCurrent) {
+            return reply
+        }
+        if codexAllowed,
+           let reply = await OpenAIClient.chat(prompt: prompt,
+                                               model: AppSettings.openAIModelCurrent) {
+            return reply
+        }
+        if copilotAllowed, let reply = await CopilotClient.chat(prompt: prompt) { return reply }
         #if canImport(FoundationModels)
         if appleAllowed, isActive {
             let session = LanguageModelSession()
@@ -178,6 +214,40 @@ enum LocalLLM {
            let reply = await GrokClient.chatStream(prompt: prompt,
                                                    model: AppSettings.grokModelCurrent,
                                                    onUpdate: onUpdate) {
+            return reply
+        }
+        if geminiAllowed,
+           let reply = await GeminiClient.chatStream(prompt: prompt,
+                                                     model: AppSettings.geminiModelCurrent,
+                                                     onUpdate: onUpdate) {
+            return reply
+        }
+        if groqAllowed,
+           let reply = await GroqClient.shared.chatStream(prompt: prompt,
+                                                          model: AppSettings.groqModelCurrent,
+                                                          onUpdate: onUpdate) {
+            return reply
+        }
+        if mistralAllowed,
+           let reply = await MistralClient.shared.chatStream(prompt: prompt,
+                                                             model: AppSettings.mistralModelCurrent,
+                                                             onUpdate: onUpdate) {
+            return reply
+        }
+        if cerebrasAllowed,
+           let reply = await CerebrasClient.shared.chatStream(prompt: prompt,
+                                                              model: AppSettings.cerebrasModelCurrent,
+                                                              onUpdate: onUpdate) {
+            return reply
+        }
+        if codexAllowed,
+           let reply = await OpenAIClient.chatStream(prompt: prompt,
+                                                     model: AppSettings.openAIModelCurrent,
+                                                     onUpdate: onUpdate) {
+            return reply
+        }
+        if copilotAllowed,
+           let reply = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
             return reply
         }
         #if canImport(FoundationModels)
@@ -224,17 +294,55 @@ enum LocalLLM {
             return offMessage
         }
         if grokAllowed {
-            // xAI Grok (cloud), single-turn, no local tools.
-            let system = """
-            You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
-            Answer directly and clearly. If the user writes in Arabic, reply in Arabic; \
-            otherwise reply in English. You don't have access to this Mac's terminal or \
-            local tools in this mode — if a task needs running a command, say so and \
-            suggest the command as text.
-            """
             if let reply = await GrokClient.chat(prompt: message,
-                                                 system: system,
+                                                 system: Self.cloudSystemPrompt,
                                                  model: AppSettings.grokModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if geminiAllowed {
+            if let reply = await GeminiClient.chat(prompt: message,
+                                                   system: Self.cloudSystemPrompt,
+                                                   model: AppSettings.geminiModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if groqAllowed {
+            if let reply = await GroqClient.shared.chat(prompt: message,
+                                                        system: Self.cloudSystemPrompt,
+                                                        model: AppSettings.groqModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if mistralAllowed {
+            if let reply = await MistralClient.shared.chat(prompt: message,
+                                                           system: Self.cloudSystemPrompt,
+                                                           model: AppSettings.mistralModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if cerebrasAllowed {
+            if let reply = await CerebrasClient.shared.chat(prompt: message,
+                                                            system: Self.cloudSystemPrompt,
+                                                            model: AppSettings.cerebrasModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if codexAllowed {
+            if let reply = await OpenAIClient.chat(prompt: message,
+                                                   system: Self.cloudSystemPrompt,
+                                                   model: AppSettings.openAIModelCurrent) {
+                return reply
+            }
+            return offMessage
+        }
+        if copilotAllowed {
+            if let reply = await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
                 return reply
             }
             return offMessage
@@ -349,6 +457,10 @@ actor ChatSession {
     }
 
     func respond(to message: String) async -> String {
+        // Belt-and-suspenders: in the current routing `LocalLLM.chat` only
+        // calls this when both `isEnabledByUser` and `.available` hold true,
+        // so neither guard ever fires. They stay as a defensive boundary in
+        // case a future caller addresses `ChatSession.shared` directly.
         guard LocalLLM.isEnabledByUser else { return LocalLLM.offMessage }
         #if canImport(FoundationModels)
         guard case .available = SystemLanguageModel.default.availability else {

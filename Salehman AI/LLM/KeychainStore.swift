@@ -26,19 +26,27 @@ enum KeychainStore {
     /// Service identifier — falls back to a stable string if the bundle ID
     /// isn't readable (e.g. in unit-test contexts where the host bundle
     /// isn't yet set up).
-    private static let service: String =
+    nonisolated private static let service: String =
         Bundle.main.bundleIdentifier ?? "com.salehman.ai"
 
     // MARK: - Account identifiers
 
     enum Account: String {
-        case grokAPIKey = "grok-api-key"
+        case grokAPIKey     = "grok-api-key"
+        case geminiAPIKey   = "gemini-api-key"
+        case groqAPIKey     = "groq-api-key"
+        case mistralAPIKey  = "mistral-api-key"
+        case cerebrasAPIKey = "cerebras-api-key"
+        case openAIAPIKey   = "openai-api-key"
+        /// GitHub OAuth access token for the Copilot brain (from the device flow).
+        /// The short-lived Copilot token derived from it is cached in memory only.
+        case copilotGitHubToken = "copilot-github-token"
     }
 
     // MARK: - CRUD
 
     /// Read the value at `account`. Returns nil if missing or unreadable.
-    static func read(_ account: Account) -> String? {
+    nonisolated static func read(_ account: Account) -> String? {
         let query: [String: Any] = [
             kSecClass as String:            kSecClassGenericPassword,
             kSecAttrService as String:      service,
@@ -59,7 +67,7 @@ enum KeychainStore {
     /// `true` on success — false means the Keychain refused the write
     /// (extremely rare; usually a permissions issue).
     @discardableResult
-    static func write(_ value: String, to account: Account) -> Bool {
+    nonisolated static func write(_ value: String, to account: Account) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
         // Try update-first, then add — atomicity isn't critical because the
@@ -87,7 +95,7 @@ enum KeychainStore {
     /// Delete the entry at `account`. Idempotent — silently succeeds when
     /// there is nothing to delete.
     @discardableResult
-    static func delete(_ account: Account) -> Bool {
+    nonisolated static func delete(_ account: Account) -> Bool {
         let query: [String: Any] = [
             kSecClass as String:        kSecClassGenericPassword,
             kSecAttrService as String:  service,
@@ -98,7 +106,7 @@ enum KeychainStore {
     }
 
     /// Convenience: does an entry exist at all?
-    static func has(_ account: Account) -> Bool {
+    nonisolated static func has(_ account: Account) -> Bool {
         read(account) != nil
     }
 }

@@ -68,9 +68,15 @@ final class BrainStatus: ObservableObject {
     var dotColor: Color {
         switch brain {
         case .appleIntelligence: return .green
-        case .ollamaCoder:       return Color(red: 0.4, green: 0.7, blue: 1.0)
+        case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
         case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
         case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
+        case .gemini:            return Color(red: 0.30, green: 0.66, blue: 0.99)  // Google blue
+        case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
+        case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
+        case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
+        case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
+        case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
         case .none:              return .orange
         }
     }

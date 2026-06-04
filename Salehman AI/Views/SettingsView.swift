@@ -19,6 +19,38 @@ struct SettingsView: View {
     @State private var grokTesting: Bool = false
     @State private var grokKeySaved: Bool = GrokClient.hasKey()
 
+    // Four free cloud brains. Same idle/"":OK/"msg":error convention as Grok.
+    @State private var geminiKeyDraft: String = ""
+    @State private var geminiTestStatus: String? = nil
+    @State private var geminiTesting: Bool = false
+    @State private var geminiKeySaved: Bool = GeminiClient.hasKey()
+
+    @State private var groqKeyDraft: String = ""
+    @State private var groqTestStatus: String? = nil
+    @State private var groqTesting: Bool = false
+    @State private var groqKeySaved: Bool = GroqClient.shared.hasKey()
+
+    @State private var mistralKeyDraft: String = ""
+    @State private var mistralTestStatus: String? = nil
+    @State private var mistralTesting: Bool = false
+    @State private var mistralKeySaved: Bool = MistralClient.shared.hasKey()
+
+    @State private var cerebrasKeyDraft: String = ""
+    @State private var cerebrasTestStatus: String? = nil
+    @State private var cerebrasTesting: Bool = false
+    @State private var cerebrasKeySaved: Bool = CerebrasClient.shared.hasKey()
+
+    @State private var openAIKeyDraft: String = ""
+    @State private var openAITestStatus: String? = nil
+    @State private var openAITesting: Bool = false
+    @State private var openAIKeySaved: Bool = OpenAIClient.hasKey()
+
+    // GitHub Copilot signs in via OAuth device-flow, not a pasted key.
+    @State private var copilotAuthed: Bool = CopilotClient.isAuthed()
+    @State private var showCopilotSignIn = false
+    @State private var copilotTesting = false
+    @State private var copilotWorking: Bool? = nil   // nil = untested, true/false = result
+
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("en") || $0.language.hasPrefix("ar") }
@@ -51,6 +83,60 @@ struct SettingsView: View {
                         grokKeyRow
                         grokModelRow
                         grokTestRow
+                    }
+
+                    section("Google Gemini (Cloud · free tier)", "Sends your messages to Google. Get a key at aistudio.google.com.") {
+                        geminiKeyRow
+                        geminiModelRow
+                        geminiTestRow
+                    }
+
+                    section("Groq (Cloud · free tier)", "Blazing-fast Llama / Mixtral. Get a key at console.groq.com.") {
+                        cloudKeyRow(provider: GroqClient.shared,
+                                    keySaved: $groqKeySaved, draft: $groqKeyDraft)
+                        cloudModelRow(displayName: "Groq",
+                                      models: GroqClient.allModels,
+                                      selection: $settings.groqModel)
+                        cloudTestRow(provider: GroqClient.shared,
+                                     keySaved: $groqKeySaved,
+                                     testing: $groqTesting, status: $groqTestStatus)
+                    }
+
+                    section("Mistral (Cloud · free tier · EU-hosted)", "Sends your messages to Mistral. Get a key at console.mistral.ai.") {
+                        cloudKeyRow(provider: MistralClient.shared,
+                                    keySaved: $mistralKeySaved, draft: $mistralKeyDraft)
+                        cloudModelRow(displayName: "Mistral",
+                                      models: MistralClient.allModels,
+                                      selection: $settings.mistralModel)
+                        cloudTestRow(provider: MistralClient.shared,
+                                     keySaved: $mistralKeySaved,
+                                     testing: $mistralTesting, status: $mistralTestStatus)
+                    }
+
+                    section("Cerebras (Cloud · free tier · ~2000 tok/s Llama)", "Sends your messages to Cerebras. Get a key at cloud.cerebras.ai.") {
+                        cloudKeyRow(provider: CerebrasClient.shared,
+                                    keySaved: $cerebrasKeySaved, draft: $cerebrasKeyDraft)
+                        cloudModelRow(displayName: "Cerebras",
+                                      models: CerebrasClient.allModels,
+                                      selection: $settings.cerebrasModel)
+                        cloudTestRow(provider: CerebrasClient.shared,
+                                     keySaved: $cerebrasKeySaved,
+                                     testing: $cerebrasTesting, status: $cerebrasTestStatus)
+                    }
+
+                    section("Codex / OpenAI (Cloud)", "Sends your messages to OpenAI. Get a key at platform.openai.com/api-keys.") {
+                        cloudKeyRow(provider: OpenAIClient.shared,
+                                    keySaved: $openAIKeySaved, draft: $openAIKeyDraft)
+                        cloudModelRow(displayName: "OpenAI",
+                                      models: OpenAIClient.allModels,
+                                      selection: $settings.openAIModel)
+                        cloudTestRow(provider: OpenAIClient.shared,
+                                     keySaved: $openAIKeySaved,
+                                     testing: $openAITesting, status: $openAITestStatus)
+                    }
+
+                    section("GitHub Copilot (Cloud)", "Uses your existing GitHub Copilot subscription. Sign in once with GitHub — no API key.") {
+                        copilotRow
                     }
 
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
@@ -104,6 +190,9 @@ struct SettingsView: View {
         .frame(width: 560, height: 640)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showMemory) { MemoryView() }
+        .sheet(isPresented: $showCopilotSignIn) {
+            CopilotSignInView { copilotAuthed = CopilotClient.isAuthed() }
+        }
         .task {
             ollamaUp = await OllamaClient.isUp()
             hasVision = await OllamaClient.hasModel(OllamaClient.visionModel)
@@ -163,6 +252,12 @@ struct SettingsView: View {
             case .ollama:      return ollamaUp && hasCoder
             case .claudeHaiku: return !settings.anthropicAPIKey.trimmingCharacters(in: .whitespaces).isEmpty
             case .grok:        return GrokClient.hasKey()
+            case .gemini:      return GeminiClient.hasKey()
+            case .groq:        return GroqClient.shared.hasKey()
+            case .mistral:     return MistralClient.shared.hasKey()
+            case .cerebras:    return CerebrasClient.shared.hasKey()
+            case .codex:       return OpenAIClient.hasKey()
+            case .copilot:     return CopilotClient.isAuthed()
             }
         }()
         return Button { settings.brainPreference = pref } label: {
@@ -297,12 +392,291 @@ struct SettingsView: View {
         }
     }
 
+    /// GitHub Copilot OAuth device-flow sign-in + a live "is it working" check.
+    private var copilotRow: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.2.badge.gearshape.fill")
+                    .foregroundStyle(.secondary).frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("GitHub Copilot")
+                        .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                    Text(copilotAuthed ? "Signed in · token stored in macOS Keychain"
+                                       : "Requires an active Copilot subscription")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if copilotAuthed {
+                    Button("Sign out") {
+                        CopilotAuth.signOut()
+                        copilotAuthed = false
+                        copilotWorking = nil
+                    }
+                    .font(.caption.weight(.semibold)).buttonStyle(.bordered)
+                    .controlSize(.small).tint(.red)
+                } else {
+                    Button("Sign in with GitHub") { showCopilotSignIn = true }
+                        .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
+            if copilotAuthed {
+                HStack(spacing: 8) {
+                    workingBadge(testing: copilotTesting, working: copilotWorking)
+                    Spacer()
+                    Button("Test") { Task { await testCopilot() } }
+                        .font(.caption2.weight(.semibold)).buttonStyle(.bordered)
+                        .controlSize(.mini).disabled(copilotTesting)
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Reusable "is this brain actually working" badge: spinner while testing,
+    /// then a green ✓ Working / red ✗ Not working / grey "Not tested".
+    @ViewBuilder
+    private func workingBadge(testing: Bool, working: Bool?) -> some View {
+        HStack(spacing: 6) {
+            if testing {
+                ProgressView().controlSize(.mini)
+                Text("Checking…").font(.caption2).foregroundStyle(.secondary)
+            } else if let working {
+                Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .foregroundStyle(working ? .green : .red)
+                Text(working ? "Working" : "Not working")
+                    .font(.caption2).foregroundStyle(working ? .green : .orange)
+            } else {
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Not tested").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Live ping for Copilot — does a one-token chat through the real path.
+    private func testCopilot() async {
+        copilotTesting = true
+        copilotWorking = nil
+        let ok = await CopilotClient.chat(prompt: "ping") != nil
+        copilotTesting = false
+        copilotWorking = ok
+    }
+
     private var grokTestStatusColor: Color {
         switch grokTestStatus {
         case nil:        return .secondary
         case .some(""):  return .green
         case .some(_):   return .orange
         }
+    }
+
+    // MARK: Generic OpenAI-compatible cloud rows
+    //
+    // The three OpenAI-compatible brains (Groq, Mistral, Cerebras) share the
+    // exact same UI shape — key entry + model picker + test. These helpers
+    // take an `OpenAICompatibleClient` so each provider's Settings section is
+    // ~10 lines of call site instead of ~150 lines of copy-paste.
+
+    @ViewBuilder
+    private func cloudKeyRow(provider: OpenAICompatibleClient,
+                             keySaved: Binding<Bool>,
+                             draft: Binding<String>) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(provider.displayName) API key")
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(keySaved.wrappedValue
+                     ? "Saved in macOS Keychain · paste a new one to replace"
+                     : "Get one at \(provider.consoleURL)")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            Spacer()
+            SecureField("key…", text: draft)
+                .textFieldStyle(.plain).frame(width: 130)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+            Button("Save") {
+                let trimmed = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: provider.keychainAccount)
+                draft.wrappedValue = ""
+                keySaved.wrappedValue = provider.hasKey()
+                Task { await BrainStatus.shared.refresh() }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            if keySaved.wrappedValue {
+                Button("Clear") {
+                    _ = KeychainStore.delete(provider.keychainAccount)
+                    keySaved.wrappedValue = false
+                    Task { await BrainStatus.shared.refresh() }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    @ViewBuilder
+    private func cloudModelRow(displayName: String,
+                               models: [String],
+                               selection: Binding<String>) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(displayName) model")
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text("First in the list is the lightest; last is the heaviest.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("", selection: selection) {
+                ForEach(models, id: \.self) { model in Text(model).tag(model) }
+            }
+            .labelsHidden().pickerStyle(.menu).frame(width: 200)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    @ViewBuilder
+    private func cloudTestRow(provider: OpenAICompatibleClient,
+                              keySaved: Binding<Bool>,
+                              testing: Binding<Bool>,
+                              status: Binding<String?>) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Test connection")
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(testStatusText(status.wrappedValue))
+                    .font(.caption2).foregroundStyle(testStatusColor(status.wrappedValue))
+            }
+            Spacer()
+            Button {
+                testing.wrappedValue = true
+                status.wrappedValue = nil
+                Task {
+                    let err = await provider.testConnection()
+                    await MainActor.run {
+                        status.wrappedValue = err ?? ""
+                        testing.wrappedValue = false
+                    }
+                }
+            } label: {
+                if testing.wrappedValue { ProgressView().controlSize(.small) }
+                else                    { Text("Test") }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(testing.wrappedValue || !keySaved.wrappedValue)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private func testStatusText(_ status: String?) -> String {
+        switch status {
+        case nil:           return "Tap Test after saving the key."
+        case .some(""):     return "Connected — your key works."
+        case .some(let m):  return m
+        }
+    }
+
+    private func testStatusColor(_ status: String?) -> Color {
+        switch status {
+        case nil:        return .secondary
+        case .some(""):  return .green
+        case .some(_):   return .orange
+        }
+    }
+
+    // MARK: Google Gemini rows
+    //
+    // Gemini doesn't speak OpenAI's wire format, so it has its own client
+    // and its own row triplet. Same shape as the generic cloud rows above.
+
+    private var geminiKeyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Gemini API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(geminiKeySaved
+                     ? "Saved in macOS Keychain · paste a new one to replace"
+                     : "Get one at aistudio.google.com → Get API key")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("AIza…", text: $geminiKeyDraft)
+                .textFieldStyle(.plain).frame(width: 130)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+            Button("Save") {
+                let trimmed = geminiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .geminiAPIKey)
+                geminiKeyDraft = ""
+                geminiKeySaved = GeminiClient.hasKey()
+                Task { await BrainStatus.shared.refresh() }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(geminiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if geminiKeySaved {
+                Button("Clear") {
+                    _ = KeychainStore.delete(.geminiAPIKey)
+                    geminiKeySaved = false
+                    geminiTestStatus = nil
+                    Task { await BrainStatus.shared.refresh() }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private var geminiModelRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Gemini model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text("`gemini-2.0-flash` is the default; `gemini-1.5-pro` is deeper.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("", selection: $settings.geminiModel) {
+                ForEach(GeminiClient.allModels, id: \.self) { model in Text(model).tag(model) }
+            }
+            .labelsHidden().pickerStyle(.menu).frame(width: 200)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private var geminiTestRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(testStatusText(geminiTestStatus))
+                    .font(.caption2).foregroundStyle(testStatusColor(geminiTestStatus))
+            }
+            Spacer()
+            Button {
+                geminiTesting = true
+                geminiTestStatus = nil
+                Task {
+                    let err = await GeminiClient.testConnection()
+                    await MainActor.run {
+                        geminiTestStatus = err ?? ""
+                        geminiTesting = false
+                    }
+                }
+            } label: {
+                if geminiTesting { ProgressView().controlSize(.small) }
+                else             { Text("Test") }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(geminiTesting || !geminiKeySaved)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
     /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.

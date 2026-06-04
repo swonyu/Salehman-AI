@@ -139,7 +139,7 @@ enum GrokClient {
     /// Build the OpenAI-compatible request body. xAI accepts the standard
     /// `messages` array; we add a `system` role only when one was provided
     /// so empty turns don't waste tokens on an empty system message.
-    private static func makeBody(model: String,
+    nonisolated private static func makeBody(model: String,
                                  prompt: String,
                                  system: String?,
                                  stream: Bool) -> [String: Any] {
@@ -156,7 +156,7 @@ enum GrokClient {
     }
 
     /// Pull `choices[0].message.content` out of a non-streaming response.
-    private static func extractContent(_ data: Data) -> String? {
+    nonisolated private static func extractContent(_ data: Data) -> String? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let first = choices.first,
@@ -166,7 +166,7 @@ enum GrokClient {
     }
 
     /// Pull `choices[0].delta.content` out of a streaming chunk.
-    private static func decodeDelta(_ jsonString: String) -> String? {
+    nonisolated private static func decodeDelta(_ jsonString: String) -> String? {
         guard let data = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],

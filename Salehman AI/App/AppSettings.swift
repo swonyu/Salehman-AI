@@ -50,6 +50,12 @@ final class AppSettings: ObservableObject {
     @Published var anthropicAPIKey: String {
         didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: Keys.anthropicAPIKey) }
     }
+    /// OpenAI model id for the "Codex" (OpenAI) cloud brain. The API **key**
+    /// lives in the Keychain (`KeychainStore.Account.openAIAPIKey`), matching the
+    /// other cloud brains — never here.
+    @Published var openAIModel: String {
+        didSet { UserDefaults.standard.set(openAIModel, forKey: Keys.openAIModel) }
+    }
     /// Which xAI Grok model to call when `BrainPreference.grok` is active.
     /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
     /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
@@ -57,6 +63,20 @@ final class AppSettings: ObservableObject {
     /// via `KeychainStore.Account.grokAPIKey`.
     @Published var grokModel: String {
         didSet { UserDefaults.standard.set(grokModel, forKey: Keys.grokModel) }
+    }
+    /// Picked model for each of the four free cloud brains. The API **key**
+    /// for each lives in macOS Keychain — see `KeychainStore.Account`.
+    @Published var geminiModel: String {
+        didSet { UserDefaults.standard.set(geminiModel, forKey: Keys.geminiModel) }
+    }
+    @Published var groqModel: String {
+        didSet { UserDefaults.standard.set(groqModel, forKey: Keys.groqModel) }
+    }
+    @Published var mistralModel: String {
+        didSet { UserDefaults.standard.set(mistralModel, forKey: Keys.mistralModel) }
+    }
+    @Published var cerebrasModel: String {
+        didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
     }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
@@ -85,12 +105,44 @@ final class AppSettings: ObservableObject {
         nonisolated static let speechVoiceID = "set_speechVoiceID"
         nonisolated static let brainPreference = "set_brainPreference"
         nonisolated static let anthropicAPIKey = "set_anthropicAPIKey"
+        nonisolated static let openAIModel     = "set_openAIModel"
         nonisolated static let grokModel       = "set_grokModel"
+        nonisolated static let geminiModel     = "set_geminiModel"
+        nonisolated static let groqModel       = "set_groqModel"
+        nonisolated static let mistralModel    = "set_mistralModel"
+        nonisolated static let cerebrasModel   = "set_cerebrasModel"
     }
 
     /// `nonisolated` read of the Anthropic key for the model layer (off main actor).
     nonisolated static var anthropicAPIKeyCurrent: String {
         UserDefaults.standard.string(forKey: Keys.anthropicAPIKey) ?? ""
+    }
+
+    /// `nonisolated` read of the selected OpenAI/Codex model (key is in Keychain).
+    nonisolated static var openAIModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.openAIModel) ?? ""
+        return OpenAIClient.allModels.contains(raw) ? raw : OpenAIClient.defaultModel
+    }
+
+    /// `nonisolated` reads for the four free cloud brains' selected model.
+    /// Each validates against its own `allModels` and falls back to the
+    /// provider's default if the stored value is unrecognized — keeps a
+    /// renamed-model rollout from silently 404ing every call.
+    nonisolated static var geminiModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.geminiModel) ?? ""
+        return GeminiClient.allModels.contains(raw) ? raw : GeminiClient.defaultModel
+    }
+    nonisolated static var groqModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.groqModel) ?? ""
+        return GroqClient.allModels.contains(raw) ? raw : GroqClient.defaultModel
+    }
+    nonisolated static var mistralModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.mistralModel) ?? ""
+        return MistralClient.allModels.contains(raw) ? raw : MistralClient.defaultModel
+    }
+    nonisolated static var cerebrasModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
+        return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
     }
 
     /// `nonisolated` read of the selected Grok model. The API **key** is in
@@ -154,8 +206,18 @@ final class AppSettings: ObservableObject {
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         anthropicAPIKey = d.string(forKey: Keys.anthropicAPIKey) ?? ""
+        let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
+        openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
         let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
         grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
+        let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""
+        geminiModel = GeminiClient.allModels.contains(storedGemini) ? storedGemini : GeminiClient.defaultModel
+        let storedGroq = d.string(forKey: Keys.groqModel) ?? ""
+        groqModel = GroqClient.allModels.contains(storedGroq) ? storedGroq : GroqClient.defaultModel
+        let storedMistral = d.string(forKey: Keys.mistralModel) ?? ""
+        mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
+        let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
+        cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
         installCaptureObservers()
     }
 
@@ -187,7 +249,7 @@ final class AppSettings: ObservableObject {
 ///   Apple Intelligence's content guardrails. The pipeline automatically
 ///   collapses to a single agent on this brain (see AgentPipeline).
 enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, apple, ollama, claudeHaiku, grok
+    case auto, apple, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
 
     var id: String { rawValue }
     var title: String {
@@ -197,6 +259,12 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ollama:      return "Ollama qwen-coder"
         case .claudeHaiku: return "Claude Haiku (Cloud)"
         case .grok:        return "xAI Grok (Cloud)"
+        case .gemini:      return "Google Gemini (Cloud)"
+        case .groq:        return "Groq (Cloud)"
+        case .mistral:     return "Mistral (Cloud)"
+        case .cerebras:    return "Cerebras (Cloud)"
+        case .codex:       return "Codex / OpenAI (Cloud)"
+        case .copilot:     return "GitHub Copilot (Cloud)"
         }
     }
     var subtitle: String {
@@ -206,6 +274,12 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ollama:      return "Local · heavier · single-agent for safety"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
         case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
+        case .gemini:      return "Cloud · generous free tier · ~zero local RAM · needs API key"
+        case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
+        case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
+        case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
+        case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
+        case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         }
     }
     var icon: String {
@@ -215,6 +289,12 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ollama:      return "cpu"
         case .claudeHaiku: return "cloud.fill"
         case .grok:        return "bolt.horizontal.circle.fill"
+        case .gemini:      return "diamond.fill"
+        case .groq:        return "hare.fill"
+        case .mistral:     return "leaf.circle.fill"
+        case .cerebras:    return "rays"
+        case .codex:       return "chevron.left.forwardslash.chevron.right"
+        case .copilot:     return "person.2.badge.gearshape.fill"
         }
     }
 }
