@@ -51,6 +51,10 @@ struct SettingsView: View {
     @State private var copilotTesting = false
     @State private var copilotWorking: Bool? = nil   // nil = untested, true/false = result
 
+    // Live "is the *selected* brain actually answering" check (covers all brains).
+    @State private var activeBrainTesting = false
+    @State private var activeBrainWorking: Bool? = nil
+
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("en") || $0.language.hasPrefix("ar") }
@@ -72,7 +76,8 @@ struct SettingsView: View {
                                "apple.logo", $settings.useAppleIntelligence)
                     }
 
-                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety; Claude Haiku and xAI Grok run in the cloud (~zero local RAM, key required).") {
+                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety; the cloud brains run off-device (~zero local RAM, key/sign-in required).") {
+                        activeBrainStatusRow
                         ForEach(BrainPreference.allCases) { pref in
                             brainRow(pref)
                         }
@@ -197,6 +202,10 @@ struct SettingsView: View {
             ollamaUp = await OllamaClient.isUp()
             hasVision = await OllamaClient.hasModel(OllamaClient.visionModel)
             hasCoder = await OllamaClient.hasModel(OllamaClient.codeModel)
+            await testActiveBrain()
+        }
+        .onChange(of: settings.brainPreference) { _, _ in
+            Task { await testActiveBrain() }
         }
     }
 
@@ -431,6 +440,41 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Live "is the selected brain actually working" row. Pings whatever brain
+    /// is currently pinned through the real routing path (`LocalLLM.generate`),
+    /// so one check covers Apple Intelligence, Ollama, and every cloud brain.
+    private var activeBrainStatusRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.seal.fill").foregroundStyle(Color.accentColor).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Is “\(settings.brainPreference.title)” working?")
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text("Live check — sends a tiny ‘ping’ through the selected brain.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            workingBadge(testing: activeBrainTesting, working: activeBrainWorking)
+            Button { Task { await testActiveBrain() } } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered).controlSize(.small).disabled(activeBrainTesting)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Ping the pinned brain and decide if it actually answered. Failure
+    /// sentinels: empty, the canonical off-message, or a bracketed cloud error
+    /// like "[Claude Haiku error 401: …]".
+    private func testActiveBrain() async {
+        activeBrainTesting = true
+        activeBrainWorking = nil
+        let reply = await LocalLLM.generate("ping", maxTokens: 5)
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let failed = trimmed.isEmpty || reply == LocalLLM.offMessage || trimmed.hasPrefix("[")
+        activeBrainWorking = !failed
+        activeBrainTesting = false
     }
 
     /// Reusable "is this brain actually working" badge: spinner while testing,
