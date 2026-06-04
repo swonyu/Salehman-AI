@@ -50,6 +50,14 @@ final class AppSettings: ObservableObject {
     @Published var anthropicAPIKey: String {
         didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: Keys.anthropicAPIKey) }
     }
+    /// Which xAI Grok model to call when `BrainPreference.grok` is active.
+    /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
+    /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
+    /// **key** itself never lives here — it's stored in the macOS Keychain
+    /// via `KeychainStore.Account.grokAPIKey`.
+    @Published var grokModel: String {
+        didSet { UserDefaults.standard.set(grokModel, forKey: Keys.grokModel) }
+    }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
     /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
@@ -77,11 +85,22 @@ final class AppSettings: ObservableObject {
         nonisolated static let speechVoiceID = "set_speechVoiceID"
         nonisolated static let brainPreference = "set_brainPreference"
         nonisolated static let anthropicAPIKey = "set_anthropicAPIKey"
+        nonisolated static let grokModel       = "set_grokModel"
     }
 
     /// `nonisolated` read of the Anthropic key for the model layer (off main actor).
     nonisolated static var anthropicAPIKeyCurrent: String {
         UserDefaults.standard.string(forKey: Keys.anthropicAPIKey) ?? ""
+    }
+
+    /// `nonisolated` read of the selected Grok model. The API **key** is in
+    /// Keychain — read it via `KeychainStore.read(.grokAPIKey)`.
+    nonisolated static var grokModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.grokModel) ?? ""
+        // Falls back to the GrokClient default if the stored value isn't a
+        // recognized model — prevents a renamed-model rollout from silently
+        // 404ing every Grok request.
+        return GrokClient.allModels.contains(raw) ? raw : GrokClient.defaultModel
     }
 
     /// Thread-safe read of the Apple Intelligence master switch for the model
@@ -135,6 +154,8 @@ final class AppSettings: ObservableObject {
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         anthropicAPIKey = d.string(forKey: Keys.anthropicAPIKey) ?? ""
+        let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
+        grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
         installCaptureObservers()
     }
 
@@ -166,7 +187,7 @@ final class AppSettings: ObservableObject {
 ///   Apple Intelligence's content guardrails. The pipeline automatically
 ///   collapses to a single agent on this brain (see AgentPipeline).
 enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, apple, ollama, claudeHaiku
+    case auto, apple, ollama, claudeHaiku, grok
 
     var id: String { rawValue }
     var title: String {
@@ -175,6 +196,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .apple:       return "Apple Intelligence"
         case .ollama:      return "Ollama qwen-coder"
         case .claudeHaiku: return "Claude Haiku (Cloud)"
+        case .grok:        return "xAI Grok (Cloud)"
         }
     }
     var subtitle: String {
@@ -183,6 +205,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .apple:       return "On-device · lightweight · 15-agent pipeline"
         case .ollama:      return "Local · heavier · single-agent for safety"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
+        case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
         }
     }
     var icon: String {
@@ -191,6 +214,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .apple:       return "apple.logo"
         case .ollama:      return "cpu"
         case .claudeHaiku: return "cloud.fill"
+        case .grok:        return "bolt.horizontal.circle.fill"
         }
     }
 }

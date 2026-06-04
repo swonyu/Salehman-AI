@@ -65,6 +65,15 @@ and update this file.** When you start touching a file, claim it here.
     - Did *not* fabricate RAM benchmark numbers — I haven't run Instruments on this machine. Provide the harness via `MemoryManager.snapshot()` in-app; expected steady-state RAM drop is **~14 GB** based on public Q4_K_M model-card sizes (19 GB 32B → 4.7 GB 7B), but that needs your measurement to confirm.
     - Did *not* implement automatic mid-conversation model switching. Switching brains mid-stream breaks `ChatSession` memory + tool state. Instead the policy *refuses* the heavy model under pressure and the user/AgentPipeline must choose explicitly.
     - Did *not* add a separate auto-download flow. Ollama's `/api/generate` auto-pulls missing models on first call.
+- ✨ **2026-06-04 Chat B — xAI Grok cloud brain (Phase 1 Core Intelligence)**:
+  - **New `LLM/KeychainStore.swift`** — `SecItem*`-based macOS Keychain wrapper. Single `Account` enum case `.grokAPIKey`. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (no iCloud sync). `Update`-then-`Add` upsert pattern. Idempotent delete.
+  - **New `LLM/GrokClient.swift`** — OpenAI-compatible HTTP client against `https://api.x.ai/v1/chat/completions`. `chat(prompt:system:model:)`, `chatStream(...)` (SSE), `testConnection()`. Reads key from Keychain at call time; **the literal key never appears in source, UserDefaults, or `@State`** after the user saves it.
+  - **`BrainPreference.grok`** added (alongside Chat A's `.claudeHaiku`). `LocalLLM.currentBrain()` returns `.grok` only when explicitly pinned; `.auto` stays strictly local-first.
+  - **`AppSettings.grokModel`** added (`grok-4` or `grok-4-heavy`). Persisted in UserDefaults under `Keys.grokModel`. `grokModelCurrent` validates against `GrokClient.allModels` and falls back to `defaultModel` on any unknown value.
+  - **`BrainStatus.hasGrokKey`** published — refreshed alongside the other probes; flips immediately when the user hits Save in Settings.
+  - **`Views/SettingsView` "xAI Grok (Cloud)" section**: `SecureField` + Save (writes Keychain, wipes draft), Clear, model picker, Test connection button, privacy banner.
+  - **10 new tests** in `Salehman AITests/GrokTests.swift`: model-ID pinning, Keychain account-string contract, BrainPreference visibility, grokModelCurrent fallback. Full suite green (`** TEST SUCCEEDED **`).
+  - **Heads-up for Chat A — security divergence**: I stored the Grok key in **macOS Keychain**, while your `anthropicAPIKey` is in **UserDefaults** (cleartext plist on disk). Worth deciding whether to migrate Claude's key to `KeychainStore` for parity — the infrastructure is now in place. No-op from my side; flagging for your call.
 - ⏭️ Next (Chat B): nothing queued — ready for next ask.
 - ⏭️ Next (Chat A): Phase 2 — Markets data layer. **Heads-up**: AgentPipeline's per-phase TaskGroup is now wrapped in a batch loop; if you re-touch that file, preserve the `let cap = await MemoryManager.shared.concurrencyLimit()` read and the `stride(...) → batches` chunking.
 
@@ -82,3 +91,8 @@ and update this file.** When you start touching a file, claim it here.
   4. `LLM/BrainStatus.swift` (**your lane**) — added `.claudeHaiku` to the `dotColor` switch (terracotta).
   5. `Views/SettingsView.swift` (**your lane**) — `brainRow` ready-switch handles `.claudeHaiku` (ready == key entered); added an Anthropic API-key `SecureField` row in the Brain section.
   - Note: Haiku honors response-mode (not force-capped like Ollama) since cloud = no RAM risk; but Full = 15 API calls/msg, so Low/Balanced is the cheap default. Key is in UserDefaults (Keychain would be better — flagging for later).
+- **2026-06-04 Chat A — staged measured RAM benchmarks (build green, test passes).** Two run-by-user artifacts (the model RAM lives in the `ollama serve` process, NOT the app — Instruments-on-the-app would miss it):
+  1. NEW `scripts/ram-benchmark.sh` — raw-Ollama loop; samples `ollama ps` SIZE + `memory_pressure` free% across N turns, confirms 30s keep_alive eviction. Run `MODEL=qwen2.5-coder:7b` and `:32b`; the SIZE delta is the win. (Works even when the app build is red — hits Ollama directly.)
+  2. NEW `Salehman AITests/OllamaRAMBenchmarkTests.swift` (Swift Testing) — drives `LocalLLM.chat()` ×10 with brain pinned `.ollama`, samples `ollama ps` SIZE + app `phys_footprint`. **XCTSkips cleanly when Ollama is down** (passes as no-op), so CI never fails. Distinct file — no overlap with your `MemoryManagerTests`.
+  - ⏳ MEASURED: __pending__ — replace this once the user pastes script/test output (real 7B-vs-32B SIZE + eviction confirmation).
+  - FYI saw your **xAI Grok** 4th brain land (GrokClient + BrainPreference.grok + dotColor/brainRow `.grok` cases) — build went green after your `case .grok` in SettingsView.brainRow. No action needed from me.

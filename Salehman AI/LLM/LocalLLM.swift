@@ -46,7 +46,7 @@ enum LocalLLM {
 
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
-    enum Brain: Equatable { case appleIntelligence, ollamaCoder, claudeHaiku, none }
+    enum Brain: Equatable { case appleIntelligence, ollamaCoder, claudeHaiku, grok, none }
 
     /// Best brain available right now, honoring the user's `BrainPreference`:
     ///   * `.apple`  → return Apple Intelligence if active, else `.none`.
@@ -70,7 +70,16 @@ enum LocalLLM {
             // Cloud brain — "reachable" simply means the user has entered a key.
             return AnthropicClient.isConfigured ? .claudeHaiku : .none
 
+        case .grok:
+            // Same contract as Claude: "reachable" = key present in Keychain.
+            // We deliberately don't probe the network here to keep the call
+            // sub-millisecond.
+            return GrokClient.hasKey() ? .grok : .none
+
         case .auto:
+            // `.auto` stays strictly local-first: we never silently spend on
+            // a cloud API. The user has to explicitly pin `.grok` or
+            // `.claudeHaiku` to leave the Mac.
             if isActive { return .appleIntelligence }
             if await ollamaReady() { return .ollamaCoder }
             return .none
@@ -90,25 +99,24 @@ enum LocalLLM {
         case .appleIntelligence: return "On-device · Apple Intelligence"
         case .ollamaCoder:       return "Local · Ollama qwen-coder"
         case .claudeHaiku:       return "Cloud · Claude Haiku"
+        case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
         case .none:              return "No brain available"
         }
     }
 
     /// Whether the Ollama fallback may be tried given the user's preference.
-    /// `.auto` and `.ollama` allow it; `.apple` pins to Apple Intelligence only.
     nonisolated private static var ollamaAllowed: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .auto, .ollama:      return true
-        case .apple, .claudeHaiku: return false
+        case .auto, .ollama:                    return true
+        case .apple, .claudeHaiku, .grok:       return false
         }
     }
 
     /// Whether the Apple-Intelligence path may be tried given the preference.
-    /// `.auto` and `.apple` allow it; `.ollama`/`.claudeHaiku` pin elsewhere.
     nonisolated private static var appleAllowed: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .auto, .apple:        return true
-        case .ollama, .claudeHaiku: return false
+        case .auto, .apple:                     return true
+        case .ollama, .claudeHaiku, .grok:      return false
         }
     }
 
@@ -117,8 +125,18 @@ enum LocalLLM {
     /// silently spend on the cloud API.
     nonisolated private static var claudeAllowed: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .claudeHaiku:          return true
-        case .auto, .apple, .ollama: return false
+        case .claudeHaiku:                      return true
+        case .auto, .apple, .ollama, .grok:     return false
+        }
+    }
+
+    /// Whether the xAI Grok (cloud) path may be tried. Same discipline as
+    /// Claude: explicit `.grok` only, never `.auto` — the user has to opt in
+    /// to leaving the Mac.
+    nonisolated private static var grokAllowed: Bool {
+        switch AppSettings.brainPreferenceCurrent {
+        case .grok:                                 return true
+        case .auto, .apple, .ollama, .claudeHaiku:  return false
         }
     }
 
@@ -131,6 +149,11 @@ enum LocalLLM {
     /// back silently — silent fallback would defeat the purpose of pinning.
     static func generate(_ prompt: String, maxTokens: Int? = nil) async -> String {
         if claudeAllowed, let reply = await AnthropicClient.chat(prompt: prompt) { return reply }
+        if grokAllowed,
+           let reply = await GrokClient.chat(prompt: prompt,
+                                             model: AppSettings.grokModelCurrent) {
+            return reply
+        }
         #if canImport(FoundationModels)
         if appleAllowed, isActive {
             let session = LanguageModelSession()
@@ -149,6 +172,12 @@ enum LocalLLM {
                                   onUpdate: @escaping (String) -> Void) async -> String {
         if claudeAllowed,
            let reply = await AnthropicClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
+            return reply
+        }
+        if grokAllowed,
+           let reply = await GrokClient.chatStream(prompt: prompt,
+                                                   model: AppSettings.grokModelCurrent,
+                                                   onUpdate: onUpdate) {
             return reply
         }
         #if canImport(FoundationModels)
@@ -192,6 +221,22 @@ enum LocalLLM {
             suggest the command as text.
             """
             if let reply = await AnthropicClient.chat(prompt: message, system: system) { return reply }
+            return offMessage
+        }
+        if grokAllowed {
+            // xAI Grok (cloud), single-turn, no local tools.
+            let system = """
+            You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
+            Answer directly and clearly. If the user writes in Arabic, reply in Arabic; \
+            otherwise reply in English. You don't have access to this Mac's terminal or \
+            local tools in this mode — if a task needs running a command, say so and \
+            suggest the command as text.
+            """
+            if let reply = await GrokClient.chat(prompt: message,
+                                                 system: system,
+                                                 model: AppSettings.grokModelCurrent) {
+                return reply
+            }
             return offMessage
         }
         if appleAllowed, isActive {

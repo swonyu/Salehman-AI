@@ -22,6 +22,10 @@ final class BrainStatus: ObservableObject {
     /// Lets the UI show a passive "vision ready" affordance without each call
     /// site having to re-probe Ollama.
     @Published private(set) var hasVision: Bool = false
+    /// `true` iff the user has stored an xAI Grok API key in the Keychain.
+    /// Cheap to read (Keychain lookup, no network), so we publish it for the
+    /// Settings UI's live "Ready" indicator without needing a probe round-trip.
+    @Published private(set) var hasGrokKey: Bool = false
 
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
@@ -42,9 +46,13 @@ final class BrainStatus: ObservableObject {
         async let nextLabel = LocalLLM.currentBrainLabel()
         async let nextVision = Self.probeVision()
         let (b, l, v) = await (nextBrain, nextLabel, nextVision)
+        // `hasGrokKey` is a sync Keychain lookup — no need to schedule it
+        // alongside the async probes.
+        let g = GrokClient.hasKey()
         if b != brain { brain = b }
         if l != label { label = l }
         if v != hasVision { hasVision = v }
+        if g != hasGrokKey { hasGrokKey = g }
     }
 
     /// Whether the local vision model is reachable. Two-step probe (server up,
@@ -62,6 +70,7 @@ final class BrainStatus: ObservableObject {
         case .appleIntelligence: return .green
         case .ollamaCoder:       return Color(red: 0.4, green: 0.7, blue: 1.0)
         case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
+        case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
         case .none:              return .orange
         }
     }
@@ -88,6 +97,10 @@ final class BrainStatus: ObservableObject {
             .sink { [weak self] _ in Task { await self?.refresh() } }
             .store(in: &cancellables)
         AppSettings.shared.$brainPreference
+            .removeDuplicates()
+            .sink { [weak self] _ in Task { await self?.refresh() } }
+            .store(in: &cancellables)
+        AppSettings.shared.$grokModel
             .removeDuplicates()
             .sink { [weak self] _ in Task { await self?.refresh() } }
             .store(in: &cancellables)

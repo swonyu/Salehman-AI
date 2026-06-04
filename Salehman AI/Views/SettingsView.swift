@@ -11,6 +11,13 @@ struct SettingsView: View {
     @State private var hasVision = false
     @State private var hasCoder = false
     @State private var showMemory = false
+    // Grok key entry state. `grokKeyDraft` only holds what the user is typing
+    // *right now* — once they hit Save it's written to Keychain and cleared.
+    // The literal key never lives in `@State` after Save.
+    @State private var grokKeyDraft: String = ""
+    @State private var grokTestStatus: String? = nil  // nil = idle, "" = OK, "msg" = error
+    @State private var grokTesting: Bool = false
+    @State private var grokKeySaved: Bool = GrokClient.hasKey()
 
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
@@ -33,11 +40,17 @@ struct SettingsView: View {
                                "apple.logo", $settings.useAppleIntelligence)
                     }
 
-                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety; Claude Haiku runs in the cloud (~zero local RAM).") {
+                    section("Brain", "Which model answers. \"Auto\" prefers Apple Intelligence when available; pinning to Ollama runs a single agent for safety; Claude Haiku and xAI Grok run in the cloud (~zero local RAM, key required).") {
                         ForEach(BrainPreference.allCases) { pref in
                             brainRow(pref)
                         }
                         claudeKeyRow
+                    }
+
+                    section("xAI Grok (Cloud)", "Sends your messages to xAI. Apple Intelligence and Ollama stay on this Mac.") {
+                        grokKeyRow
+                        grokModelRow
+                        grokTestRow
                     }
 
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
@@ -149,6 +162,7 @@ struct SettingsView: View {
             case .apple:       return appleOK && settings.useAppleIntelligence
             case .ollama:      return ollamaUp && hasCoder
             case .claudeHaiku: return !settings.anthropicAPIKey.trimmingCharacters(in: .whitespaces).isEmpty
+            case .grok:        return GrokClient.hasKey()
             }
         }()
         return Button { settings.brainPreference = pref } label: {
@@ -174,6 +188,121 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: xAI Grok rows
+    //
+    // Three small rows make up the Grok config UI:
+    //   * grokKeyRow   — paste key into SecureField + Save (writes to Keychain).
+    //   * grokModelRow — picker between grok-4 and grok-4-heavy.
+    //   * grokTestRow  — "Test connection" button + status text.
+    //
+    // The literal key only lives in `grokKeyDraft` while the user is typing.
+    // After Save, the draft is cleared and the bytes live only in Keychain.
+
+    /// SecureField + Save/Clear. "Save" writes to Keychain and wipes the draft.
+    private var grokKeyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("xAI API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(grokKeySaved ? "Saved in macOS Keychain · paste a new one to replace"
+                                  : "Get one at console.x.ai → API Keys")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("xai-…", text: $grokKeyDraft)
+                .textFieldStyle(.plain).frame(width: 130)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+            Button("Save") {
+                let trimmed = grokKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .grokAPIKey)
+                grokKeyDraft = ""             // Wipe the in-memory copy immediately.
+                grokKeySaved = GrokClient.hasKey()
+                Task { await BrainStatus.shared.refresh() }   // Refresh header dot.
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(grokKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if grokKeySaved {
+                Button("Clear") {
+                    _ = KeychainStore.delete(.grokAPIKey)
+                    grokKeySaved = false
+                    grokTestStatus = nil
+                    Task { await BrainStatus.shared.refresh() }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Picker between grok-4 (default) and grok-4-heavy.
+    private var grokModelRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text("`grok-4` is the default; `grok-4-heavy` reasons deeper (slower / more $).")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("", selection: $settings.grokModel) {
+                ForEach(GrokClient.allModels, id: \.self) { model in
+                    Text(model).tag(model)
+                }
+            }
+            .labelsHidden().pickerStyle(.menu).frame(width: 150)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Test-connection button. Hits the live API with a tiny prompt to verify
+    /// the saved key actually works (vs. a typo we silently 401 on later).
+    private var grokTestRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(grokTestStatusText)
+                    .font(.caption2)
+                    .foregroundStyle(grokTestStatusColor)
+            }
+            Spacer()
+            Button {
+                grokTesting = true
+                grokTestStatus = nil
+                Task {
+                    let err = await GrokClient.testConnection()
+                    await MainActor.run {
+                        grokTestStatus = err ?? ""    // "" = success
+                        grokTesting = false
+                    }
+                }
+            } label: {
+                if grokTesting { ProgressView().controlSize(.small) }
+                else           { Text("Test") }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(grokTesting || !grokKeySaved)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private var grokTestStatusText: String {
+        switch grokTestStatus {
+        case nil:           return "Tap Test after saving the key."
+        case .some(""):     return "Connected — your key works."
+        case .some(let m):  return m
+        }
+    }
+
+    private var grokTestStatusColor: Color {
+        switch grokTestStatus {
+        case nil:        return .secondary
+        case .some(""):  return .green
+        case .some(_):   return .orange
+        }
     }
 
     /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.
