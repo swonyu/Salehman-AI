@@ -1,0 +1,302 @@
+import Foundation
+import ScreenCaptureKit
+import Speech
+import AVFoundation
+import CoreMedia
+import CoreGraphics
+import Combine
+import AppKit
+
+enum LiveLang: String, CaseIterable, Identifiable {
+    case auto, english, arabic
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .auto: return "Auto (EN + AR)"
+        case .english: return "English"
+        case .arabic: return "Arabic"
+        }
+    }
+    var locales: [Locale] {
+        switch self {
+        case .auto:    return [Locale(identifier: "en-US"), Locale(identifier: "ar-SA")]
+        case .english: return [Locale(identifier: "en-US")]
+        case .arabic:  return [Locale(identifier: "ar-SA")]
+        }
+    }
+}
+
+struct TranscriptLine: Identifiable, Equatable {
+    let id = UUID()
+    var text: String
+}
+
+/// Live, on-device transcription of the Mac's **system audio** (the call, a video,
+/// a lecture) via ScreenCaptureKit. Note: capturing system audio is the ONLY thing
+/// that requires "Screen Recording" permission — the app never records or shows
+/// your screen, it only reads the audio.
+///
+/// Lightweight: audio-only (no video frames processed), buffers go straight to the
+/// recognizer with no manual resampling. Bilingual "Auto" runs English + Arabic and
+/// keeps the stronger hypothesis. Recognizers auto-restart per segment.
+final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput {
+    static let shared = LiveTranscriber()
+
+    @Published var isRunning = false
+    @Published var lines: [TranscriptLine] = []
+    @Published var partialThem = ""
+    @Published var status = "Idle"
+    @Published var needsScreenPermission = false
+    var language: LiveLang = .auto
+
+    private var stream: SCStream?
+    private let queue = DispatchQueue(label: "salehman.live.audio")
+    private var capturing = false        // queue-confined
+
+    private final class LangRec {
+        let recognizer: SFSpeechRecognizer
+        var request: SFSpeechAudioBufferRecognitionRequest?
+        var task: SFSpeechRecognitionTask?
+        var partial = ""
+        init(_ r: SFSpeechRecognizer) { recognizer = r }
+    }
+    private var recs: [LangRec] = []     // queue-confined
+    private var segment = 0
+    private let maxLines = 1_500
+    private var audioBufCount = 0        // queue-confined diagnostic
+    private var callbackCount = 0        // any-type callback diagnostic
+
+    func toggle() { isRunning ? stop() : start() }
+
+    var combinedText: String {
+        var out = lines.map { $0.text }
+        if !partialThem.isEmpty { out.append(partialThem) }
+        return out.joined(separator: "\n")
+    }
+
+    func start() { Task { await begin() } }
+
+    // MARK: Diagnostics
+    private static let logURL = URL(fileURLWithPath: "/tmp/salehman_live.log")
+    private func dlog(_ s: String) {
+        let line = "\(Date()) \(s)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: Self.logURL) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+        else { try? data.write(to: Self.logURL) }
+    }
+
+    private func begin() async {
+        try? "".data(using: .utf8)?.write(to: Self.logURL)
+        dlog("begin()")
+        let speechOK = await requestSpeechAuth()
+        dlog("speechAuth=\(speechOK)")
+        guard speechOK else { await setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
+
+        // System-audio capture needs Screen Recording access (it does NOT share or
+        // record your screen). Trigger the prompt up front.
+        if !CGPreflightScreenCaptureAccess() {
+            let granted = CGRequestScreenCaptureAccess()
+            if !granted {
+                await MainActor.run {
+                    self.needsScreenPermission = true
+                    self.status = "Allow Screen Recording to hear the audio (it does NOT show your screen). Then reopen the app."
+                }
+                return
+            }
+        }
+        await MainActor.run { self.needsScreenPermission = false; self.lines = []; self.partialThem = "" }
+
+        dlog("screenPreflight=\(CGPreflightScreenCaptureAccess())")
+        let lang = language
+        queue.sync {
+            capturing = true
+            segment += 1
+            audioBufCount = 0
+            recs = lang.locales.compactMap { loc in
+                guard let r = SFSpeechRecognizer(locale: loc), r.isAvailable else {
+                    self.dlog("recognizer \(loc.identifier) unavailable")
+                    return nil
+                }
+                self.dlog("recognizer \(loc.identifier) onDevice=\(r.supportsOnDeviceRecognition)")
+                return LangRec(r)
+            }
+            startTasks()
+        }
+        guard !recs.isEmpty else {
+            await setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
+            return
+        }
+
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let display = content.displays.first else { await setStatus("No display available."); return }
+
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let config = SCStreamConfiguration()
+            config.capturesAudio = true
+            config.sampleRate = 48_000
+            config.channelCount = 1
+            config.excludesCurrentProcessAudio = true   // don't transcribe our own sounds
+            // A valid (small) video size + an actually-consumed screen output is
+            // required for the stream to start pumping audio. 2x2 silently stalls it.
+            config.width = 128; config.height = 72
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 2)  // ~2 fps, negligible
+            config.queueDepth = 3
+
+            let stream = SCStream(filter: filter, configuration: config, delegate: self)
+            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)  // drives the pipeline
+            try await stream.startCapture()
+            self.stream = stream
+            dlog("startCapture OK displays=\(content.displays.count)")
+            await MainActor.run { self.isRunning = true; self.status = "Listening — system audio" }
+        } catch {
+            dlog("capture ERROR: \(error)")
+            queue.sync { teardownTasks() }
+            await MainActor.run {
+                self.needsScreenPermission = true
+                self.status = "Couldn't start. Allow Screen Recording in System Settings, then reopen. (\(error.localizedDescription))"
+            }
+        }
+    }
+
+    // MARK: - Recognition (queue-only)
+
+    private func startTasks() {
+        for rec in recs { startTask(rec) }
+    }
+
+    private func startTask(_ rec: LangRec) {
+        let req = SFSpeechAudioBufferRecognitionRequest()
+        req.shouldReportPartialResults = true
+        if rec.recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+        req.taskHint = .dictation
+        if #available(macOS 13.0, *) { req.addsPunctuation = true }
+        rec.request = req
+        rec.partial = ""
+
+        let segmentAtStart = segment
+        rec.task = rec.recognizer.recognitionTask(with: req) { [weak self, weak rec] result, error in
+            guard let self, let rec else { return }
+            self.queue.async {
+                guard self.capturing, self.segment == segmentAtStart else { return }
+                if let result {
+                    rec.partial = result.bestTranscription.formattedString
+                    if rec.partial.count <= 3 || result.isFinal {
+                        self.dlog("partial[\(rec.recognizer.locale.identifier)] final=\(result.isFinal): \(rec.partial.prefix(40))")
+                    }
+                    self.publishPartial()
+                    if result.isFinal { self.commit() }
+                } else if let error {
+                    self.dlog("rec ERROR[\(rec.recognizer.locale.identifier)]: \((error as NSError).domain) \((error as NSError).code)")
+                    self.restart(rec, segmentAtStart: segmentAtStart)
+                }
+            }
+        }
+    }
+
+    private var bestPartial: String {
+        recs.map { $0.partial }.max(by: { $0.count < $1.count }) ?? ""
+    }
+
+    private func commit() {
+        let text = bestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
+        segment += 1
+        teardownTasks()
+        if !text.isEmpty {
+            DispatchQueue.main.async {
+                self.lines.append(TranscriptLine(text: text))
+                if self.lines.count > self.maxLines { self.lines.removeFirst(self.lines.count - self.maxLines) }
+            }
+        }
+        DispatchQueue.main.async { self.partialThem = "" }
+        guard capturing else { return }
+        startTasks()
+    }
+
+    private func restart(_ rec: LangRec, segmentAtStart: Int) {
+        guard capturing, segment == segmentAtStart else { return }
+        rec.task?.cancel(); rec.request?.endAudio()
+        rec.task = nil; rec.request = nil; rec.partial = ""
+        startTask(rec)
+    }
+
+    private func publishPartial() {
+        let text = bestPartial
+        DispatchQueue.main.async { self.partialThem = text }
+    }
+
+    // MARK: - Audio delivery
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        callbackCount += 1
+        if callbackCount <= 4 { dlog("callback#\(callbackCount) type=\(type == .audio ? "audio" : (type == .screen ? "screen" : "other")) ready=\(CMSampleBufferDataIsReady(sampleBuffer))") }
+        guard capturing, type == .audio, CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        audioBufCount += 1
+        if audioBufCount == 1 {
+            if let fmt = CMSampleBufferGetFormatDescription(sampleBuffer),
+               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt) {
+                dlog("FIRST audio buf sr=\(asbd.pointee.mSampleRate) ch=\(asbd.pointee.mChannelsPerFrame) flags=\(asbd.pointee.mFormatFlags) frames=\(CMSampleBufferGetNumSamples(sampleBuffer))")
+            }
+        } else if audioBufCount % 100 == 0 {
+            dlog("audio bufs=\(audioBufCount)")
+        }
+
+        // Wrap the buffer in its NATIVE format (no resampling) and hand it to each
+        // recognizer. This is the reliable SCStream → SFSpeech path.
+        guard let pcm = Self.pcmBuffer(from: sampleBuffer) else { dlog("pcm wrap nil"); return }
+        for rec in recs { rec.request?.append(pcm) }
+    }
+
+    private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+        guard let fmtDesc = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc),
+              let format = AVAudioFormat(streamDescription: asbd) else { return nil }
+        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        pcm.frameLength = frames
+        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frames), into: pcm.mutableAudioBufferList)
+        return status == noErr ? pcm : nil
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        dlog("didStopWithError: \(error)")
+        DispatchQueue.main.async { self.status = "Stopped: \(error.localizedDescription)"; self.isRunning = false }
+        queue.async { self.teardownTasks() }
+    }
+
+    func stop() {
+        let s = stream
+        stream = nil
+        Task { try? await s?.stopCapture() }
+        queue.async { self.teardownTasks() }
+        DispatchQueue.main.async { self.isRunning = false; self.status = "Idle" }
+    }
+
+    /// MUST run on `queue`.
+    private func teardownTasks() {
+        capturing = false
+        segment += 1
+        for rec in recs {
+            rec.request?.endAudio(); rec.task?.cancel()
+            rec.request = nil; rec.task = nil
+        }
+        recs = []
+    }
+
+    private func requestSpeechAuth() async -> Bool {
+        if SFSpeechRecognizer.authorizationStatus() == .authorized { return true }
+        return await withCheckedContinuation { cont in
+            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
+        }
+    }
+
+    @MainActor private func setStatus(_ s: String) { status = s }
+
+    func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}

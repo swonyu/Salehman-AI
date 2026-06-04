@@ -1,0 +1,138 @@
+import SwiftUI
+import Combine
+import AppKit
+
+/// Central, persisted settings the user controls from the Settings panel.
+@MainActor
+final class AppSettings: ObservableObject {
+    static let shared = AppSettings()
+
+    enum ResponseMode: String, CaseIterable, Identifiable {
+        case fast, balanced, full
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .fast: return "Low"
+            case .balanced: return "Balanced"
+            case .full: return "Maximum"
+            }
+        }
+        var detail: String {
+            switch self {
+            case .fast: return "Lightest load · 1 agent · instant replies"
+            case .balanced: return "Medium load · 2 agents · streamed & polished"
+            case .full: return "Heaviest · all 15 agents · best on powerful Macs"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .fast: return "leaf.fill"
+            case .balanced: return "gauge.medium"
+            case .full: return "bolt.fill"
+            }
+        }
+    }
+
+    /// Master switch for Apple Intelligence (the on-device chat brain). When off,
+    /// the assistant politely declines to generate; vision, transcription and
+    /// dictation keep working. Defaults ON so the app works out of the box.
+    @Published var useAppleIntelligence: Bool { didSet { UserDefaults.standard.set(useAppleIntelligence, forKey: Keys.appleIntelligence) } }
+    @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
+    @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
+    /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
+    @Published var speechRate: Double { didSet { UserDefaults.standard.set(speechRate, forKey: Keys.speechRate) } }
+    /// Selected voice identifier; empty = automatic (by language).
+    @Published var speechVoiceID: String { didSet { UserDefaults.standard.set(speechVoiceID, forKey: Keys.speechVoiceID) } }
+    @Published var webAccess: Bool    { didSet { UserDefaults.standard.set(webAccess, forKey: Keys.webAccess) } }
+    @Published var useCodeModel: Bool { didSet { UserDefaults.standard.set(useCodeModel, forKey: Keys.codeModel) } }
+    @Published var useVision: Bool    { didSet { UserDefaults.standard.set(useVision, forKey: Keys.vision) } }
+    @Published var hideFromCapture: Bool {
+        didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
+    }
+
+    enum Keys {
+        nonisolated static let appleIntelligence = "set_appleIntelligence"
+        static let autoSpeak = "set_autoSpeak"
+        static let webAccess = "set_webAccess"
+        static let codeModel = "set_useCodeModel"
+        static let vision    = "set_useVision"
+        static let hideCapture = "set_hideCapture"
+        static let speechRate = "set_speechRate"
+        static let speechVoiceID = "set_speechVoiceID"
+    }
+
+    /// Thread-safe read of the Apple Intelligence master switch for the model
+    /// layer, which runs off the main actor. Defaults ON.
+    nonisolated static var appleIntelligenceEnabled: Bool { boolDefaultTrue(Keys.appleIntelligence) }
+
+    /// Excludes (or re-includes) every current app window — main window, sheets,
+    /// popovers, menus, the approval card — from screen capture/recording/sharing.
+    func applyCapturePrivacy() {
+        let type: NSWindow.SharingType = hideFromCapture ? .none : .readOnly
+        for window in NSApplication.shared.windows { window.sharingType = type }
+    }
+
+    /// Notifications that catch new windows the moment they appear so a sheet,
+    /// popover, or menu opened *after* the toggle is flipped also stays hidden.
+    private var captureObservers: [NSObjectProtocol] = []
+
+    private func installCaptureObservers() {
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification,
+            NSWindow.didChangeScreenNotification,
+            NSWindow.didChangeOcclusionStateNotification,
+            NSWindow.didExposeNotification,
+        ]
+        for name in names {
+            let obs = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let type: NSWindow.SharingType = self.hideFromCapture ? .none : .readOnly
+                    if let win = note.object as? NSWindow { win.sharingType = type }
+                    // Sweep siblings (sheet + parent, popover stack, etc.).
+                    self.applyCapturePrivacy()
+                }
+            }
+            captureObservers.append(obs)
+        }
+    }
+
+    private init() {
+        let d = UserDefaults.standard
+        useAppleIntelligence = AppSettings.boolDefaultTrue(Keys.appleIntelligence)   // default ON
+        responseMode = ResponseMode(rawValue: d.string(forKey: "set_responseMode") ?? "fast") ?? .fast
+        autoSpeak    = d.object(forKey: Keys.autoSpeak) == nil ? false : d.bool(forKey: Keys.autoSpeak)
+        speechRate   = d.object(forKey: Keys.speechRate) == nil ? 0.5 : d.double(forKey: Keys.speechRate)
+        speechVoiceID = d.string(forKey: Keys.speechVoiceID) ?? ""
+        webAccess    = AppSettings.boolDefaultTrue(Keys.webAccess)
+        useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
+        useVision    = AppSettings.boolDefaultTrue(Keys.vision)
+        hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
+        installCaptureObservers()
+    }
+
+    /// Thread-safe reads for tools running off the main actor.
+    nonisolated static func boolDefaultTrue(_ key: String) -> Bool {
+        UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
+    }
+
+    func applyRecommendedMode() { responseMode = MachineInfo.recommendedMode }
+}
+
+/// Detects the Mac's capability to recommend a performance tier.
+enum MachineInfo {
+    static var memoryGB: Int {
+        Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded())
+    }
+    static var cores: Int { ProcessInfo.processInfo.processorCount }
+
+    static var summary: String { "\(memoryGB) GB RAM · \(cores) cores" }
+
+    static var recommendedMode: AppSettings.ResponseMode {
+        if memoryGB >= 24 && cores >= 10 { return .full }      // powerful Mac
+        if memoryGB >= 16 { return .balanced }
+        return .fast                                            // lighter Mac
+    }
+}
