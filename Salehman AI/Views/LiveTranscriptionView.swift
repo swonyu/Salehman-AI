@@ -126,7 +126,7 @@ struct LiveTranscriptionView: View {
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
                     }
 
-                    ForEach(filteredLines) { line in
+                    ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
                         lineView(text: line.text, live: false)
                     }
                     // In-flight (not yet finalized) text, shown faded.
@@ -137,15 +137,19 @@ struct LiveTranscriptionView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .onChange(of: live.lines) { _, _ in scrollDown(proxy) }
-            .onChange(of: live.partialThem) { _, _ in scrollDown(proxy) }
+            .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
+            .onChange(of: live.partialThem) { _, _ in scrollDown(proxy, animated: false) }
         }
         .frame(maxHeight: .infinity)
     }
 
-    private func scrollDown(_ proxy: ScrollViewProxy) {
+    private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool) {
         guard searchText.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+        if animated {
+            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+        } else {
+            proxy.scrollTo("bottom", anchor: .bottom)   // partials: no animation (was a lag source)
+        }
     }
 
     private func lineView(text: String, live isLive: Bool) -> some View {

@@ -20,9 +20,12 @@ enum LocalLLM {
     /// Truly usable right now: the hardware supports it AND the user left it on.
     static var isActive: Bool { isEnabledByUser && isAvailable }
 
-    /// Shown whenever the user has switched Apple Intelligence off.
+    /// Shown when neither brain is reachable (Apple Intelligence off **and**
+    /// Ollama unreachable). The pipeline now transparently falls back to
+    /// Ollama qwen-coder when Apple Intelligence is off, so this only fires
+    /// when there's no local model at all.
     nonisolated static let offMessage =
-        "Apple Intelligence is turned off in Settings. Turn it back on to get AI replies — vision, transcription and dictation still work while it's off."
+        "No model is reachable right now. Turn Apple Intelligence back on in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled."
 
     static var statusNote: String {
         #if canImport(FoundationModels)
@@ -35,12 +38,39 @@ enum LocalLLM {
         #endif
     }
 
+    /// Identifies which brain handled (or would handle) a request. Used by the
+    /// UI to label the current state honestly.
+    enum Brain: Equatable { case appleIntelligence, ollamaCoder, none }
+
+    /// Best brain available right now. Apple Intelligence wins when both
+    /// enabled and hardware-available; otherwise we fall back to Ollama
+    /// qwen-coder if the local server is up.
+    static func currentBrain() async -> Brain {
+        if isActive { return .appleIntelligence }
+        if await OllamaClient.isUp(), await OllamaClient.hasModel(OllamaClient.codeModel) {
+            return .ollamaCoder
+        }
+        return .none
+    }
+
+    /// Short label for the current brain, shown in the header subtitle.
+    static func currentBrainLabel() async -> String {
+        switch await currentBrain() {
+        case .appleIntelligence: return "On-device · Apple Intelligence"
+        case .ollamaCoder:       return "Local · Ollama qwen-coder"
+        case .none:              return "No brain available"
+        }
+    }
+
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
+    ///
+    /// Fallback chain: Apple Intelligence (if enabled + available) → Ollama
+    /// qwen-coder (if the local server is up) → off-message. The Ollama path
+    /// ignores `maxTokens` since `/api/generate` doesn't expose a clean cap.
     static func generate(_ prompt: String, maxTokens: Int? = nil) async -> String {
-        guard isEnabledByUser else { return offMessage }
         #if canImport(FoundationModels)
-        if case .available = SystemLanguageModel.default.availability {
+        if isActive {
             let session = LanguageModelSession()
             let options = GenerationOptions(maximumResponseTokens: maxTokens)
             if let response = try? await session.respond(to: prompt, options: options) {
@@ -48,16 +78,16 @@ enum LocalLLM {
             }
         }
         #endif
-        return "[no on-device model available — \(statusNote)]"
+        if let reply = await OllamaClient.chat(prompt: prompt) { return reply }
+        return offMessage
     }
 
-    /// Streaming one-shot generation. Calls `onUpdate` with the cumulative text
-    /// as it is produced, and returns the final text.
+    /// Streaming one-shot generation. Same Apple → Ollama → off fallback as
+    /// `generate`, with `onUpdate` invoked for every cumulative chunk.
     static func generateStreaming(_ prompt: String, maxTokens: Int? = nil,
                                   onUpdate: @escaping (String) -> Void) async -> String {
-        guard isEnabledByUser else { onUpdate(offMessage); return offMessage }
         #if canImport(FoundationModels)
-        if case .available = SystemLanguageModel.default.availability {
+        if isActive {
             let session = LanguageModelSession()
             let options = GenerationOptions(maximumResponseTokens: maxTokens)
             var last = ""
@@ -69,17 +99,42 @@ enum LocalLLM {
                 }
                 return last
             } catch {
-                return last.isEmpty ? "[The model couldn't complete that: \(error.localizedDescription)]" : last
+                if !last.isEmpty { return last }
+                // Fall through to Ollama on a clean failure (don't trap the user).
             }
         }
         #endif
-        return "[no on-device model available — \(statusNote)]"
+        if let reply = await OllamaClient.chatStream(prompt: prompt, onUpdate: onUpdate) {
+            return reply
+        }
+        let msg = offMessage
+        onUpdate(msg)
+        return msg
     }
 
-    /// Multi-turn chat that remembers prior messages in the conversation.
+    /// Multi-turn chat that remembers prior messages. Routes through the
+    /// tool-enabled `ChatSession` when Apple Intelligence is active; otherwise
+    /// falls back to Ollama qwen-coder *without* tools (the model can answer
+    /// from knowledge, but can't run terminal commands or self-improve until
+    /// you re-enable Apple Intelligence).
     static func chat(_ message: String) async -> String {
-        return await ChatSession.shared.respond(to: message)
+        if isActive {
+            return await ChatSession.shared.respond(to: message)
+        }
+        let system = """
+        You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
+        Apple Intelligence is off, so you cannot call tools (no terminal, no web \
+        search, no self-improve) right now — just answer from your knowledge as \
+        clearly and briefly as you can. If the user writes in Arabic, reply in \
+        Arabic; otherwise reply in English. If a question really requires running \
+        a command on this Mac, say so plainly and suggest the command as text.
+        """
+        if let reply = await OllamaClient.chat(prompt: message, system: system) {
+            return reply
+        }
+        return offMessage
     }
+
 
     /// Start a fresh conversation (clears memory).
     static func resetChat() async {
@@ -107,8 +162,8 @@ enum LocalLLM {
         FINAL ANSWER:
         """
         let refined = await generate(prompt)
-        // If synthesis somehow failed, fall back to the draft.
-        return refined.hasPrefix("[no on-device model") ? draft : refined
+        // If synthesis somehow failed (both brains unreachable), keep the draft.
+        return refined == offMessage ? draft : refined
     }
 }
 
@@ -117,7 +172,10 @@ enum LocalLLM {
 actor ChatSession {
     static let shared = ChatSession()
 
-    private static let instructions = """
+    /// Persona + behaviour rules. The live tool menu is appended at session-
+    /// build time (see `currentInstructions()`) so disabled tools — e.g. web
+    /// access switched off in Settings — are never advertised to the model.
+    private static let baseInstructions = """
     You are Salehman AI, a helpful, concise, and friendly assistant created by Saleh.
     Answer the user's questions directly and clearly. Keep replies natural and to the point.
     If the user writes in Arabic, reply in Arabic; otherwise reply in English.
@@ -148,26 +206,15 @@ actor ChatSession {
     in plain language. If a command fails because it doesn't exist, figure out the
     correct macOS equivalent and try again instead of giving up. Never run
     destructive commands. After running a command, briefly summarize what happened.
-
-    You can also access the internet:
-    • web_search — for current, recent, or factual info beyond your knowledge.
-    • fetch_url — to read a specific web page or public social-media page.
-    Use them whenever up-to-date information would help, then cite what you found.
-    To open a social app or site for the user, use run_terminal_command with
-    `open` (e.g. open -a "Safari" https://twitter.com, or open -a "Instagram").
-
-    More tools you have:
-    • generate_image — create a picture when the user asks you to draw/generate one.
-    • remember_fact — save durable facts about the user (name, preferences,
-      projects). Do this whenever you learn something worth remembering.
-    • translate — translate text to another language accurately.
-    • control_mac — move/click the mouse, type, or press keys to automate or test
-      the UI (asks for Accessibility permission the first time).
-    • self_improve — build THIS app's Xcode project, find compiler errors, and
-      try to fix them automatically. Call this when the user asks you to test,
-      build, fix, debug, or improve yourself. Reports back what changed.
     To run tests, use run_terminal_command with `xcodebuild test -scheme <name>`.
     """
+
+    /// Persona + the live tool menu derived from `ToolPolicy`. Rebuilt every
+    /// time a session is created so toggling web access (or any other gated
+    /// tool) only requires starting a new chat.
+    private static func currentInstructions() -> String {
+        baseInstructions + "\n\nTools available to you right now:\n" + ToolPolicy.instructionsToolMenu()
+    }
 
     #if canImport(FoundationModels)
     private var session: LanguageModelSession?
@@ -186,7 +233,8 @@ actor ChatSession {
             return "[Apple Intelligence is not available — \(LocalLLM.statusNote). Enable it in System Settings → Apple Intelligence & Siri.]"
         }
         if session == nil {
-            session = LanguageModelSession(tools: [RunTerminalCommandTool(), WriteCodeTool(), WebSearchTool(), FetchURLTool(), GenerateImageTool(), RememberFactTool(), ControlMacTool(), TranslateTool(), SelfImproveTool()], instructions: Self.instructions)
+            session = LanguageModelSession(tools: ToolPolicy.activeTools(),
+                                           instructions: Self.currentInstructions())
         }
         guard let session else { return "[Could not start a chat session.]" }
         do {
@@ -194,7 +242,8 @@ actor ChatSession {
             return response.content
         } catch {
             // A fresh session can recover from context/length errors.
-            self.session = LanguageModelSession(tools: [RunTerminalCommandTool(), WriteCodeTool(), WebSearchTool(), FetchURLTool(), GenerateImageTool(), RememberFactTool(), ControlMacTool(), TranslateTool(), SelfImproveTool()], instructions: Self.instructions)
+            self.session = LanguageModelSession(tools: ToolPolicy.activeTools(),
+                                                instructions: Self.currentInstructions())
             if let retry = try? await self.session?.respond(to: message) {
                 return retry.content
             }

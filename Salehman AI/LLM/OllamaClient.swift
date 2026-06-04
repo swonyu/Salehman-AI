@@ -109,4 +109,52 @@ enum OllamaClient {
         """
         return await generate(model: codeModel, prompt: task, system: system)
     }
+
+    // MARK: - General chat fallback
+
+    /// General-purpose chat completion via qwen-coder (used as the fallback brain
+    /// when Apple Intelligence is off). Returns nil if Ollama or the model isn't
+    /// available, so callers can degrade gracefully.
+    static func chat(prompt: String, system: String? = nil) async -> String? {
+        guard await isUp(), await hasModel(codeModel) else { return nil }
+        return await generate(model: codeModel, prompt: prompt, system: system)
+    }
+
+    /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
+    /// with the cumulative text after each token chunk. Returns the final
+    /// text, or nil if the server/model isn't reachable.
+    static func chatStream(prompt: String, system: String? = nil,
+                           onUpdate: @escaping (String) -> Void) async -> String? {
+        guard await isUp(), await hasModel(codeModel) else { return nil }
+        guard let url = URL(string: "\(base)/api/generate") else { return nil }
+        var body: [String: Any] = ["model": codeModel, "prompt": prompt, "stream": true]
+        if let system { body["system"] = system }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = payload
+        req.timeoutInterval = 600
+
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+
+        var accumulated = ""
+        do {
+            for try await line in bytes.lines {
+                guard let data = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                if let chunk = json["response"] as? String, !chunk.isEmpty {
+                    accumulated += chunk
+                    onUpdate(accumulated)
+                }
+                if (json["done"] as? Bool) == true { break }
+            }
+        } catch {
+            // Network/stream errors fall through with whatever we have so far.
+        }
+        let trimmed = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }

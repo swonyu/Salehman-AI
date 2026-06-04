@@ -399,13 +399,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WY272L3F3N;
 				ENABLE_APP_SANDBOX = NO;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Salehman AI uses the microphone for voice dictation.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Salehman AI uses speech recognition to transcribe your voice and audio or video files.";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Salehman AI uses the microphone for voice dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Salehman AI uses speech recognition to transcribe your voice and audio or video files.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -433,13 +433,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = WY272L3F3N;
 				ENABLE_APP_SANDBOX = NO;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Salehman AI uses the microphone for voice dictation.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Salehman AI uses speech recognition to transcribe your voice and audio or video files.";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Salehman AI uses the microphone for voice dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Salehman AI uses speech recognition to transcribe your voice and audio or video files.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

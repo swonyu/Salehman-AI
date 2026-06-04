@@ -17,7 +17,8 @@ enum Orchestrator {
 
     static func runAndReturnResult(mission: String) async -> (output: String, successRating: Double) {
         let answer = await AgentPipeline.run(mission: mission)
-        return (output: answer, successRating: LocalLLM.isAvailable ? 1.0 : 0.0)
+        let rating = AgentPipeline.lastOutcome?.successRating ?? (LocalLLM.isAvailable ? 1.0 : 0.0)
+        return (output: answer, successRating: rating)
     }
 
     /// Clears the conversation memory (call when starting a new chat).

@@ -6,6 +6,7 @@ import CoreMedia
 import CoreGraphics
 import Combine
 import AppKit
+import QuartzCore
 
 enum LiveLang: String, CaseIterable, Identifiable {
     case auto, english, arabic
@@ -65,6 +66,8 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     private let maxLines = 1_500
     private var audioBufCount = 0        // queue-confined diagnostic
     private var callbackCount = 0        // any-type callback diagnostic
+    private var lastPublishedPartial = ""        // queue-confined: throttle gate
+    private var lastPublishAt: CFTimeInterval = 0 // queue-confined: throttle gate
 
     func toggle() { isRunning ? stop() : start() }
 
@@ -77,16 +80,23 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     func start() { Task { await begin() } }
 
     // MARK: Diagnostics
+    // Disabled by default — the file I/O ran on the audio queue and caused the
+    // lag when the panel opened. Build with -D LIVE_TRANSCRIBE_DEBUG to re-enable.
+    // The @autoclosure means the log string isn't even built in release.
     private static let logURL = URL(fileURLWithPath: "/tmp/salehman_live.log")
-    private func dlog(_ s: String) {
-        let line = "\(Date()) \(s)\n"
+    private func dlog(_ s: @autoclosure () -> String) {
+        #if LIVE_TRANSCRIBE_DEBUG
+        let line = "\(Date()) \(s())\n"
         guard let data = line.data(using: .utf8) else { return }
         if let h = try? FileHandle(forWritingTo: Self.logURL) { h.seekToEndOfFile(); h.write(data); try? h.close() }
         else { try? data.write(to: Self.logURL) }
+        #endif
     }
 
     private func begin() async {
+        #if LIVE_TRANSCRIBE_DEBUG
         try? "".data(using: .utf8)?.write(to: Self.logURL)
+        #endif
         dlog("begin()")
         let speechOK = await requestSpeechAuth()
         dlog("speechAuth=\(speechOK)")
@@ -221,8 +231,16 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         startTask(rec)
     }
 
+    /// Coalesce partial updates: push to the main actor at most ~9 Hz and only
+    /// when the text actually changed. Recognition callbacks fire far faster than
+    /// that, and each push re-rendered the whole transcript — the old behavior was
+    /// a big part of the lag. `commit()` flushes the final text via teardown.
     private func publishPartial() {
         let text = bestPartial
+        let now = CACurrentMediaTime()
+        guard text != lastPublishedPartial, now - lastPublishAt >= 0.11 else { return }
+        lastPublishedPartial = text
+        lastPublishAt = now
         DispatchQueue.main.async { self.partialThem = text }
     }
 
@@ -278,6 +296,8 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     private func teardownTasks() {
         capturing = false
         segment += 1
+        lastPublishedPartial = ""; lastPublishAt = 0   // reset the throttle gate
+
         for rec in recs {
             rec.request?.endAudio(); rec.task?.cancel()
             rec.request = nil; rec.task = nil

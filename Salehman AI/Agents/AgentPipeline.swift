@@ -74,9 +74,11 @@ actor ConversationStore {
 /// Runs the full multi-agent pipeline for one user message.
 enum AgentPipeline {
     static func run(mission: String) async -> String {
-        // Master switch: if the user turned Apple Intelligence off, decline once
-        // here instead of letting every agent emit the same off-message.
-        guard LocalLLM.isEnabledByUser else { return LocalLLM.offMessage }
+        // Don't gate the pipeline on Apple Intelligence — when it's off, the
+        // LocalLLM layer transparently falls back to Ollama qwen-coder so the
+        // agents keep working with the local brain. We only bail out when
+        // neither brain is reachable.
+        if await LocalLLM.currentBrain() == .none { return LocalLLM.offMessage }
 
         // Speed mode controls how many agents run.
         let mode = await MainActor.run { AppSettings.shared.responseMode }
@@ -103,7 +105,15 @@ enum AgentPipeline {
         if !memories.isEmpty {
             history = "Known about the user (from long-term memory):\n" + memories.map { "• \($0)" }.joined(separator: "\n") + "\n\n" + history
         }
-        var notes: [(name: String, output: String)] = []
+        // Structured backbone: a MissionPlan + MissionMemory accumulate the run,
+        // and the per-agent handlers are looked up from AgentRegistry.
+        let plan = MissionPlan(mission: mission,
+                               successCriteria: ["Directly answers the user", "Factually correct", "Clear and complete"],
+                               keyRisks: ["Hallucination", "Stale info without web access", "Over-coding a non-code request"],
+                               recommendedAgents: specs.map { $0.name })
+        var memory = MissionMemory(missionPlan: plan)
+        AgentRegistry.registerDefaultsOnce()
+
         var reasoning = ""
         var finalAnswer = ""
 
@@ -113,29 +123,35 @@ enum AgentPipeline {
             .sorted { $0.key < $1.key }
 
         for (_, indices) in phases {
-            // Snapshot context for this phase (so concurrent agents see the same input).
-            let ctxNotes = notes
-            let ctxReasoning = reasoning
+            // Immutable context snapshot for this phase (shared by its concurrent agents).
+            let phaseContext = memory.buildContext(for: "")
 
             let results = await withTaskGroup(of: (Int, String).self) { group in
                 for i in indices {
                     let spec = specs[i]
+                    // Extract the streaming callback so the compiler can pick the
+                    // right `Task.init` — embedding it inside a ternary defeats
+                    // closure-argument type inference.
+                    let stream: ((String) -> Void)? = spec.isFinal
+                        ? { partial in
+                            Task { @MainActor in MissionProgress.shared.stream(partial) }
+                        }
+                        : nil
+                    let input = AgentInput(
+                        mission: mission, history: history, context: phaseContext,
+                        onStream: stream)
                     group.addTask {
                         await MainActor.run { MissionProgress.shared.setRunning(i) }
+                        // `??` uses an autoclosure that can't contain `await`,
+                        // so branch explicitly between the registered handler
+                        // and the LocalLLM fallback.
                         let output: String
-                        if spec.usesTools {
-                            output = await LocalLLM.chat(mission)
-                        } else if spec.isFinal {
-                            // Stream the final answer live into the UI.
-                            let prompt = buildPrompt(spec: spec, mission: mission,
-                                                     history: history, notes: ctxNotes, reasoning: ctxReasoning)
-                            output = await LocalLLM.generateStreaming(prompt, maxTokens: 700) { partial in
-                                Task { @MainActor in MissionProgress.shared.stream(partial) }
-                            }
+                        if let handler = AgentRegistry.handler(for: spec.name) {
+                            output = await handler(input)
                         } else {
-                            let prompt = buildPrompt(spec: spec, mission: mission,
-                                                     history: history, notes: ctxNotes, reasoning: ctxReasoning)
-                            output = await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
+                            output = await LocalLLM.generate(
+                                buildPrompt(spec: spec, mission: mission, history: history, context: phaseContext),
+                                maxTokens: spec.full ? 700 : 110)
                         }
                         await MainActor.run { MissionProgress.shared.setDone(i) }
                         return (i, output)
@@ -146,11 +162,14 @@ enum AgentPipeline {
                 return collected
             }
 
-            // Fold this phase's outputs back into shared state (in spec order).
+            // Fold this phase's outputs into MissionMemory (in spec order).
             for (i, output) in results.sorted(by: { $0.0 < $1.0 }) {
                 let spec = specs[i]
-                notes.append((spec.name, output))
-                if spec.usesTools { reasoning = output }
+                memory.recordAgentOutput(name: spec.name, output: output)
+                if spec.usesTools {
+                    reasoning = output
+                    memory.recordToolResult(tool: "reasoning_strategist", summary: String(output.prefix(800)))
+                }
                 if spec.isFinal { finalAnswer = output }
             }
         }
@@ -158,13 +177,21 @@ enum AgentPipeline {
         await MainActor.run { MissionProgress.shared.finish() }
 
         if finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            finalAnswer = reasoning.isEmpty ? (notes.last?.output ?? "…") : reasoning
+            finalAnswer = reasoning.isEmpty ? (memory.agentOutputs.last?.output ?? "…") : reasoning
         }
+
+        // Record the outcome so MissionMemory/Outcome aren't dead — Orchestrator reads it.
+        let rating: Double = (LocalLLM.isAvailable && !finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ? 1.0 : 0.0
+        memory.recordOutcome(Outcome(successRating: rating, notes: memory.getSummary()))
+        lastOutcome = memory.outcome
 
         await ConversationStore.shared.add(role: "User", text: mission)
         await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
         return finalAnswer
     }
+
+    /// The most recent run's recorded outcome (read by Orchestrator for successRating).
+    nonisolated(unsafe) static var lastOutcome: Outcome?
 
     /// Ask the model for a short task-specific title for each agent.
     private static func adaptTitles(mission: String, names: [String]) async -> [String: String] {
@@ -194,20 +221,10 @@ enum AgentPipeline {
         return map
     }
 
-    private static func buildPrompt(spec: AgentSpec, mission: String, history: String,
-                                    notes: [(name: String, output: String)], reasoning: String) -> String {
+    static func buildPrompt(spec: AgentSpec, mission: String, history: String, context: String) -> String {
         var ctx = ""
         if !history.isEmpty { ctx += "Recent conversation:\n\(history)\n\n" }
-        if !reasoning.isEmpty {
-            ctx += "Working answer from the Reasoning Strategist (includes results of any commands run):\n\(reasoning)\n\n"
-        }
-        if !notes.isEmpty {
-            ctx += "Team notes so far:\n"
-            for n in notes.suffix(10) {
-                ctx += "• [\(n.name)] \(n.output.prefix(350))\n"
-            }
-            ctx += "\n"
-        }
+        if !context.isEmpty { ctx += context + "\n\n" }
 
         let lengthRule = spec.full
             ? "Write a complete, well-structured response."

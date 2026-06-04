@@ -20,6 +20,7 @@ struct ContentView: View {
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var brain = BrainStatus.shared
     @State private var attachment: Attachment?
     @State private var loadingAttachment = false
     @State private var runningTask: Task<Void, Never>?
@@ -33,11 +34,26 @@ struct ContentView: View {
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
 
-    private let examples = [
-        "What macOS version am I running?",
-        "List the files on my Desktop",
-        "How much free disk space do I have?",
-        "Change my wallpaper"
+    private struct Suggestion: Hashable {
+        let icon: String
+        let title: String
+        let subtitle: String
+        let prompt: String
+    }
+
+    private let suggestions: [Suggestion] = [
+        .init(icon: "desktopcomputer", title: "Inspect this Mac",
+              subtitle: "macOS version, hardware, uptime",
+              prompt: "What macOS version am I running, and give me a quick hardware summary."),
+        .init(icon: "folder", title: "Find files",
+              subtitle: "List what's on the Desktop",
+              prompt: "List the files on my Desktop, grouped by kind."),
+        .init(icon: "internaldrive", title: "Storage health",
+              subtitle: "Free space + heaviest folders",
+              prompt: "How much free disk space do I have, and what are the heaviest folders in my home directory?"),
+        .init(icon: "photo.on.rectangle", title: "Change my wallpaper",
+              subtitle: "Pick from a few options",
+              prompt: "Change my wallpaper. Suggest a few options first."),
     ]
 
     var body: some View {
@@ -107,10 +123,15 @@ struct ContentView: View {
                 Text("Salehman AI")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
-                Text(isRunning ? "Thinking…"
-                     : (settings.useAppleIntelligence ? "On-device • Apple Intelligence" : "Apple Intelligence off"))
-                    .font(.caption2)
-                    .foregroundStyle(settings.useAppleIntelligence || isRunning ? .secondary : Color.orange.opacity(0.9))
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(isRunning ? Color.purple : brain.dotColor)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: (isRunning ? Color.purple : brain.dotColor).opacity(0.6), radius: 3)
+                    Text(isRunning ? "Thinking…" : brain.label)
+                        .font(.caption2)
+                        .foregroundStyle(isRunning ? .secondary : brain.labelColor)
+                }
             }
 
             Spacer()
@@ -156,26 +177,8 @@ struct ContentView: View {
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { startNewChat() }
 
-            // Confirmation toggle
-            Button {
-                withAnimation(DS.Motion.fade) { approval.confirmationEnabled.toggle() }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: approval.confirmationEnabled ? "lock.shield.fill" : "bolt.fill")
-                    Text(approval.confirmationEnabled ? "Confirm" : "Auto-run")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(approval.confirmationEnabled ? Color.green : Color.orange)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background((approval.confirmationEnabled ? Color.green : Color.orange).opacity(0.14),
-                           in: Capsule())
-                .overlay(Capsule().stroke((approval.confirmationEnabled ? Color.green : Color.orange).opacity(0.35), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .help(approval.confirmationEnabled
-                  ? "You'll approve each terminal command before it runs."
-                  : "Commands run automatically. Click to require approval.")
+            // Confirmation toggle — calm chip with a colored dot, no shouty fill.
+            ConfirmationChip(enabled: $approval.confirmationEnabled)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -234,7 +237,7 @@ struct ContentView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.25)) {
+        withAnimation(DS.Motion.smooth) {
             if isRunning { proxy.scrollTo("typing", anchor: .bottom) }
             else { proxy.scrollTo(messages.last?.id, anchor: .bottom) }
         }
@@ -242,32 +245,50 @@ struct ContentView: View {
 
     // MARK: Empty state
     private var emptyState: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 28) {
+            // Floating logo with twin glow halos.
             ZStack {
-                Circle().fill(Theme.brand).frame(width: 72, height: 72)
-                    .shadow(color: Theme.accent.opacity(0.55), radius: 18, y: 6)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            VStack(spacing: 6) {
-                Text("How can I help, Saleh?")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("Ask me anything, or let me run things on your Mac.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            // Example chips
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(examples, id: \.self) { example in
-                    Chip(text: example) { send(example) }
+                Circle().fill(Theme.accent.opacity(0.18))
+                    .frame(width: 130, height: 130).blur(radius: 40)
+                Circle().fill(Theme.accent2.opacity(0.16))
+                    .frame(width: 110, height: 110).blur(radius: 36)
+                    .offset(x: 18, y: 8)
+                ZStack {
+                    Circle().fill(Theme.brand).frame(width: 72, height: 72)
+                        .shadow(color: Theme.accent.opacity(0.55), radius: 22, y: 8)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(.white)
                 }
             }
-            .frame(maxWidth: 460)
+
+            VStack(spacing: 10) {
+                Eyebrow(text: "Salehman AI · On-device")
+                Text("How can I help, Saleh?")
+                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                Text("Ask me anything, or let me run things on your Mac.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(DS.Palette.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            // 2×2 Bento of rich SuggestionCards.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12)],
+                      spacing: 12) {
+                ForEach(suggestions, id: \.self) { s in
+                    SuggestionCard(icon: s.icon, title: s.title, subtitle: s.subtitle) {
+                        send(s.prompt)
+                    }
+                }
+            }
+            .frame(maxWidth: 540)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
+        .padding(.bottom, 40)
     }
 
     // MARK: Input bar
@@ -569,6 +590,48 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Confirmation chip (header)
+// Calmer replacement for the saturated green/orange pill. A small dot carries
+// the state signal (green = confirm, amber = auto-run) and the chip itself stays
+// neutral glass — premium, not alarmist.
+private struct ConfirmationChip: View {
+    @Binding var enabled: Bool
+    @State private var hovering = false
+
+    private var dotColor: Color {
+        enabled ? Color(red: 0.45, green: 0.85, blue: 0.55) : Color(red: 1.0, green: 0.72, blue: 0.35)
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(DS.Motion.smooth) { enabled.toggle() }
+        } label: {
+            HStack(spacing: 7) {
+                ZStack {
+                    Circle().fill(dotColor).frame(width: 7, height: 7)
+                    Circle().fill(dotColor.opacity(0.35)).frame(width: 13, height: 13).blur(radius: 3)
+                }
+                Text(enabled ? "Confirm" : "Auto-run")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(
+                Capsule().fill(Color.white.opacity(hovering ? 0.10 : 0.06))
+            )
+            .overlay(
+                Capsule().stroke(Color.white.opacity(hovering ? 0.18 : 0.10), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .help(enabled
+              ? "You'll approve each terminal command before it runs."
+              : "Commands run automatically. Click to require approval.")
+    }
+}
+
 // MARK: - Background (state-free so SwiftUI keeps it stable across body redraws)
 private struct BackgroundView: View {
     var body: some View {
@@ -704,8 +767,23 @@ struct MessageBubble: View {
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
+    @State private var appeared = false   // drives fade-up-blur entry
 
     var body: some View {
+        bubbleRow
+            .opacity(appeared ? 1 : 0)
+            .blur(radius: appeared ? 0 : 6)
+            .offset(y: appeared ? 0 : 14)
+            .onAppear {
+                // Skip the entry choreography on cells SwiftUI is reusing during
+                // a scroll redraw — only animate the first time this bubble's
+                // identity reaches the screen.
+                guard !appeared else { return }
+                withAnimation(DS.Motion.cinematic) { appeared = true }
+            }
+    }
+
+    private var bubbleRow: some View {
         HStack(alignment: .bottom, spacing: 9) {
             if message.isUser { Spacer(minLength: 48) } else { avatar }
 
