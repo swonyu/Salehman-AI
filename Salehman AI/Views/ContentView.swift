@@ -637,6 +637,9 @@ struct ContentView: View {
                     SpeechOut.shared.speak(result.output, id: reply.id)
                 }
             }
+            // Refresh the header brain dot now — it otherwise lags up to ~10s, so
+            // this reflects reality right after a send (e.g. a brain that just failed).
+            await BrainStatus.shared.refresh()
         }
     }
 

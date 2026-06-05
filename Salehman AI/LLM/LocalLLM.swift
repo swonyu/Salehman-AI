@@ -577,7 +577,9 @@ enum LocalLLM {
     CRITICAL LANGUAGE RULE: reply in the SAME language as the user's latest \
     message. If their message is in English, reply ONLY in English; if it is in \
     Arabic, reply in Arabic. Never switch languages on your own. \
-    Answer directly and clearly. You don't have access to this Mac's terminal or \
+    Lead with the answer first, then only the reasoning that helps — skip filler. \
+    Use markdown only when it adds clarity (lists for 3+ items, fenced code for code). \
+    You don't have access to this Mac's terminal or \
     local tools in this mode — if a task needs running a command, say so and \
     suggest the command as text.
     """
@@ -591,7 +593,8 @@ enum LocalLLM {
     Arabic, reply in Arabic. Never switch languages on your own (you are a \
     multilingual model and must not default to Arabic or any other language). \
     You cannot call tools (no terminal, no web search, no self-improve) right \
-    now — just answer from your knowledge as clearly and briefly as you can. If a \
+    now — just answer from your knowledge: lead with the answer, keep it clear and \
+    brief, and use markdown only when it adds clarity (lists, fenced code). If a \
     question really requires running a command on this Mac, say so plainly and \
     suggest the command as text.
     """
@@ -731,11 +734,11 @@ enum LocalLLM {
                     // (it shouldn't reach here — the spec is only sent when allowed).
                     result = ToolPolicy.isExternalAllowed
                         ? await Web.search(call.arguments["query"] ?? "")
-                        : "Web access is disabled — not run."
+                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
                 case "fetch_url":
                     result = ToolPolicy.isExternalAllowed
                         ? await Web.fetch(call.arguments["url"] ?? "")
-                        : "Web access is disabled — not run."
+                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
                 default:
                     result = "Unknown tool '\(call.name)'."
                 }
@@ -1250,8 +1253,8 @@ actor ChatSession {
     /// access switched off in Settings — are never advertised to the model.
     private static let baseInstructions = """
     You are Salehman AI, a helpful, concise, and friendly assistant created by Saleh.
-    Answer the user's questions directly and clearly. Keep replies natural and to the point.
-    If the user writes in Arabic, reply in Arabic; otherwise reply in English.
+    Lead with the answer first, then add only the reasoning or caveats that actually help. Skip filler like "Certainly!" or "As an AI…". Use markdown only when it adds clarity (lists for 3+ items, fenced code blocks for code); short answers stay prose.
+    LANGUAGE (critical): reply in the SAME language as the user's latest message — English in, English out; Arabic in, Arabic out. Never switch languages on your own, and never default to Arabic just because the Mac's region is Saudi.
 
     IMPORTANT — answering vs. coding:
     • For ANY question about this Mac or its current state (macOS version, files,

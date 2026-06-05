@@ -814,6 +814,19 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 🧠 AI-quality pass (verified-safe edits) + Grok session cancelled
+**Files:** `LLM/LocalLLM.swift` (3 prompt edits), `Agents/AgentPipeline.swift` (2), `Views/ContentView.swift` (1), `CLAUDE.md` (3→2 session).
+**What & why:** Owner: "improve the ai" (all 4 levers). A read-only design workflow proposed 13 edits → **9 verified-safe** (adversarially checked for `.auto` local-first, anti-Arabic-drift, small-model bloat, streaming). Implemented the top, highest-confidence batch:
+- **Prompts:** `baseInstructions` (default Apple-FM path) — hardened the weak language rule (was "otherwise reply in English") into a strict same-language rule + answer-first/clean-markdown guidance; same answer-first nudge added to `cloudSystemPrompt` + `ollamaChatSystem`.
+- **Context/memory:** cap each recalled long-term memory at 280 chars so one long fact can't bloat the small local model's prompt.
+- **Reasoning:** language-mirror rule added to the shared multi-agent prompt.
+- **Routing:** refresh the header brain-status dot right after a send (was lagging ~10s).
+Deferred (documented in CODEBASE_REVIEW.md): `brainReady` Keychain caching, anyBrainReachable reorder, the streaming-error-diagnostic guard.
+**Grok cancelled:** the trialed 3rd (Grok Build 0.2) session hit 0% credits mid-work; reverted `CLAUDE.md` to the 2-session model. Grok's incomplete test WIP was rolled back (test files back to disabled stubs) → suite green again. Grok prompts kept in-repo for possible re-enable.
+**Result:** Build + full suite **green** (`TEST SUCCEEDED`). Targeted commit (only my 4 files) so the other session's in-flight `Tools/`/`COORDINATION` edits aren't swept in.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

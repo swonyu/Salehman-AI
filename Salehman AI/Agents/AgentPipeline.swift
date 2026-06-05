@@ -172,7 +172,7 @@ enum AgentPipeline {
         var history = await ConversationStore.shared.transcript()
         let memories = MemoryStore.shared.recall(mission)
         if !memories.isEmpty {
-            history = "Known about the user (from long-term memory):\n" + memories.map { "• \($0)" }.joined(separator: "\n") + "\n\n" + history
+            history = "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + history
         }
         // Structured backbone: a MissionPlan + MissionMemory accumulate the run,
         // and the per-agent handlers are looked up from AgentRegistry.
@@ -454,6 +454,8 @@ enum AgentPipeline {
         never substitute code for an actual answer. If (and only if) the user
         explicitly asked for code, be rigorous: correct, idiomatic, complete,
         modern Swift/SwiftUI where relevant, with edge cases handled and no TODOs.
+
+        LANGUAGE: reply in the SAME language as the user's request below — never switch on your own, and never default to Arabic unless the user actually wrote in Arabic.
 
         \(lengthRule)
 

@@ -30,14 +30,15 @@ xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configurati
 edits). Tests run in parallel — never have two tests mutate the same global
 `UserDefaults` key.
 
-## 🤝 Three-session coordination
-Up to three build sessions work this repo in parallel: **two Claude Code** + **one
-Grok**. Ownership lanes + a running handoff log are in
-[`COORDINATION.md`](COORDINATION.md). **Claim a file there before editing another
+## 🤝 Two-session coordination
+Two Claude Code sessions work this repo in parallel. (Grok was trialed as a third
+session on 2026-06-06 but cancelled — its onboarding prompts remain in the repo
+[`GROK_SESSION_PROMPT.md`](GROK_SESSION_PROMPT.md) / `GROK_TEAM_PROMPT.md` if ever
+re-enabled.) Ownership lanes + a running handoff log are in
+[`COORDINATION.md`](COORDINATION.md). **Claim a file there before editing the other
 session's lane.** Quick reference:
 - **Chat B** (brain/UI): `LLM/*`, `Views/ContentView.swift`, `Views/SettingsView.swift`, `BrainStatus`.
 - **Chat A** (agents/markets): `Agents/*`, `Markets/*`, `Views/Markets*`, several `Tools/*`, `Media/LiveTranscriber`.
-- **Grok** (tests/docs): `Salehman AITests/*` (test coverage — start with the 8 suites in `CODEBASE_REVIEW.md` §4), plus doc accuracy + new self-contained modules. Onboarding prompt: [`GROK_SESSION_PROMPT.md`](GROK_SESSION_PROMPT.md).
 - **Shared (append-only):** `App/AppSettings.swift`, `App/AppState.swift`, `Tools/ToolPolicy.swift`.
 
 ## 🔐 Security & secrets
