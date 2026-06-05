@@ -16,7 +16,8 @@ enum OpenAIClient {
         defaultModel: defaultModel,
         allModels: allModels,
         keychainAccount: .openAIAPIKey,
-        consoleURL: "https://platform.openai.com/api-keys")
+        consoleURL: "https://platform.openai.com/api-keys",
+        promptCacheKey: "salehman-ai")   // OpenAI-only: improves auto-cache hit routing
 
     /// True iff the user has stored an OpenAI key. Sync (Keychain only, no HTTP).
     nonisolated static func hasKey() -> Bool { KeychainStore.has(.openAIAPIKey) }

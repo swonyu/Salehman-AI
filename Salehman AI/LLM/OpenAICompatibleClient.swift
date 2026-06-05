@@ -57,6 +57,13 @@ struct OpenAICompatibleClient: Sendable {
     /// (the documented usage above) fail to compile for local servers.
     var requiresKey: Bool = true
 
+    /// Optional `prompt_cache_key` for OpenAI's automatic prompt caching — groups
+    /// requests that share a prefix so they hit the same cache (higher hit rate +
+    /// lower latency). Set ONLY for the real OpenAI provider; other OpenAI-compatible
+    /// servers may reject an unknown field, so it stays nil for them. Harmless no-op
+    /// below the per-model cache floor (~1024 tokens).
+    var promptCacheKey: String? = nil
+
     // MARK: - Reachability
 
     /// True iff this brain is considered "configured." For authenticated
@@ -85,8 +92,9 @@ struct OpenAICompatibleClient: Sendable {
         }
         guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
 
-        let body = Self.makeBody(model: model ?? defaultModel,
+        var body = Self.makeBody(model: model ?? defaultModel,
                                  prompt: prompt, system: system, stream: false)
+        if let promptCacheKey { body["prompt_cache_key"] = promptCacheKey }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
         var req = URLRequest(url: url)
@@ -124,8 +132,9 @@ struct OpenAICompatibleClient: Sendable {
         }
         guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
 
-        let body = Self.makeBody(model: model ?? defaultModel,
+        var body = Self.makeBody(model: model ?? defaultModel,
                                  prompt: prompt, system: system, stream: true)
+        if let promptCacheKey { body["prompt_cache_key"] = promptCacheKey }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
         var req = URLRequest(url: url)

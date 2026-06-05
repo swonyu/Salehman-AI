@@ -853,6 +853,13 @@ Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed t
 
 ---
 
+## 2026-06-06 · 💾 Prompt-caching refinement — OpenAI `prompt_cache_key` (Codex brain)
+**Files:** `LLM/OpenAICompatibleClient.swift` (+ optional `promptCacheKey` property, injected into the request body in `chat`/`chatStream`), `LLM/OpenAIClient.swift` (sets `promptCacheKey: "salehman-ai"`).
+**What & why:** Owner wanted caching for the Codex (OpenAI) brain too. OpenAI auto-caches prefixes server-side (already triggered by the prior fold-to-front change), and `prompt_cache_key` improves the cache-HIT routing (groups same-prefix requests onto the same cache). Added it as an OPT-IN property on the shared `OpenAICompatibleClient` (default nil) so it's sent ONLY for the real OpenAI provider — the other OpenAI-compatible servers (Groq/Cerebras/Mistral/OpenRouter/Unsloth) keep `nil` and never see the unknown field (some reject unknown JSON keys).
+**Result:** Build green; my 2 source files build + are unrelated to tests. **Known flaky test (NOT mine, NOT on main):** `ToolPolicyTests`↔`WebToolsOfflineGateTests` intermittently race on the shared `ToolPolicy.override`/`webAccess` globals — the other session re-added these suites WITHOUT the cross-suite shared lock (the documented `BrainPreferenceTestLock` pattern). They pass when run together but flake under the full parallel suite. Fix = a `ToolPolicyTestLock` NSLock acquired by `withCleanWebGate`/`withCleanPolicy` (flagged for the other session). Committed only my OpenAI files.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
