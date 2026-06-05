@@ -108,15 +108,23 @@ final class KnowledgeStore: @unchecked Sendable {
         if let docID { all = all.filter { $0.docID == docID } }
         guard !all.isEmpty else { return [] }
         let qVec = Self.embed(query)
-        let scored = all.map { c -> (KnowledgeChunk, Double) in
+        let scored: [(KnowledgeChunk, Double)] = all.map { c in
             var score = Self.keywordScore(query: query, text: c.text)
-            if let qv = qVec, let cv = c.vector { score += Self.cosine(qv, cv) }
+            // Clamp the embedding contribution to non-negative — a NEGATIVE
+            // cosine on a weak semantic match shouldn't be allowed to drag down
+            // a chunk that has solid keyword overlap.
+            if let qv = qVec, let cv = c.vector { score += max(0, Self.cosine(qv, cv)) }
             return (c, score)
         }
-        return scored.sorted { $0.1 > $1.1 }
-            .prefix(k)
-            .filter { $0.1 > 0 }
-            .map { KnowledgeHit(docName: $0.0.docName, text: $0.0.text, score: $0.1) }
+        // Filter-then-prefix (the old order capped recall at k even when some
+        // of the top-k were zero-score, silently dropping useful results).
+        // Then over-fetch ~3k and run MMR so the final k passages favor
+        // topical DIVERSITY — chunks overlap by ~150 chars by design, so the
+        // pure top-k frequently returns near-duplicates from the same region.
+        let candidates = scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }
+        let pool = Array(candidates.prefix(max(k * 3, k + 4)))
+        let picked = Self.mmr(pool, k: k)
+        return picked.map { KnowledgeHit(docName: $0.0.docName, text: $0.0.text, score: $0.1) }
     }
 
     // MARK: Helpers
@@ -132,14 +140,22 @@ final class KnowledgeStore: @unchecked Sendable {
         var start = 0
         while start < chars.count {
             var end = min(start + size, chars.count)
+            var boundaryFound = false
             if end < chars.count {  // back up to a whitespace boundary
                 var b = end
                 while b > start && !chars[b - 1].isWhitespace { b -= 1 }
-                if b > start + size / 2 { end = b }
+                if b > start + size / 2 { end = b; boundaryFound = true }
             }
             out.append(String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines))
             if end >= chars.count { break }
-            start = max(end - overlap, start + 1)
+            // On a boundaryless run (single huge token, no whitespace to break
+            // on), the original `size − overlap` step gets tiny and the chunker
+            // emits an explosion of near-duplicate windows. There's no semantic
+            // boundary to preserve in that case, so cap the effective overlap
+            // at size/2 to guarantee meaningful per-step progress. Normal text
+            // always finds a boundary → unchanged behavior.
+            let effOverlap = boundaryFound ? overlap : min(overlap, size / 2)
+            start = max(end - effOverlap, start + 1)
         }
         return out.filter { !$0.isEmpty }
     }
@@ -164,6 +180,48 @@ final class KnowledgeStore: @unchecked Sendable {
         let lower = text.lowercased()
         let hits = terms.filter { lower.contains($0) }.count
         return Double(hits) / Double(terms.count)
+    }
+
+    /// Maximal-Marginal-Relevance selection. Picks `k` items from `scored` that
+    /// jointly maximize relevance AND novelty:
+    ///   pick = argmax_c [ λ·relevance(c) − (1−λ)·max_{s ∈ picked} sim(c, s) ]
+    /// `λ = 0.7` favors relevance; bumping toward 1.0 reverts to plain top-k.
+    /// The win: a chunk that overlaps a previously-picked passage (very common
+    /// given our 150-char chunker overlap) gets penalized, so the final set
+    /// spans the document(s) instead of returning five near-duplicate sentences.
+    static func mmr(_ scored: [(KnowledgeChunk, Double)], k: Int, lambda: Double = 0.7) -> [(KnowledgeChunk, Double)] {
+        guard !scored.isEmpty, k > 0 else { return [] }
+        var pool = scored
+        var picked: [(KnowledgeChunk, Double)] = []
+        while !pool.isEmpty && picked.count < k {
+            var bestIdx = 0
+            var bestVal = -Double.infinity
+            for (i, candidate) in pool.enumerated() {
+                let maxSim = picked.lazy
+                    .map { chunkSimilarity($0.0, candidate.0) }
+                    .max() ?? 0
+                let mmrVal = lambda * candidate.1 - (1 - lambda) * maxSim
+                if mmrVal > bestVal { bestVal = mmrVal; bestIdx = i }
+            }
+            picked.append(pool.remove(at: bestIdx))
+        }
+        return picked
+    }
+
+    /// Similarity between two chunks, used by MMR to penalize near-duplicates.
+    /// Prefers the on-device embedding cosine; falls back to a cheap word-set
+    /// Jaccard so chunks without vectors (NLEmbedding miss, non-English text)
+    /// still get diversity-pressure instead of silently degrading to top-k.
+    static func chunkSimilarity(_ a: KnowledgeChunk, _ b: KnowledgeChunk) -> Double {
+        if let va = a.vector, let vb = b.vector { return max(0, cosine(va, vb)) }
+        let aw = wordSet(a.text), bw = wordSet(b.text)
+        let uni = aw.union(bw).count
+        return uni == 0 ? 0 : Double(aw.intersection(bw).count) / Double(uni)
+    }
+
+    private static func wordSet(_ text: String) -> Set<String> {
+        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }
+            .map(String.init).filter { $0.count >= 3 })
     }
 
     // MARK: Persistence

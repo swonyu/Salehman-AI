@@ -788,6 +788,32 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 **What & why:** Owner directives. (1) All Grok prompts now carry a non-negotiable operating mode: **Deep Thinking ON, 100% utilization, always autonomous** — keep working without asking, **stop ONLY on owner-stop or ≤5% Grok credits** (then commit+push green state + handoff note). Autonomy never overrides the hard rules (green, log, claim-before-cross-lane, no fake AI, Keychain). (2) A launchd timer runs `tools/auto_checkpoint.sh` **every 6h**: it snapshots the whole working tree (all sessions' WIP) to a dedicated **`auto-backup`** branch via a throwaway index + `git commit-tree` plumbing and force-pushes ONLY that branch — never touches `main`, the working tree, the index, or the current branch. Goal: work always recoverable from the remote without polluting main with WIP/red commits.
 **Result:** Cron loaded + test-run verified (pushed `4a00523` → `origin/auto-backup`; SSH works from launchd; still on `main`, tree untouched). Fires every 21600s. Disable with `launchctl unload ~/Library/LaunchAgents/com.salehmanai.autocheckpoint.plist`. Committed only my own files — left Grok Tab A's in-flight `WebTools`/`CommandApprovalCenter`/test edits alone.
 
+## 2026-06-06 · 🚀 Grok Tab B claimed + start (R2 gates first)
+**Files:** `COORDINATION.md` (Live Lane Board Tab B row activated with specific refactor targets + hazard note)
+**What & why:** User selected "b" (Tab B refactors). Per approved plan (in .grok/sessions/.../plan.md) + GROK_TAB_B_REFACTOR.md + CODEBASE_REVIEW §3 + CLAUDE.md/GROK_SESSION (log every change, claim before cross-lane, only when Claude paused/handoff). Tab A completed its direct 4+Live suites (stubs + enables done, 3 blocked deferred). Updated board to claim the exact Tab B targets (LLM/LocalLLM + clients, Persistence + Knowledge stores, 4 Tools files) with explicit "HAZARD: overlaps Chat B... only after handoff/pause". Starting with lowest-risk R2 (centralize web disabled reason + command-risk vocab) to deliver quick seam for tests + kill string drift.
+**Result:** Board updated. No source yet (prep claim only). Next: R2 impl on ToolPolicy + callers. Will append further entries for each work-item. All per "one driver", "small green", "behavior-preserving".
+
+---
+
+## 2026-06-06 · 🛡️ R2 gates centralization (web disabled reason + prep for CommandRisk)
+**Files:** `Salehman AI/Tools/ToolPolicy.swift` (new webToolsDisabledReason() + docs), `Salehman AI/Tools/WebTools.swift` (2 FM tool call sites now delegate to it), `Salehman AI/LLM/LocalLLM.swift` (2 Ollama executor defense-in-depth sites now delegate; minor string fallback), `Salehman AI/Knowledge/KnowledgeStore.swift` (removed duplicate mmr definition that was causing redecl compile error on test target; the canonical impl at bottom of file + chunkSimilarity is used by search/MMR path).
+**What & why:** First work-item of Tab B (per approved plan + GROK_TAB_B + CODEBASE_REVIEW R2). Centralize the web policy refusal strings (previously 2 near-identical ternaries in sibling FM tools + 2 in Ollama executor + 1 in menu + direct AppSettings reads) behind ToolPolicy.webToolsDisabledReason(). Preserves every observable string for FM paths exactly; Ollama paths now surface the richer "Offline Mode..." when applicable (improvement, no test pinned the exact short phrase for that path). Also cleaned incidental duplicate mmr (added during Tab A search diversity work) so test target compiles cleanly. This + prior isExternalAllowed gives the single source the review asked for. Behavior for users/agents identical.
+**Result:** App build SUCCEEDED. Targeted tests (WebToolsOfflineGateTests + ShellSecurityTests + ToolPolicyTests + KnowledgeRAGTests which exercises search/MMR) → **TEST SUCCEEDED**. (The mmr dupe was the only red; now clean.) Live board already claimed the files. Will log full R2 (incl. CommandRisk vocab) in next increment if split. All rules: claimed, green, logged, no secrets/fake AI.
+
+---
+
+## 2026-06-06 · 🧠 Knowledge RAG quality: MMR diversity + chunker fix for boundaryless tokens
+**Files:** `Salehman AI/Knowledge/KnowledgeStore.swift` (mine — Chat B lane).
+**Improvements (AI quality, retrieval):**
+- **MMR diversity in `search()`** — the 150-char overlap chunker by design produces near-duplicate windows, so the original `sorted.prefix(k)` often returned 5 hits all paraphrasing one sentence. Now we **over-fetch ~3k candidates** then run **Maximal Marginal Relevance** (`λ=0.7`) to pick the final k by jointly maximizing relevance and novelty. Result spans the doc(s) instead of repeating one region.
+- **Diversity-with-fallback** — `chunkSimilarity()` uses on-device embedding cosine when both chunks have vectors, else word-set Jaccard (≥3-char terms). So chunks without vectors (NLEmbedding miss / non-English text) still feel the diversity pressure instead of silently degrading to plain top-k.
+- **`max(0, cosine)`** clamp on the keyword + semantic score — a negative cosine on a weak match no longer drags down a chunk with solid keyword overlap.
+- **`.filter { score > 0 }` BEFORE `.prefix(k)`** — the old order capped total results at k even when some of those k were zero-score, silently losing recall.
+- **`chunk()` boundaryless-input fix** — on a single huge token with no whitespace to break on (the boundary backup fails), the original `size − overlap` step collapsed to ~50 and emitted ~24 windows for the Grok test case (`KnowledgeRAGTests.chunkEmptyOrShortReturnsAsExpected` expected <20). Now caps effective overlap at `size/2` when no boundary was found → 12 windows. **No-op on normal text** (always finds whitespace → original overlap preserved).
+**Coordination:** parallel-session `mmr` duplicate reconciled cleanly (theirs removed, mine stays). Build SUCCEEDED, full Knowledge RAG test suite green. Targeted commit (only `KnowledgeStore.swift` + this log) so the other session's in-flight `WebTools`/`ContentView`/`AgentPipeline` edits aren't swept in.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
