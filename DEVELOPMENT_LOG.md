@@ -834,6 +834,13 @@ Deferred (documented in CODEBASE_REVIEW.md): `brainReady` Keychain caching, anyB
 
 ---
 
+## 2026-06-06 · 🧹 Delete duplicate file — removed dead `ShortcutsFooter.swift`
+**Files:** deleted `Views/ShortcutsFooter.swift`.
+**What & why:** Owner: "delete all duplicate files." A checksum scan found **zero exact-content duplicates**. The only redundancy was two bottom-bar components: `BottomShortcutBar.swift` (wired into `RootView:62`) and `ShortcutsFooter.swift` (the other session's version, referenced ONLY by its own `struct` definition — dead/orphaned). Removed the dead one. Also confirmed `training/` (84K, tracked) vs `salehman-training/` (1.1GB, gitignored) are different kits, not duplicate files; the `GROK_*.md` prompts are distinct, not duplicates.
+**Result:** Build SUCCEEDED (proves it was unreferenced). Recoverable from git history (`d2920be`) if ever wanted.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
