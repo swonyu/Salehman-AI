@@ -18,15 +18,31 @@ enum AnthropicClient {
     /// every other cloud brain). Sync — no HTTP probe.
     nonisolated static var isConfigured: Bool { KeychainStore.has(.anthropicAPIKey) }
 
-    private static func makeRequest(stream: Bool, prompt: String, system: String?) -> URLRequest? {
+    private static func makeRequest(stream: Bool, prompt: String, system: String?,
+                                    cachePrefix: String?) -> URLRequest? {
         let key = (KeychainStore.read(.anthropicAPIKey) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let url = URL(string: endpoint) else { return nil }
 
+        // When a large STABLE prefix (e.g. the conversation history) is supplied,
+        // send it as its own content block marked `cache_control: ephemeral`.
+        // Anthropic then caches that prefix, so the next turns of a long
+        // conversation re-use it (~90% cheaper on those tokens + lower latency).
+        // Below the per-model minimum (~2048 tokens for Haiku) it's a free no-op.
+        let userContent: Any
+        if let cachePrefix, !cachePrefix.isEmpty {
+            userContent = [
+                ["type": "text", "text": cachePrefix, "cache_control": ["type": "ephemeral"]],
+                ["type": "text", "text": prompt],
+            ]
+        } else {
+            userContent = prompt
+        }
+
         var body: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
-            "messages": [["role": "user", "content": prompt]],
+            "messages": [["role": "user", "content": userContent]],
             "stream": stream,
         ]
         if let system, !system.isEmpty {
@@ -50,8 +66,8 @@ enum AnthropicClient {
     /// Non-streaming completion. Returns nil only on a network/parse failure so
     /// callers can degrade; a non-200 from the API comes back as a readable
     /// error string (so the user sees "invalid API key" rather than silence).
-    static func chat(prompt: String, system: String? = nil) async -> String? {
-        guard let req = makeRequest(stream: false, prompt: prompt, system: system) else { return nil }
+    static func chat(prompt: String, system: String? = nil, cachePrefix: String? = nil) async -> String? {
+        guard let req = makeRequest(stream: false, prompt: prompt, system: system, cachePrefix: cachePrefix) else { return nil }
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               let http = resp as? HTTPURLResponse else { return nil }
         guard http.statusCode == 200,
@@ -68,9 +84,9 @@ enum AnthropicClient {
 
     /// Streaming completion via SSE. `onUpdate` receives the cumulative text.
     /// Returns the final text, or nil if the request couldn't start.
-    static func chatStream(prompt: String, system: String? = nil,
+    static func chatStream(prompt: String, system: String? = nil, cachePrefix: String? = nil,
                            onUpdate: @escaping (String) -> Void) async -> String? {
-        guard let req = makeRequest(stream: true, prompt: prompt, system: system) else { return nil }
+        guard let req = makeRequest(stream: true, prompt: prompt, system: system, cachePrefix: cachePrefix) else { return nil }
         guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
 

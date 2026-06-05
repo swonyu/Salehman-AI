@@ -73,13 +73,21 @@ struct AgentRegistry {
                     }
                     return await LocalLLM.chat(m)
                 }
-                let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                       history: input.history, context: input.context)
                 if spec.isFinal {
-                    return await LocalLLM.generateStreaming(prompt, maxTokens: 700) { partial in
+                    // Stream the final answer. Build its prompt WITHOUT history and
+                    // pass the (stable) conversation history as `cachePrefix` so it's
+                    // cached — Anthropic as a cache_control block, Grok/OpenAI via
+                    // server-side prefix caching, folded in for the rest — instead of
+                    // re-sending the whole history inline on every turn.
+                    let body = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
+                                                         history: "", context: input.context)
+                    return await LocalLLM.generateStreaming(body, maxTokens: 700,
+                                                            cachePrefix: input.history) { partial in
                         input.onStream(partial)
                     }
                 }
+                let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
+                                                       history: input.history, context: input.context)
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
             }
         }

@@ -841,6 +841,18 @@ Deferred (documented in CODEBASE_REVIEW.md): `brainReady` Keychain caching, anyB
 
 ---
 
+## 2026-06-06 · 💾 Prompt caching — cache the conversation-history prefix (Anthropic + Grok)
+**Files:** `LLM/AnthropicClient.swift`, `LLM/LocalLLM.swift` (generate + generateStreaming), `Agents/AgentRegistry.swift`.
+**What & why:** Owner: "prompt caching" + "on grok too." Previously `AnthropicClient` only marked the ~100-token system block as cacheable — below Anthropic's ~2048-token (Haiku) floor, so it never actually cached. Now the **stable conversation history** is threaded as a dedicated `cachePrefix`:
+- **AnthropicClient** sends it as its own `cache_control: ephemeral` content block (explicit prompt caching).
+- **Grok (xAI) / OpenAI** cache prefixes **automatically server-side** — no `cache_control` param exists for them, so the win comes from putting the stable history **first**; the fold does that.
+- **Every other brain** just gets `cachePrefix` folded into the prompt (full context, no caching).
+Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed the positional param to `rawPrompt` + fold once, so all existing branches are untouched except Anthropic's). The **final streamed answer** (`AgentRegistry`) builds its prompt with `history: ""` and passes `cachePrefix: input.history` — so history is sent ONCE (cached), never duplicated. `cachePrefix == nil` → byte-identical old behaviour for every other caller (Settings test, StockSage, title-gen).
+**Honest caveats:** real savings only kick in on **long Claude/Grok conversations** (history must exceed the per-model cache floor); the rolling 8-turn `ConversationStore` window invalidates the cached prefix when it slides. Short chats stay below the floor and are already cheap.
+**Result:** Build + full suite **green**. Targeted commit (my 3 source files + log).
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

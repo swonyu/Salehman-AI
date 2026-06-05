@@ -795,7 +795,11 @@ enum LocalLLM {
     /// Within `.auto` we still try Apple Intelligence first because it's
     /// lighter; pinned modes skip the other brain entirely instead of falling
     /// back silently — silent fallback would defeat the purpose of pinning.
-    static func generate(_ prompt: String, maxTokens: Int? = nil) async -> String {
+    static func generate(_ rawPrompt: String, maxTokens: Int? = nil, cachePrefix: String? = nil) async -> String {
+        // `cachePrefix` (e.g. conversation history): cached as its own block by
+        // Anthropic, auto-cached server-side by Grok/OpenAI (we put it first);
+        // folded into the prompt for every other brain. nil → unchanged behaviour.
+        let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
         // Ensemble must be a first-class branch here, not only in AgentPipeline:
         // direct callers (the Settings health-check, StockSage briefings, title
         // generation) reach the model layer through `generate`, and without this
@@ -804,7 +808,7 @@ enum LocalLLM {
         // reported "Not working" while ensemble chat worked fine via the pipeline.
         if isFreeAutoMode { return await generateFreeAuto(prompt) }
         if isEnsembleMode { return await generateEnsemble(prompt) }
-        if claudeAllowed, let reply = await AnthropicClient.chat(prompt: prompt) { return reply }
+        if claudeAllowed, let reply = await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix) { return reply }
         if grokAllowed,
            let reply = await GrokClient.chat(prompt: prompt,
                                              model: AppSettings.grokModelCurrent) {
@@ -927,8 +931,14 @@ enum LocalLLM {
     /// returned String (the persisted reply) is the only carrier of the
     /// "unavailable" signal. The display layer (MessageBubble) is responsible
     /// for swapping the sentinel for the context-aware text.
-    static func generateStreaming(_ prompt: String, maxTokens: Int? = nil,
+    static func generateStreaming(_ rawPrompt: String, maxTokens: Int? = nil,
+                                  cachePrefix: String? = nil,
                                   onUpdate: @escaping (String) -> Void) async -> String {
+        // `cachePrefix` (e.g. the stable conversation history): Anthropic caches it
+        // as its own `cache_control` block; xAI Grok / OpenAI auto-cache a stable
+        // prefix server-side — both benefit because we put it FIRST. Every other
+        // brain just gets it folded into the prompt (full context, no caching).
+        let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
         // Ensemble can't token-stream — it fans out to N brains and joins their
         // replies into one labeled document. Deliver that combined result in a
         // single `onUpdate` so the streaming bubble shows it, then return it.
@@ -945,8 +955,8 @@ enum LocalLLM {
             return combined
         }
         if claudeAllowed {
-            if let r = await AnthropicClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
-            if let r = await AnthropicClient.chat(prompt: prompt) { return r }
+            if let r = await AnthropicClient.chatStream(prompt: rawPrompt, cachePrefix: cachePrefix, onUpdate: onUpdate) { return r }
+            if let r = await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix) { return r }
         }
         if grokAllowed {
             if let r = await GrokClient.chatStream(prompt: prompt,
