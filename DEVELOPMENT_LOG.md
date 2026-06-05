@@ -770,6 +770,14 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 🧠 Two AI-quality fixes (Agents/) — multi-turn context + serial-brain latency
+**Files:** `Agents/AgentRegistry.swift` (registerToken closure ~lines 56-77), `Agents/AgentPipeline.swift` (adaptTitles launch ~lines 155-170), `COORDINATION.md` (claim + release). Owner ask: "improve the ai more." Cross-lane (Chat A's `Agents/`) — claimed in the Live Lane Board before editing.
+- **Multi-turn coherence (MED fix from `CODEBASE_REVIEW.md` §2):** the Reasoning Strategist (tools) agent was calling `LocalLLM.chat(input.mission)`, throwing away `input.history` + `input.context`. The one agent that runs terminal commands was the only one blind to prior turns — so follow-ups like "now do the same for the other folder" lost their antecedent. Fix: prepend both as a labeled preamble (`"Prior conversation:"` / `"Phase context:"` / `"Request:"`) before passing to `chat`. The tool-calling capability is preserved (model still gets the request distinctly); the context is just restored.
+- **Serial-brain latency (perf P3 from `CODEBASE_REVIEW.md` §1):** `adaptTitles` is a cosmetic LLM call that renames pipeline-step labels. Launched as a detached utility-priority Task — *looks* non-blocking, but on Ollama / MLX Salehman / Unsloth Studio the single-instance model server processes one request at a time, so this detached call gets queued ahead of the user's first real agent call and directly delays the answer. Fix: skip the launch entirely when `brain` is `.ollamaCoder`, `.salehman`, or `.unslothStudio` — the same predicate `effectiveCap` uses for its OOM-prevention branch, so they stay in lockstep when a new serial brain is added.
+**Result:** App-target build **GREEN**. Test target locally red, but **NOT from my edits** — Grok Tab A's brand-new untracked `Salehman AITests/ShellSecurityTests.swift` calls the `@MainActor`-isolated `looksRisky` from `#expect`'s nonisolated autoclosure (real Swift 6 isolation issue in Tab A's WIP). Committed selectively (only my 3 modified files), so the committed state of `main` is clean — Tab A's WIP stays uncommitted, no red pushed to remote. Flagged the `looksRisky` blocker for Tab A in `COORDINATION.md` (likely one-line fix: mark `looksRisky` `nonisolated static` since it's a pure substring check).
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

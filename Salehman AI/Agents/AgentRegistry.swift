@@ -54,7 +54,24 @@ struct AgentRegistry {
         for spec in AgentDefinitions.pipeline {
             register(name: spec.name) { input in
                 if spec.usesTools {
-                    return await LocalLLM.chat(input.mission)
+                    // Tool-calling path: `LocalLLM.chat` deliberately takes the
+                    // bare message so the model can decide to invoke tools. But
+                    // the bare mission alone strips conversation history + phase
+                    // context — so follow-ups like "now do the same for the
+                    // other folder" lose their antecedent on the one agent that
+                    // actually runs terminal commands. Prepend both as a
+                    // preamble; the model still sees a clear "Request:" line.
+                    let h = input.history, c = input.context
+                    let m: String
+                    if h.isEmpty && c.isEmpty {
+                        m = input.mission
+                    } else {
+                        var preamble = ""
+                        if !h.isEmpty { preamble += "Prior conversation:\n\(h)\n\n" }
+                        if !c.isEmpty { preamble += "Phase context:\n\(c)\n\n" }
+                        m = preamble + "Request: \(input.mission)"
+                    }
+                    return await LocalLLM.chat(m)
                 }
                 let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
                                                        history: input.history, context: input.context)

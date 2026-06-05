@@ -154,7 +154,15 @@ enum AgentPipeline {
 
         // Adapt the visible role titles to THIS request (non-blocking — titles
         // morph in shortly after the team starts, without slowing the reply).
-        if specs.count > 1 {
+        // ⚠️ Skip on single-instance local brains: the detached task is
+        // non-blocking from the orchestrator's perspective, but on Ollama / MLX
+        // Salehman / Unsloth Studio the model server is serial, so this extra
+        // generate() ends up QUEUED ahead of the user's first real agent call
+        // and directly delays the answer. Same predicate as `effectiveCap`'s
+        // serial-brain branch so they stay in lockstep when a new serial brain
+        // is added.
+        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio)
+        if specs.count > 1 && !isSerialLocal {
             Task.detached(priority: .utility) {
                 let map = await adaptTitles(mission: mission, names: specs.map { $0.name })
                 if !map.isEmpty { await MainActor.run { MissionProgress.shared.applyAdapted(map) } }

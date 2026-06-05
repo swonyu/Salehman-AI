@@ -38,6 +38,27 @@ you start touching a file, claim it here.
 - `App/AppState.swift`, `App/Salehman_AIApp.swift`.
 - `Tools/ToolPolicy.swift` (tool registry).
 
+## Live Lane Board (at-a-glance file ownership — squads keep this current)
+**Tiny live board for scale (2 Claude + up to 2 Grok tabs = ~32 hands).** Every session **MUST** add/update its row BEFORE editing any file (even in its lane). Re-read the target file after claiming. Delete or mark "released" your row only after your changes are green + integrated (build + targeted tests SUCCEEDED).
+
+Format: one active claim row per session/tab. Use ISO-ish time or "now". For Grok tabs label explicitly (Tab A = tests per GROK_TAB_A_TESTS.md; Tab B = refactors per GROK_TAB_B_REFACTOR.md).
+
+| Session/Tab | Claimed Files (be specific) | Since | Status / Current Work Item | Released? |
+|-------------|-----------------------------|-------|----------------------------|-----------|
+| Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
+| Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
+
+**🛑 Heads-up for Grok Tab A:** while verifying, the test target fails to compile because `ShellSecurityTests.swift` (your new untracked file) calls `CommandApprovalCenter.looksRisky(...)` from `#expect`'s nonisolated autoclosure, but `looksRisky` is `@MainActor`-isolated under `-default-isolation=MainActor`. The pure-substring-check version of `looksRisky` would be safe as `nonisolated static` — that's likely the right one-line fix in `CommandApprovalCenter.swift`. Not touching it; it's your lane. (My selective commit avoids pushing this red state to `main`.)
+| **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); temp seam: `Tools/CommandApprovalCenter.swift` (nonisolated on pure looksRisky static so tests can call it; already claimed for this) | 2026-06-06 | Stubs created + 4 direct suites (KnowledgeRAG/Shell/WebToolsOffline/SelfImprove) + Live partial being enabled. Shell compile blocked on looksRisky isolation — fixing via minimal nonisolated annotation (pure, matches prior sweeps). | no |
+| Grok Tab B (refactor) | (Tab B lane: BrainAdapter registry, JSONFileStore, gates — only after Claude sessions paused or files handed in this board) | — | — | — |
+
+**Claiming discipline (from golden rules + GROK_TAB_*.md):**
+- Add your row (or append to your session's row) at the moment you decide to touch a file.
+- If you need a file outside your lane (e.g. a tiny seam in LLM/ or Tools/ for a test), claim the *exact* file here first, keep diff minimal, note the cross-lane touch.
+- Concurrent reads OK; writes to same file: coordinate here.
+- When handing off or finishing a claim: edit this table to "released" or remove row. Leave a 1-line note in the handoff section below if another squad needs to know.
+- This board + the detailed handoff log below = the only cross-session channel.
+
 ## Current state (update me!)
 - ✅ Build is **GREEN** (verified 2026-06-04 by Chat B with the canonical command).
 - ✅ Phase 0 (restored subsystems functional + transcribe perf) — committed.
@@ -54,6 +75,7 @@ you start touching a file, claim it here.
 - ✨ Chat B polish pass:
   - `LocalLLM.generate / generateStreaming / chat` now transparently fall back to Ollama qwen-coder when Apple Intelligence is off (no more "Apple Intelligence is turned off" canned reply on every send).
   - New `BrainStatus` (`LLM/BrainStatus.swift`) polls the live brain every 10s and reacts to the AI toggle; the header subtitle reads from it.
+- 🧪 **Grok Tab A started (this session):** Live Lane Board added (tiny at-a-glance claim tracker). The 8 §4 stub suites from CODEBASE_REVIEW were NOT present in tree (COORDINATION claimed they were pre-created by Chat B on 06-06); Grok Tab A will create the stubs + implement starting with the 4 directly-testable. Claimed `Salehman AITests/**` in the board above. Will run in low-collision mode alongside any Claude work.
   - DesignSystem additions: `DS.Motion.smooth/cinematic/magnetic` cubic-bezier curves, `DS.Bezel` tokens + `Bezel` container, `Eyebrow`, `SuggestionCard`.
   - Empty-state Bento, `ConfirmationChip` (replaces the saturated Auto-run pill), `MessageBubble` fade-up-blur entry.
   - `SpeechOut.Delegate` no longer holds a `weak var owner` — uses the `shared` singleton directly, clearing the Sendable warning.
