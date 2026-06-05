@@ -88,7 +88,9 @@ final class CommandApprovalCenter: ObservableObject {
     /// Commands that mutate / destroy / escalate always re-confirm even under a
     /// session bypass. (Outright-dangerous commands never reach here — they're
     /// refused first by `Shell.isBlocked`.)
-    static func looksRisky(_ command: String) -> Bool {
+    /// nonisolated: pure (only reads param + local const); safe to call from
+    /// tests (non-main) and from the @MainActor requestApproval path.
+    nonisolated static func looksRisky(_ command: String) -> Bool {
         let l = command.lowercased()
         let markers = ["rm ", "rmdir", "mv ", "trash", "delete", " > ", ">>",
                        "sudo", "chmod", "chown", "git push", "git reset --hard",

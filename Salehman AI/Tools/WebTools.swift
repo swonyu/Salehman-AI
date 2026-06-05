@@ -139,7 +139,9 @@ enum Web {
         }
     }
 
-    private static func stripHTML(_ html: String) -> String {
+    // internal (not private) so WebToolsOfflineGateTests can pin stripHTML + decodeDDG behavior exactly.
+    // No logic change; was only called internally before.
+    static func stripHTML(_ html: String) -> String {
         var s = html
         // Remove script/style blocks.
         for tag in ["script", "style", "head", "nav", "footer"] {
@@ -166,7 +168,8 @@ enum Web {
     }
 
     /// DuckDuckGo wraps links like //duckduckgo.com/l/?uddg=ENCODED
-    private static func decodeDDG(_ link: String) -> String {
+    // internal (not private) so WebToolsOfflineGateTests can pin decodeDDG exactly.
+    static func decodeDDG(_ link: String) -> String {
         guard let range = link.range(of: "uddg=") else {
             return link.hasPrefix("//") ? "https:" + link : link
         }

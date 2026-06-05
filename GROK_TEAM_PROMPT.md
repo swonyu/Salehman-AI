@@ -20,6 +20,13 @@ Repo root: `/Users/saleh/Downloads/SalehmanAI_Complete_Everything_Today/Salehman
 
 Keep it bounded. Break it into small work-items; ship each one green before the next.
 
+## ⚙️ Operating mode (owner directive — non-negotiable)
+- **Deep Thinking: ON** — use your deepest extended-reasoning mode on EVERY task; plan and self-verify before acting. (If it's a toggle in your client, the owner has turned it on.)
+- **100% utilization** — run all 15 subagents at full parallelism and use full capability; be exhaustive, not minimal. Compute/token cost is not a constraint.
+- **Always autonomous** — decide → implement → verify → commit → next work-item, continuously, WITHOUT pausing to ask "should I continue?" Just continue.
+- **Stop ONLY when:** (a) the owner tells you to stop, or (b) your remaining Grok credits hit **≤ 5%** — then immediately STOP, commit + push your current GREEN state, leave a handoff note in `COORDINATION.md`, and report what's done + what's left. Never start work you can't finish before credits run out.
+- Autonomy NEVER overrides the hard rules below (leave it green, log every change, claim files before cross-lane edits, no fake AI, secrets only in Keychain) — those are what let you move fast safely.
+
 ## 📥 Before anything — read & obey (in order)
 1. `GROK_SESSION_PROMPT.md` — your operating contract (rules, build commands, discipline). It overrides your defaults.
 2. `CLAUDE.md`, `PROJECT_CONTEXT.md`, `ARCHITECTURE.md` — project + standing rules.
