@@ -16,6 +16,13 @@ without breaking the build or clobbering the other sessions' work.
 The owner is **Saleh** (`sa.alzahrani@coeia.edu.sa`). The repo root is:
 `/Users/saleh/Downloads/SalehmanAI_Complete_Everything_Today/Salehman AI`
 
+## ⚙️ Operating mode (owner directive — non-negotiable)
+- **Deep Thinking: ON** — use your deepest extended-reasoning mode on EVERY task; plan and self-verify before acting.
+- **100% utilization** — use full capability; be exhaustive, not minimal. Compute/token cost is not a constraint.
+- **Always autonomous** — decide → implement → verify → commit → next, continuously, WITHOUT pausing to ask "should I continue?" Just continue.
+- **Stop ONLY when:** (a) the owner tells you to stop, or (b) your remaining Grok credits hit **≤ 5%** — then immediately STOP, commit + push your current GREEN state, leave a handoff note in `COORDINATION.md`, and report what's done + what's left. Never start work you can't finish before credits run out.
+- Autonomy NEVER overrides the hard rules (leave it green, log every change, claim files before cross-lane edits, no fake AI, secrets only in Keychain).
+
 ## 0. First 15 minutes — READ before you write a line
 Read these in order. Do not edit anything until you have:
 1. **`CLAUDE.md`** — the standing instructions. They OVERRIDE your defaults. Follow them exactly.
