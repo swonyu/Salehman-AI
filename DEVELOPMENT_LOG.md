@@ -756,6 +756,13 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 🧑‍🤝‍🧑 GROK_TEAM_PROMPT.md — orchestrator prompt for a 15-agent Grok squad
+**Files:** `GROK_TEAM_PROMPT.md` (new); `GROK_SESSION_PROMPT.md` (identity → "Grok (Build 0.2)"). Doc-only.
+**What & why:** Owner is running TWO Grok (Build 0.2) tabs, each as an orchestrator with 15 roled subagents. Wrote a single reusable orchestrator prompt: a 15-role roster (Lead, Architect, Cartographer, 3 Implementers, Test, Security/Privacy, Performance, Concurrency, Accessibility, Adversarial Critic, Verifier, Doc Scribe, Merge Coordinator), a per-work-item phase loop (Plan→Map→Design→Implement→parallel Review→Verify→Document→Integrate), the project hard rules, and a **"coordination at scale" section** (≈32 hands on one tree: one-driver-per-file, claim-before-edit, stop-on-foreign-red-build, serialize commits). `{{MISSION}}`/`{{LANE}}` slots + two suggested disjoint missions (Tab A = the §4 test suites [low-collision]; Tab B = the §3 refactors [overlaps Claude lanes — pause/handoff]).
+**Result:** Doc only. Pairs with `GROK_SESSION_PROMPT.md` (single-agent onboarding). Honest caveat baked in: the refactor squad overlaps the Claude brain/tools lanes, so it should run when those are paused or via explicit file handoff.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
