@@ -46,6 +46,14 @@ enum ToolPolicy {
         tools.append(SelfImproveTool())          // edits THIS project's source only
         tools.append(StockAnalysisTool())        // offline Saudi/TASI heuristic analysis
         tools.append(TranscribeMediaTool())      // on-device audio/video transcription
+        tools.append(StockSageBriefingTool())    // on-device market briefing over tracked symbols
+        tools.append(CaptureNoteTool())          // Scratchpad: capture a note
+        tools.append(AddTaskTool())              // Scratchpad: add a task
+        tools.append(CompleteTaskTool())         // Scratchpad: complete a task
+        tools.append(ListScratchpadTool())       // Scratchpad: list notes + open tasks
+        tools.append(ListDocumentsTool())        // Knowledge vault: list what's there ("what's in my Knowledge?")
+        tools.append(SearchDocumentsTool())      // Knowledge vault: retrieve from the user's private documents
+        tools.append(GetDocumentTool())          // Knowledge vault: fetch one whole document by name (summary / translate / quote)
 
         // Image understanding — only when the vision capability is enabled.
         if isVisionEnabled {
@@ -84,6 +92,14 @@ enum ToolPolicy {
         lines.append("• self_improve — build THIS app's Xcode project and try to auto-fix compiler errors.")
         lines.append("• analyze_stock — educational Saudi/TASI stock analysis (heuristic, NOT financial advice).")
         lines.append("• transcribe_media — transcribe a local audio/video file on-device.")
+        lines.append("• market_briefing — on-device briefing + strong-signal scan over tracked symbols (sample data until a live feed is connected).")
+        lines.append("• capture_note — save a free-text note to the user's Scratchpad (Notes tab).")
+        lines.append("• add_task — add a to-do to the user's Scratchpad (Tasks tab).")
+        lines.append("• complete_task — mark an open task done by matching words from its title.")
+        lines.append("• list_scratchpad — list current notes and open tasks (call this before summarizing or organizing them).")
+        lines.append("• list_documents — list everything in the user's Knowledge vault (use when you don't know what's there).")
+        lines.append("• search_documents — retrieve relevant passages from the user's private Knowledge vault (their added docs/notes); cite the source.")
+        lines.append("• get_document — fetch one whole document from the Knowledge vault by name (use after search_documents when you need the entire doc to summarize, translate, or quote).")
         if isVisionEnabled {
             lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
         }
@@ -117,6 +133,12 @@ enum ToolPolicy {
     // contexts (which would drag the main-actor Equatable conformance across
     // the actor boundary — a Swift-6 error).
     nonisolated static var isExternalAllowed: Bool {
+        // Offline Mode is the STRONGER constraint: it short-circuits even if
+        // the user has `webAccess` on (or a test override pins `.allowExternalTools`).
+        // Net effect: with offline ON, the model never sees `web_search` /
+        // `fetch_url` in its tool list and the instructions menu announces them
+        // as disabled — no chance of accidentally going to the network.
+        if AppSettings.isOfflineOnly { return false }
         switch current {
         case .allowExternalTools: return true
         case .localOnly:          return false

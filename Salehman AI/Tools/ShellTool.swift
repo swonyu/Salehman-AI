@@ -10,13 +10,34 @@ import FoundationModels
 /// with a timeout so a hung process can't freeze the app.
 enum Shell {
 
-    /// Patterns that are refused outright. Conservative on purpose.
-    private static let blockedPatterns: [String] = [
-        "rm -rf /", "rm -rf /*", "rm -rf ~", "rm -rf ~/", "rm -fr /",
-        ":(){", "fork()", "mkfs", "diskutil eraseDisk", "diskutil erasevolume",
-        "dd if=", "/dev/disk", "/dev/sd", "> /dev/",
-        "shutdown", "reboot", "halt", "killall -9",
-        "sudo ", "chmod -R 000", "chown -R", "> /etc/", "csrutil disable"
+    /// Dangerous *operation / path* fragments — refused if they appear ANYWHERE
+    /// in the command (so a chained `foo; rm -rf /` is still caught). All lower-
+    /// case; `isBlocked` lowercases the input before comparing.
+    ///
+    /// NOTE on `/dev/disk` etc.: kept as a blunt substring on purpose. For a
+    /// destructive-command gate, over-blocking a rare raw-disk *read* is the
+    /// right trade vs. letting a disk-*wipe* (`dd of=/dev/diskN`, `> /dev/diskN`)
+    /// slip through. Safety beats the theoretical false-positive.
+    private static let blockedSubstrings: [String] = [
+        "rm -rf /", "rm -rf /*", "rm -rf ~", "rm -rf ~/", "rm -fr /", "rm -rf .", "rm -rf *",
+        ":(){", "fork()",
+        "mkfs", "diskutil erasedisk", "diskutil erasevolume", "diskutil reformat",
+        "diskutil partitiondisk", "dd if=", "of=/dev/",
+        "/dev/disk", "/dev/rdisk", "/dev/sd", "> /dev/", ">/dev/",
+        "> /etc/", ">/etc/", "csrutil disable", "spctl --master-disable", "nvram ",
+        "chmod -r 000", "chmod 000", "chmod -r ", "chown -r", "chgrp -r",
+    ]
+
+    /// Destructive command *names*. Matched as the leading token of EACH
+    /// `;`/`&&`/`||`/`|`/newline/backtick-separated segment, so neither chaining
+    /// (`x && sudo rm`) nor a path prefix (`/sbin/reboot`) can sneak one past a
+    /// substring check. `eval`/`exec`/`source` are blocked because they enable
+    /// the variable-indirection bypass (`X="rm -rf /"; eval $X`).
+    private static let blockedCommands: Set<String> = [
+        "shutdown", "reboot", "halt", "poweroff",
+        "sudo", "su", "doas",
+        "killall", "mkfs", "fdisk", "newfs_apfs", "newfs_hfs", "diskutil",
+        "eval", "exec", "source", "launchctl", "chgrp",
     ]
 
     struct Result {
@@ -25,10 +46,22 @@ enum Shell {
         let timedOut: Bool
     }
 
+    /// Returns the matched pattern/command if `command` is refused, else `nil`.
+    /// Two layers: dangerous substrings (operations/paths, anywhere) + dangerous
+    /// command names (leading token of each chained segment).
     static func isBlocked(_ command: String) -> String? {
         let lower = command.lowercased()
-        for pattern in blockedPatterns where lower.contains(pattern.lowercased()) {
+        for pattern in blockedSubstrings where lower.contains(pattern) {
             return pattern
+        }
+        // Token-aware pass: inspect the leading command of every chained segment.
+        let segments = lower.components(separatedBy: CharacterSet(charactersIn: ";|&\n\r`"))
+        for raw in segments {
+            let segment = raw.trimmingCharacters(in: .whitespaces)
+            guard let firstToken = segment.split(separator: " ").first else { continue }
+            // Strip any path prefix: `/sbin/reboot` → `reboot`.
+            let name = firstToken.split(separator: "/").last.map(String.init) ?? String(firstToken)
+            if blockedCommands.contains(name) { return name }
         }
         return nil
     }
@@ -97,6 +130,27 @@ enum Shell {
                       output: output,
                       timedOut: timedOut)
     }
+
+    /// Approval-gated async execution, shared by the Foundation Models tool AND
+    /// the Ollama tool-calling loop so BOTH brains run commands through the exact
+    /// same safety path: refuse-if-blocked → ask the user (CommandApprovalCenter)
+    /// → run → formatted report. Returns a model-readable string in every case.
+    nonisolated static func runApproved(_ command: String) async -> String {
+        let cmd = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty else { return "No command provided." }
+        if let blocked = isBlocked(cmd) {
+            return "REFUSED: this command was blocked for safety (matched \"\(blocked)\"). It was NOT run — tell the user."
+        }
+        let approved = await CommandApprovalCenter.shared.requestApproval(cmd)
+        guard approved else {
+            return "The user CANCELLED this command. It was NOT run. Acknowledge that and ask what they'd like instead."
+        }
+        let result = run(cmd)
+        var report = "$ \(cmd)\n"
+        if result.timedOut { report += "(timed out after 60s; process terminated)\n" }
+        report += "exit code: \(result.exitCode)\n---\n\(result.output)"
+        return report
+    }
 }
 
 /// Thread-safe accumulator for pipe output read on a background readability handler.
@@ -144,24 +198,8 @@ struct RunTerminalCommandTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let command = arguments.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty else { return "No command provided." }
-
-        if let blocked = Shell.isBlocked(command) {
-            return "REFUSED: this command was blocked for safety (matched \"\(blocked)\"). Tell the user it was not run."
-        }
-
-        // Ask the user for approval (unless they turned confirmation off).
-        let approved = await CommandApprovalCenter.shared.requestApproval(command)
-        guard approved else {
-            return "The user CANCELLED this command. It was NOT run. Acknowledge that and ask what they'd like to do instead."
-        }
-
-        let result = Shell.run(command)
-        var report = "$ \(command)\n"
-        if result.timedOut { report += "(timed out after 60s; process terminated)\n" }
-        report += "exit code: \(result.exitCode)\n---\n\(result.output)"
-        return report
+        // Shared gated executor — identical safety path to the Ollama tool loop.
+        await Shell.runApproved(arguments.command)
     }
 }
 #endif

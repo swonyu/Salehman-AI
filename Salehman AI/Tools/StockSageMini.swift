@@ -58,7 +58,7 @@ enum StockSageMini {
         oil-30 stress ≈ \(String(format: "%.0f", oilStress))%.
 
         6. SYNTHESIS
-        Verdict: \(verdict). Confidence \(conf)%.
+        Verdict: \(verdict). Signal strength \(conf)%.
 
         ⚠️ \(disclaimer)
         """

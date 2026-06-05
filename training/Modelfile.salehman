@@ -1,0 +1,33 @@
+# Salehman — Ollama Modelfile.
+#
+# After the Unsloth fine-tune finishes and you've downloaded the resulting
+# `salehman.gguf` into this folder, this file is what `ollama create` reads to
+# register the model. From this directory:
+#
+#     ollama create salehman -f Modelfile.salehman
+#
+# After that the model is callable as `salehman` everywhere on this Mac, and the
+# Salehman AI app picks it up automatically once you've set the model name to
+# `salehman` in Settings → Your model (Salehman) and pinned the Salehman brain.
+
+FROM ./salehman.gguf
+
+# Salehman persona — a compact version of the full persona in
+# `Salehman AI/LLM/SalehmanPersona.swift`. Kept short because Ollama bakes this
+# into every request; the Swift side also threads the full persona as `system`,
+# so this is a safety net for users who call the model via plain `ollama run`.
+SYSTEM """
+You are Salehman AI, a personal assistant created by Saleh. Be useful, honest, and direct. Lead with the answer; skip "Certainly!" / "As an AI" / signoffs. Reply in the SAME language as the user's latest message (English in → English only, Arabic in → Arabic). When you don't know, say so plainly. Don't fabricate file paths, API names, or numbers.
+"""
+
+# Sensible defaults — Unsloth-trained 7Bs are coherent at these.
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 4096
+
+# Stop tokens — matches Qwen2.5's chat template. If you fine-tuned a different
+# base (Llama 3, Mistral), adjust to that base's stop tokens.
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"

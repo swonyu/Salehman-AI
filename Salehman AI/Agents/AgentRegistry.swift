@@ -18,9 +18,11 @@ struct AgentRegistry {
 
     typealias AgentHandler = @Sendable (_ input: AgentInput) async -> String
 
-    // Registration happens once, before any concurrent reads — safe to mark unsafe.
+    // `handlers` is mutated ONLY inside `registerToken`'s initializer (below),
+    // which Swift runs exactly once and thread-safely. After that one-time
+    // population the dict is read-only, so the concurrent task-group lookups are
+    // safe — that's what makes `nonisolated(unsafe)` honest here.
     nonisolated(unsafe) private static var handlers: [String: AgentHandler] = [:]
-    nonisolated(unsafe) private static var didRegister = false
 
     // All accessors are `nonisolated` so the pipeline's concurrent task group
     // can look up handlers without hopping to the main actor. The dictionary
@@ -40,9 +42,15 @@ struct AgentRegistry {
 
     /// Register a handler for every agent in the team. Each handler captures its
     /// spec and picks the right LocalLLM call (tools / streamed final / terse note).
-    nonisolated static func registerDefaultsOnce() {
-        guard !didRegister else { return }
-        didRegister = true
+    ///
+    /// Thread-safe once-init: the old `guard !didRegister { didRegister = true }`
+    /// was a TOCTOU race — two concurrent `run()` calls could both pass the guard
+    /// and register into `handlers` simultaneously. A lazy `static let`
+    /// initializer is run EXACTLY ONCE by the Swift runtime (dispatch_once under
+    /// the hood), so triggering it from here is race-free.
+    nonisolated static func registerDefaultsOnce() { _ = registerToken }
+
+    private nonisolated static let registerToken: Void = {
         for spec in AgentDefinitions.pipeline {
             register(name: spec.name) { input in
                 if spec.usesTools {
@@ -58,5 +66,6 @@ struct AgentRegistry {
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
             }
         }
-    }
+        return ()
+    }()
 }

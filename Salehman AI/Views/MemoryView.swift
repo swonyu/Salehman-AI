@@ -1,16 +1,27 @@
 import SwiftUI
+import AppKit
 
 /// "What I know about you" — lists the durable facts Salehman AI has saved to
-/// long-term memory, with per-fact delete and a clear-all. MemoryStore stays a
-/// plain (non-ObservableObject) store, so we load into local state on appear.
+/// long-term memory, with search, per-fact copy/delete, and a clear-all.
+/// MemoryStore stays a plain (non-ObservableObject) store, so we load into local
+/// state on appear.
 struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: [String] = []
     @State private var confirmClear = false
+    @State private var query = ""
+
+    /// Facts filtered by the search box (case-insensitive substring).
+    private var filtered: [String] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? facts : facts.filter { $0.lowercased().contains(q) }
+    }
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(red: 0.06, green: 0.07, blue: 0.12), Color.black],
+            // Route through DS canvas tokens so this sheet inherits any palette
+            // swap (was a hardcoded cold-indigo that bypassed the token layer).
+            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
@@ -19,15 +30,28 @@ struct MemoryView: View {
                 if facts.isEmpty {
                     emptyState
                 } else {
-                    ScrollView {
-                        VStack(spacing: 1) {
-                            ForEach(facts, id: \.self) { fact in
-                                row(fact)
-                            }
+                    if facts.count > 3 { searchField }
+
+                    let shown = filtered
+                    if shown.isEmpty {
+                        VStack(spacing: 6) {
+                            Spacer()
+                            Text("No memories match “\(query)”.")
+                                .font(.callout).foregroundStyle(.secondary)
+                            Spacer()
                         }
-                        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 1) {
+                                ForEach(shown, id: \.self) { fact in
+                                    row(fact)
+                                }
+                            }
+                            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                        }
                     }
 
                     Button(role: .destructive) { confirmClear = true } label: {
@@ -64,15 +88,24 @@ struct MemoryView: View {
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityLabel("Close")
         }
     }
 
     private var emptyState: some View {
         VStack(spacing: DS.Space.md) {
             Spacer()
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 40)).foregroundStyle(.secondary)
+            // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
+            // pattern so an empty sheet still feels lived-in, not abandoned.
+            ZStack {
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.14))
+                    .frame(width: 84, height: 84)
+                    .blur(radius: 16)
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 40))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
+            }
             Text("Nothing remembered yet")
                 .font(.headline).foregroundStyle(.white)
             Text("As you chat, Salehman AI saves durable facts about you here — like your name, preferences, and projects.")
@@ -83,19 +116,50 @@ struct MemoryView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search memories…", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 14))
+                .accessibilityLabel("Search memories")
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
+        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
     private func row(_ fact: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkle").foregroundStyle(DS.Palette.accent).frame(width: 18)
             Text(fact).font(.system(size: 14)).foregroundStyle(.white)
                 .textSelection(.enabled)
             Spacer(minLength: 8)
+            Button { copy(fact) } label: {
+                Image(systemName: "doc.on.doc").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Copy")
+            .accessibilityLabel("Copy memory")
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help("Forget this")
+            .accessibilityLabel("Forget this memory")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
+    }
+
+    private func copy(_ s: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
     }
 
     private func reload() { facts = MemoryStore.shared.allFacts() }

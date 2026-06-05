@@ -37,19 +37,38 @@ struct OpenAICompatibleClient: Sendable {
 
     /// Keychain slot where this provider's API key lives. Each provider gets
     /// its own account name so users can stack multiple cloud brains without
-    /// the keys colliding.
-    let keychainAccount: KeychainStore.Account
+    /// the keys colliding. **Optional** so the same client can drive
+    /// unauthenticated local OpenAI-compatible servers (Unsloth Studio,
+    /// `mlx_lm.server`, llama.cpp, LM Studio, …) where no Bearer header is
+    /// needed; in that case set `requiresKey: false`.
+    let keychainAccount: KeychainStore.Account?
 
     /// Where the user obtains a key — surfaced in the Settings UI's
     /// helper text ("Get one at console.groq.com / mistral.ai / …").
     let consoleURL: String
 
+    /// When `false`, the endpoint is unauthenticated (e.g., a local Unsloth
+    /// Studio server on `localhost:8000`). The `Authorization` header is
+    /// omitted, no Keychain read is attempted, and `hasKey()` returns true so
+    /// reachability gating in `LocalLLM` depends only on whether the URL is set.
+    /// Defaults to `true` so every existing cloud caller is unaffected.
+    /// `var` (not `let`) so it stays in the synthesized memberwise initializer —
+    /// a `let` with a default is excluded, which made `requiresKey: false`
+    /// (the documented usage above) fail to compile for local servers.
+    var requiresKey: Bool = true
+
     // MARK: - Reachability
 
-    /// True iff the user has stored a key for this provider. Synchronous —
-    /// no HTTP probe so `BrainStatus` polling stays sub-millisecond.
+    /// True iff this brain is considered "configured." For authenticated
+    /// providers, that means a key is in Keychain. For unauthenticated local
+    /// servers (`requiresKey == false`), we always return true — the URL is
+    /// what gates reachability, and the caller validates it before constructing
+    /// the client. Synchronous — no HTTP probe so `BrainStatus` polling stays
+    /// sub-millisecond.
     func hasKey() -> Bool {
-        KeychainStore.has(keychainAccount)
+        if !requiresKey { return true }
+        guard let account = keychainAccount else { return false }
+        return KeychainStore.has(account)
     }
 
     // MARK: - Chat (non-streaming)
@@ -59,7 +78,11 @@ struct OpenAICompatibleClient: Sendable {
     /// the response is empty. Same contract as `GrokClient.chat` /
     /// `OllamaClient.chat` so `LocalLLM` can treat all cloud brains uniformly.
     func chat(prompt: String, system: String? = nil, model: String? = nil) async -> String? {
-        guard let key = KeychainStore.read(keychainAccount) else { return nil }
+        var bearer: String? = nil
+        if requiresKey {
+            guard let account = keychainAccount, let key = KeychainStore.read(account) else { return nil }
+            bearer = key
+        }
         guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
 
         let body = Self.makeBody(model: model ?? defaultModel,
@@ -69,13 +92,18 @@ struct OpenAICompatibleClient: Sendable {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         req.httpBody = payload
         req.timeoutInterval = 120
 
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse).map({ $0.statusCode == 200 }) == true,
-              let text = Self.extractContent(data) else { return nil }
+        // `nil` only when we couldn't reach the server. For HTTP responses we
+        // always return a non-nil String — either the assistant's reply or a
+        // `[<Provider> error STATUS: MSG]` diagnostic, so the user sees the
+        // real failure mode instead of the generic offMessage sentinel.
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status != 200 { return errorText(data: data, status: status) }
+        guard let text = Self.extractContent(data) else { return nil }
         return text.isEmpty ? nil : text
     }
 
@@ -89,7 +117,11 @@ struct OpenAICompatibleClient: Sendable {
                     system: String? = nil,
                     model: String? = nil,
                     onUpdate: @escaping (String) -> Void) async -> String? {
-        guard let key = KeychainStore.read(keychainAccount) else { return nil }
+        var bearer: String? = nil
+        if requiresKey {
+            guard let account = keychainAccount, let key = KeychainStore.read(account) else { return nil }
+            bearer = key
+        }
         guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
 
         let body = Self.makeBody(model: model ?? defaultModel,
@@ -100,12 +132,18 @@ struct OpenAICompatibleClient: Sendable {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         req.httpBody = payload
         req.timeoutInterval = 600
 
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
-              (resp as? HTTPURLResponse).map({ $0.statusCode == 200 }) == true else { return nil }
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req) else { return nil }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status != 200 {
+            // Non-200 means the server sent an error JSON, not an SSE stream.
+            var raw = Data()
+            do { for try await byte in bytes { raw.append(byte) } } catch {}
+            return errorText(data: raw, status: status)
+        }
 
         var accumulated = ""
         do {
@@ -132,18 +170,46 @@ struct OpenAICompatibleClient: Sendable {
     /// Tap the live endpoint with a one-token prompt. Returns nil on success
     /// or a human-readable reason on failure (surfaced in Settings).
     func testConnection() async -> String? {
-        guard KeychainStore.read(keychainAccount) != nil else {
-            return "No \(displayName) API key saved. Paste one and tap Save."
+        if requiresKey {
+            guard let account = keychainAccount, KeychainStore.read(account) != nil else {
+                return "No \(displayName) API key saved. Paste one and tap Save."
+            }
         }
         if await chat(prompt: "ping", system: nil, model: defaultModel) == nil {
-            return "Couldn't reach \(displayName). Check the key + your network."
+            return requiresKey
+                ? "Couldn't reach \(displayName). Check the key + your network."
+                : "Couldn't reach \(displayName) at \(baseURL). Is the server running?"
         }
         return nil
     }
 
+    // MARK: - Error formatting
+
+    /// Pull a human-readable diagnostic out of a non-200 response body. All
+    /// OpenAI-compatible providers we ship to (Groq, Mistral, Cerebras,
+    /// OpenAI itself) follow the same error shape: `{"error":{"message":"...","type":"..."}}`.
+    /// We include `displayName` so the chat reply tells you *which* cloud
+    /// brain failed — important when multiple are configured.
+    // Visibility note: relaxed from `private` to internal so the test
+    // bundle can exercise the decoder directly. No production code path
+    // calls this from outside `OpenAICompatibleClient` — it stays
+    // effectively private by convention.
+    func errorText(data: Data, status: Int) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let err = json["error"] as? [String: Any], let msg = err["message"] as? String {
+                return "[\(displayName) error \(status): \(msg)]"
+            }
+            if let msg = json["error"] as? String {
+                return "[\(displayName) error \(status): \(msg)]"
+            }
+        }
+        return "[\(displayName) request failed (HTTP \(status)). Check the key + your network.]"
+    }
+
     // MARK: - Internals (shared decode logic)
 
-    private static func makeBody(model: String,
+    // Internal for test access (see `errorText` visibility note).
+    static func makeBody(model: String,
                                  prompt: String,
                                  system: String?,
                                  stream: Bool) -> [String: Any] {
@@ -159,7 +225,10 @@ struct OpenAICompatibleClient: Sendable {
         ]
     }
 
-    private static func extractContent(_ data: Data) -> String? {
+    // Internal for test access (see `errorText` visibility note). Shared by
+    // Groq / Mistral / Cerebras / OpenAI, so one regression here breaks four
+    // providers — worth direct coverage.
+    static func extractContent(_ data: Data) -> String? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let first = choices.first,
@@ -168,7 +237,9 @@ struct OpenAICompatibleClient: Sendable {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func decodeDelta(_ jsonString: String) -> String? {
+    /// Returns the delta content **verbatim** — must NOT trim, or words get
+    /// joined across streamed chunk boundaries. Internal for test access.
+    static func decodeDelta(_ jsonString: String) -> String? {
         guard let data = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],

@@ -3,6 +3,15 @@ import Foundation
 import Combine
 #endif
 
+/// Shared byte-count constants. Centralizes the GiB conversion that was inlined
+/// in three places (LocalLLM.swift, MemoryManager.swift, AppSettings.swift) —
+/// the magic 1_073_741_824 literal isn't self-documenting, and three copies
+/// drift the day someone "tunes" one without grepping for the other two.
+enum ByteConstants {
+    /// Bytes per gibibyte (2^30). Use to convert `ProcessInfo.physicalMemory` to GB.
+    static let bytesPerGB = 1_073_741_824
+}
+
 /// System-wide, real-time RAM + thermal awareness for the intelligence layer.
 ///
 /// Subscribes once at startup to the kernel-pushed signals that matter on
@@ -134,7 +143,7 @@ actor MemoryManager {
     nonisolated(unsafe) private var thermalObserver: NSObjectProtocol?
 
     private init() {
-        let gb = Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded())
+        let gb = Int((Double(ProcessInfo.processInfo.physicalMemory) / Double(ByteConstants.bytesPerGB)).rounded())
         self.physicalGB = max(gb, 1)
         self.thermal    = Thermal(ProcessInfo.processInfo.thermalState)
 

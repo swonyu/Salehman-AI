@@ -262,9 +262,16 @@ enum SelfImprove {
     /// project root. Prevents a hallucinated path from rewriting unrelated
     /// files on disk.
     static func isInsideProject(_ file: String) -> Bool {
-        let resolved = URL(fileURLWithPath: file).standardizedFileURL.path
-        let root = projectRootURL.standardizedFileURL.path
-        return resolved.hasPrefix(root + "/")
+        // `standardizedFileURL` only normalizes path *syntax* (`./`, `../`) — it
+        // does NOT resolve symlinks. A symlink planted inside the project that
+        // points outside (e.g. `project/evil -> /etc/passwd`) would otherwise
+        // pass this prefix check and let a write escape the project root.
+        // `resolvingSymlinksInPath()` canonicalizes THROUGH symlinks (on both
+        // sides, so /tmp→/private/tmp-style aliases compare consistently), so
+        // the check is against the real on-disk target.
+        let resolved = URL(fileURLWithPath: file).resolvingSymlinksInPath().standardizedFileURL.path
+        let root = projectRootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolved == root || resolved.hasPrefix(root + "/")
     }
 
     private static let backupTimestamp: String = {
@@ -282,6 +289,11 @@ enum SelfImprove {
             .appendingPathComponent(backupTimestamp)
         try? FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
         let dest = backupDir.appendingPathComponent(URL(fileURLWithPath: file).lastPathComponent)
+        // Never overwrite an existing backup: the FIRST copy is the true pre-edit
+        // original. Patching the same file twice in one run previously clobbered
+        // it (same timestamped folder + same filename), destroying the recovery
+        // copy this function exists to preserve.
+        guard !FileManager.default.fileExists(atPath: dest.path) else { return }
         try? contents.write(to: dest, atomically: true, encoding: .utf8)
     }
 

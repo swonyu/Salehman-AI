@@ -69,6 +69,9 @@ final class BrainStatus: ObservableObject {
         switch brain {
         case .appleIntelligence: return .green
         case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
+        case .salehman:          return DS.Palette.accent                          // the brand's own model
+        case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
+
         case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
         case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
         case .gemini:            return Color(red: 0.30, green: 0.66, blue: 0.99)  // Google blue
@@ -77,6 +80,9 @@ final class BrainStatus: ObservableObject {
         case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
         case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
         case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
+        case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
+        case .ensemble:          return Color(red: 0.55, green: 0.85, blue: 0.40)  // multi-brain lime
+        case .freeAuto:          return Color(red: 0.20, green: 0.85, blue: 0.65)  // free-auto mint (unlimited)
         case .none:              return .orange
         }
     }

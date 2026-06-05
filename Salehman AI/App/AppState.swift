@@ -8,8 +8,8 @@ import Combine
 final class AppState: ObservableObject {
     static let shared = AppState()
 
-    /// Which top-level tab is showing (Chat / Agents / Markets).
-    @Published var selectedTab: AppTab = .chat
+    /// Which top-level tab is showing. Launches on Today (the home dashboard).
+    @Published var selectedTab: AppTab = .today
 
     @Published var newChatRequested = false
     @Published var stopRequested = false
@@ -17,28 +17,43 @@ final class AppState: ObservableObject {
     @Published var showLiveRequested = false
     @Published var toggleSearchRequested = false
     @Published var focusInputRequested = false
+    /// ⌘K quick-command palette (presented over the root window).
+    @Published var showCommandPaletteRequested = false
+    /// ⌘/ keyboard-shortcuts cheat sheet.
+    @Published var showShortcutsRequested = false
+    /// "About Salehman AI" sheet — identity, capabilities, privacy stance.
+    @Published var showAboutRequested = false
+    /// ⌘J hands-free Voice Mode (talk↔listen) — presented over the root window.
+    @Published var showVoiceModeRequested = false
 
     private init() {}
 }
 
-/// The three top-level surfaces.
+/// The top-level surfaces.
 enum AppTab: String, CaseIterable, Identifiable {
-    case chat, agents, markets
+    // Order defines the tab-bar layout AND ⌘-number mapping: Today (Home) first.
+    case today, chat, agents, markets, scratchpad, knowledge
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .chat:    return "Chat"
-        case .agents:  return "Agents"
-        case .markets: return "Markets"
+        case .today:      return "Today"
+        case .chat:       return "Chat"
+        case .agents:     return "Agents"
+        case .markets:    return "Markets"
+        case .scratchpad: return "Notes"
+        case .knowledge:  return "Knowledge"
         }
     }
 
     var icon: String {
         switch self {
-        case .chat:    return "bubble.left.and.bubble.right.fill"
-        case .agents:  return "person.3.fill"
-        case .markets: return "chart.line.uptrend.xyaxis"
+        case .today:      return "sun.max.fill"
+        case .chat:       return "bubble.left.and.bubble.right.fill"
+        case .agents:     return "person.3.fill"
+        case .markets:    return "chart.line.uptrend.xyaxis"
+        case .scratchpad: return "checklist"
+        case .knowledge:  return "books.vertical.fill"
         }
     }
 }

@@ -19,22 +19,51 @@ struct GrokModelIDTests {
         #expect(GrokClient.defaultModel == "grok-4")
     }
 
-    @Test func heavyModelMatchesXAICatalog() {
-        #expect(GrokClient.heavyModel == "grok-4-heavy")
+    @Test func grok3ModelsAreAvailable() {
+        // grok-3 and grok-3-mini are the accessible alternatives to grok-4
+        // (cheaper, smaller). Pinning them so a rename in the picker doesn't
+        // silently drop the user back to grok-4 with no warning.
+        #expect(GrokClient.grok3Model == "grok-3")
+        #expect(GrokClient.grok3MiniModel == "grok-3-mini")
     }
 
-    @Test func allModelsContainsTheDefaults() {
+    @Test func allModelsContainsTheAccessibleCatalog() {
         // `allModels` drives both the Settings picker and
         // `AppSettings.grokModelCurrent`'s validation. If a value disappears
         // from this list, stored preferences silently fall back to default.
         #expect(GrokClient.allModels.contains("grok-4"))
-        #expect(GrokClient.allModels.contains("grok-4-heavy"))
-        #expect(GrokClient.allModels.count == 2)
+        #expect(GrokClient.allModels.contains("grok-3"))
+        #expect(GrokClient.allModels.contains("grok-3-mini"))
+        // `grok-build-0.1` is confirmed available to this team (seen in the
+        // user's xAI console). Included as a probe — see GrokClient.buildModel.
+        #expect(GrokClient.allModels.contains("grok-build-0.1"))
+        // `count >= 3` (not `== 3`) so the list can grow without re-litigating
+        // the test. Specific exclusions are enforced separately below.
+        #expect(GrokClient.allModels.count >= 3)
+    }
+
+    @Test func heavyVariantsAreReservedButNotUserVisible() {
+        // xAI's `/v1/chat/completions` API does NOT currently expose either
+        // `grok-4-heavy` or `grok-4-heavy-4.3` — they're grok.com-only
+        // "Think Harder" modes. Picking either 404s with "The model … does
+        // not exist or your team does not have access to it". The constants
+        // stay defined for forward compatibility, but they must NOT appear
+        // in `allModels` (the Settings picker) until xAI ships API access.
+        // This guard trips loudly if someone re-adds either without
+        // checking xAI's current catalog.
+        #expect(GrokClient.heavyModel == "grok-4-heavy")
+        #expect(GrokClient.heavy43Model == "grok-4-heavy-4.3")
+        #expect(!GrokClient.allModels.contains("grok-4-heavy"),
+                "grok-4-heavy is not API-accessible — keep it out of allModels until xAI ships it")
+        #expect(!GrokClient.allModels.contains("grok-4-heavy-4.3"),
+                "grok-4-heavy-4.3 is not API-accessible — keep it out of allModels until xAI ships it")
     }
 
     @Test func modelStringsAreLowercaseAndDashed() {
         // xAI's API rejects mixed-case or underscored model IDs. Belt-and-
-        // suspenders check so a "Grok-4" or "grok_4" never ships.
+        // suspenders check so a "Grok-4" or "grok_4" never ships. Dots
+        // (e.g. `grok-4-heavy-4.3`) are tolerated — the API does accept
+        // them when they're part of a real model tag.
         for model in GrokClient.allModels {
             #expect(model == model.lowercased(),
                     "Grok model IDs must be lowercase, got \(model)")

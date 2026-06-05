@@ -1,17 +1,34 @@
 import SwiftUI
 
-/// The Markets tab. Phase 1: a shell with the section switcher and disclaimer.
-/// Data, charts, signals, alerts, and the extras land in later phases.
+/// The Markets tab — now wired to the live `StockSage` subsystem: per-symbol
+/// rule-based momentum signals (`StockSageSignalEngine`, deterministic
+/// |Δ%| thresholds) + an on-device daily briefing (`StockSageBriefingService`,
+/// routed through `LocalLLM.generateOnDevice`). Data comes from `StockSageStore`
+/// (sample seed until a live feed lands — honestly flagged). Sections not yet
+/// built show a clear "coming soon".
 struct MarketsView: View {
     @State private var section: MarketSection = .watchlist
+    @ObservedObject private var store = StockSageStore.shared
+    @ObservedObject private var portfolio = StockSagePortfolio.shared
+    @State private var briefing = ""
+    @State private var loadingBriefing = false
+    @State private var newSymbol = ""
+    @State private var newShares = ""
+    @State private var newCost = ""
+    // Alerts (wired to StockSageMonitor — strong-signal Mac notifications).
+    @State private var monitoring = false
+    @State private var alertSignals: [StockSageSignal] = []
+    @State private var checkingAlerts = false
+    @State private var monitorError = ""
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
                     header
+                    if store.isSampleData { sampleBanner }
                     sectionPicker
-                    placeholder
+                    content
                 }
                 .padding(DS.Space.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -22,31 +39,390 @@ struct MarketsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Saudi Markets")
+            Text("Markets")
                 .font(DS.Typography.titleL).foregroundStyle(.white)
-            Text("Live Tadawul (TASI) monitoring · educational, not financial advice")
+            Text("Rule-based momentum signals · educational, not financial advice")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
+    private var sampleBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+            Text("Sample data — no live market feed connected yet. The signals show the engine running on illustrative prices.")
+                .font(.caption).foregroundStyle(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
+        .background(DS.Palette.warningSoft.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+            .stroke(DS.Palette.warningSoft.opacity(0.30), lineWidth: 1))
+    }
+
     private var sectionPicker: some View {
-        Picker("", selection: $section) {
+        Picker("Markets section", selection: $section) {
             ForEach(MarketSection.allCases) { Text($0.title).tag($0) }
         }
+        .labelsHidden()
         .pickerStyle(.segmented)
         .frame(maxWidth: 520)
     }
 
-    private var placeholder: some View {
-        Card {
-            VStack(alignment: .leading, spacing: DS.Space.sm) {
-                Label("Markets engine coming online", systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.headline).foregroundStyle(.white)
-                Text("This tab will show all ~200 TASI symbols with live quotes, charts, AI buy/hold/sell signals from news + the web, a portfolio tracker, custom alerts, and a daily briefing — with Telegram + Mac notifications.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    @ViewBuilder private var content: some View {
+        switch section {
+        case .watchlist, .all: signalList
+        case .heatmap:         heatmap
+        case .portfolio:       portfolioSection
+        case .alerts:          alertsSection
+        case .briefing:        briefingSection
         }
+    }
+
+    // MARK: Alerts
+
+    private var alertsSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
+                HStack(spacing: DS.Space.md) {
+                    Image(systemName: "bell.badge.fill").font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Strong-signal alerts").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        Text("Get a Mac notification when a Strong Buy or Strong Sell appears.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(get: { monitoring }, set: { toggleMonitoring($0) }))
+                        .labelsHidden().tint(DS.Palette.accent)
+                        .accessibilityLabel("Strong-signal monitoring")
+                }
+                if !monitorError.isEmpty {
+                    Text(monitorError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                }
+                Button { Task { await checkAlertsNow() } } label: {
+                    HStack(spacing: 6) {
+                        if checkingAlerts { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.clockwise") }
+                        Text(checkingAlerts ? "Checking…" : "Check now")
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
+            }
+            .padding(DS.Space.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+
+            if alertSignals.isEmpty {
+                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 16)
+            } else {
+                VStack(spacing: 1) {
+                    ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
+                }
+                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    private func signalAlertRow(_ s: StockSageSignal) -> some View {
+        HStack(spacing: 10) {
+            Text(s.symbol).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 8)
+            Text(s.recommendation.rawValue)
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(recColor(s.recommendation), in: Capsule())
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+    }
+
+    private func toggleMonitoring(_ on: Bool) {
+        monitorError = ""
+        if on {
+            do { try StockSageMonitor.shared.start(); monitoring = true }
+            catch { monitorError = error.localizedDescription; monitoring = false }
+        } else {
+            StockSageMonitor.shared.stop(); monitoring = false
+        }
+    }
+
+    private func checkAlertsNow() async {
+        checkingAlerts = true
+        alertSignals = await StockSageMonitor.shared.runCycle(notify: false)
+        checkingAlerts = false
+    }
+
+    // MARK: Portfolio
+
+    private func currentPrice(_ symbol: String) -> Double? {
+        store.symbols.first { $0.symbol.uppercased() == symbol.uppercased() }?.latest?.price
+    }
+
+    private var portfolioTotals: (cost: Double, value: Double) {
+        var cost = 0.0, value = 0.0
+        for p in portfolio.positions {
+            cost += p.totalCost
+            value += (currentPrice(p.symbol) ?? p.costBasis) * p.shares
+        }
+        return (cost, value)
+    }
+
+    private var portfolioSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            portfolioSummary
+            addPositionForm
+            if portfolio.positions.isEmpty {
+                Text("No holdings yet — add one above to track value & P&L.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 18)
+            } else {
+                VStack(spacing: 1) {
+                    ForEach(portfolio.positions) { positionRow($0) }
+                }
+                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    private var portfolioSummary: some View {
+        let t = portfolioTotals
+        let pl = t.value - t.cost
+        let plPct = t.cost > 0 ? pl / t.cost * 100 : 0
+        let up = pl >= 0
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
+                Text(String(format: "%.2f", t.value))
+                    .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("Total P&L").font(.caption).foregroundStyle(.secondary)
+                Text((up ? "+" : "") + String(format: "%.2f (%+.1f%%)", pl, plPct))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+            }
+        }
+        .padding(DS.Space.md)
+        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private var addPositionForm: some View {
+        HStack(spacing: 8) {
+            field($newSymbol, "Symbol", width: 84)
+            field($newShares, "Shares", width: 66)
+            field($newCost, "Cost/sh", width: 72)
+            Button {
+                portfolio.add(symbol: newSymbol, shares: Double(newShares) ?? 0, costBasis: Double(newCost) ?? 0)
+                newSymbol = ""; newShares = ""; newCost = ""
+            } label: {
+                Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Add holding").accessibilityLabel("Add holding")
+            .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty || (Double(newShares) ?? 0) <= 0)
+            Spacer()
+        }
+    }
+
+    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain).font(.system(size: 13))
+            .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
+            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .accessibilityLabel(placeholder)
+    }
+
+    private func positionRow(_ p: PortfolioPosition) -> some View {
+        let price = currentPrice(p.symbol)
+        let value = (price ?? p.costBasis) * p.shares
+        let pl = value - p.totalCost
+        let up = pl >= 0
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(p.symbol).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text("\(numString(p.shares)) sh @ \(String(format: "%.2f", p.costBasis))")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(price == nil ? "— no price" : String(format: "%.2f", value))
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                if price != nil {
+                    Text((up ? "+" : "") + String(format: "%.2f", pl))
+                        .font(.caption).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                }
+            }
+            Button { portfolio.remove(p.id) } label: {
+                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+    }
+
+    private func numString(_ d: Double) -> String {
+        d == d.rounded() ? String(Int(d)) : String(format: "%.2f", d)
+    }
+
+    // MARK: Heatmap
+
+    private var heatmap: some View {
+        Group {
+            if store.symbols.isEmpty {
+                emptyState
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                    ForEach(store.symbols) { sym in
+                        let change = sym.latest?.changePercent ?? 0
+                        VStack(spacing: 3) {
+                            Text(sym.symbol)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
+                            Text(String(format: "%+.1f%%", change))
+                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 66)
+                        .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1))
+                        .help(sym.market)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Tile color: green-to-red by change magnitude (gain → green, loss → red,
+    /// flat → neutral). Opacity scales with the move so a big swing reads hotter.
+    private func heatColor(_ change: Double) -> Color {
+        if change > 0.05 { return DS.Palette.success.opacity(min(0.28 + change / 18, 0.85)) }
+        if change < -0.05 { return DS.Palette.danger.opacity(min(0.28 + abs(change) / 18, 0.85)) }
+        return Color.white.opacity(0.10)
+    }
+
+    // MARK: Signals
+
+    private var signalList: some View {
+        VStack(spacing: DS.Space.sm) {
+            if store.symbols.isEmpty {
+                emptyState
+            } else {
+                ForEach(store.symbols) { signalCard($0) }
+            }
+        }
+    }
+
+    private func signalCard(_ sym: StockSageSymbol) -> some View {
+        let signal = StockSageSignalEngine.generateSignal(for: sym)
+        let change = sym.latest?.changePercent ?? 0
+        let up = change >= 0
+        return HStack(spacing: DS.Space.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sym.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text(sym.market).font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let p = sym.latest?.price {
+                    Text(String(format: "%.2f", p)).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                }
+                HStack(spacing: 3) {
+                    Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
+                    Text(String(format: "%+.2f%%", change)).font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+            }
+            if let signal {
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(signal.recommendation.rawValue)
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(recColor(signal.recommendation), in: Capsule())
+                    // "Strength %" only makes sense for an actual buy/sell signal —
+                    // SignalEngine hardcodes 0.65 for hold ("price consolidating"),
+                    // which would read as "65% strength of doing nothing." Hide it.
+                    if signal.recommendation != .hold {
+                        Text("strength \(Int(signal.confidence * 100))%").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 96, alignment: .trailing)
+            }
+        }
+        .padding(DS.Space.md)
+        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .help(signal?.reason ?? "")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(sym.symbol), \(sym.market), \(String(format: "%.2f", sym.latest?.price ?? 0)), \(String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")")
+    }
+
+    private func recColor(_ r: StockSageRecommendation) -> Color {
+        switch r {
+        case .strongBuy, .buy:   return DS.Palette.successSoft
+        case .hold:              return DS.Palette.warningSoft
+        case .sell, .strongSell: return DS.Palette.danger
+        }
+    }
+
+    // MARK: Briefing
+
+    private var briefingSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            HStack {
+                Text("Daily briefing")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Button { Task { await generateBriefing() } } label: {
+                    HStack(spacing: 6) {
+                        if loadingBriefing { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "sparkles") }
+                        Text(loadingBriefing ? "Generating…" : "Generate")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .disabled(loadingBriefing)
+            }
+            Text(briefing.isEmpty ? StockSageBriefingService.deterministicSummary(for: store.symbols) : briefing)
+                .font(.callout).foregroundStyle(DS.Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .padding(DS.Space.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private func generateBriefing() async {
+        loadingBriefing = true
+        briefing = await StockSageBriefingService.generateBriefing(for: store.symbols)
+        loadingBriefing = false
+    }
+
+    // MARK: Empty
+
+    private var emptyState: some View {
+        Text("No symbols tracked yet.")
+            .font(.callout).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity).padding(.vertical, 28)
     }
 }
 

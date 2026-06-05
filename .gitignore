@@ -21,3 +21,14 @@ build/
 # Editor / tooling
 .claude/
 .vscode/
+
+# Local training kit — contains a 1.1 GB embedded llama.cpp clone + models/build
+# artifacts. Local-only; not part of the app source. (The small `training/`
+# scripts dir IS tracked.)
+salehman-training/
+
+# Model weights / large binaries — never commit
+*.gguf
+*.safetensors
+*.bin
+*.mlmodelc/

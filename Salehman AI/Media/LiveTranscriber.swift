@@ -48,6 +48,13 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     @Published var partialThem = ""
     @Published var status = "Idle"
     @Published var needsScreenPermission = false
+    /// True iff EVERY active recognizer reports `supportsOnDeviceRecognition`.
+    /// When false (e.g. an Arabic recognizer that only runs server-side), the
+    /// captured audio is sent to Apple's servers — so the footer must say so
+    /// truthfully rather than claim "On-device." Defaults to `true` so the
+    /// startup state doesn't lie; flipped to the real value when recognizers
+    /// are constructed in `startCapture`.
+    @Published var isFullyOnDevice: Bool = true
     var language: LiveLang = .auto
 
     private var stream: SCStream?
@@ -159,7 +166,15 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
             try await stream.startCapture()
             self.stream = stream
             dlog("startCapture OK displays=\(content.displays.count)")
-            await MainActor.run { self.isRunning = true; self.status = "Listening — system audio" }
+            // Compute the real "is every recognizer running on-device?" answer
+            // now that `recs` is set, and publish it so the View's footer label
+            // can say "On-device" or "Cloud transcription" honestly.
+            let allOnDevice = recs.allSatisfy { $0.recognizer.supportsOnDeviceRecognition }
+            await MainActor.run {
+                self.isRunning = true
+                self.status = "Listening — system audio"
+                self.isFullyOnDevice = allOnDevice
+            }
         } catch {
             dlog("capture ERROR: \(error)")
             queue.sync { teardownTasks() }
@@ -211,8 +226,6 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
 
     private func commit() {
         let text = bestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
-        segment += 1
-        teardownTasks()
         if !text.isEmpty {
             DispatchQueue.main.async {
                 self.lines.append(TranscriptLine(text: text))
@@ -220,8 +233,20 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
             }
         }
         DispatchQueue.main.async { self.partialThem = "" }
+        // Advance the segment so late callbacks from the just-finished tasks are
+        // dropped by the `segment == segmentAtStart` guards.
+        segment += 1
+        lastPublishedPartial = ""; lastPublishAt = 0   // reset the throttle gate
         guard capturing else { return }
-        startTasks()
+        // Recycle each recognizer's request/task IN PLACE for the next segment.
+        // We must NOT call teardownTasks() here — it empties `recs` (and flips
+        // `capturing` off), which permanently killed live capture after the
+        // first finalized segment (startTasks() then iterated an empty `recs`).
+        for rec in recs {
+            rec.request?.endAudio(); rec.task?.cancel()
+            rec.request = nil; rec.task = nil; rec.partial = ""
+            startTask(rec)
+        }
     }
 
     private func restart(_ rec: LangRec, segmentAtStart: Int) {

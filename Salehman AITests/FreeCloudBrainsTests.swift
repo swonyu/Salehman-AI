@@ -32,8 +32,12 @@ struct GeminiModelIDTests {
 
 struct GroqModelIDTests {
     @Test func defaultIsLlama70B() {
-        // Llama-3.1-70b is what `console.groq.com` calls "Llama 3.1 70B Versatile".
-        #expect(GroqClient.defaultModel == "llama-3.1-70b-versatile")
+        // `llama-3.3-70b-versatile` is the current "Llama 70B Versatile" on
+        // Groq; the predecessor `llama-3.1-70b-versatile` was decommissioned
+        // (HTTP 400 "model not found") around 2026-06. Intent of the test is
+        // unchanged — "default is the 70B versatile model" — only the exact
+        // ID rolled forward.
+        #expect(GroqClient.defaultModel == "llama-3.3-70b-versatile")
     }
     @Test func allModelsContainsDefault() {
         #expect(GroqClient.allModels.contains(GroqClient.defaultModel))
@@ -59,8 +63,14 @@ struct MistralModelIDTests {
 }
 
 struct CerebrasModelIDTests {
-    @Test func defaultIsLlama3_1_8B() {
-        #expect(CerebrasClient.defaultModel == "llama3.1-8b")
+    @Test func defaultIsCurrentlyServedModel() {
+        // Cerebras retired the Llama 3.1 family from public inference; the old
+        // `llama3.1-8b` / `llama-3.3-70b` IDs both return 404 now. Live `GET
+        // /v1/models` exposes only `gpt-oss-120b` and `zai-glm-4.7` — see the
+        // comment on `CerebrasClient` in `CloudBrains.swift`. This test now
+        // asserts the *current* default; rename + assertion will need rolling
+        // again the next time the provider's offering shifts.
+        #expect(CerebrasClient.defaultModel == "gpt-oss-120b")
     }
     @Test func allModelsContainsDefault() {
         #expect(CerebrasClient.allModels.contains(CerebrasClient.defaultModel))

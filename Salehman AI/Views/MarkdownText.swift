@@ -15,10 +15,15 @@ struct MarkdownText: View {
                 case .code(let language, let code):
                     CodeBlock(language: language, code: code)
                 case .text(let body):
-                    Text(MarkdownText.inlineMarkdown(body))
-                        .font(.system(size: 14))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Render block-by-block so `##` headings and `- `/`1.` lists
+                    // read as real structure instead of literal "##"/"-" text.
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(body.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
+                            MarkdownText.lineView(raw)
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -110,6 +115,82 @@ struct MarkdownText: View {
         cacheLock.unlock()
         return attr
     }
+
+    /// Render one source line with block-level styling (headings, bullets,
+    /// numbered items) on top of the inline markdown. LLM replies lean on `##`
+    /// headings and `- ` lists that the old single-`Text` renderer showed as
+    /// literal "##" / "-" — this makes them read as real document structure.
+    @ViewBuilder
+    static func lineView(_ raw: String) -> some View {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            Color.clear.frame(height: 3)
+        } else if let h = heading(trimmed) {
+            Text(inlineMarkdown(h.text))
+                .font(.system(size: h.level == 1 ? 19 : (h.level == 2 ? 16 : 14.5),
+                              weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.top, 3)
+        } else if let item = bullet(trimmed) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•").font(.system(size: 14, weight: .bold)).foregroundStyle(DS.Palette.accent)
+                Text(inlineMarkdown(item)).font(.system(size: 14))
+            }
+            .padding(.leading, 2)
+        } else if let num = numbered(trimmed) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(num.marker).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                Text(inlineMarkdown(num.text)).font(.system(size: 14))
+            }
+            .padding(.leading, 2)
+        } else if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+            Rectangle()
+                .fill(DS.Palette.surfaceStroke)
+                .frame(height: 1)
+                .padding(.vertical, 4)
+        } else if let quote = blockquote(trimmed) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(DS.Palette.accent.opacity(0.7))
+                    .frame(width: 3)
+                Text(inlineMarkdown(quote))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(inlineMarkdown(raw)).font(.system(size: 14))
+        }
+    }
+
+    /// `#`/`##`/`###` heading → (level, text).
+    private static func heading(_ s: String) -> (level: Int, text: String)? {
+        for level in [3, 2, 1] {
+            let hashes = String(repeating: "#", count: level) + " "
+            if s.hasPrefix(hashes) { return (level, String(s.dropFirst(hashes.count))) }
+        }
+        return nil
+    }
+    /// `- ` / `* ` / `• ` bullet → item text.
+    private static func bullet(_ s: String) -> String? {
+        for p in ["- ", "* ", "• "] where s.hasPrefix(p) { return String(s.dropFirst(p.count)) }
+        return nil
+    }
+    /// `> ` blockquote → quoted text (`>` alone → empty quoted line).
+    private static func blockquote(_ s: String) -> String? {
+        if s == ">" { return "" }
+        if s.hasPrefix("> ") { return String(s.dropFirst(2)) }
+        return nil
+    }
+    /// `12. ` numbered → (marker "12.", text). Won't match decimals like "3.14".
+    private static func numbered(_ s: String) -> (marker: String, text: String)? {
+        guard let dot = s.firstIndex(of: ".") else { return nil }
+        let numPart = s[s.startIndex..<dot]
+        let afterDot = s.index(after: dot)
+        guard !numPart.isEmpty, numPart.allSatisfy(\.isNumber),
+              afterDot < s.endIndex, s[afterDot] == " " else { return nil }
+        return (String(numPart) + ".", String(s[s.index(after: afterDot)...]))
+    }
 }
 
 struct CodeBlock: View {
@@ -119,10 +200,14 @@ struct CodeBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language.isEmpty ? "code" : language)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                // Tinted uppercase language badge (was plain grey text).
+                Text((language.isEmpty ? "code" : language).uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(0.5)
+                    .foregroundStyle(DS.Palette.accent)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(DS.Palette.accent.opacity(0.14), in: Capsule())
                 Spacer()
                 Button {
                     copyToClipboard(code)
@@ -131,24 +216,36 @@ struct CodeBlock: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(copied ? .green : .secondary)
+                        .foregroundStyle(copied ? DS.Palette.successSoft : .secondary)
+                        // Comfortable hit target: the tight 10pt label is hard
+                        // to land on with assistive pointers / Voice Control.
+                        // `.contentShape` over a minimum frame keeps the visual
+                        // tight while making the WHOLE padded zone clickable.
+                        .frame(minWidth: 56, minHeight: 24, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Copy code to clipboard")
+                .accessibilityLabel(copied ? "Copied" : "Copy code to clipboard")
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(Color.white.opacity(0.05))
+            .background(Color.white.opacity(0.04))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
                     .font(.system(size: 12.5, design: .monospaced))
-                    .foregroundStyle(Color.green.opacity(0.92))
+                    // Neutral off-white instead of harsh terminal-green — easier
+                    // to read in a chat context; line-spacing for breathing room.
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .lineSpacing(3)
                     .textSelection(.enabled)
                     .padding(12)
             }
         }
-        .background(Color.black.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(Color.black.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
     }
 
     private func copyToClipboard(_ s: String) {

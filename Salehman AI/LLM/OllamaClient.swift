@@ -16,6 +16,20 @@ enum OllamaClient {
     nonisolated static let visionModel     = "qwen2.5vl"
     nonisolated static let codeModel       = "qwen2.5-coder:7b"       // ← sweet-spot default
     nonisolated static let heavyCodeModel  = "qwen2.5-coder:32b"      // opt-in only
+
+    /// Priority list for picking the active code model: lightest first,
+    /// heaviest last. The app uses whichever of these is **actually pulled
+    /// on disk**, falling back gracefully. `7b` stays the documented
+    /// sweet-spot default; `14b` and `32b` are accepted upgrades for users
+    /// who already have them or whose download of `7b` failed (e.g. low
+    /// disk space). Adding a new variant here makes it eligible without
+    /// any other code changes.
+    nonisolated static let preferredCodeModels: [String] = [
+        codeModel,           // qwen2.5-coder:7b — sweet-spot (~4.7 GB)
+        "qwen2.5-coder:14b", // middle (~9 GB)
+        heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB)
+    ]
+
     nonisolated private static let base = "http://localhost:11434"
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
@@ -121,6 +135,64 @@ enum OllamaClient {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    // MARK: - Tool-calling (/api/chat)
+
+    /// A tool call the model requested. `arguments` is stringified per key to
+    /// stay `Sendable` (our only tool, run_terminal_command, takes a `command`
+    /// string — lossless here).
+    struct ToolCall: Sendable {
+        let name: String
+        let arguments: [String: String]
+    }
+
+    /// One `/api/chat` turn WITH tools. Returns the assistant message's text plus
+    /// any tool calls it requested (empty array if it answered directly). `nil`
+    /// on a transport/non-200 error. Takes the FULL request body pre-serialized
+    /// as `Data` (Sendable) — the caller builds the `[[String: Any]]` messages/
+    /// tools dicts locally and serializes them, which keeps the non-`Sendable`
+    /// dictionaries from crossing the isolation boundary. qwen2.5-coder supports
+    /// tool-calling.
+    nonisolated static func chatTurn(bodyData: Data,
+                                     timeout: TimeInterval = 300) async -> (text: String, toolCalls: [ToolCall])? {
+        guard let url = URL(string: "\(base)/api/chat") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        req.timeoutInterval = timeout
+
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return parseChatResponse(json)
+    }
+
+    /// Pure parser for an Ollama `/api/chat` response dict. Extracted from
+    /// `chatTurn` so the gnarly part — handling Ollama's two `arguments`
+    /// shapes (object on recent versions, JSON string on older) — is unit-
+    /// testable without an HTTP mock.
+    nonisolated static func parseChatResponse(_ json: [String: Any]) -> (text: String, toolCalls: [ToolCall])? {
+        guard let msg = json["message"] as? [String: Any] else { return nil }
+        let text = (msg["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var calls: [ToolCall] = []
+        if let tcs = msg["tool_calls"] as? [[String: Any]] {
+            for tc in tcs {
+                guard let fn = tc["function"] as? [String: Any],
+                      let name = fn["name"] as? String else { continue }
+                var args: [String: String] = [:]
+                if let dict = fn["arguments"] as? [String: Any] {
+                    for (k, v) in dict { args[k] = "\(v)" }
+                } else if let str = fn["arguments"] as? String,
+                          let d = str.data(using: .utf8),
+                          let parsed = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                    for (k, v) in parsed { args[k] = "\(v)" }
+                }
+                calls.append(ToolCall(name: name, arguments: args))
+            }
+        }
+        return (text, calls)
+    }
+
     // MARK: - Eviction
 
     /// Immediately evict the loaded model from RAM. Ollama recognizes
@@ -161,25 +233,58 @@ enum OllamaClient {
         return await generate(model: visionModel, prompt: prompt, images: [imageData])
     }
 
+    /// Returns the first `preferredCodeModels` entry that is actually pulled
+    /// on disk, or `nil` if the user has none of them. Drives the chat /
+    /// chatStream / code paths so the app keeps working when the user
+    /// doesn't have the sweet-spot 7B variant but DOES have the 14B or 32B
+    /// fallback. The probe is cheap — `hasModel` consults the 30s-cached
+    /// model list from `Reachability`, so a typical lookup is in-memory.
+    nonisolated static func activeCodeModel() async -> String? {
+        for name in preferredCodeModels {
+            if await hasModel(name) { return name }
+        }
+        return nil
+    }
+
+    /// The model the general CHAT path should use right now. When the user pinned
+    /// their OWN "Salehman" model (`BrainPreference.salehman`), return ONLY that —
+    /// and only when it's actually pulled; never silently fall back to qwen, so
+    /// "run my model, nothing else" is honored. Otherwise the normal coder model.
+    nonisolated static func activeChatModel() async -> String? {
+        if AppSettings.brainPreferenceCurrent == .salehman {
+            let name = AppSettings.customModelNameCurrent
+            guard !name.isEmpty, await hasModel(name) else { return nil }
+            return name
+        }
+        return await activeCodeModel()
+    }
+
+    /// True iff the user's custom `.salehman` model is pulled on this machine.
+    nonisolated static func hasCustomModel() async -> Bool {
+        let name = AppSettings.customModelNameCurrent
+        guard !name.isEmpty else { return false }
+        return await hasModel(name)
+    }
+
     /// Generate/fix code with the dedicated coding model. Returns nil if unavailable.
     static func code(task: String) async -> String? {
-        guard await isUp(), await hasModel(codeModel) else { return nil }
+        guard await isUp(), let model = await activeCodeModel() else { return nil }
         let system = """
         You are an expert software engineer. Produce correct, complete, idiomatic, \
         modern code. Handle errors and edge cases. Add brief usage notes. Never \
         leave TODO placeholders. Use fenced code blocks with the language tag.
         """
-        return await generate(model: codeModel, prompt: task, system: system)
+        return await generate(model: model, prompt: task, system: system)
     }
 
     // MARK: - General chat fallback
 
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
-    /// when Apple Intelligence is off). Returns nil if Ollama or the model isn't
-    /// available, so callers can degrade gracefully.
+    /// when Apple Intelligence is off). Returns nil if Ollama or any preferred
+    /// coder model isn't available, so callers can degrade gracefully.
     static func chat(prompt: String, system: String? = nil) async -> String? {
-        guard await isUp(), await hasModel(codeModel) else { return nil }
-        return await generate(model: codeModel, prompt: prompt, system: system)
+        guard await isUp(), let model = await activeChatModel() else { return nil }
+        return await generate(model: model, prompt: prompt, system: system)
     }
 
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
@@ -187,9 +292,9 @@ enum OllamaClient {
     /// text, or nil if the server/model isn't reachable.
     static func chatStream(prompt: String, system: String? = nil,
                            onUpdate: @escaping (String) -> Void) async -> String? {
-        guard await isUp(), await hasModel(codeModel) else { return nil }
+        guard await isUp(), let model = await activeChatModel() else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
-        var body: [String: Any] = ["model": codeModel, "prompt": prompt, "stream": true,
+        var body: [String: Any] = ["model": model, "prompt": prompt, "stream": true,
                                    "keep_alive": "30s"]   // evict from RAM ~30s after idle
         if let system { body["system"] = system }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }

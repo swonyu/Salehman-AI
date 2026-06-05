@@ -47,6 +47,45 @@ struct ShellToolTests {
         let result = Shell.run("sleep 5", timeout: 1)
         #expect(result.timedOut == true)
     }
+
+    // --- Hardened blocklist: case-insensitivity, chaining, path prefixes,
+    //     expanded patterns, and NO over-blocking of benign commands. ---
+
+    @Test func blockListIsCaseInsensitive() throws {
+        #expect(Shell.isBlocked("RM -RF /") != nil)
+        #expect(Shell.isBlocked("Sudo rm file") != nil)
+        #expect(Shell.isBlocked("ReBoot") != nil)
+        #expect(Shell.isBlocked("Chmod -R 000 /") != nil)
+    }
+
+    @Test func blocksChainedAndIndirectDangerousCommands() throws {
+        // A destructive command hidden after a separator must still be caught.
+        #expect(Shell.isBlocked("echo hi && sudo rm -rf /tmp/x") != nil)
+        #expect(Shell.isBlocked("ls; reboot") != nil)
+        #expect(Shell.isBlocked("true | killall Finder") != nil)
+        // Variable-indirection bypass: blocked because `eval` is a refused command.
+        #expect(Shell.isBlocked("export CMD=foo; eval $CMD") != nil)
+    }
+
+    @Test func blocksPathPrefixedDangerousCommands() throws {
+        #expect(Shell.isBlocked("/sbin/reboot") != nil)
+        #expect(Shell.isBlocked("/usr/bin/sudo whoami") != nil)
+    }
+
+    @Test func blocksExpandedDestructivePatterns() throws {
+        #expect(Shell.isBlocked("chmod -R 777 /") != nil)
+        #expect(Shell.isBlocked("chown -R root /etc") != nil)
+        #expect(Shell.isBlocked("launchctl unload -w /System/x.plist") != nil)
+        #expect(Shell.isBlocked("diskutil reformat disk2") != nil)
+    }
+
+    @Test func allowsBenignCommandsThatLookScary() throws {
+        // Token-aware matching must NOT over-block these safe, common commands.
+        #expect(Shell.isBlocked("chmod +x build.sh") == nil)              // not recursive/zeroing
+        #expect(Shell.isBlocked("git commit -m 'halt the bug'") == nil)   // 'halt' is an arg, not the command
+        #expect(Shell.isBlocked("ps aux | grep node") == nil)            // 'grep' segment leader is safe
+        #expect(Shell.isBlocked("ls /dev") == nil)                       // listing /dev is fine; /dev/disk is the trigger
+    }
 }
 
 // MARK: - MarkdownText caching + parsing

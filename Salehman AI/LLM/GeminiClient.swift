@@ -46,7 +46,8 @@ enum GeminiClient {
                                  system: String? = nil,
                                  model: String = defaultModel) async -> String? {
         guard let key = KeychainStore.read(.geminiAPIKey) else { return nil }
-        guard let url = URL(string: "\(base)/models/\(model):generateContent?key=\(key)") else { return nil }
+        guard let url = makeURL(model: model, action: "generateContent",
+                                key: key, extraQueryItems: []) else { return nil }
 
         let body = makeBody(prompt: prompt, system: system)
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -57,9 +58,14 @@ enum GeminiClient {
         req.httpBody = payload
         req.timeoutInterval = 120
 
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse).map({ $0.statusCode == 200 }) == true,
-              let text = extractContent(data) else { return nil }
+        // `nil` is reserved for "couldn't reach the server"; HTTP errors come
+        // back as `[Gemini error STATUS: MSG]` so the user sees the real
+        // reason (e.g. PERMISSION_DENIED, RESOURCE_EXHAUSTED, NOT_FOUND for
+        // an unknown model id) instead of the generic offMessage.
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status != 200 { return errorText(data: data, status: status) }
+        guard let text = extractContent(data) else { return nil }
         return text.isEmpty ? nil : text
     }
 
@@ -70,7 +76,9 @@ enum GeminiClient {
                                        model: String = defaultModel,
                                        onUpdate: @escaping (String) -> Void) async -> String? {
         guard let key = KeychainStore.read(.geminiAPIKey) else { return nil }
-        guard let url = URL(string: "\(base)/models/\(model):streamGenerateContent?alt=sse&key=\(key)") else { return nil }
+        guard let url = makeURL(model: model, action: "streamGenerateContent",
+                                key: key,
+                                extraQueryItems: [URLQueryItem(name: "alt", value: "sse")]) else { return nil }
 
         let body = makeBody(prompt: prompt, system: system)
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -82,8 +90,13 @@ enum GeminiClient {
         req.httpBody = payload
         req.timeoutInterval = 600
 
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
-              (resp as? HTTPURLResponse).map({ $0.statusCode == 200 }) == true else { return nil }
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req) else { return nil }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status != 200 {
+            var raw = Data()
+            do { for try await byte in bytes { raw.append(byte) } } catch {}
+            return errorText(data: raw, status: status)
+        }
 
         var accumulated = ""
         do {
@@ -118,7 +131,57 @@ enum GeminiClient {
 
     // MARK: - Internals
 
-    nonisolated private static func makeBody(prompt: String, system: String?) -> [String: Any] {
+    /// Build the Gemini endpoint URL via `URLComponents` so the key, model,
+    /// and any extra query items are correctly percent-encoded. The earlier
+    /// implementation interpolated `key` directly into a string template; if
+    /// a user ever pasted a key containing `+`, `&`, `?`, whitespace, or
+    /// other URL-reserved characters (rare for `AIza…` keys but defensible
+    /// at the boundary), `URL(string:)` would silently return nil and the
+    /// caller would see a generic "no model is reachable" instead of a
+    /// useful diagnostic. URLComponents fixes that at the source.
+    ///
+    /// The action argument is the per-method tail ("generateContent" or
+    /// "streamGenerateContent"); `extraQueryItems` is for sibling params
+    /// like `alt=sse` on the streaming endpoint.
+    nonisolated static func makeURL(model: String,
+                                    action: String,
+                                    key: String,
+                                    extraQueryItems: [URLQueryItem]) -> URL? {
+        // Google's URL puts `:` between the model name and the action verb
+        // — that's a sub-delim that `URLComponents.path` accepts directly,
+        // no special handling required.
+        guard var comps = URLComponents(string: "\(base)/models/\(model):\(action)") else {
+            return nil
+        }
+        comps.queryItems = extraQueryItems + [URLQueryItem(name: "key", value: key)]
+        return comps.url
+    }
+
+
+    /// Pull a human-readable diagnostic out of a non-200 response body.
+    /// Google's error shape is `{"error":{"code":..., "message":"...", "status":"..."}}`.
+    /// We prefer the human `message` and fall back to the `status` enum
+    /// (e.g. `NOT_FOUND`, `PERMISSION_DENIED`) if the server didn't include
+    /// a message — both are diagnostic.
+    // Visibility note: relaxed from `private` to internal so the test
+    // bundle can exercise the decoder directly. No production code path
+    // calls this from outside `GeminiClient` — it stays effectively private
+    // by convention.
+    nonisolated static func errorText(data: Data, status: Int) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let err = json["error"] as? [String: Any] {
+            if let msg = err["message"] as? String {
+                return "[Gemini error \(status): \(msg)]"
+            }
+            if let s = err["status"] as? String {
+                return "[Gemini error \(status): \(s)]"
+            }
+        }
+        return "[Gemini request failed (HTTP \(status)). Check Settings → Brain → Google Gemini.]"
+    }
+
+    // Internal for test access (see `errorText` visibility note above).
+    nonisolated static func makeBody(prompt: String, system: String?) -> [String: Any] {
         var body: [String: Any] = [
             "contents": [
                 [
@@ -136,7 +199,8 @@ enum GeminiClient {
     /// Pull `candidates[0].content.parts[0].text` out of a non-streaming
     /// response. Gemini sometimes returns multiple parts (e.g. when tools
     /// are enabled) — we concatenate them to handle the future case.
-    nonisolated private static func extractContent(_ data: Data) -> String? {
+    // Internal for test access.
+    nonisolated static func extractContent(_ data: Data) -> String? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let candidates = json["candidates"] as? [[String: Any]],
               let first = candidates.first,
@@ -150,7 +214,8 @@ enum GeminiClient {
     /// Streaming chunks have the same shape as non-streaming responses —
     /// one candidate, one or more parts each with `text`. We extract
     /// whatever text the chunk contains; the caller accumulates.
-    nonisolated private static func extractStreamingDelta(_ jsonString: String) -> String? {
+    // Internal for test access.
+    nonisolated static func extractStreamingDelta(_ jsonString: String) -> String? {
         guard let data = jsonString.data(using: .utf8) else { return nil }
         return extractContent(data)
     }

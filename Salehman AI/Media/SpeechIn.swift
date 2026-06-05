@@ -3,7 +3,9 @@ import AVFoundation
 import Speech
 import Combine
 
-/// Live microphone dictation (free, on-device). Publishes a live transcript.
+/// Live microphone dictation. Free; runs on-device when the recognizer supports
+/// it for the current locale (en-US generally does), otherwise SFSpeechRecognizer
+/// routes the audio through Apple's Speech servers. Publishes a live transcript.
 @MainActor
 final class SpeechIn: ObservableObject {
     static let shared = SpeechIn()
@@ -32,6 +34,10 @@ final class SpeechIn: ObservableObject {
         transcript = ""
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        // Mirror Transcriber / LiveTranscriber: prefer on-device recognition
+        // when the locale supports it, so audio doesn't quietly head off to
+        // Apple's Speech servers when a local model is available.
+        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
         self.request = request
 
         let input = engine.inputNode

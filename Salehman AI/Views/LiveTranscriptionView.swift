@@ -15,7 +15,9 @@ struct LiveTranscriptionView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(red: 0.05, green: 0.06, blue: 0.12), Color.black],
+            // Route through DS canvas tokens so this sheet inherits any palette
+            // swap (was a hardcoded cold-indigo that bypassed the token layer).
+            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 14) {
@@ -49,7 +51,7 @@ struct LiveTranscriptionView: View {
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityLabel("Close")
         }
     }
 
@@ -90,15 +92,20 @@ struct LiveTranscriptionView: View {
 
     private var permissionBanner: some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.yellow)
+            Image(systemName: "exclamationmark.shield.fill").foregroundStyle(DS.Palette.accent)
             Text("Allow Screen Recording to hear the audio — it does NOT show your screen.")
                 .font(.caption).foregroundStyle(.white.opacity(0.9))
             Spacer()
             Button("Open Settings") { live.openScreenRecordingSettings() }
-                .buttonStyle(.borderedProminent).controlSize(.small)
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
         }
         .padding(10)
-        .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // Brand-accent tint instead of off-brand yellow; subtle stroke gives it
+        // structure without the harsh banner look.
+        .background(DS.Palette.accent.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+            .stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
     }
 
     private var searchField: some View {
@@ -106,9 +113,10 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
@@ -156,13 +164,16 @@ struct LiveTranscriptionView: View {
         let rtl = text.range(of: "\\p{Arabic}", options: .regularExpression) != nil
         return Text(text)
             .font(.system(size: 15))
-            .foregroundStyle(.white.opacity(isLive ? 0.55 : 0.96))
+            // 0.55 was ~3.9:1 on the canvas — below WCAG AA's 4.5:1 for body
+            // text. 0.66 measures ~5.7:1 while staying clearly subordinate to
+            // finalized lines (which run at 0.96).
+            .foregroundStyle(.white.opacity(isLive ? 0.66 : 0.96))
             .textSelection(.enabled)
             .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Color.white.opacity(isLive ? 0.03 : 0.06),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 
     // MARK: Footer
@@ -194,7 +205,15 @@ struct LiveTranscriptionView: View {
                 .disabled(live.combinedText.isEmpty)
 
             Spacer()
-            Text("On-device • system audio").font(.caption2).foregroundStyle(.secondary)
+            // Honest footer: only say "On-device" when every active recognizer
+            // actually runs locally (e.g. ar-SA historically has no on-device
+            // model, so SFSpeechRecognizer routes Arabic audio to Apple's
+            // servers). The Bool comes from LiveTranscriber, set when the
+            // recognizers are constructed in startCapture.
+            Text(live.isFullyOnDevice
+                 ? "On-device • system audio"
+                 : "Cloud transcription • system audio (no on-device model for this language)")
+                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 

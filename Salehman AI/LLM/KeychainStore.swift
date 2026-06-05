@@ -39,9 +39,16 @@ enum KeychainStore {
         case cerebrasAPIKey = "cerebras-api-key"
         case anthropicAPIKey = "anthropic-api-key"
         case openAIAPIKey   = "openai-api-key"
+        case openRouterAPIKey = "openrouter-api-key"
         /// GitHub OAuth access token for the Copilot brain (from the device flow).
         /// The short-lived Copilot token derived from it is cached in memory only.
         case copilotGitHubToken = "copilot-github-token"
+        /// Unsloth API token. NOT required for the app's `.unslothStudio` chat
+        /// brain (that talks to a local OpenAI-compatible server with no auth) —
+        /// stored only so the "Use this model with Claude Code too" snippet in
+        /// Settings can substitute the real `ANTHROPIC_AUTH_TOKEN` into the
+        /// copy-to-clipboard payload (see Unsloth's Claude-Code guide).
+        case unslothStudioAPIKey = "unsloth-studio-api-key"
     }
 
     // MARK: - CRUD

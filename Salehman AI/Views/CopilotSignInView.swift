@@ -16,7 +16,7 @@ struct CopilotSignInView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "person.2.badge.gearshape.fill")
-                .font(.system(size: 34)).foregroundStyle(Color.accentColor)
+                .font(.system(size: 34)).foregroundStyle(DS.Palette.accent)
             Text("Sign in to GitHub Copilot").font(.title2.weight(.bold))
             Text("Requires an active Copilot subscription on your GitHub account.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
