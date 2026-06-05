@@ -827,6 +827,13 @@ Deferred (documented in CODEBASE_REVIEW.md): `brainReady` Keychain caching, anyB
 
 ---
 
+## 2026-06-06 · 🧠 AI-quality pass (6 verified-safe edits) + Grok shelved → back to 2 sessions
+**Files:** `LLM/LocalLLM.swift` (baseInstructions + cloudSystemPrompt + ollamaChatSystem: answer-first/markdown nudge; baseInstructions language rule hardened to the same anti-Arabic-drift wording the cloud/Ollama prompts already use), `Agents/AgentPipeline.swift` (recalled memories capped at 280 chars each before being prepended to the history preamble; shared agent prompt gained a `LANGUAGE: reply in the SAME language as the user's request` line so multi-agent answers don't drift), `Views/ContentView.swift` (after `await Orchestrator.runAndReturnResult(...)`, `await BrainStatus.shared.refresh()` so the header dot reflects reality immediately instead of lagging up to ~10s), `CLAUDE.md` (reverted Three-session → Two-session; Grok shelved, prompts kept as dormant artifacts).
+**What & why:** Ran an adversarial 4-area design workflow (context/memory · prompts · agent reasoning · routing/reliability) — **13 proposed → 9 verified-safe** after each was refuted independently for `.auto`-local-first / anti-language-drift / small-model bloat / streaming regressions. Landed the top 6 (all conf ≥ 0.83) which cover all four levers; deferred #7/#8 (anyBrainReachable reorder, streaming-error guard) as lower-confidence and routing-refactor-adjacent. Owner asked to cancel Grok after both Grok tabs hit 0% credits mid-work; their broken in-flight tests rolled back to my disabled stubs, so the suite went green on its own — nothing for me to fix there.
+**Result:** Build + full suite **GREEN** (`TEST SUCCEEDED`). All 6 AI edits survived the multi-session churn intact (verified via grep before committing). Targeted commit (these 4 files + this log) — the other session's in-flight `Tools/`/`COORDINATION.md`/`PROJECT_CONTEXT.md` edits intentionally not swept in. `GROK_SESSION_PROMPT.md` / `GROK_TEAM_PROMPT.md` / `GROK_TAB_*.md` stay in the repo as dormant artifacts in case Grok is re-enabled.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
