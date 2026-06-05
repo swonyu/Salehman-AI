@@ -749,6 +749,13 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 🧪 Pre-wrote 8 test-suite stubs for Grok (Swift Testing, disabled checklists)
+**Files:** `Salehman AITests/{SelfImprovePatchTests, LiveTranscriberSegmentTests, WebToolsOfflineGateTests, ShellSecurityTests, KnowledgeRAGTests, BrainRoutingDispatchTests, PersistenceRoundTripTests, SettingsBrainReadyTests}.swift` (new).
+**What & why:** Owner asked me to scaffold Grok's first task. Each `CODEBASE_REVIEW.md` §4 suite is now a real Swift-Testing file where every planned case is a `@Test(.disabled("TODO: <case>"))` stub — a literal checklist Grok un-disables and fills in. Disabled tests are skipped, so the suite stays green and there are no false-positive passes. Headers flag which confirmed bug each "locks" (write-failing-first) and which 3 suites need the §3 refactor (BrainAdapter registry / injectable JSONFileStore / extract `brainReady`) before they're fully implementable — steering Grok to start with the directly-testable ones (Knowledge RAG, Shell, WebTools, SelfImprove).
+**Result:** Build + full suite green (new stubs compile; disabled tests skipped). Noted in `COORDINATION.md` under Grok's lane.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
