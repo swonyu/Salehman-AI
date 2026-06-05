@@ -763,6 +763,13 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 📋 Two ready-to-paste Grok tab prompts (no fill-in)
+**Files:** `GROK_TAB_A_TESTS.md`, `GROK_TAB_B_REFACTOR.md` (new). Generated from `GROK_TEAM_PROMPT.md` with `{{MISSION}}`/`{{LANE}}` expanded inline.
+**What & why:** Owner runs two Grok (Build 0.2) tabs. Tab A = Hardening/QA squad (mission: the §4 test suites, start with the 4 directly-testable ones, bugs-as-failing-tests-first; lane: `Salehman AITests/**` — low collision, safe anytime). Tab B = Architecture/refactor squad (mission: the §3 BrainAdapter registry / JSONFileStore / centralized gates, behavior-preserving, unblocks Tab A's 3 blocked suites; lane: the refactor-target files — **overlaps the Claude brain/tools lanes, run paused/handoff only**). Each file is fully self-contained (15-role roster + phase loop + rules + coordination), nothing to fill in.
+**Result:** Doc only. Owner pastes one file per tab.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
