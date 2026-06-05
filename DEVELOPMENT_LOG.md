@@ -742,6 +742,13 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 
 ---
 
+## 2026-06-06 · 🤝 Onboarded a 3rd build session (Grok) — lane = Tests + docs
+**Files:** `CLAUDE.md` (Two-session → Three-session coordination + Grok lane), `COORDINATION.md` (header + a formal Grok ownership section), `GROK_SESSION_PROMPT.md` (lane finalized from "proposed" to assigned). Doc-only; no build impact.
+**What & why:** Owner adding Grok as a third parallel session. Assigned Grok the **Tests** lane — lowest collision with the two Claude feature lanes, and it picks up exactly the work the owner didn't want me to do: the **8 missing test suites from `CODEBASE_REVIEW.md` §4** (each with concrete case names; reproduce confirmed bugs as failing tests first). Also owns doc accuracy + new self-contained modules. The onboarding prompt (`GROK_SESSION_PROMPT.md`) transfers all the rules/discipline; owner pastes it into the Grok session to start it.
+**Result:** Repo is three-session-ready. Owner launches Grok by pasting the prompt; its lane is pre-claimed so the Claude sessions stay out of `Salehman AITests/`.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

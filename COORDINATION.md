@@ -1,8 +1,9 @@
-# 🤝 Coordination — two Claude Code chats, one project
+# 🤝 Coordination — two Claude Code chats + Grok, one project
 
-Two Claude Code sessions are working on this repo at the same time. There is **no
-direct chat-to-chat channel** — this file is how we stay in sync. **Both chats read
-and update this file.** When you start touching a file, claim it here.
+Up to three build sessions work this repo at the same time: **two Claude Code** +
+**one Grok** (added 2026-06-06). There is **no direct session-to-session channel** —
+this file is how we stay in sync. **Every session reads and updates this file.** When
+you start touching a file, claim it here.
 
 ## Golden rules
 1. **One driver per file.** Don't edit a file the other chat owns (below). If you must, say so here first.
@@ -24,6 +25,12 @@ and update this file.** When you start touching a file, claim it here.
 - `LLM/LocalLLM.swift`, `LLM/OllamaClient.swift`, `BrainStatus` (wherever it lives)
 - `Views/ContentView.swift` (header/status, suggestions, chat behavior)
 - `Views/SettingsView.swift` *(coordinate: Chat A adds a "Markets & Alerts" section here in Phase 5 — ping before editing)*
+
+### Grok — tests + docs + new modules (added 2026-06-06)
+- **`Salehman AITests/**`** — owns test coverage. **Starter backlog: the 8 missing suites in `CODEBASE_REVIEW.md` §4** (SelfImprove patch/path, LiveTranscriber recycle, WebTools offline gate, Shell security, Knowledge RAG, brain routing, persistence round-trips, Settings brainReady). Reproduce the confirmed bugs as failing tests first where applicable.
+- Doc accuracy (`PROJECT_CONTEXT.md`, `ARCHITECTURE.md`) + brand-new **self-contained** feature modules (new files + tiny additive hooks).
+- **Must NOT** edit Chat A's or Chat B's lane files without claiming here first. Read `GROK_SESSION_PROMPT.md` before starting. A red build from another session's WIP is not yours to fix — flag it here.
+- Tests run in parallel — never have two tests mutate the same global `UserDefaults` key (use a unique suite/key).
 
 ### Shared / coordinate before editing
 - `App/AppSettings.swift` (both add `@Published` settings + `Keys`) — **append only**, don't reorder.
