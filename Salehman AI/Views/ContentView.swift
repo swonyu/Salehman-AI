@@ -21,7 +21,7 @@ struct ContentView: View {
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
-    @ObservedObject private var brain = BrainStatus.shared
+    @ObservedObject private var brainStatus = BrainStatus.shared
     @State private var attachment: Attachment?
     @State private var loadingAttachment = false
     @State private var runningTask: Task<Void, Never>?
@@ -41,6 +41,9 @@ struct ContentView: View {
     @ObservedObject private var library = PromptLibrary.shared
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
+
+    // Drives the "alive" pulse on the GOD MODE indicator.
+    @State private var godModePulse = false
 
     private struct Suggestion: Hashable {
         let icon: String
@@ -66,7 +69,16 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Global red tint when GOD MODE (Unrestricted) is active.
+            if settings.unrestrictedTools {
+                Color.red.opacity(0.03).ignoresSafeArea()
+            }
+
             VStack(spacing: 0) {
+                // Warning banner appears above the normal header when active.
+                if settings.unrestrictedTools {
+                    godModeBanner
+                }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
@@ -75,7 +87,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .overlay {
-            if let pending = approval.pending {
+            if let pending = approval.pending, !settings.unrestrictedTools {
                 ApprovalCard(command: pending.command,
                              onRun: { approval.resolve(true) },
                              onCancel: { approval.resolve(false) },
@@ -109,6 +121,16 @@ struct ContentView: View {
         .onChange(of: app.toggleSearchRequested) { _, v in
             if v { withAnimation(DS.Motion.snappy) { searching.toggle(); if !searching { searchQuery = "" } }; app.toggleSearchRequested = false }
         }
+        .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
+            if isUnrestricted {
+                approval.confirmationEnabled = false
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    godModePulse = true
+                }
+            } else {
+                godModePulse = false
+            }
+        }
     }
 
     // MARK: Header
@@ -123,21 +145,50 @@ struct ContentView: View {
                 // Status indicator with a brand-accent halo that EXPANDS + pulses
                 // while running (was a flat off-brand purple dot — the most
                 // visible "AI is working" affordance in the chrome).
-                BrainStatusDot(isRunning: isRunning, color: brain.dotColor)
-                Text(isRunning ? "Thinking…" : brain.label)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    // Brand gradient while running, ties the text to the now-
-                    // accent BrainStatusDot — a unified branded "active" state
-                    // instead of the previous secondary-gray fade.
-                    .foregroundStyle(
-                        isRunning
-                            ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                                           startPoint: .leading, endPoint: .trailing))
-                            : AnyShapeStyle(Color.white)
-                    )
+                if settings.unrestrictedTools {
+                    // Red pulsing halo for GOD MODE (alive / "always on" signal)
+                    ZStack {
+                        Circle().fill(Color.red.opacity(0.4))
+                            .frame(width: 22, height: 22)
+                            .blur(radius: 5)
+                            .scaleEffect(godModePulse ? 1.45 : 1.0)
+                            .opacity(godModePulse ? 0.6 : 0.4)
+                        Circle().fill(Color.red)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: Color.red.opacity(0.6), radius: 3)
+                    }
+                    Text(isRunning ? "GOD MODE • Thinking…" : "GOD MODE")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.red)
+                } else {
+                    BrainStatusDot(isRunning: isRunning, color: brainStatus.dotColor)
+                    Text(isRunning ? "Thinking…" : brainStatus.label)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        // Brand gradient while running, ties the text to the now-
+                        // accent BrainStatusDot — a unified branded "active" state
+                        // instead of the previous secondary-gray fade.
+                        .foregroundStyle(
+                            isRunning
+                                ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
+                                                               startPoint: .leading, endPoint: .trailing))
+                                : AnyShapeStyle(Color.white)
+                        )
+                    // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
+                    // when the Grok brain is active. Tapping opens Settings so the
+                    // user can complete the Anthropic→Grok migration or confirm
+                    // the key/model. This surfaces the "Super" path directly in
+                    // the primary chat chrome without cluttering local/Apple modes.
+                    if brainStatus.brain == .grok {
+                        SuperGrokBadge(text: "SUPER GROK") {
+                            app.showSettingsRequested = true
+                        }
+                    }
+                }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(isRunning ? "Salehman AI, thinking" : "Salehman AI, \(brain.label)")
+            .accessibilityLabel(settings.unrestrictedTools 
+                ? "Salehman AI, GOD MODE unrestricted" 
+                : (isRunning ? "Salehman AI, thinking" : "Salehman AI, \(brainStatus.label)"))
 
             Spacer()
 
@@ -185,12 +236,53 @@ struct ContentView: View {
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { startNewChat() }
 
-            // Confirmation toggle — calm chip with a colored dot, no shouty fill.
-            ConfirmationChip(enabled: $approval.confirmationEnabled)
+            if settings.unrestrictedTools {
+                // Prominent GOD MODE badge (red, tappable to exit the mode)
+                Button {
+                    settings.unrestrictedTools = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("GOD MODE")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.red.opacity(0.15), in: Capsule())
+                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Unrestricted Mode is active — tap to disable")
+            } else {
+                // Confirmation toggle — calm chip with a colored dot, no shouty fill.
+                ConfirmationChip(enabled: $approval.confirmationEnabled)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(.ultraThinMaterial)
+    }
+
+    // Prominent warning banner for GOD MODE (global red tint + clear call-to-action).
+    private var godModeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .bold))
+            Text("GOD MODE ACTIVE — Unrestricted tools enabled. No command approvals or restrictions. Use with extreme caution.")
+                .font(.caption.weight(.semibold))
+            Spacer()
+            Button("Disable") { settings.unrestrictedTools = false }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(.red)
+                .font(.caption)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 5)
+        .background(Color.red.opacity(0.12))
+        .foregroundStyle(Color.red)
     }
 
     // MARK: Conversation
@@ -939,7 +1031,7 @@ struct MessageBubble: View {
     var body: some View {
         bubbleRow
             .opacity(appeared ? 1 : 0)
-            .blur(radius: appeared ? 0 : 6)
+            .blur(radius: appeared ? 6 : 0)
             .offset(y: appeared ? 0 : 14)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during

@@ -128,6 +128,15 @@ struct SettingsView: View {
                                "wifi.slash", $settings.offlineOnly)
                     }
 
+                    section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
+                        toggle("Unrestricted Mode (God Mode)",
+                               "Runs the assistant's shell commands WITHOUT asking for approval. Catastrophic commands (rm -rf /, disk erase, fork bombs, sudo) are STILL refused, but everything else runs unprompted. Off by default — use with extreme caution.",
+                               "exclamationmark.triangle.fill", $settings.unrestrictedTools)
+                        toggle("Private Mode",
+                               "One tap for maximum privacy: forces Offline (no network) and Hide-from-capture on. Cannot be combined with Unrestricted Mode.",
+                               "lock.fill", $settings.privateMode)
+                    }
+
                     section("Brain", "Which model answers. Tap a cell to pin one; hover for details. The dot is green when that brain is reachable, orange when not.") {
                         activeBrainStatusRow
                         // Compact 3-column adaptive grid — 13 brains drop from a

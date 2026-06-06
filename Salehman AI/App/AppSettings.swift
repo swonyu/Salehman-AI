@@ -136,6 +136,33 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
     }
 
+    /// **Unrestricted Mode ("God Mode").** Opt-in power-user switch that removes the
+    /// per-command approval PROMPT — shell commands the assistant issues run without
+    /// asking. Off by default. SAFETY FLOOR PRESERVED: `Shell.runApproved` still runs
+    /// `Shell.isBlocked` BEFORE approval, so outright-catastrophic commands (`rm -rf /`,
+    /// fork bombs, disk erase, `sudo`, etc.) are refused regardless of this mode —
+    /// God Mode only auto-approves what already passed that floor (see
+    /// `CommandApprovalCenter.requestApproval`). Mutually exclusive with Private Mode.
+    @Published var unrestrictedTools: Bool {
+        didSet {
+            UserDefaults.standard.set(unrestrictedTools, forKey: Keys.unrestrictedTools)
+            if unrestrictedTools && privateMode { privateMode = false }  // opposite extremes
+        }
+    }
+
+    /// **Private Mode.** One tap for maximum privacy: forces Offline (no cloud/network)
+    /// and Hide-from-capture ON. Mutually exclusive with Unrestricted Mode. Off by default.
+    @Published var privateMode: Bool {
+        didSet {
+            UserDefaults.standard.set(privateMode, forKey: Keys.privateMode)
+            if privateMode {
+                if unrestrictedTools { unrestrictedTools = false }
+                if !offlineOnly { offlineOnly = true }
+                if !hideFromCapture { hideFromCapture = true }
+            }
+        }
+    }
+
     // UserDefaults keys — `nonisolated` so the policy layer (which runs off
     // the main actor) can read them without an actor hop. They're just
     // immutable string constants, so no isolation is needed.
@@ -148,6 +175,8 @@ final class AppSettings: ObservableObject {
         nonisolated static let autonomousMode = "set_autonomousMode"
         nonisolated static let offlineOnly    = "set_offlineOnly"
         nonisolated static let hideCapture = "set_hideCapture"
+        nonisolated static let unrestrictedTools = "set_unrestrictedTools"
+        nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
         nonisolated static let brainPreference = "set_brainPreference"
@@ -271,6 +300,11 @@ final class AppSettings: ObservableObject {
     /// main actor. Defaults OFF (opt-in).
     nonisolated static var isOfflineOnly: Bool { UserDefaults.standard.bool(forKey: Keys.offlineOnly) }
 
+    /// Thread-safe read of the Unrestricted Mode ("God Mode") switch, for any
+    /// off-main caller. Defaults OFF. The catastrophic-command floor
+    /// (`Shell.isBlocked`) is independent of this and always applies.
+    nonisolated static var unrestrictedToolsEnabled: Bool { UserDefaults.standard.bool(forKey: Keys.unrestrictedTools) }
+
     /// Excludes (or re-includes) every current app window — main window, sheets,
     /// popovers, menus, the approval card — from screen capture/recording/sharing.
     func applyCapturePrivacy() {
@@ -318,6 +352,8 @@ final class AppSettings: ObservableObject {
         autonomousMode = d.bool(forKey: Keys.autonomousMode)   // default off
         offlineOnly    = d.bool(forKey: Keys.offlineOnly)      // default off (opt-in)
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
+        unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in "God Mode")
+        privateMode = d.bool(forKey: Keys.privateMode)             // default off
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
