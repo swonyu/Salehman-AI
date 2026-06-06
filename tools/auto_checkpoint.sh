@@ -11,7 +11,7 @@
 # Disable: launchctl unload ~/Library/LaunchAgents/com.salehmanai.autocheckpoint.plist
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-REPO="/Users/saleh/Downloads/SalehmanAI_Complete_Everything_Today/Salehman AI"
+REPO="/Users/saleh/Desktop/Salehman AI"
 BRANCH="auto-backup"
 
 cd "$REPO" || exit 0
