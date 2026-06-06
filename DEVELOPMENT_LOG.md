@@ -929,6 +929,11 @@ The looksRisky change itself: removed the `nonisolated static CommandApprovalCen
 
 ---
 
+## 2026-06-06 · 📎 Grok collaboration kit: skill-creator + Salehman AI Improver (Grok-native format)
+**Files:** `GROK_SKILL_CREATOR.md` (new), `GROK_SALEHMAN_IMPROVER.md` (new)
+**What & why:** Owner runs an external Grok web workspace alongside Claude Code. Saved two pasteable, versioned artifacts: (1) `GROK_SKILL_CREATOR.md` — a "skill-creator" prompt for Grok that produces reusable **Grok Project Packs** (Name + Instructions + Files + Starter prompts) instead of Claude-style `SKILL.md`, because Grok has no agent-skill file system / executable bundled scripts / progressive disclosure (mapping: `description`→ opening Instructions + starter prompts; `references/`→ attached Files; `scripts/`→ explicit steps). (2) `GROK_SALEHMAN_IMPROVER.md` — the skill the owner actually wants, in that Project Pack format: an agent that improves THIS app every way imaginable (correctness, perf, security, multi-agent reasoning, UX, a11y, refactors, tests, features), returns complete compile-ready Swift + a DEVELOPMENT_LOG entry per change, and treats this log as **APPEND-ONLY** (never remove/rewrite/reorder old entries — owner directive "never remove old logs"). Built from the owner's existing Grok prompt + the 7b-default invariant + the append-only logging rule. No app code touched.
+**Result:** Docs only — build/tests unaffected. Both are `*.md` at the repo root, so `tools/bundle_source.sh` will fold them into future `SOURCE_BUNDLE.md` regenerations.
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
