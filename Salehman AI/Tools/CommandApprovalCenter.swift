@@ -88,11 +88,13 @@ final class CommandApprovalCenter: ObservableObject {
     /// Commands that mutate / destroy / escalate always re-confirm even under a
     /// session bypass. (Outright-dangerous commands never reach here — they're
     /// refused first by `Shell.isBlocked`.)
-    static func looksRisky(_ command: String) -> Bool {
-        let l = command.lowercased()
-        let markers = ["rm ", "rmdir", "mv ", "trash", "delete", " > ", ">>",
-                       "sudo", "chmod", "chown", "git push", "git reset --hard",
-                       "git clean", "truncate", "format", "kill "]
-        return markers.contains { l.contains($0) }
+    /// `nonisolated` + pure: it now just FORWARDS to the single risk-vocabulary
+    /// source (`ToolPolicy.CommandRisk.looksRisky`), so the refusal layer
+    /// (`Shell.isBlocked`) and this session-bypass re-confirm gate can never drift
+    /// apart. Holds no state, so it's safe to call off the main actor (the
+    /// background tool path + `#expect` autoclosures in tests). The delegation
+    /// parity + the re-confirm cases are locked by `ShellSecurityTests`.
+    nonisolated static func looksRisky(_ command: String) -> Bool {
+        ToolPolicy.CommandRisk.looksRisky(command)
     }
 }

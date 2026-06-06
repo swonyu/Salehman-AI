@@ -886,6 +886,31 @@ Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed t
 
 ---
 
+## 2026-06-06 · 🔒 Lock-down tests for `CommandApprovalCenter.looksRisky` delegation + cosine type drive-by
+**Files:** `Salehman AITests/ShellSecurityTests.swift` (+ drive-by: `Salehman AITests/KnowledgeRAGTests.swift`).
+
+After the prior commit forwarded `CommandApprovalCenter.looksRisky` to the single-source vocab (`ToolPolicy.CommandRisk.looksRisky`), the doc-comment on the approval-center side already named the role / `nonisolated`/pure contract / single-source delegation / tests-lock — no comment edit needed. Added two new `@Test` cases:
+
+1. **`looksRiskyDelegationMatchesSingleSource`** — parity loop over a 19-case set (canonical risky markers + casing/whitespace edges + benign baselines + `>>` redirect). Asserts `CommandApprovalCenter.looksRisky(c) == ToolPolicy.CommandRisk.looksRisky(c)` for every case, so any future re-divergence (someone re-inlining a copy of the vocab) fails loudly instead of silently shifting UX on the session-bypass re-confirm gate.
+2. **`commandRiskLooksRiskyIsDeterministicAndNonisolated`** — two contracts in one test: (a) 50 repeated calls per input return identical verdicts (no hidden state); (b) the call is fanned out across 16 `withTaskGroup`-detached tasks. The fan-out is the real guard — if anyone ever annotates `ToolPolicy.CommandRisk.looksRisky` with `@MainActor` (or moves it onto an actor), the closure stops compiling, surfacing a silent main-actor hop on every background tool call as a build break.
+
+**Drive-by (genuine blocker for verifying my own tests):** `KnowledgeRAGTests.cosineIdenticalOrthogonalAndEdgeCases` still passed `[Double]` literals to `KnowledgeStore.cosine`, whose signature flipped to `[Float]` in commit 8152d68 (embedding RAM optimization). Typed the binding `let v: [Float]` — Swift now infers `[Float]` on the inline literals via the call signature. No behavior change; this is the canonical "tests need to follow the API change" follow-up.
+
+**Result:** `xcodebuild test … -only-testing:"Salehman AITests/ShellSecurityTests"` → **TEST SUCCEEDED**, all 8 cases pass on both parallel runners.
+
+---
+
+## 2026-06-06 · 🔐 Lock down looksRisky delegation (parity + actor-safety tests)
+**Files:** `Salehman AITests/LooksRiskyDelegationTests.swift` (new), `Tools/CommandApprovalCenter.swift` (comment only). Cross-lane note: the looksRisky → `ToolPolicy.CommandRisk` delegation itself is the other session's (Grok Tab A) uncommitted work; I added the safeguards a code review asked for, on top.
+**What & why:** A review flagged two risks in the delegation refactor: (1) MEDIUM — re-confirm UX could silently drift if the two marker layers diverge; (2) LOW — the `nonisolated` annotation's purity isn't compiler-enforced across the delegation boundary. Added two tests that turn both into build-time guarantees:
+- `looksRiskyDelegatesFaithfullyToSingleSource` — asserts `CommandApprovalCenter.looksRisky(c) == ToolPolicy.CommandRisk.looksRisky(c)` across 21 commands, so any drift fails the suite.
+- `commandRiskLooksRiskyIsDeterministicAndNonisolated` — calls it 64× (determinism) and from 32 DETACHED child tasks; if it ever becomes actor-isolated or reads shared state, the file stops compiling.
+Also refreshed the `looksRisky` doc comment to reflect the delegation (was stale "reads local const"). Kept the tests in a NEW file, not the contended `ShellSecurityTests`.
+**Gotcha logged:** first wrote the test to the stale TOP-LEVEL `Salehman AITests/` (outside the git repo) instead of the inner `Salehman AI/Salehman AITests/` that Xcode compiles — two same-named dirs. Moved it; that also explained a phantom "files shrinking" effect (reading stub copies vs implemented copies).
+**Result:** `xcodebuild test … -only-testing:"Salehman AITests/LooksRiskyDelegationTests"` → **TEST SUCCEEDED** (both cases). App build green. Committed only my 2 files + this log (left Grok's untracked suites + COORDINATION/PROJECT_CONTEXT alone).
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
