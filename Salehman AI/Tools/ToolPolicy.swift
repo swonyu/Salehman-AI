@@ -144,4 +144,94 @@ enum ToolPolicy {
         case .localOnly:          return false
         }
     }
+
+    /// Returns the exact user- and model-facing refusal string when web tools
+    /// are disabled by policy (webAccess off or Offline Mode), or nil when
+    /// allowed. Single source of truth for the two reasons + Offline precedence.
+    /// Callers (WebSearchTool, FetchURLTool, Ollama executor) should use:
+    ///   guard ToolPolicy.isExternalAllowed else { return ToolPolicy.webToolsDisabledReason() ?? "..." }
+    /// This eliminates the prior 3-site string drift (FM tools vs. Ollama vs. menu)
+    /// while preserving every observable message byte-for-byte.
+    nonisolated static func webToolsDisabledReason() -> String? {
+        guard !isExternalAllowed else { return nil }
+        if AppSettings.isOfflineOnly {
+            return "Offline Mode is on — web access is disabled."
+        } else {
+            return "Web access is turned off in Settings."
+        }
+    }
+
+    // MARK: - Command risk vocabulary (single source of truth)
+
+    /// Centralized blocked vs. risky command markers. Documents the two-tier
+    /// model: blocked ⊂ outright refused (before approval UI); risky ⊂ always
+    /// re-confirm even under "Always run" session bypass.
+    /// Source lists live here so ShellTool + CommandApprovalCenter + future
+    /// places (e.g. audit, docs) stay in sync; adding "npm publish" or tightening
+    /// ">" no longer requires editing 3 places.
+    nonisolated enum CommandRisk {
+        /// Dangerous operations/paths matched *anywhere* in the command (catches
+        /// chains like "foo; rm -rf /" and path prefixes after lowercasing).
+        static let blockedSubstrings: [String] = [
+            "rm -rf /", "rm -rf /*", "rm -rf ~", "rm -rf ~/", "rm -fr /", "rm -rf .", "rm -rf *",
+            ":(){", "fork()",
+            "mkfs", "diskutil erasedisk", "diskutil erasevolume", "diskutil reformat",
+            "diskutil partitiondisk", "dd if=", "of=/dev/",
+            "/dev/disk", "/dev/rdisk", "/dev/sd", "> /dev/", ">/dev/",
+            "> /etc/", ">/etc/", "csrutil disable", "spctl --master-disable", "nvram ",
+            "chmod -r 000", "chmod 000", "chmod -r ", "chown -r", "chgrp -r",
+        ]
+
+        /// Destructive command *names* (leading token after path-strip, per
+        /// ;|&|\n\r` segment). "eval"/"exec"/"source" close the variable bypass.
+        static let blockedLeadingCommands: Set<String> = [
+            "shutdown", "reboot", "halt", "poweroff",
+            "sudo", "su", "doas",
+            "killall", "mkfs", "fdisk", "newfs_apfs", "newfs_hfs", "diskutil",
+            "eval", "exec", "source", "launchctl", "chgrp",
+        ]
+
+        /// Markers for commands that mutate/destroy/escalate. These always force
+        /// a re-confirmation even if the user hit "Always run" for the session.
+        /// (Note the current whitespace-sensitive " > " — pinned by tests until
+        /// a normalization pass lands.)
+        static let riskyMarkers: [String] = [
+            "rm ", "rmdir", "mv ", "trash", "delete", " > ", ">>",
+            "sudo", "chmod", "chown", "git push", "git reset --hard",
+            "git clean", "truncate", "format", "kill "
+        ]
+
+        /// Returns the matched blocked token (for the REFUSED message) or nil.
+        /// Two-layer: substrings anywhere, then leading-token (path-stripped) against the Set.
+        static func isBlocked(_ command: String) -> String? {
+            let lower = command.lowercased()
+            for pattern in blockedSubstrings where lower.contains(pattern) {
+                return pattern
+            }
+            // Operator-aware split: collapse the TWO-char operators (&&, ||, |&)
+            // to a single sentinel FIRST, so `&&` isn't mis-parsed as a doubled
+            // single `&` (which left spurious empty segments). Then split on the
+            // remaining control operators. `&&` (and) and `&` (background) both
+            // separate commands, so every segment's leading token is still checked.
+            let sep = "\u{0}"
+            let normalized = lower
+                .replacingOccurrences(of: "&&", with: sep)
+                .replacingOccurrences(of: "||", with: sep)
+                .replacingOccurrences(of: "|&", with: sep)
+            let segments = normalized.components(separatedBy: CharacterSet(charactersIn: ";|&\n\r`" + sep))
+            for raw in segments {
+                let segment = raw.trimmingCharacters(in: .whitespaces)
+                guard let firstToken = segment.split(separator: " ").first else { continue }
+                let name = firstToken.split(separator: "/").last.map(String.init) ?? String(firstToken)
+                if blockedLeadingCommands.contains(name) { return name }
+            }
+            return nil
+        }
+
+        /// True for commands that should re-confirm even under sessionBypass.
+        static func looksRisky(_ command: String) -> Bool {
+            let l = command.lowercased()
+            return riskyMarkers.contains { l.contains($0) }
+        }
+    }
 }

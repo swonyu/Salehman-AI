@@ -876,6 +876,16 @@ Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed t
 
 ---
 
+## 2026-06-06 · 🛡️ Tool security/correctness hardening (4 fixes)
+**Files:** `Tools/WebTools.swift`, `Tools/ShellTool.swift`, `Tools/ToolPolicy.swift`. (These also carry the other session's CommandRisk-centralization WIP — committed together, green.)
+1. **SSRF (`Web.ssrfRejectionReason`):** now explicitly **rejects embedded credentials** (`url.user`/`url.password` → refuse `user:pass@host`, a classic `@`-split confusion vector), and **rejects numeric/obfuscated host encodings** that slipped past the dotted-quad check — bare hex (`0x7f000001`), bare decimal int (`2130706433` == 127.0.0.1), and octal/leading-zero octets (`0177.0.0.1`). No legit DNS host is purely numeric, so these are safe refusals.
+2. **`Shell.runApproved`:** the timeout report no longer hardcodes "60s" — it captures the actual `timeout` it passes to `run(_:timeout:)` and reports `\(Int(timeout))s`, so the message can't drift from the real value.
+3. **`CommandRisk.isBlocked` segment splitting:** now **operator-aware** — collapses the two-char operators (`&&`, `||`, `|&`) to a single sentinel BEFORE splitting on the control-operator set, so `&&` isn't mis-parsed as a doubled single `&` (which left spurious empty segments). Same blocked-command coverage, cleaner parse.
+4. **Removed the unused deprecated `Shell.blockedSubstrings`/`blockedCommands` aliases** (grep confirmed zero references; `isBlocked` already delegates to `ToolPolicy.CommandRisk`).
+**Result:** Build + full suite green (one intermittent web-gate flake from the other session's test churn — unrelated, passes on re-run).
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

@@ -10,35 +10,10 @@ import FoundationModels
 /// with a timeout so a hung process can't freeze the app.
 enum Shell {
 
-    /// Dangerous *operation / path* fragments — refused if they appear ANYWHERE
-    /// in the command (so a chained `foo; rm -rf /` is still caught). All lower-
-    /// case; `isBlocked` lowercases the input before comparing.
-    ///
-    /// NOTE on `/dev/disk` etc.: kept as a blunt substring on purpose. For a
-    /// destructive-command gate, over-blocking a rare raw-disk *read* is the
-    /// right trade vs. letting a disk-*wipe* (`dd of=/dev/diskN`, `> /dev/diskN`)
-    /// slip through. Safety beats the theoretical false-positive.
-    private static let blockedSubstrings: [String] = [
-        "rm -rf /", "rm -rf /*", "rm -rf ~", "rm -rf ~/", "rm -fr /", "rm -rf .", "rm -rf *",
-        ":(){", "fork()",
-        "mkfs", "diskutil erasedisk", "diskutil erasevolume", "diskutil reformat",
-        "diskutil partitiondisk", "dd if=", "of=/dev/",
-        "/dev/disk", "/dev/rdisk", "/dev/sd", "> /dev/", ">/dev/",
-        "> /etc/", ">/etc/", "csrutil disable", "spctl --master-disable", "nvram ",
-        "chmod -r 000", "chmod 000", "chmod -r ", "chown -r", "chgrp -r",
-    ]
-
-    /// Destructive command *names*. Matched as the leading token of EACH
-    /// `;`/`&&`/`||`/`|`/newline/backtick-separated segment, so neither chaining
-    /// (`x && sudo rm`) nor a path prefix (`/sbin/reboot`) can sneak one past a
-    /// substring check. `eval`/`exec`/`source` are blocked because they enable
-    /// the variable-indirection bypass (`X="rm -rf /"; eval $X`).
-    private static let blockedCommands: Set<String> = [
-        "shutdown", "reboot", "halt", "poweroff",
-        "sudo", "su", "doas",
-        "killall", "mkfs", "fdisk", "newfs_apfs", "newfs_hfs", "diskutil",
-        "eval", "exec", "source", "launchctl", "chgrp",
-    ]
+    // Command-risk lists + logic live in ToolPolicy.CommandRisk (single source for
+    // Shell + CommandApprovalCenter + tests). `isBlocked` below just delegates;
+    // the old per-type deprecated aliases were removed after confirming nothing
+    // referenced them.
 
     struct Result {
         let exitCode: Int32
@@ -50,20 +25,9 @@ enum Shell {
     /// Two layers: dangerous substrings (operations/paths, anywhere) + dangerous
     /// command names (leading token of each chained segment).
     static func isBlocked(_ command: String) -> String? {
-        let lower = command.lowercased()
-        for pattern in blockedSubstrings where lower.contains(pattern) {
-            return pattern
-        }
-        // Token-aware pass: inspect the leading command of every chained segment.
-        let segments = lower.components(separatedBy: CharacterSet(charactersIn: ";|&\n\r`"))
-        for raw in segments {
-            let segment = raw.trimmingCharacters(in: .whitespaces)
-            guard let firstToken = segment.split(separator: " ").first else { continue }
-            // Strip any path prefix: `/sbin/reboot` → `reboot`.
-            let name = firstToken.split(separator: "/").last.map(String.init) ?? String(firstToken)
-            if blockedCommands.contains(name) { return name }
-        }
-        return nil
+        // Delegate to the single source (ToolPolicy.CommandRisk). The old private
+        // lets are now thin deprecated forwards for any other references.
+        return ToolPolicy.CommandRisk.isBlocked(command)
     }
 
     /// Run a command with `/bin/zsh -c`. Blocks the calling (background) task
@@ -145,9 +109,10 @@ enum Shell {
         guard approved else {
             return "The user CANCELLED this command. It was NOT run. Acknowledge that and ask what they'd like instead."
         }
-        let result = run(cmd)
+        let timeout: TimeInterval = 60
+        let result = run(cmd, timeout: timeout)
         var report = "$ \(cmd)\n"
-        if result.timedOut { report += "(timed out after 60s; process terminated)\n" }
+        if result.timedOut { report += "(timed out after \(Int(timeout))s; process terminated)\n" }
         report += "exit code: \(result.exitCode)\n---\n\(result.output)"
         return report
     }

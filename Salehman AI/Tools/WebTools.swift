@@ -90,6 +90,12 @@ enum Web {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             return "Refused: only http/https URLs can be fetched."
         }
+        // Reject embedded credentials (userinfo). A fetch tool should never carry
+        // them, and `user:pass@host` is a classic SSRF-confusion vector when a
+        // downstream parser splits on `@` differently than Foundation's URL does.
+        if url.user != nil || url.password != nil {
+            return "Refused: URLs with embedded credentials (user:password@) are not allowed."
+        }
         guard var host = url.host?.lowercased(), !host.isEmpty else {
             return "Refused: URL has no host."
         }
@@ -111,6 +117,19 @@ enum Web {
                 }
             }
             return nil
+        }
+        // Numeric IP obfuscations that bypass the dotted-quad check below:
+        //   • bare hex host      0x7f000001
+        //   • bare decimal int   2130706433  (== 127.0.0.1)
+        //   • octal dotted-quad  0177.0.0.1  (a leading-zero octet)
+        // No legitimate DNS hostname is purely numeric, so refusing these is safe.
+        if host.hasPrefix("0x") || host.allSatisfy(\.isNumber) {
+            return "Refused: \"\(host)\" is a numeric/obfuscated address."
+        }
+        let octets = host.split(separator: ".")
+        if octets.count == 4, octets.allSatisfy({ $0.allSatisfy(\.isNumber) }),
+           octets.contains(where: { $0.count > 1 && $0.hasPrefix("0") }) {
+            return "Refused: \"\(host)\" uses an ambiguous (octal) address form."
         }
         if isPrivateIPv4(host) {
             return "Refused: \"\(host)\" is a private or loopback address."
@@ -139,7 +158,9 @@ enum Web {
         }
     }
 
-    private static func stripHTML(_ html: String) -> String {
+    // internal (not private) so WebToolsOfflineGateTests can pin stripHTML + decodeDDG behavior exactly.
+    // No logic change; was only called internally before.
+    static func stripHTML(_ html: String) -> String {
         var s = html
         // Remove script/style blocks.
         for tag in ["script", "style", "head", "nav", "footer"] {
@@ -166,7 +187,8 @@ enum Web {
     }
 
     /// DuckDuckGo wraps links like //duckduckgo.com/l/?uddg=ENCODED
-    private static func decodeDDG(_ link: String) -> String {
+    // internal (not private) so WebToolsOfflineGateTests can pin decodeDDG exactly.
+    static func decodeDDG(_ link: String) -> String {
         guard let range = link.range(of: "uddg=") else {
             return link.hasPrefix("//") ? "https:" + link : link
         }
@@ -209,8 +231,7 @@ struct WebSearchTool: Tool {
         // which is Offline-Mode-aware — a session built while online otherwise kept
         // these tools live and leaked to the network after the user went offline.
         guard ToolPolicy.isExternalAllowed else {
-            return AppSettings.isOfflineOnly ? "Offline Mode is on — web access is disabled."
-                                             : "Web access is turned off in Settings."
+            return ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled."
         }
         return await Web.search(arguments.query)
     }
@@ -228,8 +249,7 @@ struct FetchURLTool: Tool {
 
     func call(arguments: Arguments) async throws -> String {
         guard ToolPolicy.isExternalAllowed else {
-            return AppSettings.isOfflineOnly ? "Offline Mode is on — web access is disabled."
-                                             : "Web access is turned off in Settings."
+            return ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled."
         }
         return await Web.fetch(arguments.url)
     }
