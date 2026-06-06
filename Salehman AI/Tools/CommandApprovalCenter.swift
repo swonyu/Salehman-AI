@@ -59,11 +59,11 @@ final class CommandApprovalCenter: ObservableObject {
     /// turned confirmations off in Settings, or a NON-risky command is covered by
     /// the current session bypass. Risky commands always re-confirm.
     func requestApproval(_ command: String) async -> Bool {
-        // Unrestricted Mode ("God Mode"): auto-approve without a prompt. The chat UI
+        // Unrestricted Mode: auto-approve without a prompt. The chat UI
         // hides the approval card in this mode, so we MUST resolve here or the tool
         // would hang forever. SAFETY FLOOR INTACT: `Shell.runApproved` runs
         // `Shell.isBlocked` BEFORE calling this, so outright-catastrophic commands
-        // (rm -rf /, fork bombs, disk erase, sudo, …) are already refused — God Mode
+        // (rm -rf /, fork bombs, disk erase, sudo, …) are already refused — Unrestricted Mode
         // only skips the approval prompt for what passed that floor.
         if AppSettings.shared.unrestrictedTools { return true }
         // Deliberate, persisted opt-out (Settings/chip) fully bypasses.

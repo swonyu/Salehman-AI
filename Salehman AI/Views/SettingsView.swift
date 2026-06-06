@@ -129,7 +129,7 @@ struct SettingsView: View {
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
-                        toggle("Unrestricted Mode (God Mode)",
+                        toggle("Unrestricted Mode",
                                "Runs the assistant's shell commands WITHOUT asking for approval. Catastrophic commands (rm -rf /, disk erase, fork bombs, sudo) are STILL refused, but everything else runs unprompted. Off by default — use with extreme caution.",
                                "exclamationmark.triangle.fill", $settings.unrestrictedTools)
                         toggle("Private Mode",

@@ -42,8 +42,8 @@ struct ContentView: View {
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
 
-    // Drives the "alive" pulse on the GOD MODE indicator.
-    @State private var godModePulse = false
+    // Drives the "alive" pulse on the Unrestricted Mode indicator.
+    @State private var unrestrictedPulse = false
 
     private struct Suggestion: Hashable {
         let icon: String
@@ -69,7 +69,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // Global red tint when GOD MODE (Unrestricted) is active.
+            // Global red tint when Unrestricted Mode is active.
             if settings.unrestrictedTools {
                 Color.red.opacity(0.03).ignoresSafeArea()
             }
@@ -77,7 +77,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 // Warning banner appears above the normal header when active.
                 if settings.unrestrictedTools {
-                    godModeBanner
+                    unrestrictedBanner
                 }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
@@ -125,10 +125,10 @@ struct ContentView: View {
             if isUnrestricted {
                 approval.confirmationEnabled = false
                 withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    godModePulse = true
+                    unrestrictedPulse = true
                 }
             } else {
-                godModePulse = false
+                unrestrictedPulse = false
             }
         }
     }
@@ -146,18 +146,18 @@ struct ContentView: View {
                 // while running (was a flat off-brand purple dot — the most
                 // visible "AI is working" affordance in the chrome).
                 if settings.unrestrictedTools {
-                    // Red pulsing halo for GOD MODE (alive / "always on" signal)
+                    // Red pulsing halo for Unrestricted Mode (alive / "always on" signal)
                     ZStack {
                         Circle().fill(Color.red.opacity(0.4))
                             .frame(width: 22, height: 22)
                             .blur(radius: 5)
-                            .scaleEffect(godModePulse ? 1.45 : 1.0)
-                            .opacity(godModePulse ? 0.6 : 0.4)
+                            .scaleEffect(unrestrictedPulse ? 1.45 : 1.0)
+                            .opacity(unrestrictedPulse ? 0.6 : 0.4)
                         Circle().fill(Color.red)
                             .frame(width: 7, height: 7)
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
-                    Text(isRunning ? "GOD MODE • Thinking…" : "GOD MODE")
+                    Text(isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.red)
                 } else {
@@ -187,7 +187,7 @@ struct ContentView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
-                ? "Salehman AI, GOD MODE unrestricted" 
+                ? "Salehman AI, Unrestricted Mode"
                 : (isRunning ? "Salehman AI, thinking" : "Salehman AI, \(brainStatus.label)"))
 
             Spacer()
@@ -237,14 +237,14 @@ struct ContentView: View {
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { startNewChat() }
 
             if settings.unrestrictedTools {
-                // Prominent GOD MODE badge (red, tappable to exit the mode)
+                // Prominent Unrestricted Mode badge (red, tappable to exit the mode)
                 Button {
                     settings.unrestrictedTools = false
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text("GOD MODE")
+                        Text("UNRESTRICTED")
                             .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(.red)
@@ -265,12 +265,12 @@ struct ContentView: View {
         .background(.ultraThinMaterial)
     }
 
-    // Prominent warning banner for GOD MODE (global red tint + clear call-to-action).
-    private var godModeBanner: some View {
+    // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
+    private var unrestrictedBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .bold))
-            Text("GOD MODE ACTIVE — Unrestricted tools enabled. No command approvals or restrictions. Use with extreme caution.")
+            Text("UNRESTRICTED MODE ACTIVE — the assistant runs commands without asking. Catastrophic commands are still blocked. Use with caution.")
                 .font(.caption.weight(.semibold))
             Spacer()
             Button("Disable") { settings.unrestrictedTools = false }
