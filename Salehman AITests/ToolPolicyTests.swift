@@ -33,6 +33,9 @@ struct ToolPolicyTests {
     /// the duration of the test so the override and webAccess paths can be
     /// asserted in isolation.
     private func withCleanPolicy(_ body: () -> Void) {
+        // Cross-suite lock: WebToolsOfflineGateTests mutates these same globals in parallel.
+        ToolPolicyTestLock.lock.lock()
+        defer { ToolPolicyTestLock.lock.unlock() }   // LIFO: unlocks AFTER the restore defer
         let priorOverride = ToolPolicy.override
         let webKey = AppSettings.Keys.webAccess
         let offlineKey = AppSettings.Keys.offlineOnly

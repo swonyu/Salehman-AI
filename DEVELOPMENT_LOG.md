@@ -860,6 +860,13 @@ Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed t
 
 ---
 
+## 2026-06-06 · 🔒 Fixed the flaky web-gate test race (cross-suite lock)
+**Files:** `Salehman AITests/ToolPolicyTestLock.swift` (new), `Salehman AITests/ToolPolicyTests.swift` + `WebToolsOfflineGateTests.swift` (each `withClean*` helper now acquires the lock).
+**What & why:** `ToolPolicyTests` ↔ `WebToolsOfflineGateTests` intermittently failed because Swift Testing parallelizes ACROSS suites (`@Suite(.serialized)` only serializes within a suite) and both mutate the same process-globals `ToolPolicy.override` / `webAccess` / `offlineOnly` with no injection seam. Added a shared `ToolPolicyTestLock` (NSLock) — both helpers `lock()` before touching the globals and `unlock()` after restoring them (declared first so it unlocks LAST, after the state-restore defer). Mirrors the existing `BrainPreferenceTestLock`.
+**Result:** Full suite ran **green twice back-to-back** (the flake needed >1 pass to trust). Build SUCCEEDED. (Committed the lock + both suites — this also lands the other session's now-race-fixed web-gate test implementations.)
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
