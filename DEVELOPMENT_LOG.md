@@ -939,6 +939,11 @@ The looksRisky change itself: removed the `nonisolated static CommandApprovalCen
 **What & why:** Owner clarified the Grok project's job is to polish/improve AND release the app, not just propose changes. Extended the Project Pack with: an `IMPROVE & POLISH EVERY WAY IMAGINABLE` section (now incl. UX states, light/dark, keyboard nav, "production quality not prototypes"), and a new `RELEASE READINESS` section grounded in the real config read from `project.pbxproj` — Developer ID distribution (automatic signing, `ENABLE_HARDENED_RUNTIME = YES`, team `WY272L3F3N`), currently `MARKETING_VERSION 1.0` / build `1`, no CHANGELOG. On "release/ship", Grok must produce a blockers-vs-nice-to-haves readiness report, a version/build bump, synthesized release notes (propose `CHANGELOG.md`), and the owner-run Xcode archive → notarize (`notarytool`) → staple → export steps — treating release as a quality gate (never ship past a blocker). Append-only logging rule preserved. No app code touched.
 **Result:** Docs only — build/tests unaffected. This entry was appended below the prior Grok-kit entry (history preserved, per the owner's "never remove old logs" directive).
 
+## 2026-06-06 · 🔄 Regenerated SOURCE_BUNDLE.md (handoff refresh)
+**Files:** `SOURCE_BUNDLE.md` (regenerated)
+**What & why:** Refreshed the single-file source dump via `tools/bundle_source.sh` so the external-AI (Grok) handoff reflects current `main` (was generated at 57e7e1e; now includes the two new Grok collaboration docs — `GROK_SKILL_CREATOR.md`, `GROK_SALEHMAN_IMPROVER.md` — plus all session code). Generated artifact only; no source changed.
+**Result:** Bundle re-emitted; build/tests unaffected. Appended below prior entries (history preserved, per the append-only directive).
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
