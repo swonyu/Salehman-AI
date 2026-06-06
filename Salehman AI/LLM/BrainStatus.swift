@@ -71,6 +71,7 @@ final class BrainStatus: ObservableObject {
         case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
         case .salehman:          return DS.Palette.accent                          // the brand's own model
         case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
+        case .vllm:              return Color(red: 0.20, green: 0.78, blue: 0.90)  // vLLM cyan — local high-throughput
 
         case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
         case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet

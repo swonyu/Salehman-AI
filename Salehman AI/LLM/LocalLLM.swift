@@ -82,6 +82,8 @@ enum LocalLLM {
             return "Salehman needs an on-device engine to run. Either turn on Apple Intelligence (Settings → Intelligence → Apple Intelligence) — Salehman uses it with its own persona, no install required — OR pull your custom Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
+        case .vllm:
+            return "vLLM is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → vLLM (e.g. http://localhost:8000/v1) and make sure `vllm serve` is running."
         }
     }
 
@@ -105,6 +107,7 @@ enum LocalLLM {
         case appleIntelligence, ollamaCoder
         case salehman                                // the user's OWN local Ollama model
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
+        case vllm                                    // local OpenAI-compat server served by vLLM
         case claudeHaiku, grok                       // cloud, pre-existing
         case gemini, groq, mistral, cerebras         // cloud, free-tier
         case codex, copilot                          // cloud, OpenAI + GitHub Copilot
@@ -169,6 +172,12 @@ enum LocalLLM {
             // "configured" check (endpoint URL is non-empty) is enough for the
             // header dot; a real call will surface unreachability later.
             return UnslothStudio.isConfigured ? .unslothStudio : .none
+
+        case .vllm:
+            // Same rationale as Unsloth Studio: don't probe the URL here (would
+            // burn an HTTP call every 10s while BrainStatus polls). "Configured"
+            // (endpoint set) is enough for the dot; a real call surfaces failure.
+            return VLLM.isConfigured ? .vllm : .none
 
         // Cloud brains: "reachable" simply means the user has entered a key.
         // We never probe the network here — that would burn an HTTP request
@@ -391,6 +400,10 @@ enum LocalLLM {
             return UnslothStudio.isLocalLoopback
                 ? "Local · Unsloth Studio (\(AppSettings.unslothStudioModelCurrent))"
                 : "Custom server · Unsloth Studio (\(AppSettings.unslothStudioModelCurrent))"
+        case .vllm:
+            return VLLM.isLocalLoopback
+                ? "Local · vLLM (\(AppSettings.vllmModelCurrent))"
+                : "Custom server · vLLM (\(AppSettings.vllmModelCurrent))"
         case .claudeHaiku:       return "Cloud · Claude Haiku"
         case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
         case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
@@ -423,6 +436,10 @@ enum LocalLLM {
                 return UnslothStudio.isConfigured
                     ? "Unsloth Studio · server unreachable"
                     : "Unsloth Studio · set endpoint URL in Settings"
+            case .vllm:
+                return VLLM.isConfigured
+                    ? "vLLM · server unreachable"
+                    : "vLLM · set endpoint URL in Settings"
             case .auto:    return "No brain available"
             default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
             }
@@ -778,6 +795,9 @@ enum LocalLLM {
     /// exclusively to it, no silent fallback to Apple/Ollama. Same discipline
     /// as `.salehman`: an explicit pin means "this engine or nothing."
     nonisolated private static var unslothStudioAllowed: Bool { pref == .unslothStudio }
+    /// vLLM (local OpenAI-compatible server) is pinned — route exclusively to it,
+    /// no silent fallback. Same discipline as `.unslothStudio`.
+    nonisolated private static var vllmAllowed: Bool { pref == .vllm }
     nonisolated private static var claudeAllowed:   Bool { pref == .claudeHaiku }
     nonisolated private static var grokAllowed:     Bool { pref == .grok }
     nonisolated private static var geminiAllowed:   Bool { pref == .gemini }
@@ -872,6 +892,11 @@ enum LocalLLM {
         // no silent fallback. The endpoint URL is the only configuration.
         if unslothStudioAllowed {
             if let reply = await UnslothStudio.chat(prompt: prompt) { return reply }
+            return offMessage
+        }
+        // vLLM — explicit pin, no silent fallback (same discipline as Unsloth Studio).
+        if vllmAllowed {
+            if let reply = await VLLM.chat(prompt: prompt) { return reply }
             return offMessage
         }
         // Local tier (Apple Intelligence + Ollama): free & on-device, so they
@@ -1052,6 +1077,12 @@ enum LocalLLM {
             if let r = await UnslothStudio.chat(prompt: prompt) { return r }
             return offMessage
         }
+        // vLLM — explicit pin: stream first, then non-streaming fallback, same as above.
+        if vllmAllowed {
+            if let r = await VLLM.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
+            if let r = await VLLM.chat(prompt: prompt) { return r }
+            return offMessage
+        }
         // Local tier — same fall-back-and-order rules as `generate`.
         if isLocalPref {
             if ollamaFirst,
@@ -1202,6 +1233,13 @@ enum LocalLLM {
         // calling tools through Studio's OpenAI-compatible `tools` field.)
         if unslothStudioAllowed {
             if let reply = await UnslothStudio.chat(prompt: message, system: Self.cloudSystemPrompt) {
+                return reply
+            }
+            return offMessage
+        }
+        // vLLM — explicit pin; plain chat (no tool loop yet), same as Unsloth Studio.
+        if vllmAllowed {
+            if let reply = await VLLM.chat(prompt: message, system: Self.cloudSystemPrompt) {
                 return reply
             }
             return offMessage

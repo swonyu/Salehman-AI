@@ -161,7 +161,7 @@ enum AgentPipeline {
         // and directly delays the answer. Same predicate as `effectiveCap`'s
         // serial-brain branch so they stay in lockstep when a new serial brain
         // is added.
-        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio)
+        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm)
         if specs.count > 1 && !isSerialLocal {
             Task.detached(priority: .utility) {
                 let map = await adaptTitles(mission: mission, names: specs.map { $0.name })
@@ -328,7 +328,7 @@ enum AgentPipeline {
         // `.salehman` model, and the OpenAI-compatible `.unslothStudio`
         // server) all run serially — N parallel requests would queue or OOM
         // on the same shared-RAM box.
-        (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio) ? 1 : max(1, baseCap)
+        (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm) ? 1 : max(1, baseCap)
     }
 
     nonisolated static func isTrivialMission(_ mission: String) -> Bool {

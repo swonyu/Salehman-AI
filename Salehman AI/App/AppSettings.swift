@@ -77,6 +77,16 @@ final class AppSettings: ObservableObject {
     @Published var unslothStudioModel: String {
         didSet { UserDefaults.standard.set(unslothStudioModel, forKey: Keys.unslothStudioModel) }
     }
+    /// vLLM endpoint URL (e.g. http://localhost:8000/v1) for the `.vllm` brain.
+    /// Empty = not configured (the brain gate treats that as unreachable).
+    @Published var vllmEndpoint: String {
+        didSet { UserDefaults.standard.set(vllmEndpoint, forKey: Keys.vllmEndpoint) }
+    }
+    /// Model id passed to vLLM's OpenAI-compatible `{"model": …}` body. vLLM
+    /// typically serves a single model; blank falls back to a `"local"` sentinel.
+    @Published var vllmModel: String {
+        didSet { UserDefaults.standard.set(vllmModel, forKey: Keys.vllmModel) }
+    }
     /// Brains the user checked (✓) for ROTATION. When ≥2 are selected the app
     /// cycles to the next one on each sent message (`advanceRotation`). Persisted
     /// as raw values; list order IS the rotation order.
@@ -184,6 +194,8 @@ final class AppSettings: ObservableObject {
         nonisolated static let customMLXModelPath = "set_customMLXModelPath"
         nonisolated static let unslothStudioEndpoint = "set_unslothStudioEndpoint"
         nonisolated static let unslothStudioModel    = "set_unslothStudioModel"
+        nonisolated static let vllmEndpoint = "set_vllmEndpoint"
+        nonisolated static let vllmModel    = "set_vllmModel"
         nonisolated static let rotationBrains  = "set_rotationBrains"
         nonisolated static let openAIModel     = "set_openAIModel"
         nonisolated static let grokModel       = "set_grokModel"
@@ -222,6 +234,17 @@ final class AppSettings: ObservableObject {
     /// blank — most single-model servers ignore the field anyway.
     nonisolated static var unslothStudioModelCurrent: String {
         let stored = (UserDefaults.standard.string(forKey: Keys.unslothStudioModel) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stored.isEmpty ? "local" : stored
+    }
+
+    /// Nonisolated reads for the vLLM endpoint + model (mirrors Unsloth Studio).
+    nonisolated static var vllmEndpointCurrent: String {
+        (UserDefaults.standard.string(forKey: Keys.vllmEndpoint) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    nonisolated static var vllmModelCurrent: String {
+        let stored = (UserDefaults.standard.string(forKey: Keys.vllmModel) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return stored.isEmpty ? "local" : stored
     }
@@ -359,6 +382,8 @@ final class AppSettings: ObservableObject {
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
         unslothStudioEndpoint = d.string(forKey: Keys.unslothStudioEndpoint) ?? "" // empty = not configured
         unslothStudioModel    = d.string(forKey: Keys.unslothStudioModel)    ?? ""
+        vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
+        vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
         let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
         openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
@@ -410,6 +435,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
     case ensemble   // run ALL reachable brains in parallel, show every answer
     case salehman   // the user's OWN local Ollama model (name in `customModelName`); runs nothing else
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
+    case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
     // local (Apple/Ollama) backstop → effectively never rate-limited, never paid.
 
@@ -448,6 +474,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ensemble:    return "All Brains at Once"
         case .salehman:    return "Salehman (your model)"
         case .unslothStudio: return "Unsloth Studio (local server)"
+        case .vllm:          return "vLLM (local server)"
         }
     }
     var subtitle: String {
@@ -468,6 +495,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
         case .salehman:    return "On-device · its own persona on Apple Intelligence (no install needed); optionally point it at your own Ollama model"
         case .unslothStudio: return "Local · your fine-tuned model served by Unsloth Studio (or mlx_lm.server / LM Studio) over OpenAI-compatible HTTP · no key needed"
+        case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
     }
     var icon: String {
@@ -488,6 +516,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .ensemble:    return "rectangle.3.group.fill"
         case .salehman:    return "brain.head.profile"
         case .unslothStudio: return "server.rack"
+        case .vllm:          return "speedometer"
         }
     }
 }

@@ -62,6 +62,8 @@ struct SettingsView: View {
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
     @State private var unslothStudioTesting: Bool = false
+    @State private var vllmTestStatus: String? = nil
+    @State private var vllmTesting: Bool = false
     /// Optional Unsloth API token. Stored in Keychain (never UserDefaults). NOT
     /// needed for the local chat brain — only used so the Claude-Code snippet
     /// can paste the real `ANTHROPIC_AUTH_TOKEN` on copy. `nonisolated` Keychain
@@ -208,6 +210,13 @@ struct SettingsView: View {
                         unslothStudioTestRow
                         unslothStudioKeyRow
                         claudeCodeUsageRow
+                    }
+
+                    // vLLM (high-throughput local OpenAI-compatible server).
+                    section("vLLM (local server)", "Connect to a local vLLM server — run `vllm serve <model>` and it exposes an OpenAI-compatible API on http://localhost:8000/v1. Pick \u{201C}vLLM\u{201D} in the Brain grid above to route chat here. No key needed. Loopback URLs (localhost / 127.0.0.1) also satisfy Knowledge's on-device privacy guarantee.") {
+                        vllmEndpointRow
+                        vllmModelRow
+                        vllmTestRow
                     }
 
                     // Free providers (zero-cost tiers / `:free` models). Count
@@ -492,6 +501,8 @@ struct SettingsView: View {
         // unreachable case via `unavailableMessage`.
         case .unslothStudio:
             return UnslothStudio.isConfigured
+        case .vllm:
+            return VLLM.isConfigured
         }
     }
 
@@ -800,6 +811,71 @@ struct SettingsView: View {
             .accessibilityLabel("Test Unsloth Studio connection")
 
             if let status = unslothStudioTestStatus {
+                Text(status.isEmpty ? "Connected ✓" : status)
+                    .font(.caption)
+                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    // MARK: vLLM rows (keyless local OpenAI-compatible server)
+
+    private var vllmEndpointRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "link").foregroundStyle(DS.Palette.accent)
+            TextField("Endpoint URL (e.g. http://localhost:8000/v1)",
+                      text: $settings.vllmEndpoint)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+                .padding(8)
+                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .accessibilityLabel("vLLM endpoint URL")
+            Button("Use :8000") {
+                settings.vllmEndpoint = "http://localhost:8000/v1"
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .accessibilityLabel("Fill with vLLM's default localhost URL")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private var vllmModelRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "shippingbox.fill").foregroundStyle(DS.Palette.accent)
+            TextField("Model name (what you passed to `vllm serve` — leave blank if unsure)",
+                      text: $settings.vllmModel)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+                .padding(8)
+                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .accessibilityLabel("vLLM model name")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    private var vllmTestRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task {
+                    vllmTesting = true
+                    vllmTestStatus = (await VLLM.testConnection()) ?? ""
+                    vllmTesting = false
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if vllmTesting { ProgressView().controlSize(.small) }
+                    Text("Test connection")
+                }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(vllmTesting || settings.vllmEndpoint.isEmpty)
+            .accessibilityLabel("Test vLLM connection")
+
+            if let status = vllmTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
                     .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
