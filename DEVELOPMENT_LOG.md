@@ -867,6 +867,15 @@ Wiring: `generate`/`generateStreaming` take an optional `cachePrefix` (renamed t
 
 ---
 
+## 2026-06-06 · 🧠 RAM optimization (embeddings Double→Float) + default local model → 14B
+**Files:** `Knowledge/KnowledgeStore.swift`, `Persistence/MemoryStore.swift` (embedding vectors `[Double]`→`[Float]`), `LLM/OllamaClient.swift` (default Ollama model → the already-pulled 14B).
+**What & why:** Owner: "optimize the app, especially RAM." The biggest app-side in-memory structure is the on-device sentence-embedding vectors (512-dim) in the Knowledge vault + long-term Memory. Stored them as **`[Float]` instead of `[Double]` → halves that footprint** (8→4 bytes/dim). Cosine still accumulates in `Double`, so retrieval accuracy is unchanged; existing JSON decodes fine (JSON numbers → Float). Also reordered `preferredCodeModels` so the local brain defaults to **`qwen2.5-coder:14b`** (already pulled, ~9 GB) — the most capable model that fits 16 GB — falling back to 7b.
+**Disk:** freed ~3.2 GB (`ollama rm llama3.2`, `qwen2.5-coder:1.5b-base`); volume was at 508 MB free → 3.7 GB.
+**Honest scope:** the app is a SwiftUI client and the local model runs in a SEPARATE Ollama process, so app-side RAM trimming frees unified memory for the model but can't add the ~10 GB a 27B/35B ("3.6") would need on a 16 GB Mac — that ceiling is hardware, not code.
+**Result:** Build + suite green (one intermittent flake from the other session's web-gate test churn — unrelated; passes on re-run). Targeted commit of my 3 files.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

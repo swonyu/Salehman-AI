@@ -6,7 +6,7 @@ import FoundationModels
 
 struct MemoryItem: Codable {
     let text: String
-    let vector: [Double]?
+    let vector: [Float]?   // Float, not Double — halves the in-memory vector RAM
 }
 
 /// Long-term memory: stores durable facts about the user and recalls the most
@@ -31,9 +31,9 @@ final class MemoryStore: @unchecked Sendable {
         }
     }
 
-    private func embed(_ text: String) -> [Double]? {
+    private func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
-        return e.vector(for: text)
+        return e.vector(for: text)?.map { Float($0) }   // Float halves the stored-vector RAM
     }
 
     func remember(_ text: String) {
@@ -90,10 +90,10 @@ final class MemoryStore: @unchecked Sendable {
         }.prefix(k).map { $0.text }
     }
 
-    private func cosine(_ a: [Double], _ b: [Double]) -> Double {
+    private func cosine(_ a: [Float], _ b: [Float]) -> Double {
         guard a.count == b.count else { return 0 }
         var dot = 0.0, na = 0.0, nb = 0.0
-        for i in 0..<a.count { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i] }
+        for i in 0..<a.count { let x = Double(a[i]), y = Double(b[i]); dot += x*y; na += x*x; nb += y*y }
         return (na == 0 || nb == 0) ? 0 : dot / (na.squareRoot() * nb.squareRoot())
     }
 }

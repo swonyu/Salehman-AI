@@ -25,9 +25,9 @@ enum OllamaClient {
     /// disk space). Adding a new variant here makes it eligible without
     /// any other code changes.
     nonisolated static let preferredCodeModels: [String] = [
-        codeModel,           // qwen2.5-coder:7b — sweet-spot (~4.7 GB)
-        "qwen2.5-coder:14b", // middle (~9 GB)
-        heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB)
+        "qwen2.5-coder:14b", // ← default: most capable that fits a 16 GB Mac (~9 GB live).
+        codeModel,           // qwen2.5-coder:7b — lighter fallback (~4.7 GB), snappier.
+        heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB), opt-in only.
     ]
 
     nonisolated private static let base = "http://localhost:11434"

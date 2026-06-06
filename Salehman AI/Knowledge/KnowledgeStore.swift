@@ -17,7 +17,7 @@ struct KnowledgeChunk: Codable, Equatable, Sendable {
     var docName: String
     var ordinal: Int
     var text: String
-    var vector: [Double]?
+    var vector: [Float]?   // Float, not Double — halves the in-memory vector RAM
 }
 
 /// A search result: the passage + which document it came from + a score.
@@ -160,15 +160,17 @@ final class KnowledgeStore: @unchecked Sendable {
         return out.filter { !$0.isEmpty }
     }
 
-    static func embed(_ text: String) -> [Double]? {
+    static func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
-        return e.vector(for: text)
+        // Down-cast to Float: halves the per-chunk vector footprint (512 dims ×
+        // 8→4 bytes). Cosine still accumulates in Double, so accuracy is unchanged.
+        return e.vector(for: text)?.map { Float($0) }
     }
 
-    static func cosine(_ a: [Double], _ b: [Double]) -> Double {
+    static func cosine(_ a: [Float], _ b: [Float]) -> Double {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot = 0.0, na = 0.0, nb = 0.0
-        for i in a.indices { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        for i in a.indices { let x = Double(a[i]), y = Double(b[i]); dot += x * y; na += x * x; nb += y * y }
         let denom = (na.squareRoot() * nb.squareRoot())
         return denom == 0 ? 0 : dot / denom
     }
