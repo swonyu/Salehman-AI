@@ -19,14 +19,16 @@ enum OllamaClient {
 
     /// Priority list for picking the active code model: lightest first,
     /// heaviest last. The app uses whichever of these is **actually pulled
-    /// on disk**, falling back gracefully. `7b` stays the documented
-    /// sweet-spot default; `14b` and `32b` are accepted upgrades for users
-    /// who already have them or whose download of `7b` failed (e.g. low
-    /// disk space). Adding a new variant here makes it eligible without
-    /// any other code changes.
+    /// on disk**, falling back gracefully. `7b` is the documented sweet-spot
+    /// default (and MUST equal `preferredCodeModels[0]` — `codeModel`); `14b`
+    /// and `32b` are accepted upgrades for users who already have them or whose
+    /// download of `7b` failed (e.g. low disk space). Adding a new variant here
+    /// makes it eligible without any other code changes.
+    /// (2026-06-06: reverted to 7b-first; commit 8152d68 had put 14b first,
+    /// which broke the `codeModel == [0]` invariant locked by OllamaPreferredModelsTests.)
     nonisolated static let preferredCodeModels: [String] = [
-        "qwen2.5-coder:14b", // ← default: most capable that fits a 16 GB Mac (~9 GB live).
-        codeModel,           // qwen2.5-coder:7b — lighter fallback (~4.7 GB), snappier.
+        codeModel,           // qwen2.5-coder:7b — sweet-spot default (~4.7 GB), snappy on 16 GB.
+        "qwen2.5-coder:14b", // accepted upgrade (~9 GB live) if already pulled.
         heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB), opt-in only.
     ]
 

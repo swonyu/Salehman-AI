@@ -62,7 +62,11 @@ final class CommandApprovalCenter: ObservableObject {
         // Deliberate, persisted opt-out (Settings/chip) fully bypasses.
         if !confirmationEnabled { return true }
         // "Always run" session bypass — but risky commands always re-confirm.
-        if sessionBypass && !Self.looksRisky(command) { return true }
+        // Go to `ToolPolicy.CommandRisk.looksRisky` directly (the single source of
+        // the risk vocabulary). The old `Self.looksRisky` thin alias was removed —
+        // a `nonisolated static` on a `@MainActor` class was a maintenance trap
+        // (compiler couldn't prevent future drift into MainActor state).
+        if sessionBypass && !ToolPolicy.CommandRisk.looksRisky(command) { return true }
         return await withCheckedContinuation { continuation in
             self.pending = Pending(command: command) { approved in
                 continuation.resume(returning: approved)
@@ -85,16 +89,10 @@ final class CommandApprovalCenter: ObservableObject {
         resolve(true)
     }
 
-    /// Commands that mutate / destroy / escalate always re-confirm even under a
-    /// session bypass. (Outright-dangerous commands never reach here — they're
-    /// refused first by `Shell.isBlocked`.)
-    /// `nonisolated` + pure: it now just FORWARDS to the single risk-vocabulary
-    /// source (`ToolPolicy.CommandRisk.looksRisky`), so the refusal layer
-    /// (`Shell.isBlocked`) and this session-bypass re-confirm gate can never drift
-    /// apart. Holds no state, so it's safe to call off the main actor (the
-    /// background tool path + `#expect` autoclosures in tests). The delegation
-    /// parity + the re-confirm cases are locked by `ShellSecurityTests`.
-    nonisolated static func looksRisky(_ command: String) -> Bool {
-        ToolPolicy.CommandRisk.looksRisky(command)
-    }
+    // Note: there is intentionally NO `CommandApprovalCenter.looksRisky` alias.
+    // The risk vocabulary lives in ONE place — `ToolPolicy.CommandRisk.looksRisky`
+    // — and every caller (this class above, `Shell.isBlocked`, the tests) reaches
+    // it directly. A `nonisolated static` thin alias on this `@MainActor` class
+    // was misleading: the annotation suggested an isolation guarantee that the
+    // compiler couldn't actually defend across future edits.
 }

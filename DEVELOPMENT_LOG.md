@@ -911,6 +911,24 @@ Also refreshed the `looksRisky` doc comment to reflect the delegation (was stale
 
 ---
 
+## 2026-06-06 · 🟢 Green-up + commit of the pending coverage drop (looksRisky centralization + 7 new suites) + two red-test root-cause fixes
+**Files:**
+- Source fixes (today, Claude): `Agents/SelfImprove.swift` (defaultRoot repoint), `LLM/OllamaClient.swift` (preferredCodeModels order)
+- Pending working-tree work now committed: `Tools/CommandApprovalCenter.swift` (removed `looksRisky` alias), `Salehman AITests/LooksRiskyDelegationTests.swift` (rewritten), 7 new suites — `BrainRoutingDispatchTests`, `KnowledgeRAGTests`, `LiveTranscriberSegmentTests`, `PersistenceRoundTripTests`, `SelfImprovePatchTests`, `SettingsBrainReadyTests`, `ShellSecurityTests`
+- Docs: `COORDINATION.md`, `PROJECT_CONTEXT.md`, `SOURCE_BUNDLE.md` (regenerated)
+
+**What & why:** Owner asked to `git push`; the branch was already in sync with `origin/main` (0/0) so nothing shipped — the real work was uncommitted (5 modified + 7 untracked). Per CLAUDE.md "leave it green" (pushing to the shared remote is a handoff), ran the suite first. It was RED, traced to two unrelated root causes — **neither from the looksRisky refactor**:
+1. **`OllamaPreferredModelsTests` (3 fail) — pre-existing on `main`.** Commit `8152d68` ("default → 14B") put `14b` first in `preferredCodeModels`, breaking the `codeModel (7b) == preferredCodeModels[0]` invariant and the ascending-order test. Per owner ("7B is the intended default"), reordered the list back to 7b-first (reverts only `8152d68`'s ordering; `codeModel` was already `7b`). All 3 pass, no test edits.
+2. **`SelfImprovePatchTests` (2 fail) — new file exposing a latent path bug.** `SelfImprove.defaultRoot` still pointed at the deleted `~/Downloads/SalehmanAI_Complete_Everything_Today/…` (repo moved to `~/Desktop`; commit `a9b99be` repointed the zip/checkpoint tools but missed this). The test's `try?` scratch-write silently failed → `applyPatch` returned false. Repointed `defaultRoot` to `/Users/saleh/Desktop/Salehman AI`. This was a real latent bug — self-improve would have backed up/patched a dead path.
+
+The looksRisky change itself: removed the `nonisolated static CommandApprovalCenter.looksRisky` thin alias (a misleading isolation annotation on a `@MainActor` class) so every caller reaches the single source `ToolPolicy.CommandRisk.looksRisky` directly. `LooksRiskyDelegationTests` rewritten — dropped the now-moot parity test, added a file-scope compile-time tripwire (`_looksRiskyCompileTimeContract`) that fails the build if the predicate ever becomes actor-isolated.
+
+**Mid-work incidents (logged on purpose):** owner's MacBook hard-crashed (power-button hold) during the first verify run, killing the background xcodebuild. Re-checked working tree + `git fsck --connectivity-only` → clean (only benign dangling blobs); nothing lost. Owner then restored files from Trash; re-verified `git status`/integrity unchanged, no duplicate/conflicted copies, commit history + reflog intact. Claude Code session list / shell history were lost to the crash (outside the repo; unrecoverable).
+
+**Result:** `xcodebuild test … -only-testing:"Salehman AITests"` → **TEST SUCCEEDED** (0 failures; `XCODEBUILD_EXIT=0`). Regenerated `SOURCE_BUNDLE.md`. Committed all + pushed to `origin/main`.
+
+---
+
 ## Standing notes / known issues
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.

@@ -213,9 +213,14 @@ Notable suites: `FreeAutoTests` (race filter + mode), `EnsembleTests`,
 `MemoryManagerTests`, `GrokTests`, `OpenRouterTests`, `StockSageTests`,
 `TrivialMissionTests` (complexity tiers), `SecurityHardeningTests` (SSRF + symlink
 guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
-`LocalLLMOffMessageTests`. Tests run **in parallel** — never have two tests mutate
-the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference`
-lesson in the log).
+`LocalLLMOffMessageTests`. 
+
+**Grok Tab A (2026-06-06) added 8 new suites per CODEBASE_REVIEW.md §4 (start of coverage for highest-blast-radius logic):**
+- Direct (enabled, green): `KnowledgeRAGTests` (chunk/keyword/cosine/search), `ShellSecurityTests` (isBlocked + run harness + looksRisky limits), `WebToolsOfflineGateTests` (FM tool gates + decodeDDG/stripHTML), `SelfImprovePatchTests` (applyPatch/parseErrors/isInside/backup — locks the double-patch-original fix).
+- `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
+- Refactor-dependent (disabled with header, per COORDINATION): `BrainRoutingDispatchTests`, `PersistenceRoundTripTests`, `SettingsBrainReadyTests` — wait for Tab B (BrainAdapter registry + JSONFileStore + brainReady extract).
+
+Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
 ---
 

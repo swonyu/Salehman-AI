@@ -2,52 +2,53 @@ import Testing
 import Foundation
 @testable import Salehman_AI
 
-// MARK: - looksRisky: delegation parity + determinism/actor-safety
+// MARK: - looksRisky: determinism + actor-safety contract
 //
-// `CommandApprovalCenter.looksRisky` (the session-bypass re-confirm gate) now
-// FORWARDS to `ToolPolicy.CommandRisk.looksRisky` (the single risk-vocabulary
-// source). These tests lock that the delegation changed no re-confirm UX, and
-// that the canonical predicate stays deterministic + actor-safe (nonisolated).
-// Kept in its own file (not ShellSecurityTests) to avoid colliding with the
-// other session's edits to that suite.
+// `ToolPolicy.CommandRisk.looksRisky` is the SINGLE source of the risk-vocab.
+// (`Shell.isBlocked` and `CommandApprovalCenter`'s session-bypass gate both call
+// it directly — there is no second-layer alias to drift against.) These tests
+// pin two structural contracts on the predicate:
+//   1. Determinism — pure function, no hidden state, same input → same output.
+//   2. Nonisolated-callability — must remain safe to call synchronously from any
+//      context (including non-main background paths). The TRUE compile-time
+//      guarantee for #2 lives in `_looksRiskyCompileTimeContract` below.
+
+// COMPILE-TIME tripwire for the nonisolated contract. This function is itself
+// explicitly `nonisolated` and synchronous; the call to `looksRisky` inside it is
+// also synchronous. If anyone ever annotates `ToolPolicy.CommandRisk.looksRisky`
+// with `@MainActor`, moves it onto an actor, or otherwise makes it isolated,
+// THIS FILE STOPS COMPILING — no `await` is possible from a sync nonisolated
+// context. We never need to call this at runtime; the compile is the test.
+nonisolated private func _looksRiskyCompileTimeContract() {
+    _ = ToolPolicy.CommandRisk.looksRisky("compile-time-only")
+}
 
 struct LooksRiskyDelegationTests {
 
     @Test
-    func looksRiskyDelegatesFaithfullyToSingleSource() {
-        // CommandApprovalCenter.looksRisky must forward EXACTLY to
-        // ToolPolicy.CommandRisk.looksRisky — pins that centralizing the risk
-        // vocabulary changed NO session-bypass re-confirm behaviour. Any drift
-        // between the two layers fails here.
-        let cases = ["rm foo", "git push", "sudo apt", "kill 123", "git reset --hard",
-                     "git clean -fd", "chmod 700 x", "chown root x", "mv a b", "rmdir d",
-                     "trash x", "truncate -s0 f", "format", "delete x",
-                     "echo a >> b", "echo a > b",
-                     "ls", "cat file", "pwd", "echo hi", "sw_vers"]
-        for c in cases {
-            #expect(CommandApprovalCenter.looksRisky(c) == ToolPolicy.CommandRisk.looksRisky(c),
-                    "looksRisky drifted between the two layers for \"\(c)\"")
-        }
-    }
-
-    @Test
     func commandRiskLooksRiskyIsDeterministicAndNonisolated() async {
-        // Determinism: identical input → identical output, repeatedly (no hidden
-        // or mutable state behind the predicate).
+        // (1) Determinism: identical input → identical output, repeatedly. Any
+        // hidden state or mutable cache behind the predicate would fail one of
+        // these 64 repeats.
         for c in ["sudo rm -rf /tmp/x", "ls -la", "git push origin main", "echo hi"] {
             let first = ToolPolicy.CommandRisk.looksRisky(c)
             for _ in 0..<64 { #expect(ToolPolicy.CommandRisk.looksRisky(c) == first) }
         }
-        // Actor-safety tripwire: looksRisky is invoked here from DETACHED, non-main
-        // child tasks. If it ever becomes actor-isolated (e.g. `@MainActor`) or
-        // starts reading mutable shared state, THIS BLOCK STOPS COMPILING — which
-        // is the point: it blocks future actor-unsafe changes at build time.
+
+        // (2) Runtime sanity (NOT the actor-safety guard — that's the file-scope
+        // `_looksRiskyCompileTimeContract` above). A fan-out via `withTaskGroup`
+        // verifies the predicate produces consistent verdicts under concurrent
+        // calls. We deliberately do not rely on `addTask` closures being
+        // "detached enough" to enforce nonisolation — that's why the real
+        // compile-time check lives at file scope.
+        let risky = "sudo rm -rf /"
         let results = await withTaskGroup(of: Bool.self) { group in
-            for _ in 0..<32 { group.addTask { ToolPolicy.CommandRisk.looksRisky("sudo rm -rf /") } }
+            for _ in 0..<32 { group.addTask { ToolPolicy.CommandRisk.looksRisky(risky) } }
             var out: [Bool] = []
             for await r in group { out.append(r) }
             return out
         }
-        #expect(results.count == 32 && results.allSatisfy { $0 })   // consistent across concurrency
+        #expect(results.count == 32)
+        #expect(results.allSatisfy { $0 == true })
     }
 }

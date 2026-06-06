@@ -17,7 +17,10 @@ enum SelfImprove {
 
     /// Default location of THIS project. Overridable via UserDefaults so the
     /// same binary can point at a moved/renamed checkout without recompiling.
-    static let defaultRoot = "/Users/saleh/Downloads/SalehmanAI_Complete_Everything_Today/Salehman AI"
+    // Repointed 2026-06-06 from ~/Downloads/SalehmanAI_Complete_Everything_Today
+    // to the live ~/Desktop checkout (the old path was deleted in the repo move;
+    // commit a9b99be repointed the zip/checkpoint tools but missed this one).
+    static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
     static let projectFile = "Salehman AI.xcodeproj"
     static let scheme      = "Salehman AI"
 
