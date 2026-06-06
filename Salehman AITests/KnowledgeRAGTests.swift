@@ -6,11 +6,32 @@ import Foundation
 //
 // These power the on-device document Q&A. The static helpers are pure and
 // always available; search exercises the lock-guarded store + scoring.
-// Cases are written to be side-effect tolerant (clear before/after) and the
-// suite is serialized because it mutates the shared on-disk knowledge.json.
+//
+// HERMETIC: the search cases redirect KnowledgeStore persistence to a throwaway
+// temp dir (via `testBaseDirOverride` + `reloadForTesting`) so they NEVER read or
+// clobber the owner's real ~/Library/Application Support/SalehmanAI/knowledge.json.
+// (Earlier these called `clear()` on the live singleton and silently wiped the
+// real vault on every run — see the 2026-06-06 review.) Suite is serialized
+// because it mutates that shared global override + singleton.
 
 @Suite(.serialized)
 struct KnowledgeRAGTests {
+
+    /// Point the shared store at a fresh empty temp dir for `body`, then restore
+    /// the previous override and delete the dir. Nothing touches the real vault.
+    private func withTempVault(_ body: () throws -> Void) rethrows {
+        let prev = KnowledgeStore.testBaseDirOverride
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("KnowledgeTest_\(UUID().uuidString.prefix(8))", isDirectory: true)
+        KnowledgeStore.testBaseDirOverride = dir
+        KnowledgeStore.shared.reloadForTesting()   // now backed by the empty temp dir
+        defer {
+            KnowledgeStore.shared.clear()           // writes empty snapshot to TEMP, not the real vault
+            KnowledgeStore.testBaseDirOverride = prev
+            try? FileManager.default.removeItem(at: dir)
+        }
+        try body()
+    }
 
     // MARK: chunk
 
@@ -76,33 +97,33 @@ struct KnowledgeRAGTests {
 
     @Test
     func searchReturnsAtMostKPositiveScoredOrdered() {
-        KnowledgeStore.shared.clear()
-        defer { KnowledgeStore.shared.clear() }
-        let doc = "The quick brown fox jumps over the lazy dog. Apple banana cherry date."
-        KnowledgeStore.shared.addDocument(name: "test.txt", kind: "txt", icon: "doc", fullText: doc)
-        let hits = KnowledgeStore.shared.search(query: "apple banana cherry", k: 2)
-        #expect(hits.count <= 2)
-        if hits.count >= 2 {
+        withTempVault {
+            // Two matching docs → two positive hits, so the ordering check is
+            // UNCONDITIONAL (the old version guarded it behind `if count >= 2` and
+            // would pass even if search silently returned nothing).
+            KnowledgeStore.shared.addDocument(name: "a.txt", kind: "txt", icon: "doc",
+                fullText: "apple banana cherry — first document about fruit")
+            KnowledgeStore.shared.addDocument(name: "b.txt", kind: "txt", icon: "doc",
+                fullText: "apple banana cherry — second document, also fruit salad")
+            #expect(KnowledgeStore.shared.allDocuments().count == 2)
+            let hits = KnowledgeStore.shared.search(query: "apple banana cherry", k: 2)
+            #expect(hits.count == 2)
             #expect(hits[0].score >= hits[1].score)
+            #expect(hits.allSatisfy { $0.score > 0 })
         }
-        #expect(hits.allSatisfy { $0.score > 0 })
     }
 
     @Test
-    func searchInDocumentScopesCorrectly() {
-        KnowledgeStore.shared.clear()
-        defer { KnowledgeStore.shared.clear() }
-        KnowledgeStore.shared.addDocument(name: "a.txt", kind: "txt", icon: "doc", fullText: "alpha beta only in a")
-        KnowledgeStore.shared.addDocument(name: "b.txt", kind: "txt", icon: "doc", fullText: "beta gamma only in b")
-        // find the doc id somehow? use search on all then pick, or since we control, search(in:) requires UUID.
-        // For simplicity: search broad, then use the returned doc's id? But API is search(inDocument:).
-        // Instead: after adds, we can use internal? For now test via full search + name filter, or expose later.
-        // To satisfy case without more seams: broad search returns both, inDocument for one doc's chunks only.
-        let all = KnowledgeStore.shared.search(query: "beta", k: 10)
-        #expect(all.count >= 1)
-        // To test inDocument we would need a docID; since add doesn't return id, we can fetch allDocuments and use one.
-        if let doc = KnowledgeStore.shared.allDocuments().first(where: { $0.name == "a.txt" }) {
-            let scoped = KnowledgeStore.shared.search(query: "alpha", k: 5, inDocument: doc.id)
+    func searchInDocumentScopesCorrectly() throws {
+        try withTempVault {
+            KnowledgeStore.shared.addDocument(name: "a.txt", kind: "txt", icon: "doc", fullText: "alpha beta only in a")
+            KnowledgeStore.shared.addDocument(name: "b.txt", kind: "txt", icon: "doc", fullText: "beta gamma only in b")
+            // Unconditional: require the doc to exist (a skipped `if let` used to let
+            // this case pass with zero scoping assertions executed).
+            #expect(KnowledgeStore.shared.allDocuments().count == 2)
+            let a = try #require(KnowledgeStore.shared.allDocuments().first { $0.name == "a.txt" })
+            let scoped = KnowledgeStore.shared.search(query: "alpha", k: 5, inDocument: a.id)
+            #expect(!scoped.isEmpty)
             #expect(scoped.allSatisfy { $0.docName == "a.txt" })
             #expect(scoped.contains { $0.text.contains("alpha") })
         }
@@ -110,8 +131,8 @@ struct KnowledgeRAGTests {
 
     @Test
     func searchOnEmptyStoreReturnsEmpty() {
-        KnowledgeStore.shared.clear()
-        defer { KnowledgeStore.shared.clear() }
-        #expect(KnowledgeStore.shared.search(query: "anything") == [])
+        withTempVault {
+            #expect(KnowledgeStore.shared.search(query: "anything") == [])
+        }
     }
 }

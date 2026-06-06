@@ -191,14 +191,38 @@ enum ToolPolicy {
             "eval", "exec", "source", "launchctl", "chgrp",
         ]
 
-        /// Markers for commands that mutate/destroy/escalate. These always force
-        /// a re-confirmation even if the user hit "Always run" for the session.
-        /// (Note the current whitespace-sensitive " > " — pinned by tests until
-        /// a normalization pass lands.)
+        /// Markers for commands that mutate/destroy/escalate/exfiltrate. These
+        /// always force a re-confirmation even if the user hit "Always run" for the
+        /// session. `looksRisky` is the ONLY gate on that bypass path, so this is a
+        /// deliberately broad DENYLIST: over-confirming a benign command is a minor
+        /// annoyance, but UNDER-confirming a destructive one is a security hole.
+        /// (A truly safe-only gate would be an allowlist — a bigger UX change;
+        /// tracked in the 2026-06-06 review. Until then we keep widening this.)
         static let riskyMarkers: [String] = [
-            "rm ", "rmdir", "mv ", "trash", "delete", " > ", ">>",
-            "sudo", "chmod", "chown", "git push", "git reset --hard",
-            "git clean", "truncate", "format", "kill "
+            // delete / move / truncate / format
+            "rm ", "rmdir", "mv ", "trash", "delete", "truncate", "format",
+            // ANY output redirect: ">" subsumes ">>", " > ", and the bare "x>file"
+            // form (writing a file — even a dotfile like ~/.zshrc — re-confirms).
+            ">",
+            // privilege / ownership / permissions
+            "sudo", "doas", "chmod", "chown", "chgrp",
+            // process control / destructive git
+            "kill ", "killall", "git push", "git reset --hard", "git clean",
+            // direct interpreter exec (arbitrary code): `python -c`, `node -e`, `sh -c`, …
+            "python -c", "python3 -c", "node -e", "ruby -e", "perl -e", "php -r",
+            "bash -c", "sh -c", "zsh -c", "osascript",
+            // file copy / symlink / remote copy / fetch (overwrite + exfil building blocks)
+            "tee ", "cp ", "ln ", "scp ", "ditto ", "curl ", "wget ",
+            // persistence / system configuration
+            "defaults write", "crontab", "launchctl", "systemsetup",
+        ]
+
+        /// Interpreters that, on the RECEIVING end of a pipe, mean "execute whatever
+        /// was just produced" — i.e. `curl … | sh` / `… |bash` (remote/arbitrary
+        /// code execution). Matched spacing-independently by `pipesIntoInterpreter`.
+        private static let pipedInterpreters: Set<String> = [
+            "sh", "bash", "zsh", "ksh", "fish", "python", "python3",
+            "node", "ruby", "perl", "php", "osascript", "tclsh",
         ]
 
         /// Returns the matched blocked token (for the REFUSED message) or nil.
@@ -229,9 +253,30 @@ enum ToolPolicy {
         }
 
         /// True for commands that should re-confirm even under sessionBypass.
+        /// Pure + nonisolated (no Date/random/shared state) — the determinism and
+        /// actor-safety contracts are locked by `LooksRiskyDelegationTests`.
         static func looksRisky(_ command: String) -> Bool {
             let l = command.lowercased()
-            return riskyMarkers.contains { l.contains($0) }
+            if riskyMarkers.contains(where: { l.contains($0) }) { return true }
+            return pipesIntoInterpreter(l)
+        }
+
+        /// Detects piping into a shell/interpreter regardless of spacing, e.g.
+        /// `curl x | sh`, `wget y |bash`, `cat z | python3 -`. Splits on a single
+        /// `|` (the `||` OR-operator is neutralized first) and checks each
+        /// downstream segment's leading (path-stripped) token.
+        private static func pipesIntoInterpreter(_ lower: String) -> Bool {
+            let sentinel = "\u{0}"
+            let segments = lower
+                .replacingOccurrences(of: "||", with: sentinel)
+                .components(separatedBy: "|")
+            for seg in segments.dropFirst() {
+                let trimmed = seg.trimmingCharacters(in: .whitespaces)
+                guard let first = trimmed.split(separator: " ").first else { continue }
+                let name = first.split(separator: "/").last.map(String.init) ?? String(first)
+                if pipedInterpreters.contains(name) { return true }
+            }
+            return false
         }
     }
 }

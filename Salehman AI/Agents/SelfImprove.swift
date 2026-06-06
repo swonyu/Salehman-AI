@@ -20,6 +20,10 @@ enum SelfImprove {
     // Repointed 2026-06-06 from ~/Downloads/SalehmanAI_Complete_Everything_Today
     // to the live ~/Desktop checkout (the old path was deleted in the repo move;
     // commit a9b99be repointed the zip/checkpoint tools but missed this one).
+    // FRAGILE: this is a hardcoded, user-specific absolute path — it will dangle
+    // again on the next move/rename (the exact failure a9b99be caused). The robust
+    // mechanism is the `self_improve_project_root` UserDefaults override below;
+    // treat this constant as a dev-only fallback, not the source of truth.
     static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
     static let projectFile = "Salehman AI.xcodeproj"
     static let scheme      = "Salehman AI"
@@ -279,17 +283,39 @@ enum SelfImprove {
 
     private static let backupTimestamp: String = {
         let f = DateFormatter()
+        // Pin locale + calendar: on a Hijri-defaulting locale (e.g. en_SA) an
+        // unpinned formatter named backup folders like `14471220-…` (year 1447 AH),
+        // making the recovery copies mis-sorted and confusing. Force Gregorian +
+        // POSIX so folders are chronological `yyyyMMdd-HHmmss` everywhere.
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = .current
         f.dateFormat = "yyyyMMdd-HHmmss"
         return f.string(from: Date())
     }()
+
+    /// Test-only accessor for the frozen per-run backup timestamp, so a test can
+    /// locate THIS run's backup folder and verify the preserved pre-edit copy.
+    /// Returns the same value `backup()` uses (the private frozen `static let`),
+    /// not a recomputed one — recomputing could cross a second boundary and miss.
+    nonisolated static var backupTimestampForTesting: String { backupTimestamp }
+
+    /// Root for per-run backup folders. Overridable via UserDefaults
+    /// (`self_improve_backup_root`) so tests redirect to a temp dir instead of
+    /// littering ~/.salehman_ai_self_improve_backups. Production uses the default.
+    static var backupRoot: URL {
+        if let custom = UserDefaults.standard.string(forKey: "self_improve_backup_root") {
+            return URL(fileURLWithPath: custom)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".salehman_ai_self_improve_backups")
+    }
 
     /// Copies the pre-edit contents into a per-run timestamped folder. A single
     /// folder is reused for the whole loop so all edits from one invocation
     /// land together.
     static func backup(file: String, contents: String) {
-        let backupDir = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".salehman_ai_self_improve_backups")
-            .appendingPathComponent(backupTimestamp)
+        let backupDir = backupRoot.appendingPathComponent(backupTimestamp)
         try? FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
         let dest = backupDir.appendingPathComponent(URL(fileURLWithPath: file).lastPathComponent)
         // Never overwrite an existing backup: the FIRST copy is the true pre-edit

@@ -38,6 +38,19 @@ final class KnowledgeStore: @unchecked Sendable {
     private var docs: [KnowledgeDoc] = []
     private var chunks: [KnowledgeChunk] = []
 
+    /// Test-only: when set (before the store is used), persistence is redirected
+    /// to this directory so tests never read or — critically — `clear()`/`save()`
+    /// over the owner's REAL on-disk vault. Production never sets this; it stays
+    /// nil, so behavior is unchanged. Pair with `reloadForTesting()`.
+    nonisolated(unsafe) static var testBaseDirOverride: URL? = nil
+
+    /// Test-only: drop in-memory state and reload from the (possibly overridden)
+    /// file, so a test can point at a temp dir and start from a known state.
+    func reloadForTesting() {
+        lock.lock(); docs.removeAll(); chunks.removeAll(); lock.unlock()
+        load()
+    }
+
     private init() { load() }
 
     // MARK: Read
@@ -231,8 +244,9 @@ final class KnowledgeStore: @unchecked Sendable {
     private struct Snapshot: Codable { var docs: [KnowledgeDoc]; var chunks: [KnowledgeChunk] }
 
     private var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SalehmanAI", isDirectory: true)
+        let base = Self.testBaseDirOverride
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("SalehmanAI", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("knowledge.json")
     }

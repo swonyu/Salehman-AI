@@ -24,8 +24,9 @@ enum OllamaClient {
     /// and `32b` are accepted upgrades for users who already have them or whose
     /// download of `7b` failed (e.g. low disk space). Adding a new variant here
     /// makes it eligible without any other code changes.
-    /// (2026-06-06: reverted to 7b-first; commit 8152d68 had put 14b first,
-    /// which broke the `codeModel == [0]` invariant locked by OllamaPreferredModelsTests.)
+    /// (2026-06-06: reverted to 7b-first; commit 8152d68 had put 14b first, which
+    /// broke the `codeModel == [0]` invariant locked by `OllamaPriorityResolverTests.swift`
+    /// — struct `OllamaPreferredModelsTests`.)
     nonisolated static let preferredCodeModels: [String] = [
         codeModel,           // qwen2.5-coder:7b — sweet-spot default (~4.7 GB), snappy on 16 GB.
         "qwen2.5-coder:14b", // accepted upgrade (~9 GB live) if already pulled.

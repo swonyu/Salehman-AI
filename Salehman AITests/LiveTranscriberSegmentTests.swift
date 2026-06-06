@@ -4,75 +4,42 @@ import Foundation
 
 // MARK: - LiveTranscriber recycle / segment / partial surface
 //
-// High-sev bug was: commit() called teardown which set capturing=false and
-// emptied recs, so after first final segment, no more audio was processed.
-// The recycle fix (do not fully teardown on commit) made restart work.
-// This suite pins the contract; some cases may have been satisfied by the
-// prior fix but we still want the regression locks.
+// The real recycle / segment-increment / 0.11s-throttle / stale-drop contracts
+// live behind PRIVATE state driven by a live ScreenCaptureKit + Speech stream.
+// Without an injectable recognition seam they can't be exercised in a unit test —
+// and calling start()/toggle() would fire real Screen-Recording + Speech (TCC)
+// permission prompts and leave the shared singleton mid-capture. So those cases
+// are honestly `.disabled` until a seam exists (matching BrainRoutingDispatch /
+// PersistenceRoundTrip / SettingsBrainReady), rather than shipped as green
+// tautologies like `#expect(!isRunning || isRunning)` (see the 2026-06-06 review).
+// One safe, falsifiable contract is kept active.
 
 struct LiveTranscriberSegmentTests {
 
     @Test
-    func afterCommitStartTasksRunsAndRecsIsRepopulatedWhileCapturingRemainsTrue() {
-        // Core recycle fix lives in commit() (see LiveTranscriber.swift:240-249): after final, it does
-        // segment+=1 + per-rec clear + startTask(rec) *without* calling teardownTasks (which would have
-        // set capturing=false and emptied recs). We exercise the public surface (toggle/stop) and
-        // published state; full internal recs/capturing pin is covered by the source comment + the
-        // prior high-sev fix (2026-06-06). Starting real capture requires Screen Recording perm + audio.
+    func stopIsSafeAndLeavesTranscriberIdle() {
+        // stop() is the only capture-control call safe to make without ever
+        // starting (no TCC), and "after stop the transcriber is not running" is a
+        // real, falsifiable contract. Calling it twice also pins idempotence.
         let t = LiveTranscriber.shared
         t.stop()
-        #expect(!t.isRunning || t.isRunning) // state observable
-        t.toggle()
-        // best we can do without driving the SCK stream: stop cleanly
+        #expect(t.isRunning == false)
         t.stop()
-        #expect(t.partialThem == "" || t.partialThem.count >= 0)
+        #expect(t.isRunning == false)
     }
 
-    @Test
-    func feedingTwoFinalResultsProducesTwoSegmentsAndTwoStartTasksArms() {
-        // Without a real audio driver we can't force two .isFinal callbacks.
-        // The public observable is .lines growing; we at least verify the API surface
-        // and that stop resets.
-        let t = LiveTranscriber.shared
-        t.stop()
-        let before = t.lines.count
-        t.stop()
-        #expect(t.lines.count >= before) // no negative mutation
-    }
+    @Test(.disabled("needs an injectable recognition seam to feed .isFinal/partial without real capture"))
+    func afterCommitRecsRepopulatedWhileCapturingRemainsTrue() {}
 
-    @Test
-    func bestPartialReturnsLongestOfMultiplePartialsOrEmptyWhenNoRecs() {
-        let t = LiveTranscriber.shared
-        t.stop()
-        // bestPartial is private; we observe the published proxy (partialThem) which is driven from it.
-        // After stop it should be empty or stable.
-        #expect(t.partialThem.isEmpty || t.partialThem.count >= 0)
-        let c = t.combinedText
-        #expect(c == t.lines.map { $0.text }.joined(separator: "\n") || c.contains(t.partialThem))
-    }
+    @Test(.disabled("needs an injectable recognition seam to drive two .isFinal callbacks"))
+    func feedingTwoFinalResultsProducesTwoSegments() {}
 
-    @Test
-    func staleRecognitionCallbackWhoseSegmentAtStartDiffersIsIgnored() {
-        // The guard "segment == segmentAtStart" is inside the callback (private).
-        // We can only exercise the public contract: after stop() + start() the segment advances
-        // and late results from prior segment are dropped. Smoke: no crash on rapid toggle.
-        let t = LiveTranscriber.shared
-        t.stop()
-        t.start()
-        t.stop()
-        #expect(true)
-    }
+    @Test(.disabled("needs an injectable recognition seam to inject competing partials"))
+    func bestPartialReturnsLongestOfMultiplePartials() {}
 
-    @Test
-    func publishPartialThrottlesToApprox9HzAndOnlyOnChangedText() {
-        // Throttle gate is 0.11s + "text != last" inside publishPartial (private, called from callbacks).
-        // Public surface: partialThem changes only on real updates. We can assert it is a string
-        // and that combinedText includes it when present. Timing test would require injecting partials.
-        let t = LiveTranscriber.shared
-        t.stop()
-        let p1 = t.partialThem
-        let p2 = t.partialThem
-        #expect(p1 == p2 || p1.count >= 0)
-        #expect(t.combinedText.count >= p1.count)
-    }
+    @Test(.disabled("needs a seam; start() would trigger real Screen-Recording/Speech TCC"))
+    func staleRecognitionCallbackFromPriorSegmentIsIgnored() {}
+
+    @Test(.disabled("needs an injectable recognition seam to assert the 0.11s publish throttle"))
+    func publishPartialThrottlesToApprox9Hz() {}
 }

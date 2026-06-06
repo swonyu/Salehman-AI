@@ -4,72 +4,86 @@ import Foundation
 
 // MARK: - SelfImprove patch / parse / safety surface
 //
-// These are the blast-radius functions: a bad patch or weak isInside can
-// corrupt user source or escape the project. Tests use a scratch file *under
-// the projectRoot* so isInside passes, then clean up. backup is exercised
-// to lock the "never overwrite original" fix.
+// Blast-radius functions: a bad patch or a weak isInside can corrupt user source
+// or escape the project. These tests run fully HERMETICALLY — `SelfImprove`'s
+// projectRoot AND backup root are redirected to a throwaway temp dir (via the
+// `self_improve_project_root` / `self_improve_backup_root` UserDefaults keys), so
+// nothing is ever written into the live checkout or ~/.salehman_ai_self_improve_backups.
+// (Earlier these wrote scratch files into the real repo and leaked uncleaned
+// backup folders into $HOME — see the 2026-06-06 review.)
 
-@Suite(.serialized) // touches disk (backup dir + scratch file under project)
+@Suite(.serialized) // mutates shared SelfImprove UserDefaults keys + temp disk
 struct SelfImprovePatchTests {
 
-    private var scratchURL: URL {
-        let root = URL(fileURLWithPath: SelfImprove.projectRoot)
-        return root.appendingPathComponent("SelfImproveScratch_\(UUID().uuidString.prefix(8)).txt")
+    /// Redirect SelfImprove.projectRoot and backupRoot at a fresh temp dir for the
+    /// duration of `body`, then restore the previous overrides and delete the dir.
+    private func withTempRoots(_ body: (_ projectRoot: URL) throws -> Void) rethrows {
+        let ud = UserDefaults.standard
+        let prevProject = ud.string(forKey: "self_improve_project_root")
+        let prevBackup  = ud.string(forKey: "self_improve_backup_root")
+        let baseDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("SelfImproveTest_\(UUID().uuidString.prefix(8))", isDirectory: true)
+        let projectRoot = baseDir.appendingPathComponent("project", isDirectory: true)
+        let backupRoot  = baseDir.appendingPathComponent("backups", isDirectory: true)
+        try? FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+        ud.set(projectRoot.path, forKey: "self_improve_project_root")
+        ud.set(backupRoot.path,  forKey: "self_improve_backup_root")
+        defer {
+            if let prevProject { ud.set(prevProject, forKey: "self_improve_project_root") }
+            else { ud.removeObject(forKey: "self_improve_project_root") }
+            if let prevBackup { ud.set(prevBackup, forKey: "self_improve_backup_root") }
+            else { ud.removeObject(forKey: "self_improve_backup_root") }
+            try? FileManager.default.removeItem(at: baseDir)
+        }
+        try body(projectRoot)
     }
 
-    private func writeScratch(_ content: String) -> URL {
-        let url = scratchURL
+    private func writeScratch(_ content: String, under root: URL) -> URL {
+        let url = root.appendingPathComponent("SelfImproveScratch_\(UUID().uuidString.prefix(8)).txt")
         try? content.write(to: url, atomically: true, encoding: .utf8)
         return url
-    }
-
-    private func removeIfExists(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
     }
 
     // MARK: applyPatch
 
     @Test
     func applyPatchValidSingleLineRewriteBacksUpAndSucceeds() {
-        let url = writeScratch("line1\nline2\nline3\n")
-        defer { removeIfExists(url) }
-        let patch = """
-        REPLACE_RANGE: 2-2
-        WITH:
-        REPLACED
-        END
-        """
-        let ok = SelfImprove.applyPatch(patch, to: url.path)
-        #expect(ok)
-        let after = try? String(contentsOf: url)
-        #expect((after?.contains("REPLACED")) ?? false)
-        #expect((after?.contains("line1")) ?? false)
-        // Backup exists under ~/.salehman_ai_self_improve_backups/<ts>/
-        // (we don't assert the exact backup path here; the double-patch case does)
+        withTempRoots { root in
+            let url = writeScratch("line1\nline2\nline3\n", under: root)
+            let patch = """
+            REPLACE_RANGE: 2-2
+            WITH:
+            REPLACED
+            END
+            """
+            #expect(SelfImprove.applyPatch(patch, to: url.path))
+            let after = try? String(contentsOf: url)
+            #expect((after?.contains("REPLACED")) ?? false)
+            #expect((after?.contains("line1")) ?? false)
+            #expect((after?.contains("line2")) == false)   // line 2 was the replaced one
+        }
     }
 
     @Test
     func applyPatchOutOfBoundsReturnsFalseAndDoesNotModify() {
-        let url = writeScratch("one\ntwo\n")
-        defer { removeIfExists(url) }
-        let orig = try? String(contentsOf: url)
-        let bad = "REPLACE_RANGE: 10-12\nWITH:\nX\nEND"
-        #expect(SelfImprove.applyPatch(bad, to: url.path) == false)
-        #expect((try? String(contentsOf: url)) == orig)
+        withTempRoots { root in
+            let url = writeScratch("one\ntwo\n", under: root)
+            let orig = try? String(contentsOf: url)
+            #expect(SelfImprove.applyPatch("REPLACE_RANGE: 10-12\nWITH:\nX\nEND", to: url.path) == false)
+            #expect((try? String(contentsOf: url)) == orig)
+        }
     }
 
     @Test
     func applyPatchMalformedMissingTokensReturnsFalse() {
-        let url = writeScratch("a\nb\n")
-        defer { removeIfExists(url) }
-        let noWith = "REPLACE_RANGE: 1-1\nNO-WITH\nX\nEND"
-        #expect(SelfImprove.applyPatch(noWith, to: url.path) == false)
-
-        let noEnd = "REPLACE_RANGE: 1-1\nWITH:\nX\n"
-        #expect(SelfImprove.applyPatch(noEnd, to: url.path) == false)
+        withTempRoots { root in
+            let url = writeScratch("a\nb\n", under: root)
+            #expect(SelfImprove.applyPatch("REPLACE_RANGE: 1-1\nNO-WITH\nX\nEND", to: url.path) == false)
+            #expect(SelfImprove.applyPatch("REPLACE_RANGE: 1-1\nWITH:\nX\n", to: url.path) == false)
+        }
     }
 
-    // MARK: parseErrors
+    // MARK: parseErrors (pure — no disk)
 
     @Test
     func parseErrorsParsesStandardAndMissingColAndIgnoresWarnings() {
@@ -104,55 +118,40 @@ struct SelfImprovePatchTests {
 
     @Test
     func isInsideProjectTrueForFileUnderRootFalseForSiblingAndEscapes() {
-        let root = SelfImprove.projectRoot
-        #expect(SelfImprove.isInsideProject("\(root)/Salehman AI/Some.swift"))
-
-        // sibling dir next to project root should be out
-        let parent = URL(fileURLWithPath: root).deletingLastPathComponent().path
-        #expect(SelfImprove.isInsideProject("\(parent)/evil-project/x.swift") == false)
-
-        // ../ escape
-        #expect(SelfImprove.isInsideProject("\(root)/../outside.swift") == false)
+        withTempRoots { root in
+            #expect(SelfImprove.isInsideProject(root.appendingPathComponent("Some.swift").path))
+            // sibling dir next to the project root is out
+            let parent = root.deletingLastPathComponent().path
+            #expect(SelfImprove.isInsideProject("\(parent)/evil-project/x.swift") == false)
+            // ../ escape is out
+            #expect(SelfImprove.isInsideProject("\(root.path)/../outside.swift") == false)
+        }
     }
 
-    // MARK: backup (locks the double-patch-original preservation)
+    // MARK: backup — locks the "never overwrite the true pre-edit original" guard
 
     @Test
-    func backupPatchingSameFileTwicePreservesOriginalPreEdit() {
-        let url = writeScratch("ORIGINAL\nline2\n")
-        defer { removeIfExists(url) }
+    func backupPatchingSameFileTwicePreservesOriginalPreEdit() throws {
+        try withTempRoots { root in
+            let url = writeScratch("ORIGINAL\nline2\n", under: root)
+            #expect(SelfImprove.applyPatch("REPLACE_RANGE: 1-1\nWITH:\nPATCH1\nEND", to: url.path))
+            #expect(SelfImprove.applyPatch("REPLACE_RANGE: 1-1\nWITH:\nPATCH2\nEND", to: url.path))
 
-        // first patch
-        let p1 = "REPLACE_RANGE: 1-1\nWITH:\nPATCH1\nEND"
-        _ = SelfImprove.applyPatch(p1, to: url.path)
+            // The source file ends at the SECOND edit…
+            #expect(try String(contentsOf: url).contains("PATCH2"))
 
-        // second patch on same file in same run (same timestamp dir)
-        let p2 = "REPLACE_RANGE: 1-1\nWITH:\nPATCH2\nEND"
-        _ = SelfImprove.applyPatch(p2, to: url.path)
-
-        // Now inspect the backup dir for this run's timestamp folder; the file there
-        // must still contain "ORIGINAL", not "PATCH1".
-        _ = SelfImprove.backupTimestampForTesting // (we expose a test seam below if needed; or read the dir)
-        // Simpler: the backup guard is now "if exists return", so the first write wins.
-        // We can assert by checking that a second backup for same name was not created,
-        // but easiest is to re-read the backup file if we can locate it.
-        // For this test we rely on the guard in source + the case name; a full dir walk
-        // can be added once we have a helper. For now the act of double apply + no crash
-        // + final content is part of it; the "preserves ORIGINAL" is the intent of the guard.
-        let final = try? String(contentsOf: url)
-        #expect((final?.contains("PATCH2")) ?? false)
-    }
-}
-
-// Temporary test seam so the double-backup test can read the frozen timestamp without
-// duplicating the DateFormatter. (Add-only; safe because only tests see it.)
-extension SelfImprove {
-    static var backupTimestampForTesting: String {
-        // Replicates the private formatter result for the current process lifetime.
-        // In real runs the private static is used; this is only to let the test
-        // locate the dir if it wants to assert file contents.
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd-HHmmss"
-        return f.string(from: Date())
+            // …but the backup must still hold the TRUE pre-edit ORIGINAL, never
+            // PATCH1. This actually reads the backup dir — the previous version only
+            // checked the source for "PATCH2", so the guard (SelfImprove.backup:
+            // "first copy wins") could have been deleted and the test stayed green.
+            let backupRootPath = try #require(UserDefaults.standard.string(forKey: "self_improve_backup_root"))
+            let runDir = URL(fileURLWithPath: backupRootPath)
+                .appendingPathComponent(SelfImprove.backupTimestampForTesting)
+            let backedUp = runDir.appendingPathComponent(url.lastPathComponent)
+            let backupText = try #require(try? String(contentsOf: backedUp),
+                                          "the pre-edit backup copy should exist")
+            #expect(backupText.contains("ORIGINAL"))
+            #expect(backupText.contains("PATCH1") == false)
+        }
     }
 }
