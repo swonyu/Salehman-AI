@@ -97,6 +97,35 @@ final class BrainStatus: ObservableObject {
         brain == .none ? Color.orange.opacity(0.9) : .secondary
     }
 
+    /// SF Symbol identifying the active brain — lets the header show *which*
+    /// brain is driving as a glyph instead of a text label. The Apple brain
+    /// deliberately uses a neutral "sparkles" (not apple.logo) to keep the
+    /// chrome on-brand and avoid surfacing the provider.
+    var symbol: String {
+        switch brain {
+        case .appleIntelligence: return "sparkles"
+        case .ollamaCoder:       return "chevron.left.forwardslash.chevron.right"
+        case .salehman:          return "crown.fill"
+        case .unslothStudio:     return "cpu"
+        case .vllm:              return "bolt.horizontal.fill"
+        case .claudeHaiku:       return "a.square.fill"
+        case .grok:              return "bolt.fill"
+        case .gemini:            return "sparkle"
+        case .groq:              return "hare.fill"
+        case .mistral:           return "wind"
+        case .cerebras:          return "cpu.fill"
+        case .deepSeek:          return "magnifyingglass"
+        case .codex:             return "terminal.fill"
+        case .copilot:           return "person.2.fill"
+        case .openRouter:        return "arrow.triangle.branch"
+        case .ensemble:          return "circle.grid.2x2.fill"
+        case .freeAuto:          return "infinity"
+        case .freeCoding:        return "curlybraces"
+        case .cloudCoding:       return "cloud.fill"
+        case .none:              return "exclamationmark.triangle.fill"
+        }
+    }
+
     private func startPolling() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in

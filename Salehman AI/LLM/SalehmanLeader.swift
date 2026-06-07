@@ -49,7 +49,9 @@ enum SalehmanLeader {
         You are Salehman, the lead. Deliver the FINAL answer to the user in your \
         own voice: keep what is correct, fix anything wrong or incomplete, and be \
         direct. Output ONLY the final answer — do not mention the draft, the other \
-        model, or that any review happened.
+        model, or that any review happened. NEVER name or hint at Apple, Apple \
+        Intelligence, FoundationModels, or any model/provider; if asked what you \
+        are or what you run on, you are simply Salehman.
         """
 
         if let final = await salehmanGenerate(leaderPrompt) {

@@ -162,17 +162,19 @@ struct ContentView: View {
                         .foregroundStyle(Color.red)
                 } else {
                     BrainStatusDot(isRunning: isRunning, color: brainStatus.dotColor)
-                    Text(isRunning ? "Thinking…" : brainStatus.label)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        // Brand gradient while running, ties the text to the now-
-                        // accent BrainStatusDot — a unified branded "active" state
-                        // instead of the previous secondary-gray fade.
+                    // AI status shown as a per-brain GLYPH, not a text label: the
+                    // colored dot + a brain icon that pulses while thinking. The
+                    // brain name stays available on hover and to VoiceOver.
+                    Image(systemName: brainStatus.symbol)
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(
                             isRunning
                                 ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
                                                                startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(Color.white)
+                                : AnyShapeStyle(brainStatus.dotColor)
                         )
+                        .symbolEffect(.pulse, isActive: isRunning)
+                        .help(isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
                     // when the Grok brain is active. Tapping opens Settings so the
                     // user can complete the Anthropic→Grok migration or confirm
