@@ -1158,6 +1158,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Owner wants Salehman to "lead on a real model" (cloud-hosted) instead of 7B local dolphin. `SalehmanLeader.salehmanGenerate` now tries, in order of capability: a configured REMOTE endpoint (vLLM → Unsloth Studio — both gate on `isConfigured`, pass `SalehmanPersona.systemPrompt` as system) → standalone MLX → the custom Ollama model. So hosting a strong model on a cloud GPU ([`HOST_BRAIN_ON_CLOUD.md`](HOST_BRAIN_ON_CLOUD.md)) and pasting its URL in Settings → vLLM makes the leader finalize EVERY reply on that cloud model automatically; with no remote configured it transparently falls back to dolphin. Apple Intelligence still never used. App-side only — renting/launching the GPU is the owner's step (needs their account + payment).
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓.
 
+## 2026-06-07 · 🧑‍💻 Salehman leader steps aside for coding (protects code quality)
+**Files:** `LLM/SalehmanLeader.swift`
+**What & why:** Owner wants Salehman to lead chat but NOT degrade code — a small (7B dolphin) leader rewriting a strong coder's output risks subtle bugs. Two skip conditions added: (1) `isLeading` now returns false in the dedicated coding modes (`cloudCoding` / `freeCoding`) so the coder loop's tool-built answer stands untouched; (2) `finalize` bails via a new `isMostlyCode(_:)` heuristic when ≥40 % of the draft sits inside fenced ``` blocks — so code-heavy replies in ANY mode (e.g. Groq drafting code) skip the leader too. Normal prose still gets the Salehman final pass. Self-disabling + graceful behavior otherwise unchanged.
+**Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

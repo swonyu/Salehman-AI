@@ -24,9 +24,14 @@ enum SalehmanLeader {
     /// Whether the final Salehman pass should run for the current turn.
     static var isLeading: Bool {
         guard AppSettings.salehmanLeaderEnabled else { return false }
-        // Don't double-pass when the user already pinned Salehman as the brain.
         let pref = UserDefaults.standard.string(forKey: AppSettings.Keys.brainPreference)
-        return pref != BrainPreference.salehman.rawValue
+        // Don't double-pass when the user already pinned Salehman as the brain.
+        if pref == BrainPreference.salehman.rawValue { return false }
+        // Step aside for the dedicated coding modes — a small leader shouldn't
+        // rewrite (and risk breaking) the coder loop's tool-built output.
+        if pref == BrainPreference.cloudCoding.rawValue
+            || pref == BrainPreference.freeCoding.rawValue { return false }
+        return true
     }
 
     /// Run `draft` (whatever brain produced it) through Salehman and return its
@@ -36,6 +41,9 @@ enum SalehmanLeader {
         guard isLeading else { return draft }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, draft != LocalLLM.offMessage else { return draft }
+        // Never let the leader rewrite substantial code — handing working code to
+        // a small model risks subtle breakage, so the drafter's code stands.
+        guard !isMostlyCode(draft) else { return draft }
 
         let leaderPrompt = """
         The user asked:
@@ -62,6 +70,17 @@ enum SalehmanLeader {
         }
         // Salehman unreachable → the original draft still stands.
         return draft
+    }
+
+    /// True when the draft is dominated by fenced code blocks (≥40% of the
+    /// reply). Such replies are left untouched by the leader so a small model
+    /// can't quietly break working code, even outside the dedicated coding modes.
+    private static func isMostlyCode(_ text: String) -> Bool {
+        let parts = text.components(separatedBy: "```")
+        guard parts.count >= 3 else { return false }   // need ≥1 opened+closed fence
+        var codeLen = 0
+        for i in stride(from: 1, to: parts.count, by: 2) { codeLen += parts[i].count }
+        return Double(codeLen) >= 0.4 * Double(max(text.count, 1))
     }
 
     /// Runs ONLY the Salehman engine chain, in order of capability:
