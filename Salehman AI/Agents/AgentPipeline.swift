@@ -105,6 +105,14 @@ actor ConversationStore {
 /// Runs the full multi-agent pipeline for one user message.
 enum AgentPipeline {
     static func run(mission: String) async -> String {
+        // Every user-facing reply funnels through here, so this is the one place
+        // Salehman gets the last word: produce the draft via the normal brain
+        // pipeline, then (when Salehman Leader is ON) finalize it through Salehman.
+        let draft = await runDraft(mission: mission)
+        return await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+    }
+
+    private static func runDraft(mission: String) async -> String {
         // Don't gate the pipeline on Apple Intelligence — when it's off, the
         // LocalLLM layer transparently falls back to Ollama qwen-coder so the
         // agents keep working with the local brain. We only bail out when
@@ -123,8 +131,29 @@ enum AgentPipeline {
         // "Free · Auto" likewise bypasses the multi-agent team: it races the
         // free brains in parallel for one fast answer (local backstop), not a
         // 15-agent pipeline. Same short-circuit shape as ensemble above.
+        //
+        // Unrestricted Mode upgrades Free·Auto to a TOOL-capable single brain so
+        // it can actually run terminal commands / search the web (the owner asked
+        // Free·Auto to "do all commands"). With Unrestricted off it stays the fast
+        // no-tool race.
         if LocalLLM.isFreeAutoMode {
+            if AppSettings.unrestrictedToolsEnabled {
+                return await LocalLLM.freeAutoReplyWithTools(mission)
+            }
             return await LocalLLM.generateFreeAuto(mission)
+        }
+
+        // FreeCoding: a coding-focused loop over the free coders + DeepSeek. Always
+        // tool-capable (coding wants to build/run/test), so it bypasses the
+        // multi-agent team too and routes straight to `freeCodingReply`.
+        if LocalLLM.isFreeCodingMode {
+            return await LocalLLM.freeCodingReply(mission)
+        }
+
+        // Cloud Coding: cloud-only "best coders" loop — same tool-capable bypass,
+        // no local model (zero RAM / no lag).
+        if LocalLLM.isCloudCodingMode {
+            return await LocalLLM.cloudCodingReply(mission)
         }
 
         // How many agents run is a function of BOTH the user's response-mode

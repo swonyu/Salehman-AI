@@ -8,9 +8,11 @@ enum Web {
     private static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
     /// Search the web via DuckDuckGo's HTML endpoint. Returns formatted results.
+    /// `kp=-2` turns DuckDuckGo SafeSearch OFF so results are unfiltered (adult
+    /// content included) — a standard search-engine setting, not a content bypass.
     static func search(_ query: String) async -> String {
         guard let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://html.duckduckgo.com/html/?q=\(q)") else {
+              let url = URL(string: "https://html.duckduckgo.com/html/?q=\(q)&kp=-2&kl=wt-wt") else {
             return "Invalid search query."
         }
         var req = URLRequest(url: url)
@@ -30,7 +32,7 @@ enum Web {
         if titles.isEmpty { return "No results found for \"\(query)\"." }
 
         var out = "Web results for \"\(query)\":\n"
-        for i in 0..<min(6, titles.count) {
+        for i in 0..<min(25, titles.count) {
             let title = clean(titles[i])
             let snippet = i < snippets.count ? clean(snippets[i]) : ""
             let link = i < links.count ? decodeDDG(links[i]) : ""
@@ -76,7 +78,7 @@ enum Web {
         }
         if let finalURL = response.url, let reason = ssrfRejectionReason(finalURL) { return reason }
         let text = stripHTML(html)
-        return text.isEmpty ? "(No readable text at \(s).)" : String(text.prefix(8000))
+        return text.isEmpty ? "(No readable text at \(s).)" : String(text.prefix(25000))
     }
 
     // MARK: - Helpers

@@ -90,7 +90,7 @@ struct OpenAICompatibleClient: Sendable {
             guard let account = keychainAccount, let key = KeychainStore.read(account) else { return nil }
             bearer = key
         }
-        guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
+        guard let url = Self.chatCompletionsURL(baseURL) else { return nil }
 
         var body = Self.makeBody(model: model ?? defaultModel,
                                  prompt: prompt, system: system, stream: false)
@@ -130,7 +130,7 @@ struct OpenAICompatibleClient: Sendable {
             guard let account = keychainAccount, let key = KeychainStore.read(account) else { return nil }
             bearer = key
         }
-        guard let url = URL(string: "\(baseURL)/chat/completions") else { return nil }
+        guard let url = Self.chatCompletionsURL(baseURL) else { return nil }
 
         var body = Self.makeBody(model: model ?? defaultModel,
                                  prompt: prompt, system: system, stream: true)
@@ -174,6 +174,81 @@ struct OpenAICompatibleClient: Sendable {
         return accumulated.isEmpty ? nil : accumulated
     }
 
+    // MARK: - Tool-calling (OpenAI function calling)
+
+    /// A tool/function call the model requested. `id` is echoed back in the
+    /// matching `tool` result message — OpenAI requires every result carry the
+    /// originating `tool_call_id`. `arguments` is stringified per key (our tools
+    /// take simple string args like `command` / `query` / `url`, so this is
+    /// lossless).
+    struct ToolCall: Sendable {
+        let id: String
+        let name: String
+        let arguments: [String: String]
+    }
+
+    /// One `/chat/completions` turn WITH tools (non-streaming). Returns the
+    /// assistant message's text plus any tool calls it requested (empty array if
+    /// it answered directly), or `nil` on a transport / non-200 error so the
+    /// caller can fall back to plain `chat` (e.g. a provider that rejects the
+    /// `tools` field). Takes the FULL request body pre-serialized as `Data`
+    /// (Sendable) — the caller assembles the `[[String: Any]]` messages/tools
+    /// locally and serializes them, so the non-`Sendable` dictionaries never
+    /// cross into this method. Same Sendable discipline as `OllamaClient.chatTurn`.
+    func chatTurnWithTools(bodyData: Data, timeout: TimeInterval = 120) async -> (text: String, toolCalls: [ToolCall])? {
+        var bearer: String? = nil
+        if requiresKey {
+            guard let account = keychainAccount, let key = KeychainStore.read(account) else { return nil }
+            bearer = key
+        }
+        guard let url = Self.chatCompletionsURL(baseURL) else { return nil }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        req.httpBody = bodyData
+        req.timeoutInterval = timeout
+
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return Self.parseToolResponse(json)
+    }
+
+    /// Pure parser for an OpenAI `/chat/completions` response dict. Extracted from
+    /// `chatTurnWithTools` so the tool-call shape —
+    /// `choices[0].message.tool_calls[].function{name, arguments}`, where
+    /// `arguments` is a JSON **string** on real OpenAI but a raw **object** on
+    /// some compatible servers — is unit-testable without an HTTP mock. Internal
+    /// for test access (see `errorText` visibility note).
+    static func parseToolResponse(_ json: [String: Any]) -> (text: String, toolCalls: [ToolCall])? {
+        guard let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first,
+              let message = first["message"] as? [String: Any] else { return nil }
+        let text = (message["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var calls: [ToolCall] = []
+        if let tcs = message["tool_calls"] as? [[String: Any]] {
+            for (idx, tc) in tcs.enumerated() {
+                guard let fn = tc["function"] as? [String: Any],
+                      let name = fn["name"] as? String else { continue }
+                // Some OpenAI-compatible servers omit `id`; synthesize a stable
+                // fallback so the tool-result message can still reference it.
+                let id = (tc["id"] as? String) ?? "call_\(idx)"
+                var args: [String: String] = [:]
+                if let dict = fn["arguments"] as? [String: Any] {
+                    for (k, v) in dict { args[k] = "\(v)" }
+                } else if let str = fn["arguments"] as? String,
+                          let d = str.data(using: .utf8),
+                          let parsed = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                    for (k, v) in parsed { args[k] = "\(v)" }
+                }
+                calls.append(ToolCall(id: id, name: name, arguments: args))
+            }
+        }
+        return (text, calls)
+    }
+
     // MARK: - Test connection
 
     /// Tap the live endpoint with a one-token prompt. Returns nil on success
@@ -184,12 +259,15 @@ struct OpenAICompatibleClient: Sendable {
                 return "No \(displayName) API key saved. Paste one and tap Save."
             }
         }
-        if await chat(prompt: "ping", system: nil, model: defaultModel) == nil {
-            return requiresKey
-                ? "Couldn't reach \(displayName). Check the key + your network."
-                : "Couldn't reach \(displayName) at \(baseURL). Is the server running?"
-        }
-        return nil
+        let reply = await chat(prompt: "ping", system: nil, model: defaultModel)
+        guard Self.isErrorReply(reply, displayName: displayName) else { return nil }
+        // A non-nil reply that still failed is an `errorText` diagnostic
+        // ("[<name> error 401: …]") — surface it verbatim so the user sees the
+        // real cause. A nil reply is a transport failure → the generic hint.
+        if let reply { return reply }
+        return requiresKey
+            ? "Couldn't reach \(displayName). Check the key + your network."
+            : "Couldn't reach \(displayName) at \(baseURL). Is the server running?"
     }
 
     // MARK: - Error formatting
@@ -216,6 +294,30 @@ struct OpenAICompatibleClient: Sendable {
     }
 
     // MARK: - Internals (shared decode logic)
+
+    /// Build the `/chat/completions` endpoint from a base URL, tolerating a
+    /// trailing slash. The cloud providers hard-code a slash-free base, but the
+    /// local-server brains (vLLM / Unsloth Studio) take a **hand-typed** URL —
+    /// pasting `http://localhost:8000/v1/` would otherwise yield
+    /// `…/v1//chat/completions`, which strict routers (vLLM's included) 404.
+    /// Internal for test access.
+    static func chatCompletionsURL(_ base: String) -> URL? {
+        var b = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        while b.hasSuffix("/") { b.removeLast() }
+        return URL(string: b + "/chat/completions")
+    }
+
+    /// True iff a `chat()` result indicates failure — either a transport error
+    /// (`nil`) or one of `errorText`'s synthesized HTTP-error diagnostics, which
+    /// `chat()` returns **non-nil** for any non-200. `testConnection` needs this
+    /// because a bare `!= nil` check mistakes a `[<name> error 401: …]` body for
+    /// success, making the Settings "Test" button green on a bad key / wrong URL.
+    /// Internal for test access.
+    static func isErrorReply(_ reply: String?, displayName: String) -> Bool {
+        guard let reply else { return true }
+        return reply.hasPrefix("[\(displayName) error ")
+            || reply.hasPrefix("[\(displayName) request failed")
+    }
 
     // Internal for test access (see `errorText` visibility note).
     static func makeBody(model: String,

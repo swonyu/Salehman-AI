@@ -47,13 +47,13 @@ public final class LiquidLearningNetwork: AIComponent, @unchecked Sendable {
         
         // Input influence
         for i in 0..<min(input.flatCount, reservoirSize) {
-            let inputWeight = 0.3
+            let inputWeight: Float = 0.3
             newState[i] += inputWeight * input.data[i]
         }
         
         // Recurrent dynamics (state-to-state)
         for i in 0..<reservoirSize {
-            let recurrentWeight = 0.7
+            let recurrentWeight: Float = 0.7
             let activation = tanh(newState[i])
             newState[i] = (1.0 - timeFactor) * newState[i] + timeFactor * activation * recurrentWeight
         }
@@ -140,7 +140,7 @@ public final class MixtureOfExperts: AIComponent, @unchecked Sendable {
         var expertOutputs: [Tensor] = []
         let expertKeys = Array(experts.keys).sorted()
         
-        for (index, key) in expertKeys.enumerated() {
+        for key in expertKeys {
             if let expert = experts[key] {
                 let output = await expert(input)
                 expertOutputs.append(output)
@@ -179,7 +179,7 @@ private class ExpertRouter {
     
     func route(_ input: Tensor) -> RouterOutput {
         // Compute routing logits based on input
-        var logits = Array(repeating: 0.0, count: expertCount)
+        var logits: [Float] = Array(repeating: 0, count: expertCount)
         
         for (i, value) in input.data.enumerated() {
             logits[i % expertCount] += value
@@ -214,11 +214,18 @@ public final class SmallLanguageModel: AIComponent, @unchecked Sendable {
     private var weights: [[[Float]]]
     
     public init() {
+        // Bind dimension constants to locals so the closures below capture
+        // plain values rather than `self` (not yet fully initialized).
+        let vocabularySize = self.vocabularySize
+        let embeddingDim = self.embeddingDim
+        let numLayers = self.numLayers
+        let hiddenDim = self.hiddenDim
+
         // Initialize compact model weights
         self.embeddings = (0..<vocabularySize).map { _ in
             Array(repeating: Float.random(in: -0.1...0.1), count: embeddingDim)
         }
-        
+
         // Shallow network for speed
         self.weights = (0..<numLayers).map { _ in
             (0..<hiddenDim).map { _ in
@@ -275,7 +282,7 @@ public final class SmallLanguageModel: AIComponent, @unchecked Sendable {
         // Average embeddings of tokens
         guard !tokens.isEmpty else { return Array(repeating: 0.0, count: embeddingDim) }
         
-        var combined = Array(repeating: 0.0, count: embeddingDim)
+        var combined: [Float] = Array(repeating: 0, count: embeddingDim)
         for token in tokens {
             let idx = token % vocabularySize
             for j in 0..<embeddingDim {
@@ -287,7 +294,7 @@ public final class SmallLanguageModel: AIComponent, @unchecked Sendable {
     }
     
     private func transformerLayer(_ input: [Float], weights: [[Float]]) -> [Float] {
-        var output = Array(repeating: 0.0, count: hiddenDim)
+        var output: [Float] = Array(repeating: 0, count: hiddenDim)
         
         for i in 0..<hiddenDim {
             var value: Float = 0
@@ -313,7 +320,7 @@ public struct RLTrainingLoop {
         self.agent = RLAgent(stateSize: stateSize)
     }
     
-    public mutating func runEpisode(_ environment: @escaping (Int) async -> RLStep) async -> Float {
+    public mutating func runEpisode(_ environment: @escaping @Sendable (Int) async -> RLStep) async -> Float {
         var episodeReward: Float = 0
         var state = Tensor(data: Array(repeating: 0.0, count: 10), shape: [1, 10])
         

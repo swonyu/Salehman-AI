@@ -244,7 +244,7 @@ public final class AIPipelineOrchestrator {
             "reasoning_expert": { tensor in
                 tensor.map { value in
                     let normalized = value / (sqrt(tensor.data.reduce(0) { $0 + $1 * $1 }) + 0.001)
-                    return tanh(normalized)
+                    return Self.tanh(normalized)
                 }
             },
             "action_expert": { tensor in
@@ -262,7 +262,7 @@ public final class AIPipelineOrchestrator {
         executionLog.append(message)
     }
     
-    private func tanh(_ x: Float) -> Float {
+    nonisolated private static func tanh(_ x: Float) -> Float {
         let expX = exp(x)
         let expNegX = exp(-x)
         return (expX - expNegX) / (expX + expNegX)

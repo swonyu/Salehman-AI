@@ -5,7 +5,7 @@ import CoreML
 // MARK: - Core Type Definitions
 
 /// Represents a tensor in the AI pipeline (flexible n-dimensional array wrapper).
-public struct Tensor {
+public struct Tensor: Sendable {
     public let data: [Float]
     public let shape: [Int]
     
@@ -23,7 +23,7 @@ public struct Tensor {
 }
 
 /// Represents a bounding box detected in vision tasks.
-public struct BoundingBox {
+public struct BoundingBox: Sendable {
     public let x: Float
     public let y: Float
     public let width: Float
@@ -42,7 +42,7 @@ public struct BoundingBox {
 }
 
 /// Represents a segmentation mask with point coordinates.
-public struct SegmentationResult {
+public struct SegmentationResult: Sendable {
     public let masks: [Tensor]
     public let boundingBoxes: [BoundingBox]
     public let pointCoordinates: [(x: Float, y: Float)]
@@ -50,7 +50,7 @@ public struct SegmentationResult {
 }
 
 /// Represents a physical trajectory for robotic or digital systems.
-public struct TrajectoryVector {
+public struct TrajectoryVector: Sendable {
     public let x: Float  // Position X
     public let y: Float  // Position Y
     public let z: Float  // Position Z
@@ -65,8 +65,8 @@ public struct TrajectoryVector {
 }
 
 /// Represents a system event (keyboard, mouse, etc.).
-public struct SystemEvent {
-    public enum EventType {
+public struct SystemEvent: Sendable {
+    public enum EventType: Sendable {
         case mouseClick(x: Int, y: Int)
         case keyPress(String)
         case drag(fromX: Int, fromY: Int, toX: Int, toY: Int)
@@ -83,7 +83,7 @@ public struct SystemEvent {
 }
 
 /// Represents an action taken by the LAM/VLA system.
-public struct ActionExecutionResult {
+public struct ActionExecutionResult: Sendable {
     public let actionID: UUID
     public let eventSequence: [SystemEvent]
     public let trajectoryVector: TrajectoryVector?
@@ -93,7 +93,7 @@ public struct ActionExecutionResult {
 }
 
 /// Represents the state of a Liquid Network at a point in time.
-public struct LiquidState {
+public struct LiquidState: Sendable {
     public var internalState: [Float]
     public var timestamp: Date
     
@@ -104,7 +104,7 @@ public struct LiquidState {
 }
 
 /// Represents a single step in a Reinforcement Learning episode.
-public struct RLStep {
+public struct RLStep: Sendable {
     public let state: Tensor
     public let action: Int
     public let reward: Float
@@ -113,7 +113,7 @@ public struct RLStep {
 }
 
 /// Represents routing weights for Mixture of Experts.
-public struct RouterOutput {
+public struct RouterOutput: Sendable {
     public let expertIndices: [Int]
     public let weights: [Float]
     public let topK: Int
@@ -126,7 +126,7 @@ public struct RouterOutput {
 }
 
 /// Vision-Language Model output.
-public struct VLMOutput {
+public struct VLMOutput: Sendable {
     public let description: String
     public let confidence: Float
     public let detections: [BoundingBox]
@@ -134,7 +134,7 @@ public struct VLMOutput {
 }
 
 /// Diffusion pipeline intermediate state.
-public struct DiffusionStep {
+public struct DiffusionStep: Sendable {
     public let stepNumber: Int
     public let noiseScale: Float
     public let latent: Tensor
@@ -142,7 +142,7 @@ public struct DiffusionStep {
 }
 
 /// Tabular ML prediction result.
-public struct TabularPrediction {
+public struct TabularPrediction: Sendable {
     public let label: String
     public let probability: Float
     public let features: [String: Float]

@@ -37,6 +37,7 @@ enum KeychainStore {
         case groqAPIKey     = "groq-api-key"
         case mistralAPIKey  = "mistral-api-key"
         case cerebrasAPIKey = "cerebras-api-key"
+        case deepSeekAPIKey = "deepseek-api-key"
         case anthropicAPIKey = "anthropic-api-key"
         case openAIAPIKey   = "openai-api-key"
         case openRouterAPIKey = "openrouter-api-key"
@@ -49,6 +50,11 @@ enum KeychainStore {
         /// Settings can substitute the real `ANTHROPIC_AUTH_TOKEN` into the
         /// copy-to-clipboard payload (see Unsloth's Claude-Code guide).
         case unslothStudioAPIKey = "unsloth-studio-api-key"
+        /// Optional bearer token for a self-hosted vLLM server started with
+        /// `--api-key`. Needed when you host the vLLM brain on a PUBLIC cloud GPU
+        /// (so the endpoint isn't open to the world); a localhost `vllm serve`
+        /// stays keyless. Lives ONLY in Keychain.
+        case vllmAPIKey = "vllm-api-key"
     }
 
     // MARK: - CRUD

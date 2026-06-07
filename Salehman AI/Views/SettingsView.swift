@@ -59,11 +59,18 @@ struct SettingsView: View {
     @State private var openRouterTesting: Bool = false
     @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
 
+    @State private var deepSeekKeyDraft: String = ""
+    @State private var deepSeekTestStatus: String? = nil
+    @State private var deepSeekTesting: Bool = false
+    @State private var deepSeekKeySaved: Bool = DeepSeekClient.shared.hasKey()
+
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
     @State private var unslothStudioTesting: Bool = false
     @State private var vllmTestStatus: String? = nil
     @State private var vllmTesting: Bool = false
+    @State private var vllmKeySaved: Bool = (KeychainStore.read(.vllmAPIKey) != nil)
+    @State private var vllmKeyDraft: String = ""
     /// Optional Unsloth API token. Stored in Keychain (never UserDefaults). NOT
     /// needed for the local chat brain — only used so the Claude-Code snippet
     /// can paste the real `ANTHROPIC_AUTH_TOKEN` on copy. `nonisolated` Keychain
@@ -128,6 +135,9 @@ struct SettingsView: View {
                         toggle("Offline mode (local only)",
                                "Hard-disable every cloud brain and web tool. Only Apple Intelligence and Ollama can answer — no network call leaves this Mac. Use them alone.",
                                "wifi.slash", $settings.offlineOnly)
+                        toggle("Salehman leads",
+                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
+                               "crown.fill", $settings.salehmanLeader)
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
@@ -212,10 +222,11 @@ struct SettingsView: View {
                         claudeCodeUsageRow
                     }
 
-                    // vLLM (high-throughput local OpenAI-compatible server).
-                    section("vLLM (local server)", "Connect to a local vLLM server — run `vllm serve <model>` and it exposes an OpenAI-compatible API on http://localhost:8000/v1. Pick \u{201C}vLLM\u{201D} in the Brain grid above to route chat here. No key needed. Loopback URLs (localhost / 127.0.0.1) also satisfy Knowledge's on-device privacy guarantee.") {
+                    // vLLM — local OR cloud-hosted high-throughput OpenAI-compatible server.
+                    section("vLLM (local or cloud server)", "Run `vllm serve <model>` locally (http://localhost:8000/v1) OR host it on a cloud GPU (RunPod, etc.) and paste that public URL here — this is how you \u{201C}host the brain on the cloud\u{201D} and drive it from the app. Pick \u{201C}vLLM\u{201D} in the Brain grid to route chat here. For a public/cloud endpoint, start vLLM with `--api-key` and paste that key below so it's not open to the world. Loopback URLs also satisfy Knowledge's on-device privacy guarantee.") {
                         vllmEndpointRow
                         vllmModelRow
+                        vllmKeyRow
                         vllmTestRow
                     }
 
@@ -225,7 +236,7 @@ struct SettingsView: View {
                     collapsibleGroup(
                         "Free API keys",
                         configured: [geminiKeySaved, groqKeySaved, mistralKeySaved,
-                                     cerebrasKeySaved, openRouterKeySaved].filter { $0 }.count,
+                                     cerebrasKeySaved, openRouterKeySaved, deepSeekKeySaved].filter { $0 }.count,
                         total: 5,
                         isExpanded: $showFreeKeys
                     ) {
@@ -273,6 +284,17 @@ struct SettingsView: View {
                             cloudTestRow(provider: OpenRouterClient.shared,
                                          keySaved: $openRouterKeySaved,
                                          testing: $openRouterTesting, status: $openRouterTestStatus)
+                        }
+
+                        section("DeepSeek (Cloud · cheap, elite coder · runs the terminal)", "Pay-as-you-go but pennies; one of the strongest coding/reasoning models. Get a key at platform.deepseek.com/api_keys.") {
+                            cloudKeyRow(provider: DeepSeekClient.shared,
+                                        keySaved: $deepSeekKeySaved, draft: $deepSeekKeyDraft)
+                            cloudModelRow(displayName: "DeepSeek",
+                                          models: DeepSeekClient.allModels,
+                                          selection: $settings.deepSeekModel)
+                            cloudTestRow(provider: DeepSeekClient.shared,
+                                         keySaved: $deepSeekKeySaved,
+                                         testing: $deepSeekTesting, status: $deepSeekTestStatus)
                         }
                     }
 
@@ -468,6 +490,7 @@ struct SettingsView: View {
         case .groq:        return GroqClient.shared.hasKey()
         case .mistral:     return MistralClient.shared.hasKey()
         case .cerebras:    return CerebrasClient.shared.hasKey()
+        case .deepSeek:    return DeepSeekClient.shared.hasKey()
         case .codex:       return OpenAIClient.hasKey()
         case .copilot:     return CopilotClient.isAuthed()
         case .openRouter:  return OpenRouterClient.shared.hasKey()
@@ -487,6 +510,17 @@ struct SettingsView: View {
                 || GroqClient.shared.hasKey() || GeminiClient.hasKey()
                 || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
                 || OpenRouterClient.shared.hasKey()
+        // FreeCoding mirrors Free·Auto's readiness plus DeepSeek (opted into the loop).
+        case .freeCoding:
+            return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+                || DeepSeekClient.shared.hasKey() || GroqClient.shared.hasKey()
+                || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
+                || OpenRouterClient.shared.hasKey()
+        // Cloud Coding is cloud-ONLY — ready iff any cloud coder key is saved.
+        case .cloudCoding:
+            return DeepSeekClient.shared.hasKey() || CerebrasClient.shared.hasKey()
+                || GroqClient.shared.hasKey() || OpenRouterClient.shared.hasKey()
+                || MistralClient.shared.hasKey()
         // Salehman is reachable via either Apple Intelligence (its own persona,
         // no install) or the user's own Ollama model (if pulled). A synchronous
         // proxy — the exact "is that model pulled" check is async at runtime
@@ -674,6 +708,12 @@ struct SettingsView: View {
         }
     }
 
+    /// The "smart modes" — orchestration prefs (not single brains) that get the
+    /// premium gradient glyph in the grid. Pure so the cell stays cheap to render.
+    private static func isOrchestrationMode(_ pref: BrainPreference) -> Bool {
+        pref == .auto || pref == .freeAuto || pref == .freeCoding || pref == .cloudCoding || pref == .ensemble
+    }
+
     private func brainGridCell(_ pref: BrainPreference) -> some View {
         let selected = settings.brainPreference == pref
         let inRotation = settings.rotationBrains.contains(pref)
@@ -686,10 +726,24 @@ struct SettingsView: View {
         Button { settings.brainPreference = pref } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Image(systemName: pref.icon)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(selected ? DS.Palette.accent : .secondary)
-                        .padding(.leading, 18)   // room for the rotation ✓ overlay
+                    Group {
+                        if Self.isOrchestrationMode(pref) {
+                            // The smart "modes" (Auto / Free·Auto / FreeCoding /
+                            // Ensemble) get a premium violet→accent gradient glyph
+                            // so they read as a distinct tier above the single
+                            // brains — cohesive, and makes the flagship loops pop.
+                            Image(systemName: pref.icon)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LinearGradient(
+                                    colors: [Color(red: 0.62, green: 0.40, blue: 0.95), DS.Palette.accent],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                        } else {
+                            Image(systemName: pref.icon)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(selected ? DS.Palette.accent : .secondary)
+                        }
+                    }
+                    .padding(.leading, 18)   // room for the rotation ✓ overlay
                     Spacer()
                     Circle()
                         .fill(statusColor)
@@ -883,6 +937,46 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Optional vLLM API key. REQUIRED when you host vLLM on a public cloud GPU
+    /// (start the server with `--api-key …`) so the endpoint isn't open to the
+    /// world; leave blank for a keyless localhost `vllm serve`. The client sends
+    /// it as `Authorization: Bearer …`. Per CLAUDE.md, it lives ONLY in Keychain.
+    private var vllmKeyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("vLLM API key (optional)").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(vllmKeySaved
+                     ? "Saved in macOS Keychain · sent as a Bearer token to your endpoint"
+                     : "Needed for a public/cloud endpoint started with `--api-key`. Leave blank for localhost.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("token", text: $vllmKeyDraft)
+                .textFieldStyle(.plain).frame(width: 140)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+                .accessibilityLabel("vLLM API key")
+            Button("Save") {
+                let trimmed = vllmKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .vllmAPIKey)
+                vllmKeyDraft = ""             // Wipe the in-memory copy immediately.
+                vllmKeySaved = true
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(vllmKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if vllmKeySaved {
+                Button("Clear") {
+                    _ = KeychainStore.delete(.vllmAPIKey)
+                    vllmKeySaved = false
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .accessibilityLabel("Clear vLLM API key")
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }

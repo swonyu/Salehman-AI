@@ -79,11 +79,14 @@ final class BrainStatus: ObservableObject {
         case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
         case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
         case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
+        case .deepSeek:          return Color(red: 0.29, green: 0.46, blue: 0.96)  // DeepSeek blue
         case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
         case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
         case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
         case .ensemble:          return Color(red: 0.55, green: 0.85, blue: 0.40)  // multi-brain lime
         case .freeAuto:          return Color(red: 0.20, green: 0.85, blue: 0.65)  // free-auto mint (unlimited)
+        case .freeCoding:        return Color(red: 0.62, green: 0.40, blue: 0.95)  // FreeCoding violet
+        case .cloudCoding:       return Color(red: 0.40, green: 0.62, blue: 1.00)  // Cloud Coding sky-blue
         case .none:              return .orange
         }
     }

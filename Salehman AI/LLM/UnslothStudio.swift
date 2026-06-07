@@ -84,6 +84,17 @@ enum UnslothStudio {
         await client()?.chatStream(prompt: prompt, system: system, onUpdate: onUpdate)
     }
 
+    /// Tool-calling chat: lets the Studio model ACTUALLY run the terminal (and
+    /// web tools when allowed) through the shared approval gate, the same way the
+    /// local brains do. `nil` when no endpoint is set or on a transport error /
+    /// a server that doesn't support `tools`, so `LocalLLM` falls back to `chat`.
+    static func chatWithTools(_ message: String, systemPrompt: String? = nil) async -> String? {
+        guard let c = client() else { return nil }
+        return await LocalLLM.chatOpenAICompatWithTools(
+            client: c, model: AppSettings.unslothStudioModelCurrent,
+            message: message, systemPrompt: systemPrompt)
+    }
+
     /// Settings-page health check. Returns `nil` on success, a human-readable
     /// reason on failure.
     static func testConnection() async -> String? {

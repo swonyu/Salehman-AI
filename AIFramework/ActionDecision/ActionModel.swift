@@ -68,7 +68,7 @@ public final class LargeActionModel: AIComponent, @unchecked Sendable {
         return tasks.isEmpty ? ["execute"] : tasks
     }
     
-    private func generateEventSequence(for tasks: [String], context: [String: Any]?) async -> [SystemEvent] {
+    private func generateEventSequence(for tasks: [String], context: [String: any Sendable]?) async -> [SystemEvent] {
         var events: [SystemEvent] = []
         
         for (index, task) in tasks.enumerated() {
@@ -300,9 +300,9 @@ struct MotionPrimitive {
 
 public struct LAMInput: Sendable {
     public let objective: String
-    public let context: [String: Any]?
-    
-    public init(objective: String, context: [String: Any]? = nil) {
+    public let context: [String: any Sendable]?
+
+    public init(objective: String, context: [String: any Sendable]? = nil) {
         self.objective = objective
         self.context = context
     }

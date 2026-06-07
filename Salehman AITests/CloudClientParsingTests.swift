@@ -119,6 +119,103 @@ struct OpenAICompatibleParsingTests {
         #expect(OpenAICompatibleClient.decodeDelta(#"{"choices":[{"delta":{"content":""}}]}"#) == "")
         #expect(OpenAICompatibleClient.decodeDelta(#"{"choices":[{"delta":{}}]}"#) == nil)
     }
+
+    // The local-server brains (vLLM / Unsloth Studio) take a hand-typed base
+    // URL. A trailing slash used to produce `…/v1//chat/completions`, which
+    // strict routers 404. The builder must collapse trailing slashes.
+    @Test func chatCompletionsURLToleratesTrailingSlash() {
+        let want = "http://localhost:8000/v1/chat/completions"
+        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1")?.absoluteString == want)
+        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1/")?.absoluteString == want)
+        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1///")?.absoluteString == want)
+        // Surrounding whitespace (easy to paste) is trimmed too.
+        #expect(OpenAICompatibleClient.chatCompletionsURL("  http://localhost:8000/v1  ")?.absoluteString == want)
+    }
+
+    // `chat()` returns a non-nil "[<name> error STATUS: …]" string for any
+    // non-200, so `testConnection` must treat that as failure — otherwise the
+    // Settings "Test" button goes green on a bad key / wrong URL.
+    @Test func isErrorReplyDetectsFailuresButNotRealText() {
+        #expect(OpenAICompatibleClient.isErrorReply(nil, displayName: "vLLM"))                       // transport failure
+        #expect(OpenAICompatibleClient.isErrorReply("[vLLM error 401: bad key]", displayName: "vLLM"))
+        #expect(OpenAICompatibleClient.isErrorReply("[vLLM request failed (HTTP 404).]", displayName: "vLLM"))
+        // A genuine reply (even one mentioning another brain's name) is success.
+        #expect(!OpenAICompatibleClient.isErrorReply("pong", displayName: "vLLM"))
+        #expect(!OpenAICompatibleClient.isErrorReply("[Groq error 401: …]", displayName: "vLLM")) // name must match
+    }
+}
+
+// MARK: - OpenAI-compatible tool-call parsing (run-the-terminal path)
+//
+// `parseToolResponse` is what lets ANY OpenAI-compatible brain (Groq, Mistral,
+// Cerebras, OpenRouter, OpenAI, Unsloth Studio, vLLM) actually run terminal
+// commands: it pulls the model's requested function calls out of a
+// `/chat/completions` response. A wrong shape here means the brain "describes"
+// a command but never runs it — the exact bug this feature fixes. Pure (no
+// network), so cheap to lock down.
+
+struct OpenAICompatibleToolCallParsingTests {
+
+    @Test func parsesArgumentsAsJSONString_realOpenAIShape() {
+        // Real OpenAI sends `function.arguments` as a JSON *string*.
+        let json = #"""
+        {"choices":[{"message":{"content":null,"tool_calls":[
+          {"id":"call_abc","type":"function",
+           "function":{"name":"run_terminal_command","arguments":"{\"command\":\"ls -la ~\"}"}}
+        ]}}]}
+        """#.data(using: .utf8)!
+        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
+        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
+        #expect(parsed?.text == "")                       // null content → ""
+        #expect(parsed?.toolCalls.count == 1)
+        #expect(parsed?.toolCalls.first?.id == "call_abc")
+        #expect(parsed?.toolCalls.first?.name == "run_terminal_command")
+        #expect(parsed?.toolCalls.first?.arguments["command"] == "ls -la ~")
+    }
+
+    @Test func parsesArgumentsAsRawObject_compatServerShape() {
+        // Some OpenAI-compatible servers send `arguments` as a raw object.
+        let json = #"""
+        {"choices":[{"message":{"content":"","tool_calls":[
+          {"id":"c1","function":{"name":"web_search","arguments":{"query":"swift 6"}}}
+        ]}}]}
+        """#.data(using: .utf8)!
+        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
+        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
+        #expect(parsed?.toolCalls.first?.name == "web_search")
+        #expect(parsed?.toolCalls.first?.arguments["query"] == "swift 6")
+    }
+
+    @Test func synthesizesIdWhenServerOmitsIt() {
+        // Missing `id` must not drop the call — we synthesize a stable fallback
+        // so the matching `tool` result message can still reference it.
+        let json = #"""
+        {"choices":[{"message":{"tool_calls":[
+          {"function":{"name":"run_terminal_command","arguments":"{\"command\":\"pwd\"}"}}
+        ]}}]}
+        """#.data(using: .utf8)!
+        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
+        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
+        #expect(parsed?.toolCalls.first?.id == "call_0")
+        #expect(parsed?.toolCalls.first?.arguments["command"] == "pwd")
+    }
+
+    @Test func plainAnswerHasNoToolCalls() {
+        let json = #"{"choices":[{"message":{"content":"  just text  "}}]}"#.data(using: .utf8)!
+        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
+        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
+        #expect(parsed?.text == "just text")              // trimmed
+        #expect(parsed?.toolCalls.isEmpty == true)
+    }
+
+    @Test func nilForMalformedResponse() {
+        for bad in [#"{"choices":[]}"#, #"{}"#, #"garbage"#] {
+            let obj = (try? JSONSerialization.jsonObject(with: bad.data(using: .utf8)!)) as? [String: Any]
+            // A non-object body ("garbage") isn't a dict at all; the others are
+            // dicts that fail the choices/message guard → nil.
+            if let obj { #expect(OpenAICompatibleClient.parseToolResponse(obj) == nil, "`\(bad)` should yield nil") }
+        }
+    }
 }
 
 // MARK: - Gemini request body + parsers (Google's non-OpenAI shape)

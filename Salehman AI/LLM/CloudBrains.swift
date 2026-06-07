@@ -119,3 +119,26 @@ enum OpenRouterClient {
         consoleURL:      "https://openrouter.ai/keys"
     )
 }
+
+/// DeepSeek — pay-as-you-go but extremely cheap, and one of the strongest open
+/// models at coding and reasoning. OpenAI-compatible (`/v1/chat/completions`),
+/// so like the others it's just a config of `OpenAICompatibleClient` — which
+/// means it gets terminal tool-calling automatically. `deepseek-chat` (V3) is
+/// the general/coding default; `deepseek-reasoner` (R1) trades latency for
+/// deeper step-by-step reasoning on hard problems.
+enum DeepSeekClient {
+    nonisolated static let defaultModel = "deepseek-chat"
+    nonisolated static let allModels    = [
+        "deepseek-chat",       // V3 — fast, excellent general + coding
+        "deepseek-reasoner",   // R1 — deeper reasoning, slower
+    ]
+
+    nonisolated static let shared = OpenAICompatibleClient(
+        displayName:     "DeepSeek",
+        baseURL:         "https://api.deepseek.com/v1",
+        defaultModel:    defaultModel,
+        allModels:       allModels,
+        keychainAccount: .deepSeekAPIKey,
+        consoleURL:      "https://platform.deepseek.com/api_keys"
+    )
+}

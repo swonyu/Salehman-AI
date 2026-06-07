@@ -121,6 +121,9 @@ final class AppSettings: ObservableObject {
     @Published var cerebrasModel: String {
         didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
     }
+    @Published var deepSeekModel: String {
+        didSet { UserDefaults.standard.set(deepSeekModel, forKey: Keys.deepSeekModel) }
+    }
     @Published var openRouterModel: String {
         didSet { UserDefaults.standard.set(openRouterModel, forKey: Keys.openRouterModel) }
     }
@@ -173,6 +176,15 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// **Salehman Leader.** When ON, every brain's answer is passed through the
+    /// Salehman model for one final pass — Salehman is the "leader" that owns the
+    /// last word regardless of which brain drafted it. Default ON. Becomes a no-op
+    /// when the brain is already `.salehman`, the draft is an error/off message, or
+    /// the Salehman engine isn't reachable (then it returns the draft unchanged).
+    @Published var salehmanLeader: Bool {
+        didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
+    }
+
     // UserDefaults keys — `nonisolated` so the policy layer (which runs off
     // the main actor) can read them without an actor hop. They're just
     // immutable string constants, so no isolation is needed.
@@ -186,6 +198,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let offlineOnly    = "set_offlineOnly"
         nonisolated static let hideCapture = "set_hideCapture"
         nonisolated static let unrestrictedTools = "set_unrestrictedTools"
+        nonisolated static let salehmanLeader    = "set_salehmanLeader"
         nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
@@ -203,6 +216,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let groqModel       = "set_groqModel"
         nonisolated static let mistralModel    = "set_mistralModel"
         nonisolated static let cerebrasModel   = "set_cerebrasModel"
+        nonisolated static let deepSeekModel   = "set_deepSeekModel"
         nonisolated static let openRouterModel = "set_openRouterModel"
     }
 
@@ -298,6 +312,10 @@ final class AppSettings: ObservableObject {
         let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
         return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
     }
+    nonisolated static var deepSeekModelCurrent: String {
+        let raw = UserDefaults.standard.string(forKey: Keys.deepSeekModel) ?? ""
+        return DeepSeekClient.allModels.contains(raw) ? raw : DeepSeekClient.defaultModel
+    }
     nonisolated static var openRouterModelCurrent: String {
         let raw = UserDefaults.standard.string(forKey: Keys.openRouterModel) ?? ""
         return OpenRouterClient.allModels.contains(raw) ? raw : OpenRouterClient.defaultModel
@@ -316,6 +334,10 @@ final class AppSettings: ObservableObject {
     /// Thread-safe read of the Apple Intelligence master switch for the model
     /// layer, which runs off the main actor. Defaults ON.
     nonisolated static var appleIntelligenceEnabled: Bool { boolDefaultTrue(Keys.appleIntelligence) }
+
+    /// Thread-safe read of the Salehman Leader switch (defaults ON) so the agent
+    /// pipeline can gate the final Salehman pass from off the main actor.
+    nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
 
     /// Thread-safe read of the Offline / Local-Only switch — same pattern as the
     /// Apple Intelligence accessor above so `LocalLLM.currentBrain()`,
@@ -376,6 +398,7 @@ final class AppSettings: ObservableObject {
         offlineOnly    = d.bool(forKey: Keys.offlineOnly)      // default off (opt-in)
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
+        salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
@@ -397,6 +420,8 @@ final class AppSettings: ObservableObject {
         mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
         let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
         cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
+        let storedDeepSeek = d.string(forKey: Keys.deepSeekModel) ?? ""
+        deepSeekModel = DeepSeekClient.allModels.contains(storedDeepSeek) ? storedDeepSeek : DeepSeekClient.defaultModel
         let storedOpenRouter = d.string(forKey: Keys.openRouterModel) ?? ""
         openRouterModel = OpenRouterClient.allModels.contains(storedOpenRouter) ? storedOpenRouter : OpenRouterClient.defaultModel
         installCaptureObservers()
@@ -430,8 +455,9 @@ final class AppSettings: ObservableObject {
 ///   Apple Intelligence's content guardrails. The pipeline automatically
 ///   collapses to a single agent on this brain (see AgentPipeline).
 enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, freeAuto, apple, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
+    case auto, freeAuto, freeCoding, cloudCoding, apple, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
+    case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
     case ensemble   // run ALL reachable brains in parallel, show every answer
     case salehman   // the user's OWN local Ollama model (name in `customModelName`); runs nothing else
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
@@ -460,6 +486,8 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         switch self {
         case .auto:        return "Auto"
         case .freeAuto:    return "Free · Auto"
+        case .freeCoding:  return "FreeCoding"
+        case .cloudCoding: return "Cloud Coding"
         case .apple:       return "Apple Intelligence"
         case .ollama:      return "Ollama qwen-coder"
         case .claudeHaiku: return "Claude Haiku (Cloud)"
@@ -468,6 +496,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Groq (Cloud)"
         case .mistral:     return "Mistral (Cloud)"
         case .cerebras:    return "Cerebras (Cloud)"
+        case .deepSeek:    return "DeepSeek (Cloud)"
         case .codex:       return "Codex / OpenAI (Cloud)"
         case .copilot:     return "GitHub Copilot (Cloud)"
         case .openRouter:  return "OpenRouter (Cloud · free models)"
@@ -481,6 +510,8 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         switch self {
         case .auto:        return "Apple if available, otherwise Ollama"
         case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
+        case .freeCoding:  return "Coding loop · races your free coder models + DeepSeek, runs & tests code in the terminal · local backstop"
+        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (DeepSeek, gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
         case .apple:       return "On-device · Apple's tiny model · honors response mode"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
@@ -489,6 +520,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
         case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
         case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
+        case .deepSeek:    return "Cloud · cheap + elite at code/reasoning · runs the terminal · ~zero local RAM · needs API key"
         case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
@@ -502,6 +534,8 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         switch self {
         case .auto:        return "sparkles"
         case .freeAuto:    return "infinity.circle.fill"
+        case .freeCoding:  return "terminal.fill"
+        case .cloudCoding: return "cloud.bolt.fill"
         case .apple:       return "apple.logo"
         case .ollama:      return "cpu"
         case .claudeHaiku: return "cloud.fill"
@@ -510,6 +544,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "hare.fill"
         case .mistral:     return "leaf.circle.fill"
         case .cerebras:    return "rays"
+        case .deepSeek:    return "curlybraces"
         case .codex:       return "chevron.left.forwardslash.chevron.right"
         case .copilot:     return "person.2.badge.gearshape.fill"
         case .openRouter:  return "arrow.triangle.branch"

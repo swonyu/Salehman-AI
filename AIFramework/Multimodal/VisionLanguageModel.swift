@@ -62,9 +62,10 @@ public final class VisionLanguageModel: AIComponent, @unchecked Sendable {
         do {
             try handler.perform([request])
             if let featurePrint = request.results?.first as? VNFeaturePrintObservation {
-                let data = featurePrint.data
-                // Convert observation data to float array
-                features = Array(UnsafeMutableBufferPointer(start: data.bytes.assumingMemoryBound(to: Float.self), count: data.count / MemoryLayout<Float>.size))
+                // Copy the feature-print bytes into a [Float] via a safe typed buffer.
+                features = featurePrint.data.withUnsafeBytes { rawBuffer in
+                    Array(rawBuffer.bindMemory(to: Float.self))
+                }
             }
         } catch {
             print("Vision framework error: \(error)")
@@ -77,8 +78,7 @@ public final class VisionLanguageModel: AIComponent, @unchecked Sendable {
     
     private func computeTextEmbedding(_ text: String) -> [Float] {
         // Simulate text-to-embedding using tokenization and pseudo-random projection
-        let tokens = text.split(separator: " ").count
-        var embedding = Array(repeating: 0.0, count: 512)
+        var embedding: [Float] = Array(repeating: 0, count: 512)
         
         for (i, char) in text.enumerated() {
             let hash = Float(char.asciiValue ?? 0) / 127.0
@@ -102,30 +102,34 @@ public final class VisionLanguageModel: AIComponent, @unchecked Sendable {
     }
     
     private func detectObjects(in image: CGImage) async -> [BoundingBox] {
-        let request = VNRecognizeObjectsRequest()
+        // Vision has no general object detector without a CoreML model, but
+        // objectness-based saliency yields real bounding boxes for salient
+        // regions — a native stand-in for "detected objects."
+        let request = VNGenerateObjectnessBasedSaliencyImageRequest()
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        
+
         var detections: [BoundingBox] = []
-        
+
         do {
             try handler.perform([request])
-            if let results = request.results as? [VNRecognizedObjectObservation] {
-                detections = results.map { observation in
-                    let bbox = observation.boundingBox
+            if let observation = request.results?.first as? VNSaliencyImageObservation,
+               let objects = observation.salientObjects {
+                detections = objects.map { object in
+                    let bbox = object.boundingBox
                     return BoundingBox(
                         x: Float(bbox.origin.x),
                         y: Float(bbox.origin.y),
                         width: Float(bbox.size.width),
                         height: Float(bbox.size.height),
-                        confidence: Float(observation.confidence),
-                        label: observation.labels.first?.identifier
+                        confidence: object.confidence,
+                        label: "salient_object"
                     )
                 }
             }
         } catch {
             print("Object detection error: \(error)")
         }
-        
+
         return detections
     }
     
@@ -190,7 +194,7 @@ public final class SegmentAnythingModel: AIComponent, @unchecked Sendable {
             
             // Generate 4 proposal masks based on quadrants
             for quadrant in 0..<4 {
-                let maskData = generateQuadrantMask(quadrant: quadrant, imageSize: image.size)
+                let maskData = generateQuadrantMask(quadrant: quadrant, imageSize: CGSize(width: image.width, height: image.height))
                 proposals.append(Tensor(data: maskData, shape: [256, 256]))
             }
         } catch {
@@ -203,7 +207,7 @@ public final class SegmentAnythingModel: AIComponent, @unchecked Sendable {
     
     private func generateQuadrantMask(quadrant: Int, imageSize: CGSize) -> [Float] {
         let (width, height) = maskResolution
-        var mask = Array(repeating: 0.0, count: width * height)
+        var mask: [Float] = Array(repeating: 0, count: width * height)
         
         for y in 0..<height {
             for x in 0..<width {
@@ -226,7 +230,7 @@ public final class SegmentAnythingModel: AIComponent, @unchecked Sendable {
     }
     
     private func generateFallbackProposals() -> [Tensor] {
-        let emptyMask = Array(repeating: 0.5, count: 256 * 256)
+        let emptyMask: [Float] = Array(repeating: 0.5, count: 256 * 256)
         return [Tensor(data: emptyMask, shape: [256, 256])]
     }
     

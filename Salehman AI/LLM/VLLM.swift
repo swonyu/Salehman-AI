@@ -36,20 +36,23 @@ enum VLLM {
     // MARK: - Client builder
 
     /// Build a fresh `OpenAICompatibleClient` from current settings, or `nil`
-    /// when no endpoint is set. Always unauthenticated — vLLM's OpenAI server
-    /// is keyless by default.
+    /// when no endpoint is set. Unauthenticated by default (the keyless local
+    /// `vllm serve` path), but if the user saved an API key — which you SHOULD
+    /// when hosting vLLM on a public cloud GPU (`vllm serve … --api-key …`) — it's
+    /// sent as `Authorization: Bearer …` so the endpoint can be locked down.
     static func client() -> OpenAICompatibleClient? {
         let endpoint = AppSettings.vllmEndpointCurrent
         guard !endpoint.isEmpty else { return nil }
         let model = AppSettings.vllmModelCurrent
+        let hasSavedKey = KeychainStore.read(.vllmAPIKey) != nil
         return OpenAICompatibleClient(
             displayName: "vLLM",
             baseURL: endpoint,
             defaultModel: model,
             allModels: [model],
-            keychainAccount: nil,        // local server — no key
+            keychainAccount: hasSavedKey ? .vllmAPIKey : nil,
             consoleURL: "https://docs.vllm.ai/",
-            requiresKey: false
+            requiresKey: hasSavedKey
         )
     }
 
@@ -63,6 +66,17 @@ enum VLLM {
                            system: String? = nil,
                            onUpdate: @escaping (String) -> Void) async -> String? {
         await client()?.chatStream(prompt: prompt, system: system, onUpdate: onUpdate)
+    }
+
+    /// Tool-calling chat: lets the vLLM model ACTUALLY run the terminal (and web
+    /// tools when allowed) through the shared approval gate, the same way the
+    /// local brains do. `nil` when no endpoint is set or on a transport error /
+    /// a server that doesn't support `tools`, so `LocalLLM` falls back to `chat`.
+    static func chatWithTools(_ message: String, systemPrompt: String? = nil) async -> String? {
+        guard let c = client() else { return nil }
+        return await LocalLLM.chatOpenAICompatWithTools(
+            client: c, model: AppSettings.vllmModelCurrent,
+            message: message, systemPrompt: systemPrompt)
     }
 
     /// Settings-page health check. `nil` on success, a human-readable reason on failure.

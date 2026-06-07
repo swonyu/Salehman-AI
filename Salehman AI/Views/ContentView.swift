@@ -1031,7 +1031,10 @@ struct MessageBubble: View {
     var body: some View {
         bubbleRow
             .opacity(appeared ? 1 : 0)
-            .blur(radius: appeared ? 6 : 0)
+            // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
+            // arrives — the inverse of this had every settled bubble stuck at
+            // radius 6, leaving the whole transcript permanently blurry.
+            .blur(radius: appeared ? 0 : 6)
             .offset(y: appeared ? 0 : 14)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during

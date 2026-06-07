@@ -80,7 +80,7 @@ struct AIFrameworkDemo {
             print("💳 PHASE 3 — TABULAR ML (FRAUD DETECTION)")
             print("   Classification: \(phase3.prediction.label)")
             print("   Confidence: \(String(format: "%.1f%%", phase3.prediction.probability * 100))")
-            print("   " + phase3.prediction.explanation.split(separator: "\n").first ?? "")
+            print("   " + (phase3.prediction.explanation.split(separator: "\n").first.map(String.init) ?? ""))
             print("")
         }
         
@@ -173,8 +173,7 @@ struct AIFrameworkDemo {
     
     private static func createSampleImage() -> CGImage? {
         let size = CGSize(width: 512, height: 512)
-        let rect = CGRect(origin: .zero, size: size)
-        
+
         guard let context = CGContext(
             data: nil,
             width: Int(size.width),

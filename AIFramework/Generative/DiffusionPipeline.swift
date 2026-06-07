@@ -81,7 +81,7 @@ public final class LatentDiffusionModel: AIComponent, @unchecked Sendable {
     
     private func computePromptEmbedding(_ prompt: String) -> [Float] {
         // Tokenize and embed (simulated)
-        var embedding = Array(repeating: 0.0, count: latentDim * latentDim)
+        var embedding: [Float] = Array(repeating: 0, count: latentDim * latentDim)
         
         for (index, char) in prompt.enumerated() {
             let value = Float(char.asciiValue ?? 0) / 127.0
@@ -99,7 +99,7 @@ public final class LatentDiffusionModel: AIComponent, @unchecked Sendable {
     
     private func decodeLatent(_ latent: Tensor) -> Tensor {
         // Simulate VAE decoder: latent space → image space
-        let decoded = latent.map { value in
+        let decoded = latent.data.map { value in
             // Simple nonlinearity to simulate decoder transformation
             sin(value * Float.pi) * 0.5 + 0.5
         }
@@ -150,7 +150,7 @@ public final class TabularMLPipeline: AIComponent, @unchecked Sendable {
         label: String,
         probability: Float
     ) -> String {
-        let riskFactors: [String] = []
+        var riskFactors: [String] = []
         
         if let amount = features["transaction_amount"], amount > 5000 {
             riskFactors.append("High transaction amount: $\(Int(amount))")
@@ -232,7 +232,7 @@ private class DecisionTree {
         // Simulate tree traversal with pseudo-random splits
         var decision: Float = 0
         
-        for (index, feature) in features.enumerated() {
+        for feature in features {
             let threshold = rng.randomThreshold()
             let splitGain = abs(feature - threshold)
             decision += splitGain > 0.5 ? 0.1 : -0.05
