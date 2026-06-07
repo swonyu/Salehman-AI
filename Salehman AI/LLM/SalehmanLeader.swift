@@ -14,9 +14,11 @@ import Foundation
 ///   message.
 /// - **Graceful:** if the Salehman engine isn't reachable it returns the draft
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
-/// - **No Apple Intelligence:** the Salehman engine chain here is MLX → custom
-///   Ollama model only. Salehman is its own thing; it does not borrow Apple's
-///   on-device model and must never present itself as such.
+/// - **Cloud-capable:** the engine chain prefers a configured remote endpoint
+///   (cloud vLLM / Unsloth Studio) so Salehman can lead on a strong hosted model,
+///   then falls back to standalone MLX, then the local Ollama model.
+/// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
+///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
 
     /// Whether the final Salehman pass should run for the current turn.
@@ -62,10 +64,24 @@ enum SalehmanLeader {
         return draft
     }
 
-    /// Runs ONLY the Salehman engine chain: standalone on-device MLX → the user's
-    /// custom Ollama model with the Salehman persona. Deliberately omits Apple
-    /// Intelligence. Returns nil when no Salehman engine is reachable.
+    /// Runs ONLY the Salehman engine chain, in order of capability:
+    ///   1. a configured REMOTE endpoint — a strong model hosted on a cloud GPU
+    ///      via vLLM (or Unsloth Studio). This is how Salehman "leads on a real
+    ///      model" instead of the small local fallback: host a model (see
+    ///      `HOST_BRAIN_ON_CLOUD.md`), paste its URL in Settings, and the leader
+    ///      runs there automatically.
+    ///   2. standalone on-device MLX,
+    ///   3. the user's custom Ollama model (e.g. dolphin) with the Salehman persona.
+    /// Deliberately omits Apple Intelligence. Returns nil when none are reachable.
     private static func salehmanGenerate(_ prompt: String) async -> String? {
+        if VLLM.isConfigured,
+           let reply = await VLLM.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
+            return reply
+        }
+        if UnslothStudio.isConfigured,
+           let reply = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
+            return reply
+        }
         if await MLXSalehmanEngine.shared.isReady,
            let reply = await MLXSalehmanEngine.shared.generate(prompt: prompt, maxTokens: 1024) {
             return reply
