@@ -24,6 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		4C08BE922FD6E00A004D4E71 /* Salehman AI.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = "Salehman AI.xcodeproj"; sourceTree = "<group>"; };
 		4CC50A072FD15BD700EBFF56 /* Salehman AI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Salehman AI.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4CC50A162FD15BD800EBFF56 /* Salehman AITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Salehman AITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4CC50A202FD15BD800EBFF56 /* Salehman AIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Salehman AIUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,6 +73,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		4C08BE962FD6E00A004D4E71 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		4CC509FE2FD15BD700EBFF56 = {
 			isa = PBXGroup;
 			children = (
@@ -198,6 +206,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4CC50A082FD15BD700EBFF56 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = 4C08BE962FD6E00A004D4E71 /* Products */;
+					ProjectRef = 4C08BE922FD6E00A004D4E71 /* Salehman AI.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				4CC50A062FD15BD700EBFF56 /* Salehman AI */,
