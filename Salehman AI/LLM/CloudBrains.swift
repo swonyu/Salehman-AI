@@ -96,18 +96,23 @@ enum CerebrasClient {
 /// another from the Settings picker (same lesson as the Grok phantom-model
 /// episode — verify via Test connection, don't trust a hardcoded ID forever).
 enum OpenRouterClient {
-    nonisolated static let defaultModel = "meta-llama/llama-3.3-70b-instruct:free"
+    // gpt-oss-120b:free is the default — the strongest *reliably-available* free
+    // model. The genuinely frontier free brains below (Kimi K2.6 ~1T, Nemotron-
+    // Ultra-550B) are smarter but heavily rate-limited, so they're opt-in in the
+    // picker rather than the everyday default.
+    nonisolated static let defaultModel = "openai/gpt-oss-120b:free"
     nonisolated static let allModels    = [
-        // Refreshed 2026-06-05 against the live `:free` catalog. The previous
-        // list still had `deepseek/deepseek-chat:free`, `google/gemma-2-9b-it:free`,
-        // and `mistralai/mistral-7b-instruct:free` — all of which 404 now
-        // ("No endpoints found"). Keeping the 3.3-70b default because it's the
-        // most-asked free model even when it 429s; users can switch in the picker.
-        "meta-llama/llama-3.2-3b-instruct:free",
+        // Refreshed 2026-06-08 against the live `:free` catalog (GET /v1/models).
+        // DeepSeek's own `:free` variants are GONE (all DeepSeek models are paid
+        // now) — but these free models rival/exceed DeepSeek's 671B. Ordered
+        // lightest→heaviest; the heavy ones 429 often, so the app falls through.
         "openai/gpt-oss-20b:free",
-        "qwen/qwen3-coder:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
         "openai/gpt-oss-120b:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",       // 405B, free
+        "nvidia/nemotron-3-ultra-550b-a55b:free",          // 550B, free
+        "moonshotai/kimi-k2.6:free",                       // ~1T MoE — best free, rivals DeepSeek 671B
     ]
 
     nonisolated static let shared = OpenAICompatibleClient(
@@ -140,5 +145,33 @@ enum DeepSeekClient {
         allModels:       allModels,
         keychainAccount: .deepSeekAPIKey,
         consoleURL:      "https://platform.deepseek.com/api_keys"
+    )
+}
+
+/// NVIDIA NIM (`integrate.api.nvidia.com`) — NVIDIA's OpenAI-compatible inference
+/// endpoint, with a **free tier** (free credits from build.nvidia.com). This is
+/// the app's route to **REAL DeepSeek for free**: DeepSeek's own API and
+/// OpenRouter both charge for every DeepSeek model, but NVIDIA hosts the actual
+/// `deepseek-ai/deepseek-v4-*` weights at $0 on the free tier. Verified live
+/// against `GET /v1/models` (2026-06-08): `deepseek-v4-flash`, `deepseek-v4-pro`,
+/// `deepseek-coder-6.7b-instruct`. Like every other provider here it's just a
+/// config of `OpenAICompatibleClient`, so it gets terminal tool-calling for free.
+/// (Note: DeepSeek V3/R1 are last-gen and no longer offered free anywhere; V4
+/// supersedes both — for an *unlimited* R1, run a local `deepseek-r1` distill.)
+enum NvidiaClient {
+    nonisolated static let defaultModel = "deepseek-ai/deepseek-v4-flash"
+    nonisolated static let allModels    = [
+        "deepseek-ai/deepseek-v4-flash",          // fast, free — the everyday DeepSeek
+        "deepseek-ai/deepseek-v4-pro",            // deeper, free tier
+        "deepseek-ai/deepseek-coder-6.7b-instruct",
+    ]
+
+    nonisolated static let shared = OpenAICompatibleClient(
+        displayName:     "NVIDIA",
+        baseURL:         "https://integrate.api.nvidia.com/v1",
+        defaultModel:    defaultModel,
+        allModels:       allModels,
+        keychainAccount: .nvidiaAPIKey,
+        consoleURL:      "https://build.nvidia.com"
     )
 }

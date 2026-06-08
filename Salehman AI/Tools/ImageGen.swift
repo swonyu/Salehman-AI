@@ -3,9 +3,6 @@ import ImagePlayground
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 /// On-device image generation via Apple's Image Playground (free, local).
 enum ImageGen {
@@ -43,25 +40,3 @@ final class GeneratedMedia: @unchecked Sendable {
     func consume() -> String? { lock.lock(); defer { path = nil; lock.unlock() }; return path }
 }
 
-#if canImport(FoundationModels)
-struct GenerateImageTool: Tool {
-    let name = "generate_image"
-    let description = "Create an image from a text description using on-device Image Playground. Use when the user asks to generate, draw, or make a picture."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "A vivid description of the image to create.")
-        var prompt: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        let p = arguments.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !p.isEmpty else { return "No image description given." }
-        if let url = await ImageGen.generate(p) {
-            GeneratedMedia.shared.set(url.path)
-            return "Image created successfully for: \"\(p)\". It is now shown to the user."
-        }
-        return "Image generation isn't available (needs Apple Intelligence Image Playground enabled)."
-    }
-}
-#endif

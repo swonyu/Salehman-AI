@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 /// Controls whether external/non-local tools are allowed.
 /// Default = .localOnly to maintain the local-first philosophy.
@@ -23,59 +20,6 @@ enum ToolPolicy {
         if let override { return override }
         return isWebAccessEnabled ? .allowExternalTools : .localOnly
     }
-
-    // MARK: - Tool list
-
-    #if canImport(FoundationModels)
-    /// Tools to hand to a fresh `LanguageModelSession`. Settings changes take
-    /// effect on the next session — call `ChatSession.reset()` (or start a new
-    /// chat) for a new policy to apply mid-conversation.
-    ///
-    /// `nonisolated` so `ChatSession` (an actor) can build its tool list
-    /// without hopping to the main actor. Only reads `nonisolated` settings
-    /// accessors, so this is safe.
-    nonisolated static func activeTools() -> [any Tool] {
-        var tools: [any Tool] = []
-
-        // Always-on, local-only core.
-        tools.append(RunTerminalCommandTool())   // gated separately by CommandApprovalCenter
-        tools.append(RememberFactTool())
-        tools.append(TranslateTool())
-        tools.append(ControlMacTool())
-        tools.append(GenerateImageTool())        // on-device Image Playground
-        tools.append(SelfImproveTool())          // edits THIS project's source only
-        tools.append(StockAnalysisTool())        // offline Saudi/TASI heuristic analysis
-        tools.append(TranscribeMediaTool())      // on-device audio/video transcription
-        tools.append(StockSageBriefingTool())    // on-device market briefing over tracked symbols
-        tools.append(CaptureNoteTool())          // Scratchpad: capture a note
-        tools.append(AddTaskTool())              // Scratchpad: add a task
-        tools.append(CompleteTaskTool())         // Scratchpad: complete a task
-        tools.append(ListScratchpadTool())       // Scratchpad: list notes + open tasks
-        tools.append(ListDocumentsTool())        // Knowledge vault: list what's there ("what's in my Knowledge?")
-        tools.append(SearchDocumentsTool())      // Knowledge vault: retrieve from the user's private documents
-        tools.append(GetDocumentTool())          // Knowledge vault: fetch one whole document by name (summary / translate / quote)
-
-        // Image understanding — only when the vision capability is enabled.
-        if isVisionEnabled {
-            tools.append(AnalyzeImageTool())
-        }
-
-        // External web access — only when the policy says so.
-        if isExternalAllowed {
-            tools.append(WebSearchTool())
-            tools.append(FetchURLTool())
-        }
-
-        // Heavyweight local coding model (Ollama qwen-coder). The tool itself
-        // also short-circuits when off, but excluding it from the schema keeps
-        // the model from advertising a capability it doesn't actually have.
-        if isCodeModelEnabled {
-            tools.append(WriteCodeTool())
-        }
-
-        return tools
-    }
-    #endif
 
     // MARK: - Instructions hint
 

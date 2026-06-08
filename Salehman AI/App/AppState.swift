@@ -32,13 +32,14 @@ final class AppState: ObservableObject {
 /// The top-level surfaces.
 enum AppTab: String, CaseIterable, Identifiable {
     // Order defines the tab-bar layout AND ⌘-number mapping: Today (Home) first.
-    case today, chat, agents, markets, scratchpad, knowledge
+    case today, chat, code, agents, markets, scratchpad, knowledge
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .today:      return "Today"
         case .chat:       return "Chat"
+        case .code:       return "Code"
         case .agents:     return "Agents"
         case .markets:    return "Markets"
         case .scratchpad: return "Notes"
@@ -50,6 +51,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .today:      return "sun.max.fill"
         case .chat:       return "bubble.left.and.bubble.right.fill"
+        case .code:       return "chevron.left.forwardslash.chevron.right"
         case .agents:     return "person.3.fill"
         case .markets:    return "chart.line.uptrend.xyaxis"
         case .scratchpad: return "checklist"

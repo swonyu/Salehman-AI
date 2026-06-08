@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 /// Free web access — DuckDuckGo search + page fetching. No API key required.
 enum Web {
@@ -217,43 +214,3 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
     }
 }
 
-#if canImport(FoundationModels)
-struct WebSearchTool: Tool {
-    let name = "web_search"
-    let description = "Search the web (DuckDuckGo) for current information. Use for anything recent, factual, or beyond your training knowledge."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "The search query.")
-        var query: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        // Use the SAME gate as the Ollama tool path (ToolPolicy.isExternalAllowed),
-        // which is Offline-Mode-aware — a session built while online otherwise kept
-        // these tools live and leaked to the network after the user went offline.
-        guard ToolPolicy.isExternalAllowed else {
-            return ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled."
-        }
-        return await Web.search(arguments.query)
-    }
-}
-
-struct FetchURLTool: Tool {
-    let name = "fetch_url"
-    let description = "Fetch a web page (or public social-media page) and return its readable text. Use to read an article or page the user mentions or that web_search returned."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "The full URL to fetch.")
-        var url: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        guard ToolPolicy.isExternalAllowed else {
-            return ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled."
-        }
-        return await Web.fetch(arguments.url)
-    }
-}
-#endif

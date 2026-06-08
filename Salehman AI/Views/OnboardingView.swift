@@ -21,7 +21,7 @@ struct OnboardingView: View {
               body: "Your personal AI — sharp, fast, and entirely yours. Let's get you set up in a few seconds."),
         .init(icon: "lock.shield.fill",
               title: "Private by design",
-              body: "Salehman runs on-device with Apple Intelligence. Your conversations stay on this Mac — nothing leaves unless you choose a cloud brain yourself."),
+              body: "Salehman runs cloud-first on free big models, with a local fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Choose your brain — or many",
               body: "Pin one model, or check several and Salehman rotates through them, one per message. Free local brains, your own custom model, or the cloud — your call."),

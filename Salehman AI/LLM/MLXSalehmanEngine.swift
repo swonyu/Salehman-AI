@@ -21,14 +21,14 @@ import MLXLMCommon
 ///
 /// Until the package is added, this actor compiles to a thin stub that always
 /// reports `.unavailable` — the rest of the `.salehman` routing (Ollama, then
-/// Apple Intelligence with persona) keeps working unchanged.
+/// the cloud/Ollama engines) keep working unchanged.
 ///
 /// ## What it does once enabled
 /// * Downloads a small open-weight model (default: Llama 3.2 1B Instruct 4-bit,
 ///   ~800 MB) into `~/Library/Application Support/Salehman/models/`.
 /// * Loads it into memory once (memory-mapped from disk; cold-start ~1–2 s).
 /// * Generates text on the Neural Engine + GPU — no network, no Ollama, no
-///   Apple Intelligence — at ~50–80 tokens/sec on M-series Macs.
+///   a small local model — at ~50–80 tokens/sec on M-series Macs.
 ///
 /// ## Why an `actor` and not a `class`
 /// MLX inference state (the loaded `ModelContainer`, KV cache, in-flight

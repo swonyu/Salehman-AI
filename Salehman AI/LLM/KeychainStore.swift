@@ -38,6 +38,10 @@ enum KeychainStore {
         case mistralAPIKey  = "mistral-api-key"
         case cerebrasAPIKey = "cerebras-api-key"
         case deepSeekAPIKey = "deepseek-api-key"
+        /// NVIDIA NIM (integrate.api.nvidia.com) — hosts REAL DeepSeek (V4) on a
+        /// free tier, OpenAI-compatible. This is the app's "DeepSeek for free"
+        /// route since DeepSeek's own API + OpenRouter are paid-only.
+        case nvidiaAPIKey   = "nvidia-api-key"
         case anthropicAPIKey = "anthropic-api-key"
         case openAIAPIKey   = "openai-api-key"
         case openRouterAPIKey = "openrouter-api-key"

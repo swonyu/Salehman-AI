@@ -14,9 +14,13 @@ import Foundation
 ///   message.
 /// - **Graceful:** if the Salehman engine isn't reachable it returns the draft
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
-/// - **Cloud-capable:** the engine chain prefers a configured remote endpoint
-///   (cloud vLLM / Unsloth Studio) so Salehman can lead on a strong hosted model,
-///   then falls back to standalone MLX, then the local Ollama model.
+/// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
+///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
+///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), and only then
+///   DeepSeek's paid 671B as a last-resort backstop, then the local floor (MLX,
+///   Ollama). So whenever you're online with any one free key set, Salehman
+///   finalizes on a big model at **$0** — DeepSeek (paid) runs only if every free
+///   tier is unavailable, and it drops to the ~7B local model when offline.
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
@@ -59,14 +63,24 @@ enum SalehmanLeader {
         You are Salehman, the lead. Deliver the FINAL answer to the user in your \
         own voice: keep what is correct, fix anything wrong or incomplete, and be \
         direct. Output ONLY the final answer — do not mention the draft, the other \
-        model, or that any review happened. NEVER name or hint at Apple, Apple \
-        Intelligence, FoundationModels, or any model/provider; if asked what you \
-        are or what you run on, you are simply Salehman.
+        model, or that any review happened. NEVER name or hint at DeepSeek, NVIDIA, \
+        Groq, or any model/provider; if asked what you are or what you run on, you \
+        are simply Salehman.
         """
 
-        if let final = await salehmanGenerate(leaderPrompt) {
+        if let final = await salehmanGenerate(leaderPrompt, userPrompt: userPrompt) {
             let f = final.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !f.isEmpty, final != LocalLLM.offMessage { return final }
+            if !f.isEmpty, final != LocalLLM.offMessage {
+                // Self-improvement loop: hand Salehman's answer to a DeepSeek
+                // reasoner (R1-class) for analysis, then let Salehman revise per
+                // that feedback — so each answer comes out smarter. Graceful: if
+                // the critic is unreachable or satisfied, `refine` returns `final`
+                // unchanged. Skipped when the owner turns the loop off.
+                if AppSettings.salehmanRefineEnabled {
+                    return await SalehmanEngine.refine(userPrompt: userPrompt, answer: final)
+                }
+                return final
+            }
         }
         // Salehman unreachable → the original draft still stands.
         return draft
@@ -83,31 +97,12 @@ enum SalehmanLeader {
         return Double(codeLen) >= 0.4 * Double(max(text.count, 1))
     }
 
-    /// Runs ONLY the Salehman engine chain, in order of capability:
-    ///   1. a configured REMOTE endpoint — a strong model hosted on a cloud GPU
-    ///      via vLLM (or Unsloth Studio). This is how Salehman "leads on a real
-    ///      model" instead of the small local fallback: host a model (see
-    ///      `HOST_BRAIN_ON_CLOUD.md`), paste its URL in Settings, and the leader
-    ///      runs there automatically.
-    ///   2. standalone on-device MLX,
-    ///   3. the user's custom Ollama model (e.g. dolphin) with the Salehman persona.
-    /// Deliberately omits Apple Intelligence. Returns nil when none are reachable.
-    private static func salehmanGenerate(_ prompt: String) async -> String? {
-        if VLLM.isConfigured,
-           let reply = await VLLM.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
-            return reply
-        }
-        if UnslothStudio.isConfigured,
-           let reply = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
-            return reply
-        }
-        if await MLXSalehmanEngine.shared.isReady,
-           let reply = await MLXSalehmanEngine.shared.generate(prompt: prompt, maxTokens: 1024) {
-            return reply
-        }
-        if let reply = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
-            return reply
-        }
-        return nil
+    /// Runs the Salehman brain on the final pass. Delegates to the shared
+    /// `SalehmanEngine` cloud-first chain (your hosted model → REAL DeepSeek V4
+    /// free via NVIDIA → free frontier/120B tiers → DeepSeek paid backstop →
+    /// local MLX/Ollama floor) so the leader and the pinned `.salehman` brain run
+    /// on EXACTLY the same engine. `userPrompt` drives DeepSeek R1/V3 routing.
+    private static func salehmanGenerate(_ prompt: String, userPrompt: String) async -> String? {
+        await SalehmanEngine.generate(prompt: prompt, userPrompt: userPrompt, maxTokens: 1024)
     }
 }

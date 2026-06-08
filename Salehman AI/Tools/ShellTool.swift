@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 /// Runs shell commands on the user's Mac. Exposed to the on-device model as a
 /// callable tool so the assistant can "control the terminal".
@@ -21,6 +18,18 @@ enum Shell {
         let timedOut: Bool
     }
 
+    /// Optional working-directory override. The **Code tab** sets this to the
+    /// chosen project root so terminal commands + file edits run INSIDE the
+    /// project instead of `$HOME`. `nil` → home directory (unchanged behavior for
+    /// every other caller). Lock-guarded because `run` executes off the main
+    /// actor while the Code tab sets this from `@MainActor`.
+    private nonisolated(unsafe) static var _workingDirectory: URL?
+    private static let wdLock = NSLock()
+    nonisolated static var workingDirectory: URL? {
+        get { wdLock.lock(); defer { wdLock.unlock() }; return _workingDirectory }
+        set { wdLock.lock(); defer { wdLock.unlock() }; _workingDirectory = newValue }
+    }
+
     /// Returns the matched pattern/command if `command` is refused, else `nil`.
     /// Two layers: dangerous substrings (operations/paths, anywhere) + dangerous
     /// command names (leading token of each chained segment).
@@ -37,7 +46,7 @@ enum Shell {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", command]
-        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        process.currentDirectoryURL = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -145,26 +154,3 @@ private final class AtomicBool: @unchecked Sendable {
     }
 }
 
-#if canImport(FoundationModels)
-/// The Foundation Models tool the assistant can call to run a command.
-struct RunTerminalCommandTool: Tool {
-    let name = "run_terminal_command"
-    let description = """
-    Run a shell command on the user's Mac (zsh) and return its combined \
-    stdout/stderr. Use this to inspect files, run scripts, check system state, \
-    or perform tasks the user asks for. Prefer safe, read-only commands unless \
-    the user clearly asked to modify something.
-    """
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "The exact shell command to run, e.g. 'ls -la ~/Downloads' or 'sw_vers'.")
-        var command: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        // Shared gated executor — identical safety path to the Ollama tool loop.
-        await Shell.runApproved(arguments.command)
-    }
-}
-#endif

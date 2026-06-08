@@ -1,11 +1,9 @@
 import Foundation
 import OSLog
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
-/// On-device generation via Apple Intelligence (Foundation Models). Falls back
-/// gracefully when Apple Intelligence isn't available.
+/// Brain routing for Salehman AI. Salehman runs CLOUD-FIRST (free DeepSeek V4 via
+/// NVIDIA → free frontier/120B tiers → DeepSeek paid backstop) with a LOCAL floor
+/// (Ollama / on-device MLX) for offline use. No Apple Intelligence.
 enum LocalLLM {
     /// Profiling signposter. Capture a trace in **Instruments → Time Profiler +
     /// "Points of Interest"** (or `os_signpost` instrument) and the `freeAuto` /
@@ -17,18 +15,14 @@ enum LocalLLM {
     // AgentPipeline tasks, the Ollama-fallback path) can probe brain
     // availability without hopping to the main actor. The underlying APIs are
     // thread-safe — there's no shared mutable state behind any of them.
+    /// True when *some* brain can answer: a local Ollama model, an on-device MLX
+    /// Salehman engine, or any configured cloud key. Used by the pipeline to rate
+    /// an outcome. (Formerly gated on Apple Intelligence availability.)
     nonisolated static var isAvailable: Bool {
-        #if canImport(FoundationModels)
-        if case .available = SystemLanguageModel.default.availability { return true }
-        #endif
-        return false
+        SalehmanEngine.hasAnyCloud
+            || OpenAIClient.hasKey() || AnthropicClient.isConfigured || GrokClient.hasKey()
+            || GeminiClient.hasKey() || CopilotClient.isAuthed()
     }
-
-    /// User's master switch from Settings (distinct from hardware availability).
-    nonisolated static var isEnabledByUser: Bool { AppSettings.appleIntelligenceEnabled }
-
-    /// Truly usable right now: the hardware supports it AND the user left it on.
-    nonisolated static var isActive: Bool { isEnabledByUser && isAvailable }
 
     /// **Sentinel** returned by the chat pipeline when no brain can answer.
     ///
@@ -49,13 +43,12 @@ enum LocalLLM {
     /// For the context-aware text we *display* (rather than return as a
     /// sentinel), see `unavailableMessage` below.
     nonisolated static let offMessage =
-        "No model is reachable right now. Turn Apple Intelligence back on in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled, or pin a configured cloud brain in Settings → Brain."
+        "No model is reachable right now. Add a free cloud key (NVIDIA / Groq / Cerebras / OpenRouter) in Settings → Brain, or start the Ollama server (`ollama serve`) with a model pulled."
 
     /// Context-aware UI-facing text describing why the currently-pinned brain
-    /// can't answer. Names the brain the user actually selected and the
-    /// exact remedy, so we never tell them to "turn Apple Intelligence back
-    /// on" when *that* is on and a *different* pinned brain is the thing
-    /// that's down.
+    /// can't answer. Names the brain the user actually selected and the exact
+    /// remedy, so we never point them at the wrong fix when a *different* pinned
+    /// brain is the thing that's down.
     ///
     /// **Not safe for equality comparison** — value depends on
     /// `AppSettings.brainPreferenceCurrent` and changes when the user
@@ -65,27 +58,25 @@ enum LocalLLM {
         let pref = AppSettings.brainPreferenceCurrent
         switch pref {
         case .auto:
-            return "No model is reachable right now. Turn on Apple Intelligence in Settings, or start the Ollama server (`ollama serve`) with qwen2.5-coder pulled."
-        case .apple:
-            return "Apple Intelligence is your selected brain, but it's unavailable right now. Turn it on in Settings, or pick another brain."
+            return "No model is reachable right now. Add a free cloud key (NVIDIA / Groq / Cerebras / OpenRouter) in Settings, or start the Ollama server (`ollama serve`) with a model pulled."
         case .ollama:
             return "Ollama qwen-coder is your selected brain, but the Ollama server isn't reachable. Start it with `ollama serve` (with qwen2.5-coder pulled), or switch to Auto in Settings."
         case .copilot:
             return "GitHub Copilot is your selected brain, but you're not signed in. Sign in under Settings → GitHub Copilot, or switch brains."
         case .ensemble:
-            return "\"All Brains at Once\" is selected, but none are reachable. Turn on Apple Intelligence, start Ollama, or add at least one cloud API key in Settings."
+            return "\"All Brains at Once\" is selected, but none are reachable. Start Ollama, or add at least one cloud API key in Settings."
         case .freeAuto:
-            return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, turn on Apple Intelligence, or start Ollama."
+            return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, or start Ollama."
         case .freeCoding:
-            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (DeepSeek / OpenRouter / Groq / Cerebras / Mistral) in Settings, turn on Apple Intelligence, or start Ollama with qwen2.5-coder."
+            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (DeepSeek / OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
         case .cloudCoding:
             return AppSettings.isOfflineOnly
-                ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick a local brain (Ollama / Apple Intelligence)."
+                ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick the local Ollama brain."
                 : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for DeepSeek / Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .deepSeek, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "Salehman needs an on-device engine to run. Either turn on Apple Intelligence (Settings → Intelligence → Apple Intelligence) — Salehman uses it with its own persona, no install required — OR pull your custom Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
+            return "Salehman runs on the cloud — add any free key in Settings (NVIDIA for REAL DeepSeek V4 free, or Groq / Cerebras / OpenRouter) and he leads on a big model at $0. To run fully on-device instead, pull your Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -97,21 +88,14 @@ enum LocalLLM {
     // this for error messages. The underlying availability check is itself
     // thread-safe, so there's no shared state to guard.
     nonisolated static var statusNote: String {
-        #if canImport(FoundationModels)
-        switch SystemLanguageModel.default.availability {
-        case .available: return "Apple Intelligence (on-device)"
-        case .unavailable(let reason): return "fallback (Apple Intelligence unavailable: \(reason))"
-        }
-        #else
-        return "fallback (Foundation Models SDK not present)"
-        #endif
+        isAvailable ? "cloud/local brain configured" : "no brain configured"
     }
 
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
     enum Brain: Equatable {
-        case appleIntelligence, ollamaCoder
-        case salehman                                // the user's OWN local Ollama model
+        case ollamaCoder
+        case salehman                                // Salehman — cloud-first, local floor
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
         case vllm                                    // local OpenAI-compat server served by vLLM
         case claudeHaiku, grok                       // cloud, pre-existing
@@ -127,10 +111,8 @@ enum LocalLLM {
     }
 
     /// Best brain available right now, honoring the user's `BrainPreference`:
-    ///   * `.apple`  → return Apple Intelligence if active, else `.none`.
     ///   * `.ollama` → return Ollama qwen-coder if reachable, else `.none`.
-    ///   * `.auto`   → Apple Intelligence wins when active, otherwise fall
-    ///                 back to Ollama if the local server is up.
+    ///   * `.auto`   → local-first: Ollama qwen-coder when the server is up.
     /// Returning `.none` short-circuits the pipeline with the canonical
     /// "no brain reachable" message instead of silently using the other side.
     static func currentBrain() async -> Brain {
@@ -138,7 +120,7 @@ enum LocalLLM {
 
         // Offline Mode hard-gates every cloud pref to `.none` so the UI shows a
         // clear "Offline is on" hint instead of silently degrading. Local pins
-        // (`.apple`, `.ollama`, `.auto`) and the orchestration modes (`.ensemble`,
+        // (`.ollama`, `.auto`) and the orchestration modes (`.ensemble`,
         // `.freeAuto`) stay reachable — they gate their own cloud roster.
         if AppSettings.isOfflineOnly {
             switch pref {
@@ -150,28 +132,20 @@ enum LocalLLM {
         }
 
         switch pref {
-        // Local tier (Apple Intelligence + Ollama): both free & on-device, so a
-        // pinned local brain falls back to the *other* local brain instead of
-        // dead-ending. Order honors the pin. (Cloud pins below stay strict.)
-        case .apple:
-            if isActive { return .appleIntelligence }
-            if await ollamaReady() { return .ollamaCoder }
-            return .none
-
+        // Local tier (Ollama): a pinned local brain that's down dead-ends to
+        // `.none` with a clear hint. (Cloud pins below stay strict.)
         case .ollama:
             if await ollamaReady() { return .ollamaCoder }
-            if isActive { return .appleIntelligence }
             return .none
 
         case .salehman:
-            // Salehman is reachable via three engines (in preference order). The
-            // persona is the brand; the engine is internal:
-            //   1. MLX-Swift on-device — truly standalone (no Ollama, no Apple).
-            //   2. User's custom Ollama model — their explicit choice.
-            //   3. Apple Intelligence with the Salehman persona — zero install.
+            // Salehman is CLOUD-FIRST now: reachable if ANY cloud engine is set
+            // (a hosted endpoint or any free/paid key) — so he works with NO local
+            // model installed — else the on-device engines for offline use. The
+            // persona is the brand; the engine underneath is internal.
+            if SalehmanEngine.hasAnyCloud { return .salehman }
             if await MLXSalehmanEngine.shared.isReady { return .salehman }
             if await OllamaClient.hasCustomModel() { return .salehman }
-            if isActive { return .salehman }
             return .none
 
         case .unslothStudio:
@@ -206,7 +180,6 @@ enum LocalLLM {
             // `.auto` stays strictly local-first: we never silently spend on
             // a cloud API. The user has to explicitly pin a cloud brain to
             // leave the Mac.
-            if isActive { return .appleIntelligence }
             if await ollamaReady() { return .ollamaCoder }
             return .none
 
@@ -220,7 +193,6 @@ enum LocalLLM {
             // Reachable iff a *free* brain or a local brain can answer (paid
             // brains don't count — this mode never spends). The parallel race +
             // local backstop happens in `generateFreeAuto`.
-            if isActive { return .freeAuto }
             if GroqClient.shared.hasKey() || CerebrasClient.shared.hasKey()
                 || GeminiClient.hasKey() || MistralClient.shared.hasKey()
                 || OpenRouterClient.shared.hasKey() { return .freeAuto }
@@ -230,7 +202,6 @@ enum LocalLLM {
         case .freeCoding:
             // Same reachability shape as Free·Auto, plus DeepSeek (the owner opted
             // it into this coding loop). Reachable iff any coder brain can answer.
-            if isActive { return .freeCoding }
             if DeepSeekClient.shared.hasKey() || GroqClient.shared.hasKey()
                 || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
                 || OpenRouterClient.shared.hasKey() { return .freeCoding }
@@ -247,7 +218,6 @@ enum LocalLLM {
     /// True iff at least one brain (local or any keyed cloud) can answer.
     /// Used by ensemble mode to decide between fanning out and the off-message.
     nonisolated static func anyBrainReachable() async -> Bool {
-        if isActive { return true }
         if await ollamaReady() { return true }
         return AnthropicClient.isConfigured || GrokClient.hasKey() || GeminiClient.hasKey()
             || GroqClient.shared.hasKey() || MistralClient.shared.hasKey()
@@ -328,7 +298,7 @@ enum LocalLLM {
     /// return the FIRST usable answer — a rate-limited (429) or errored brain
     /// simply loses the race instead of blocking the user. If every free cloud
     /// brain fails (or none are configured), fall back to the LOCAL brains
-    /// (Apple Intelligence → Ollama) **sequentially** — never concurrently with
+    /// (Ollama) **sequentially** — never concurrently with
     /// the cloud calls, which preserves the 16 GB RAM guardrail (the same
     /// concurrent-local-model load that hard-froze the Mac). Local never
     /// rate-limits, so this is the "effectively unlimited / never blocked"
@@ -398,13 +368,6 @@ enum LocalLLM {
 
         // Every free cloud brain failed / cooling / none configured → LOCAL
         // backstop, sequential (never concurrent with the cloud calls).
-        #if canImport(FoundationModels)
-        if isActive,
-           let reply = try? await LanguageModelSession().respond(to: prompt).content,
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-        #endif
         if await ollamaReady(),
            let reply = await OllamaClient.chat(prompt: prompt, system: sys),
            isUsableFreeAnswer(reply) {
@@ -418,19 +381,13 @@ enum LocalLLM {
     /// no-tool race in `generateFreeAuto`, this routes the turn through a
     /// tool-capable brain so Free·Auto can ACTUALLY run terminal commands / search
     /// the web (the owner asked Free·Auto to "do all commands"). Order: free local
-    /// brains first (Ollama → Apple Intelligence — both free, private, and strong
-    /// with the terminal tool), then the free cloud OpenAI-compatible brains (now
-    /// tool-capable), and finally a plain `generateFreeAuto` race so it never
-    /// dead-ends. Inherits the SAME approval gate + blocked-command floor.
+    /// brains first (Ollama — free, private, strong with the terminal tool), then
+    /// the free cloud OpenAI-compatible brains (now tool-capable), and finally a
+    /// plain `generateFreeAuto` race so it never dead-ends. Inherits the SAME
+    /// approval gate + blocked-command floor.
     static func freeAutoReplyWithTools(_ message: String) async -> String {
         // 1) Local, free, tool-capable.
         if await ollamaReady(), let reply = await ollamaReply(message) { return reply }
-        #if canImport(FoundationModels)
-        if isActive {
-            let reply = await ChatSession.shared.respond(to: message)
-            if isUsableFreeAnswer(reply) { return reply }
-        }
-        #endif
         // 2) Free cloud OpenAI-compatible brains — first one the user configured.
         //    Tool-capable via `chatOpenAICompatWithTools`. Skipped under Offline
         //    Mode (the stronger constraint), matching `generateFreeAuto`.
@@ -486,7 +443,7 @@ enum LocalLLM {
     /// FreeCoding RACE (no tools) — like `generateFreeAuto` but routes each free
     /// brain to its strongest CODING model + a coding system prompt, and adds
     /// DeepSeek (elite coder, cheap) to the roster per the owner's choice. First
-    /// usable reply wins; local Ollama coder / Apple Intelligence backstop. Used by
+    /// usable reply wins; local Ollama coder backstop. Used by
     /// direct callers; the chat pipeline uses the tool-capable `freeCodingReply`.
     static func generateFreeCoding(_ prompt: String) async -> String {
         let sigState = signposter.beginInterval("freeCoding")
@@ -537,26 +494,19 @@ enum LocalLLM {
             if let winner { return winner }
         }
 
-        // Local backstop — Ollama coder first (best for code), then Apple Intelligence.
+        // Local backstop — Ollama coder (best for code).
         if await ollamaReady(),
            let reply = await OllamaClient.chat(prompt: prompt, system: sys),
            isUsableFreeAnswer(reply) {
             return reply
         }
-        #if canImport(FoundationModels)
-        if isActive,
-           let reply = try? await LanguageModelSession().respond(to: prompt).content,
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-        #endif
         return offMessage
     }
 
     /// FreeCoding WITH tools — what the chat pipeline runs. Routes through a
     /// tool-capable coder so it can actually write, build, run, and TEST code:
-    /// local Ollama coder → Apple Intelligence → free cloud coders + DeepSeek
-    /// (DeepSeek first — the strongest), then a plain `generateFreeCoding` race so
+    /// free cloud coders + DeepSeek (DeepSeek first — the strongest) → local Ollama
+    /// coder, then a plain `generateFreeCoding` race so
     /// it never dead-ends. Same approval gate + blocked-command floor as always.
     static func freeCodingReply(_ message: String) async -> String {
         let sys = applyUnrestricted(freeCodingSystem)
@@ -586,12 +536,6 @@ enum LocalLLM {
         // free + private, but heavier on a laptop, so it's intentionally LAST to
         // avoid the RAM-load lag that prompted this reorder.
         if await ollamaReady(), let reply = await chatOllamaWithTools(message, systemPrompt: sys) { return reply }
-        #if canImport(FoundationModels)
-        if isActive {
-            let reply = await ChatSession.shared.respond(to: message)
-            if isUsableFreeAnswer(reply) { return reply }
-        }
-        #endif
         // Last resort → the plain race.
         return await generateFreeCoding(message)
     }
@@ -693,9 +637,8 @@ enum LocalLLM {
     /// Short label for the current brain, shown in the header subtitle.
     static func currentBrainLabel() async -> String {
         switch await currentBrain() {
-        case .appleIntelligence: return "On-device · Apple Intelligence"
         case .ollamaCoder:       return "Local · Ollama qwen-coder"
-        case .salehman:          return "Salehman · on-device"
+        case .salehman:          return SalehmanEngine.hasAnyCloud ? "Salehman · cloud" : "Salehman · on-device"
         case .unslothStudio:
             return UnslothStudio.isLocalLoopback
                 ? "Local · Unsloth Studio (\(AppSettings.unslothStudioModelCurrent))"
@@ -722,16 +665,14 @@ enum LocalLLM {
             // Name the pinned-but-down brain so the header matches the chat message.
             switch AppSettings.brainPreferenceCurrent {
             case .ollama:  return "Ollama selected · not running"
-            case .apple:   return "Apple Intelligence selected · off"
             case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
-                // Two distinct messages depending on whether the MLX-Swift
-                // package is in the project. When linked, the user can fix this
-                // entirely on-device by downloading the standalone engine.
+                // Cloud-first: the quickest fix is a free cloud key; on-device
+                // (MLX standalone / Ollama) still works for offline use.
                 if MLXSalehmanEngine.isPackageLinked {
-                    return "Salehman selected · download the standalone engine in Settings, turn on Apple Intelligence, or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, download the standalone engine, or pull \"\(AppSettings.customModelNameCurrent)\""
                 } else {
-                    return "Salehman selected · turn on Apple Intelligence or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, or pull \"\(AppSettings.customModelNameCurrent)\""
                 }
             case .unslothStudio:
                 // Different failure mode from the cloud brains — no key, just a
@@ -791,19 +732,12 @@ enum LocalLLM {
         typealias Thunk = @Sendable () async -> String?
         var roster: [(String, Thunk)] = []
 
-        #if canImport(FoundationModels)
-        if isActive {
-            roster.append(("Apple Intelligence", {
-                try? await LanguageModelSession().respond(to: prompt).content
-            }))
-        }
-        #endif
         if let m = ollamaModel, includeLocal {
             roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
         }
-        // Offline Mode skips ALL cloud brains so ensemble runs LOCAL-only (Apple
-        // + Ollama, already appended above). Auto-scales — when the next cloud
-        // brain is added, this single gate covers it.
+        // Offline Mode skips ALL cloud brains so ensemble runs LOCAL-only (Ollama,
+        // already appended above). Auto-scales — when the next cloud brain is
+        // added, this single gate covers it.
         if !AppSettings.isOfflineOnly {
             if AnthropicClient.isConfigured {
                 roster.append(("Claude Haiku", { await AnthropicClient.chat(prompt: prompt, system: sys) }))
@@ -1059,7 +993,7 @@ enum LocalLLM {
     }
 
     /// Ollama WITH tool-calling: the local/free qwen brain runs the terminal via the
-    /// SAME approval gate + `Shell.runApproved` executor as Apple Intelligence. The
+    /// SAME approval gate + `Shell.runApproved` executor as the local brain. The
     /// model decides whether to call the tool; if it just answers, we return that
     /// text. Loops propose→approve→run→feed-back up to `maxRounds` so it can chain
     /// steps. `nil` → transport error (caller falls back to plain chat).
@@ -1225,19 +1159,16 @@ enum LocalLLM {
     // Brain-gate predicates. Each cloud brain is *only* tried when the user
     // explicitly pins it — we never silently spend on a cloud API.
     //
-    // The local tier (Apple Intelligence + Ollama) is different: both are free
-    // and on-device, so within any local preference they fall back to each
-    // other instead of dead-ending. `isLocalPref` opens the tier; `ollamaFirst`
-    // sets the order (Ollama-first only when the user explicitly pinned Ollama).
+    // The local tier (Ollama) is free and on-device. `isLocalPref` opens the
+    // tier for `.auto` and the `.ollama` pin.
     nonisolated private static var isLocalPref: Bool {
-        pref == .auto || pref == .apple || pref == .ollama
+        pref == .auto || pref == .ollama
     }
-    nonisolated private static var ollamaFirst: Bool { pref == .ollama }
     /// The user's own model is pinned — route EXCLUSIVELY to it (no fallback).
     nonisolated private static var salehmanAllowed: Bool { pref == .salehman }
     /// Unsloth Studio (or any local OpenAI-compatible server) is pinned — route
-    /// exclusively to it, no silent fallback to Apple/Ollama. Same discipline
-    /// as `.salehman`: an explicit pin means "this engine or nothing."
+    /// exclusively to it, no silent fallback to Ollama. Same discipline as
+    /// `.salehman`: an explicit pin means "this engine or nothing."
     nonisolated private static var unslothStudioAllowed: Bool { pref == .unslothStudio }
     /// vLLM (local OpenAI-compatible server) is pinned — route exclusively to it,
     /// no silent fallback. Same discipline as `.unslothStudio`.
@@ -1257,7 +1188,7 @@ enum LocalLLM {
     /// response length to keep terse agents fast.
     ///
     /// Brain order honors the user's `BrainPreference` (auto/apple/ollama).
-    /// Within `.auto` we still try Apple Intelligence first because it's
+    /// Within `.auto` we stay local-first because it's
     /// lighter; pinned modes skip the other brain entirely instead of falling
     /// back silently — silent fallback would defeat the purpose of pinning.
     static func generate(_ rawPrompt: String, maxTokens: Int? = nil, cachePrefix: String? = nil) async -> String {
@@ -1317,20 +1248,13 @@ enum LocalLLM {
             return reply
         }
         if copilotAllowed, let reply = await CopilotClient.chat(prompt: prompt) { return reply }
-        // Salehman — engine preference: MLX standalone → custom Ollama model →
-        // Apple Intelligence with persona. No further fallback.
+        // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
+        // NVIDIA → free frontier/120B tiers → DeepSeek paid backstop → local
+        // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
         if salehmanAllowed {
-            // 1. Truly-standalone on-device MLX engine. Bypasses everything else.
-            if await MLXSalehmanEngine.shared.isReady,
-               let reply = await MLXSalehmanEngine.shared.generate(prompt: prompt,
-                                                                    maxTokens: maxTokens ?? 512) {
+            if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
-            if let reply = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) {
-                return reply
-            }
-            // Salehman is its own engine (MLX → custom Ollama model) and never
-            // borrows Apple Intelligence — no FoundationModels fallback here.
             return offMessage
         }
         // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin,
@@ -1344,41 +1268,21 @@ enum LocalLLM {
             if let reply = await VLLM.chat(prompt: prompt) { return reply }
             return offMessage
         }
-        // Local tier (Apple Intelligence + Ollama): free & on-device, so they
+        // Local tier (Ollama): free & on-device, so they
         // fall back to each other; Ollama-first only when the user pinned it.
         if isLocalPref {
-            if ollamaFirst, let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
-            #if canImport(FoundationModels)
-            if isActive {
-                let session = LanguageModelSession()
-                let options = GenerationOptions(maximumResponseTokens: maxTokens)
-                if let response = try? await session.respond(to: prompt, options: options) {
-                    return response.content
-                }
-            }
-            #endif
-            if !ollamaFirst, let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+            if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
         }
         return offMessage
     }
 
     /// **On-device-only** one-shot generation. Runs EXCLUSIVELY the local tier
-    /// (Apple Intelligence → Ollama), ignoring the user's pinned brain — so a
-    /// pinned cloud brain can never cause privacy-sensitive content to leave the
-    /// Mac. This is the entry point for features that PROMISE privacy (the
-    /// Knowledge vault's "on this Mac" summary/Q&A). Returns `nil` when no
-    /// on-device model is available, so the caller can say so honestly rather
-    /// than silently falling back to the cloud.
+    /// (Ollama), ignoring the user's pinned brain — so a pinned cloud brain can
+    /// never cause privacy-sensitive content to leave the Mac. This is the entry
+    /// point for features that PROMISE privacy (the Knowledge vault's "on this
+    /// Mac" summary/Q&A). Returns `nil` when no on-device model is available, so
+    /// the caller can say so honestly rather than silently falling back to cloud.
     static func generateOnDevice(_ prompt: String, maxTokens: Int? = nil) async -> String? {
-        #if canImport(FoundationModels)
-        if isActive {
-            let session = LanguageModelSession()
-            let options = GenerationOptions(maximumResponseTokens: maxTokens)
-            if let response = try? await session.respond(to: prompt, options: options) {
-                return response.content
-            }
-        }
-        #endif
         if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
         // Unsloth Studio (or any local OpenAI-compat server) qualifies as
         // on-device ONLY when its endpoint is a loopback URL — see
@@ -1500,21 +1404,14 @@ enum LocalLLM {
             if let r = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
             if let r = await CopilotClient.chat(prompt: prompt) { return r }
         }
-        // Salehman streaming — engine preference: MLX standalone → custom Ollama
-        // model → Apple Intelligence with persona. No further fallback.
+        // Salehman streaming — CLOUD-FIRST via the shared engine (streams from the
+        // cloud brain; falls back to local MLX/Ollama streaming when offline).
         if salehmanAllowed {
-            // 1. Truly-standalone on-device MLX engine. Streams tokens natively.
-            if await MLXSalehmanEngine.shared.isReady,
-               let reply = await MLXSalehmanEngine.shared.generateStream(prompt: prompt,
-                                                                          maxTokens: maxTokens ?? 512,
-                                                                          onUpdate: onUpdate) {
+            if let reply = await SalehmanEngine.generateStream(prompt: prompt,
+                                                               maxTokens: maxTokens,
+                                                               onUpdate: onUpdate) {
                 return reply
             }
-            if let reply = await OllamaClient.chatStream(prompt: prompt, system: SalehmanPersona.systemPrompt, onUpdate: onUpdate) {
-                return reply
-            }
-            // Salehman never borrows Apple Intelligence — own engine only
-            // (MLX stream → custom Ollama stream). No FoundationModels fallback.
             return offMessage
         }
         // Unsloth Studio (or any local OpenAI-compatible server) — explicit
@@ -1532,32 +1429,9 @@ enum LocalLLM {
             if let r = await VLLM.chat(prompt: prompt) { return r }
             return offMessage
         }
-        // Local tier — same fall-back-and-order rules as `generate`.
+        // Local tier — Ollama streaming.
         if isLocalPref {
-            if ollamaFirst,
-               let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem, onUpdate: onUpdate) {
-                return reply
-            }
-            #if canImport(FoundationModels)
-            if isActive {
-                let session = LanguageModelSession()
-                let options = GenerationOptions(maximumResponseTokens: maxTokens)
-                var last = ""
-                do {
-                    let stream = session.streamResponse(to: prompt, options: options)
-                    for try await snapshot in stream {
-                        last = snapshot.content
-                        onUpdate(last)
-                    }
-                    return last
-                } catch {
-                    if !last.isEmpty { return last }
-                    // Fall through to Ollama on a clean failure (don't trap the user).
-                }
-            }
-            #endif
-            if !ollamaFirst,
-               let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem, onUpdate: onUpdate) {
+            if let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem, onUpdate: onUpdate) {
                 return reply
             }
         }
@@ -1572,7 +1446,7 @@ enum LocalLLM {
     }
 
     /// Multi-turn chat that remembers prior messages. Routes through the
-    /// tool-enabled `ChatSession` when Apple Intelligence is the active brain;
+    /// tool-enabled Ollama/cloud loop;
     /// otherwise falls back to Ollama qwen-coder *without* tools.
     static func chat(_ message: String) async -> String {
         if isFreeAutoMode { return await generateFreeAuto(message) }
@@ -1646,25 +1520,14 @@ enum LocalLLM {
             }
             return offMessage
         }
-        // Salehman — the user's own assistant identity. Engine preference:
-        //   1. MLX-Swift on-device — TRULY standalone (no Ollama, no Apple).
-        //   2. Custom Ollama model if the user pulled one (explicit choice).
-        //   3. Apple Intelligence with the Salehman persona (zero install).
-        // No further fallback (no qwen, no Apple-without-persona, no cloud).
+        // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
+        // brain can run the terminal / web through the OpenAI `tools` field, and
+        // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
+        // engine the leader uses. No further fallback.
         if salehmanAllowed {
-            // 1. Truly-standalone engine — bypasses Ollama and Apple entirely.
-            //    Tools (terminal, web) aren't wired through MLX yet — when the
-            //    standalone engine is the active one, the model answers from its
-            //    weights only. Ollama/Apple still get tools when they're used.
-            if await MLXSalehmanEngine.shared.isReady,
-               let reply = await MLXSalehmanEngine.shared.generate(prompt: message) {
+            if let reply = await SalehmanEngine.generateWithTools(message: message, userPrompt: message) {
                 return reply
             }
-            if let reply = await ollamaReply(message, systemPrompt: SalehmanPersona.systemPrompt) {
-                return reply
-            }
-            // Salehman never falls back to Apple Intelligence — own engine only
-            // (MLX → custom Ollama model with tools).
             return offMessage
         }
         // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin.
@@ -1682,15 +1545,8 @@ enum LocalLLM {
             if let reply = await VLLM.chat(prompt: message, system: Self.cloudSystemPrompt) { return reply }
             return offMessage
         }
-        // Local tier (pinned-first). BOTH brains can now run the terminal: Apple
-        // via the tool-enabled ChatSession, Ollama via `ollamaReply`'s tool loop.
+        // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
         if isLocalPref {
-            if ollamaFirst {
-                if let reply = await ollamaReply(message) { return reply }
-                if isActive { return await ChatSession.shared.respond(to: message) }
-                return offMessage
-            }
-            if isActive { return await ChatSession.shared.respond(to: message) }
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
         }
@@ -1698,9 +1554,9 @@ enum LocalLLM {
     }
 
 
-    /// Start a fresh conversation (clears memory).
+    /// Start a fresh conversation (clears the rolling transcript memory).
     static func resetChat() async {
-        await ChatSession.shared.reset()
+        await ConversationStore.shared.reset()
     }
 
     /// Result Synthesis Lead — a second pass that turns a working draft into a
@@ -1729,103 +1585,3 @@ enum LocalLLM {
     }
 }
 
-/// Holds a persistent Foundation Models session so the assistant remembers
-/// the conversation across turns. Isolated in an actor for safe concurrent use.
-actor ChatSession {
-    static let shared = ChatSession()
-
-    /// Persona + behaviour rules. The live tool menu is appended at session-
-    /// build time (see `currentInstructions()`) so disabled tools — e.g. web
-    /// access switched off in Settings — are never advertised to the model.
-    private static let baseInstructions = """
-    You are Salehman AI, a helpful, concise, and friendly assistant created by Saleh.
-    Lead with the answer first, then add only the reasoning or caveats that actually help. Skip filler like "Certainly!" or "As an AI…". Use markdown only when it adds clarity (lists for 3+ items, fenced code blocks for code); short answers stay prose.
-    LANGUAGE (critical): reply in the SAME language as the user's latest message — English in, English out; Arabic in, Arabic out. Never switch languages on your own, and never default to Arabic just because the Mac's region is Saudi.
-
-    IMPORTANT — answering vs. coding:
-    • For ANY question about this Mac or its current state (macOS version, files,
-      disk space, settings, running apps, etc.), you MUST call the
-      run_terminal_command tool to get the REAL answer, then report it in plain
-      words. Do NOT write code for the user to run, and do NOT guess.
-    • Only write code when the user EXPLICITLY asks you to write or fix code.
-    When you do write code: make it correct, complete, idiomatic, and modern
-    (Swift/SwiftUI where relevant); handle errors and edge cases; add brief usage
-    notes; never leave TODO placeholders; and show it in fenced code blocks.
-
-    You can control the user's Mac terminal using the run_terminal_command tool.
-    The computer runs macOS (Apple Silicon) with the zsh shell — NOT Linux.
-    Always use macOS-native commands. Do NOT use Linux-only tools like systemctl,
-    apt, gsettings, or xdg-open. Useful macOS equivalents:
-      • Change wallpaper: osascript -e 'tell application "System Events" to set picture of every desktop to "/full/path/to/image.jpg"'
-      • Open an app: open -a "Safari"   • Open a file/URL: open <path-or-url>
-      • Read a setting: defaults read <domain> <key>
-      • System info: sw_vers, system_profiler SPHardwareDataType
-      • Notifications: osascript -e 'display notification "text" with title "Salehman AI"'
-      • Volume: osascript -e 'set volume output volume 50'
-
-    When the user asks you to do something on their computer, call
-    run_terminal_command with the correct macOS command, then explain the result
-    in plain language. If a command fails because it doesn't exist, figure out the
-    correct macOS equivalent and try again instead of giving up. Never run
-    destructive commands. After running a command, briefly summarize what happened.
-    To run tests, use run_terminal_command with `xcodebuild test -scheme <name>`.
-    """
-
-    /// Persona + the live tool menu derived from `ToolPolicy`. Rebuilt every
-    /// time a session is created so toggling web access (or any other gated
-    /// tool) only requires starting a new chat.
-    private static func currentInstructions() -> String {
-        LocalLLM.applyUnrestricted(
-            baseInstructions + "\n\nTools available to you right now:\n" + ToolPolicy.instructionsToolMenu())
-    }
-
-    #if canImport(FoundationModels)
-    private var session: LanguageModelSession?
-    #endif
-
-    func reset() {
-        #if canImport(FoundationModels)
-        session = nil
-        #endif
-    }
-
-    func respond(to message: String) async -> String {
-        // Belt-and-suspenders: in the current routing `LocalLLM.chat` only
-        // calls this when both `isEnabledByUser` and `.available` hold true,
-        // so neither guard ever fires. They stay as a defensive boundary in
-        // case a future caller addresses `ChatSession.shared` directly.
-        guard LocalLLM.isEnabledByUser else { return LocalLLM.offMessage }
-        #if canImport(FoundationModels)
-        guard case .available = SystemLanguageModel.default.availability else {
-            return "[Apple Intelligence is not available — \(LocalLLM.statusNote). Enable it in System Settings → Apple Intelligence & Siri.]"
-        }
-        if session == nil {
-            session = LanguageModelSession(tools: ToolPolicy.activeTools(),
-                                           instructions: Self.currentInstructions())
-        }
-        guard let session else { return "[Could not start a chat session.]" }
-        do {
-            let response = try await session.respond(to: message)
-            return response.content
-        } catch {
-            let firstError = error
-            // A fresh session can recover from a one-off context/length overflow —
-            // rebuild and retry ONCE. If the retry ALSO throws, this is a
-            // persistent failure (not a transient overflow); surface both causes
-            // instead of masking the retry error with `try?`.
-            self.session = LanguageModelSession(tools: ToolPolicy.activeTools(),
-                                                instructions: Self.currentInstructions())
-            do {
-                if let retry = try await self.session?.respond(to: message) {
-                    return retry.content
-                }
-                return "[The on-device model couldn't complete that request: \(firstError.localizedDescription)]"
-            } catch {
-                return "[The on-device model couldn't complete that request, even after a fresh session. First error: \(firstError.localizedDescription). Retry error: \(error.localizedDescription)]"
-            }
-        }
-        #else
-        return "[Foundation Models SDK not present on this system.]"
-        #endif
-    }
-}

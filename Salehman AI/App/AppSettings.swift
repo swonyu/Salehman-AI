@@ -33,22 +33,15 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Master switch for Apple Intelligence (the on-device chat brain). When off,
-    /// the assistant politely declines to generate; vision, transcription and
-    /// dictation keep working. Defaults ON so the app works out of the box.
-    @Published var useAppleIntelligence: Bool { didSet { UserDefaults.standard.set(useAppleIntelligence, forKey: Keys.appleIntelligence) } }
-
-    /// User's preferred brain. `.auto` picks Apple Intelligence when it's
-    /// available, otherwise Ollama qwen-coder. `.apple` / `.ollama` force a
-    /// specific brain — useful for testing, or when the user prefers one over
-    /// the other for quality / speed reasons. Defaults to `.auto`.
+    /// User's preferred brain. `.auto` is local-first (Ollama qwen-coder when
+    /// reachable). `.ollama` / `.salehman` force a specific brain. Defaults to
+    /// `.auto`.
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
-    /// The user's OWN local model name, run by the `.salehman` brain (an Ollama
-    /// model the user pulled or built with a Modelfile, e.g. `salehman`). When the
-    /// Salehman brain is pinned, ONLY this model answers — no fallback to qwen,
-    /// Apple, or any cloud.
+    /// The user's OWN local model name, used by the `.salehman` brain's local
+    /// floor (an Ollama model the user pulled or built with a Modelfile). Salehman
+    /// itself is cloud-first; this is its offline fallback model.
     @Published var customModelName: String {
         didSet { UserDefaults.standard.set(customModelName, forKey: Keys.customModel) }
     }
@@ -142,7 +135,7 @@ final class AppSettings: ObservableObject {
     /// **Offline / Local-Only mode.** Hard-disables every cloud brain (Claude, Grok,
     /// Gemini, Groq, Mistral, Cerebras, OpenAI/Codex, Copilot, OpenRouter) AND the
     /// external tools (`web_search`, `fetch_url`) — even when their keys/toggles
-    /// are saved. With this on, only Apple Intelligence + Ollama can answer, and
+    /// are saved. With this on, only the local Ollama brain can answer, and
     /// no network call ever leaves the Mac. Off by default (opt-in).
     @Published var offlineOnly: Bool { didSet { UserDefaults.standard.set(offlineOnly, forKey: Keys.offlineOnly) } }
     @Published var hideFromCapture: Bool {
@@ -185,11 +178,17 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
 
+    /// Self-improvement loop: after Salehman answers, a DeepSeek reasoner (R1-class)
+    /// critiques the answer and Salehman revises it. Smarter replies, ~2–3× slower
+    /// and more quota — default ON per owner; turn off for snappy single-pass.
+    @Published var salehmanRefine: Bool {
+        didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
+    }
+
     // UserDefaults keys — `nonisolated` so the policy layer (which runs off
     // the main actor) can read them without an actor hop. They're just
     // immutable string constants, so no isolation is needed.
     enum Keys {
-        nonisolated static let appleIntelligence = "set_appleIntelligence"
         nonisolated static let autoSpeak = "set_autoSpeak"
         nonisolated static let webAccess = "set_webAccess"
         nonisolated static let codeModel = "set_useCodeModel"
@@ -199,6 +198,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let hideCapture = "set_hideCapture"
         nonisolated static let unrestrictedTools = "set_unrestrictedTools"
         nonisolated static let salehmanLeader    = "set_salehmanLeader"
+        nonisolated static let salehmanRefine    = "set_salehmanRefine"
         nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
@@ -331,18 +331,14 @@ final class AppSettings: ObservableObject {
         return GrokClient.allModels.contains(raw) ? raw : GrokClient.defaultModel
     }
 
-    /// Thread-safe read of the Apple Intelligence master switch for the model
-    /// layer, which runs off the main actor. Defaults ON.
-    nonisolated static var appleIntelligenceEnabled: Bool { boolDefaultTrue(Keys.appleIntelligence) }
-
     /// Thread-safe read of the Salehman Leader switch (defaults ON) so the agent
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
+    nonisolated static var salehmanRefineEnabled: Bool { boolDefaultTrue(Keys.salehmanRefine) }
 
-    /// Thread-safe read of the Offline / Local-Only switch — same pattern as the
-    /// Apple Intelligence accessor above so `LocalLLM.currentBrain()`,
-    /// `generateFreeAuto`, and `ToolPolicy` can gate cloud paths from outside the
-    /// main actor. Defaults OFF (opt-in).
+    /// Thread-safe read of the Offline / Local-Only switch so
+    /// `LocalLLM.currentBrain()`, `generateFreeAuto`, and `ToolPolicy` can gate
+    /// cloud paths from outside the main actor. Defaults OFF (opt-in).
     nonisolated static var isOfflineOnly: Bool { UserDefaults.standard.bool(forKey: Keys.offlineOnly) }
 
     /// Thread-safe read of the Unrestricted Mode switch, for any
@@ -386,7 +382,6 @@ final class AppSettings: ObservableObject {
 
     private init() {
         let d = UserDefaults.standard
-        useAppleIntelligence = AppSettings.boolDefaultTrue(Keys.appleIntelligence)   // default ON
         responseMode = ResponseMode(rawValue: d.string(forKey: "set_responseMode") ?? "fast") ?? .fast
         autoSpeak    = d.object(forKey: Keys.autoSpeak) == nil ? false : d.bool(forKey: Keys.autoSpeak)
         speechRate   = d.object(forKey: Keys.speechRate) == nil ? 0.5 : d.double(forKey: Keys.speechRate)
@@ -399,6 +394,7 @@ final class AppSettings: ObservableObject {
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
+        salehmanRefine = AppSettings.boolDefaultTrue(Keys.salehmanRefine)  // default ON (owner: self-improve loop)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
@@ -447,15 +443,12 @@ final class AppSettings: ObservableObject {
 /// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
 /// which model is asked for the next response.
 ///
-/// * `.auto` — try Apple Intelligence first, then fall back to Ollama. This is
-///   the right default: lightweight when it works, graceful when it doesn't.
-/// * `.apple` — pin to Apple Intelligence. If unavailable (hardware doesn't
-///   support it, or the master switch is off), no fallback happens.
-/// * `.ollama` — pin to Ollama qwen-coder. Heavier per-turn but free of
-///   Apple Intelligence's content guardrails. The pipeline automatically
-///   collapses to a single agent on this brain (see AgentPipeline).
+/// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
+/// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
+///   to a single agent on this brain (see AgentPipeline).
+/// * `.salehman` — Salehman, cloud-first with a local floor.
 enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, freeAuto, freeCoding, cloudCoding, apple, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
+    case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
     case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
     case ensemble   // run ALL reachable brains in parallel, show every answer
@@ -463,7 +456,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
-    // local (Apple/Ollama) backstop → effectively never rate-limited, never paid.
+    // local (Ollama) backstop → effectively never rate-limited, never paid.
 
     var id: String { rawValue }
 
@@ -488,7 +481,6 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .freeAuto:    return "Free · Auto"
         case .freeCoding:  return "FreeCoding"
         case .cloudCoding: return "Cloud Coding"
-        case .apple:       return "Apple Intelligence"
         case .ollama:      return "Ollama qwen-coder"
         case .claudeHaiku: return "Claude Haiku (Cloud)"
         case .grok:        return "xAI Grok (Cloud)"
@@ -508,11 +500,10 @@ enum BrainPreference: String, CaseIterable, Identifiable {
     }
     var subtitle: String {
         switch self {
-        case .auto:        return "Apple if available, otherwise Ollama"
+        case .auto:        return "Local-first · Ollama qwen-coder when reachable"
         case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
         case .freeCoding:  return "Coding loop · races your free coder models + DeepSeek, runs & tests code in the terminal · local backstop"
         case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (DeepSeek, gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
-        case .apple:       return "On-device · Apple's tiny model · honors response mode"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
         case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
@@ -525,7 +516,7 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
-        case .salehman:    return "On-device · its own persona on Apple Intelligence (no install needed); optionally point it at your own Ollama model"
+        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a DeepSeek critique pass"
         case .unslothStudio: return "Local · your fine-tuned model served by Unsloth Studio (or mlx_lm.server / LM Studio) over OpenAI-compatible HTTP · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
@@ -536,7 +527,6 @@ enum BrainPreference: String, CaseIterable, Identifiable {
         case .freeAuto:    return "infinity.circle.fill"
         case .freeCoding:  return "terminal.fill"
         case .cloudCoding: return "cloud.bolt.fill"
-        case .apple:       return "apple.logo"
         case .ollama:      return "cpu"
         case .claudeHaiku: return "cloud.fill"
         case .grok:        return "bolt.horizontal.circle.fill"

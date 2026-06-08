@@ -1,8 +1,5 @@
 import Foundation
 import NaturalLanguage
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 struct MemoryItem: Codable {
     let text: String
@@ -98,20 +95,3 @@ final class MemoryStore: @unchecked Sendable {
     }
 }
 
-#if canImport(FoundationModels)
-struct RememberFactTool: Tool {
-    let name = "remember_fact"
-    let description = "Save a durable fact about the user (preferences, name, projects, etc.) to long-term memory so you recall it in future conversations."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "The fact to remember, written as a clear standalone statement.")
-        var fact: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        MemoryStore.shared.remember(arguments.fact)
-        return "Saved to long-term memory: \(arguments.fact)"
-    }
-}
-#endif

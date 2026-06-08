@@ -7,7 +7,6 @@ struct SettingsView: View {
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @Environment(\.dismiss) private var dismiss
 
-    @State private var appleOK = LocalLLM.isAvailable
     @State private var ollamaUp = false
     @State private var hasVision = false
     @State private var hasCoder = false
@@ -63,6 +62,12 @@ struct SettingsView: View {
     @State private var deepSeekTestStatus: String? = nil
     @State private var deepSeekTesting: Bool = false
     @State private var deepSeekKeySaved: Bool = DeepSeekClient.shared.hasKey()
+
+    // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
+    @State private var nvidiaKeyDraft: String = ""
+    @State private var nvidiaTestStatus: String? = nil
+    @State private var nvidiaTesting: Bool = false
+    @State private var nvidiaKeySaved: Bool = NvidiaClient.shared.hasKey()
 
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
@@ -128,16 +133,16 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
 
-                    section("Intelligence", "Apple Intelligence is Salehman AI's on-device brain.") {
-                        toggle("Apple Intelligence",
-                               "On-device chat & reasoning. Off disables AI replies; vision & transcription keep working.",
-                               "apple.logo", $settings.useAppleIntelligence)
+                    section("Intelligence", "How Salehman thinks — cloud-first, with a local floor.") {
                         toggle("Offline mode (local only)",
-                               "Hard-disable every cloud brain and web tool. Only Apple Intelligence and Ollama can answer — no network call leaves this Mac. Use them alone.",
+                               "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
                         toggle("Salehman leads",
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
                                "crown.fill", $settings.salehmanLeader)
+                        toggle("Self-improve loop",
+                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, a bit slower & more quota. On by default.",
+                               "arrow.triangle.2.circlepath", $settings.salehmanRefine)
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
@@ -182,10 +187,10 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Salehman runs on Apple Intelligence by default (no install,
-                    // just its own persona); the optional field below lets the
-                    // user point it at a custom Ollama model instead.
-                    section("Salehman engine", "Three ways to power Salehman, in order of independence: the standalone on-device engine (no Ollama, no Apple Intelligence — truly alone), your own Ollama model, or Apple Intelligence with the Salehman persona. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
+                    // Salehman runs CLOUD-FIRST (free DeepSeek V4 via NVIDIA → free
+                    // frontier/120B tiers → DeepSeek paid backstop); the rows below
+                    // configure its LOCAL floor for offline use.
+                    section("Salehman engine", "Salehman runs cloud-first on big models (free DeepSeek V4 via NVIDIA → free frontier tiers). These rows set its LOCAL fallback for offline use: a standalone on-device MLX engine, or your own Ollama model. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
                         // The truly-standalone path. Visible regardless of
                         // package status; the inline state explains what to do.
                         mlxEngineRow
@@ -296,6 +301,14 @@ struct SettingsView: View {
                                          keySaved: $deepSeekKeySaved,
                                          testing: $deepSeekTesting, status: $deepSeekTestStatus)
                         }
+
+                        section("NVIDIA (Cloud · free tier · REAL DeepSeek V4 for free)", "Hosts the actual deepseek-ai/deepseek-v4 weights at $0 — DeepSeek's own API and OpenRouter are paid-only. Get a free key at build.nvidia.com. Salehman uses this first so it leads on real DeepSeek for free.") {
+                            cloudKeyRow(provider: NvidiaClient.shared,
+                                        keySaved: $nvidiaKeySaved, draft: $nvidiaKeyDraft)
+                            cloudTestRow(provider: NvidiaClient.shared,
+                                         keySaved: $nvidiaKeySaved,
+                                         testing: $nvidiaTesting, status: $nvidiaTestStatus)
+                        }
                     }
 
                     // Paid providers (Claude / xAI Grok / Codex-OpenAI / GitHub
@@ -348,7 +361,6 @@ struct SettingsView: View {
                     }
 
                     section("Status", nil) {
-                        statusRow("Apple Intelligence", appleOK)
                         statusRow("Ollama server", ollamaUp)
                         statusRow("Vision model (qwen2.5vl)", hasVision)
                         // Label is generic because the actual resolved model
@@ -481,8 +493,7 @@ struct SettingsView: View {
     /// outer Settings polling and synchronous Keychain `hasKey()` checks.
     private func brainReady(_ pref: BrainPreference) -> Bool {
         switch pref {
-        case .auto:        return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
-        case .apple:       return appleOK && settings.useAppleIntelligence
+        case .auto:        return ollamaUp && hasCoder
         case .ollama:      return ollamaUp && hasCoder
         case .claudeHaiku: return AnthropicClient.isConfigured
         case .grok:        return GrokClient.hasKey()
@@ -498,7 +509,7 @@ struct SettingsView: View {
         // keyed cloud one. Mirrors `LocalLLM.anyBrainReachable`'s synchronous
         // half; the Ollama check uses the cached `hasCoder`.
         case .ensemble:
-            return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+            return (ollamaUp && hasCoder)
                 || AnthropicClient.isConfigured || GrokClient.hasKey() || GeminiClient.hasKey()
                 || GroqClient.shared.hasKey() || MistralClient.shared.hasKey()
                 || CerebrasClient.shared.hasKey() || OpenAIClient.hasKey() || CopilotClient.isAuthed()
@@ -506,13 +517,13 @@ struct SettingsView: View {
         // Free · Auto is ready if any FREE brain or a local brain can answer
         // (paid brains excluded — this mode never spends).
         case .freeAuto:
-            return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+            return (ollamaUp && hasCoder)
                 || GroqClient.shared.hasKey() || GeminiClient.hasKey()
                 || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
                 || OpenRouterClient.shared.hasKey()
         // FreeCoding mirrors Free·Auto's readiness plus DeepSeek (opted into the loop).
         case .freeCoding:
-            return (appleOK && settings.useAppleIntelligence) || (ollamaUp && hasCoder)
+            return (ollamaUp && hasCoder)
                 || DeepSeekClient.shared.hasKey() || GroqClient.shared.hasKey()
                 || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
                 || OpenRouterClient.shared.hasKey()
@@ -521,13 +532,12 @@ struct SettingsView: View {
             return DeepSeekClient.shared.hasKey() || CerebrasClient.shared.hasKey()
                 || GroqClient.shared.hasKey() || OpenRouterClient.shared.hasKey()
                 || MistralClient.shared.hasKey()
-        // Salehman is reachable via either Apple Intelligence (its own persona,
-        // no install) or the user's own Ollama model (if pulled). A synchronous
-        // proxy — the exact "is that model pulled" check is async at runtime
-        // (`OllamaClient.hasCustomModel`); here we light the dot when either
-        // engine is plausibly available.
+        // Salehman is CLOUD-FIRST: reachable when ANY cloud engine is set
+        // (hosted endpoint or any free/paid key) or the user's own Ollama model
+        // is plausibly available (the exact pulled-model check is async at
+        // runtime via `OllamaClient.hasCustomModel`).
         case .salehman:
-            return (appleOK && settings.useAppleIntelligence)
+            return SalehmanEngine.hasAnyCloud
                 || (ollamaUp && !settings.customModelName.trimmingCharacters(in: .whitespaces).isEmpty)
         // Unsloth Studio (and any other local OpenAI-compat server) is reachable
         // iff the user has set an endpoint URL. We don't probe the URL here —
@@ -549,7 +559,7 @@ struct SettingsView: View {
     //
     // The "Salehman alone" path. Lives at the top of the Salehman engine section
     // because it's the most independent of the three options (no Ollama, no
-    // Apple Intelligence). The status text + button track the actor's State
+    // the local engine). The status text + button track the actor's State
     // enum (.unavailable / .downloading / .loading / .ready).
 
     private var mlxEngineRow: some View {
@@ -663,7 +673,7 @@ struct SettingsView: View {
         case .unavailable(let reason): return reason
         case .downloading(let p):      return String(format: "Downloading… %.0f%%", p * 100)
         case .loading:                 return "Loading into memory…"
-        case .ready:                   return "Ready — runs with no Ollama and no Apple Intelligence"
+        case .ready:                   return "Ready — runs standalone, no Ollama needed"
         }
     }
 
@@ -676,7 +686,13 @@ struct SettingsView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(DS.Palette.warningSoft.opacity(0.22), in: Capsule())
-                .help("Add `mlx-swift-examples` via Xcode → File → Add Package Dependencies, then rebuild and tap Download Model here.")
+                .help("""
+                Add MLX Swift Examples via Xcode → File → Add Package Dependencies:
+                https://github.com/ml-explore/mlx-swift-examples
+
+                Then add the MLXLLM and MLXLMCommon products to the "Salehman AI" target.
+                Rebuild, then tap "Download Model".
+                """)
                 .accessibilityLabel("Add MLX-Swift package in Xcode")
         } else {
             switch mlxState {
@@ -1297,7 +1313,7 @@ struct SettingsView: View {
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
     /// is currently pinned through the real routing path (`LocalLLM.generate`),
-    /// so one check covers Apple Intelligence, Ollama, and every cloud brain.
+    /// so one check covers Ollama and every cloud brain.
     private var activeBrainStatusRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
@@ -1327,8 +1343,8 @@ struct SettingsView: View {
     /// cloud check on-demand (the refresh button).
     private var activeBrainIsLocal: Bool {
         switch settings.brainPreference {
-        case .auto, .apple, .ollama: return true
-        default:                     return false
+        case .auto, .ollama: return true
+        default:             return false
         }
     }
 
@@ -1854,3 +1870,4 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 }
+

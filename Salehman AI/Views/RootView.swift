@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var visitedScratchpad = false
     @State private var visitedKnowledge = false
     @State private var visitedToday = false
+    @State private var visitedCode = false
 
     var body: some View {
         ZStack {
@@ -26,6 +27,12 @@ struct RootView: View {
                     ContentView()
                         .opacity(app.selectedTab == .chat ? 1 : 0)
                         .allowsHitTesting(app.selectedTab == .chat)
+
+                    if visitedCode || app.selectedTab == .code {
+                        CodeView()
+                            .opacity(app.selectedTab == .code ? 1 : 0)
+                            .allowsHitTesting(app.selectedTab == .code)
+                    }
 
                     if visitedAgents || app.selectedTab == .agents {
                         AgentsView()
@@ -66,6 +73,7 @@ struct RootView: View {
         .onChange(of: app.selectedTab) { _, tab in
             if tab == .markets { visitedMarkets = true }
             if tab == .agents  { visitedAgents = true }
+            if tab == .code    { visitedCode = true }
             if tab == .scratchpad { visitedScratchpad = true }
             if tab == .knowledge  { visitedKnowledge = true }
             if tab == .today      { visitedToday = true }

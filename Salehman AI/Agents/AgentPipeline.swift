@@ -108,12 +108,42 @@ enum AgentPipeline {
         // Every user-facing reply funnels through here, so this is the one place
         // Salehman gets the last word: produce the draft via the normal brain
         // pipeline, then (when Salehman Leader is ON) finalize it through Salehman.
-        let draft = await runDraft(mission: mission)
+        var draft = await runDraft(mission: mission)
+
+        // UNIVERSAL SAFETY NET — the chat must NEVER surface a raw provider error.
+        // If the selected brain failed (e.g. cloudCoding with every coder
+        // rate-limited, or a cloud brain whose key is missing/exhausted), rescue it
+        // with the cloud-first Salehman engine, which cascades the free providers
+        // and ULTIMATELY the local Ollama model — so the user gets a real answer
+        // instead of "[Provider error 429]". Only fires on a genuine error sentinel,
+        // so normal replies pay nothing.
+        if isErrorReply(draft) {
+            if let rescue = await SalehmanEngine.generate(prompt: mission, userPrompt: mission),
+               !isErrorReply(rescue) {
+                draft = rescue
+            }
+        }
+
         return await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
     }
 
+    /// True when a draft is an error/off sentinel rather than a real answer, so
+    /// `run` can rescue it with a working brain. CONSERVATIVE: only the off-message,
+    /// an empty string, or the bracketed `[<provider> error <status>: …]` /
+    /// "request failed (HTTP …)" diagnostic shapes count — a normal answer that
+    /// merely mentions the word "error" is never mistaken for one. Pure +
+    /// nonisolated → unit-testable.
+    nonisolated static func isErrorReply(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty || t == LocalLLM.offMessage { return true }
+        guard t.hasPrefix("[") else { return false }
+        let lower = t.lowercased()
+        return lower.contains("request failed (http")
+            || (lower.contains(" error ") && t.contains(where: \.isNumber))
+    }
+
     private static func runDraft(mission: String) async -> String {
-        // Don't gate the pipeline on Apple Intelligence — when it's off, the
+        // Don't gate the pipeline on a single brain — when one's off, the
         // LocalLLM layer transparently falls back to Ollama qwen-coder so the
         // agents keep working with the local brain. We only bail out when
         // neither brain is reachable.

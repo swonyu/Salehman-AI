@@ -283,7 +283,7 @@ enum OllamaClient {
     // MARK: - General chat fallback
 
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
-    /// when Apple Intelligence is off). Returns nil if Ollama or any preferred
+    /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
     static func chat(prompt: String, system: String? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }

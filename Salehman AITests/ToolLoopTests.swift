@@ -68,12 +68,12 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .appleIntelligence, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 8) == 8)
         #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .appleIntelligence, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 0) == 1)
     }
 }
 
@@ -92,7 +92,7 @@ struct PaidBrainHidingTests {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
         // Free + local + orchestration modes survive.
         #expect(BrainPreference.selectableCases.contains(.auto))
-        #expect(BrainPreference.selectableCases.contains(.apple))
+        #expect(BrainPreference.selectableCases.contains(.salehman))
         #expect(BrainPreference.selectableCases.contains(.gemini))
         #expect(BrainPreference.selectableCases.contains(.freeAuto))
     }

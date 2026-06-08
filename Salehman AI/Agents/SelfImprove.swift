@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
 
 /// Self-improvement loop: build the Xcode project, parse compiler errors, ask
 /// the on-device model for a minimal patch per error, apply patches with a
@@ -342,31 +339,3 @@ enum SelfImprove {
 
 // MARK: - Foundation Models tool
 
-#if canImport(FoundationModels)
-struct SelfImproveTool: Tool {
-    let name = "self_improve"
-    let description = """
-    Build the Salehman AI Xcode project, find compiler errors, and try to fix \
-    them automatically. Use this when the user asks you to "test yourself", \
-    "build yourself", "fix yourself", "find bugs in yourself", or "make \
-    yourself better". Returns a Markdown report of what was fixed and the final \
-    build status. Backups of every edited file land in \
-    ~/.salehman_ai_self_improve_backups/.
-    """
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Maximum number of build → fix → rebuild iterations (1–5). Default 3.")
-        var maxIterations: Int
-
-        @Guide(description: "Set to true to also run the unit-test target (slower). Default false.")
-        var includeTests: Bool
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        let iters = max(1, min(5, arguments.maxIterations == 0 ? 3 : arguments.maxIterations))
-        let mode: SelfImprove.Mode = arguments.includeTests ? .test : .build
-        return await SelfImprove.selfImprove(mode: mode, maxIterations: iters)
-    }
-}
-#endif

@@ -4,12 +4,11 @@ import Foundation
 /// that defines Salehman AI's identity, voice, expertise, and behavior.
 ///
 /// This is what makes "Salehman" feel like Salehman regardless of which engine
-/// runs underneath (Apple Intelligence on-device, or a user-supplied Ollama
+/// runs underneath (a cloud model like free DeepSeek V4, or a local Ollama
 /// model). The persona is the brand layer; the engine is implementation detail.
 ///
-/// Threaded as `LanguageModelSession(instructions:)` for Apple Intelligence and
-/// as the `system` prompt for Ollama — both treat it as a persistent guide that
-/// shapes every turn, not a one-shot prefix.
+/// Passed as the `system` prompt to every engine — cloud or local — so it shapes
+/// every turn as a persistent guide, not a one-shot prefix.
 enum SalehmanPersona {
 
     /// The full persona — kept here so it can be iterated as ONE prompt. Apple
@@ -23,10 +22,10 @@ enum SalehmanPersona {
     ## Identity
     Your name is Salehman AI (or just "Salehman"). When asked who you are, say \
     so — and NEVER name, hint at, or credit the underlying model or provider. Do \
-    not say "Apple", "Apple Intelligence", "FoundationModels", "qwen", "Ollama", \
-    or any engine name, even if asked directly what you run on; deflect with "I'm \
-    Salehman." You are simply Salehman, created by Saleh. The user pinned YOU. You \
-    live on this Mac, on-device by default.
+    not say "DeepSeek", "NVIDIA", "Groq", "Cerebras", "OpenRouter", "Kimi", \
+    "qwen", "Ollama", or any engine/provider name, even if asked directly what \
+    you run on; deflect with "I'm Salehman." You are simply Salehman, created by \
+    Saleh. The user pinned YOU.
 
     ## Voice & Tone
     • Warm but precise. Concise by default; expand only when asked or when \
@@ -104,9 +103,8 @@ enum SalehmanPersona {
     a reason — show them why.
     """
 
-    /// Combine the persona with the live tool menu (used by the Apple Intelligence
-    /// path so Salehman knows which tools are actually wired right now). Pure +
-    /// nonisolated; mirrors `ChatSession.currentInstructions()`.
+    /// Combine the persona with the live tool menu so Salehman knows which tools
+    /// are actually wired right now. Pure + nonisolated.
     nonisolated static func instructions(toolMenu: String) -> String {
         systemPrompt + "\n\n## Tools available right now\n" + toolMenu
     }

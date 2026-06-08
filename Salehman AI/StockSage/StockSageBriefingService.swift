@@ -3,9 +3,9 @@ import Foundation
 // MARK: - StockSageBriefingService
 //
 // Reworked from the package's `AppleIntelligenceService`. The package claimed
-// "On-device LLM summary generation (Apple Intelligence / Foundation Models
+// "On-device LLM summary generation (the local model
 // ready)" but actually just concatenated strings. Here the summary is generated
-// for real by the app's `LocalLLM` (Apple Intelligence, or whatever brain the
+// for real by the app's `LocalLLM` (whatever brain the
 // user pinned), with the deterministic gainers/losers concat kept ONLY as the
 // offline fallback when no brain is reachable.
 enum StockSageBriefingService {
@@ -15,7 +15,7 @@ enum StockSageBriefingService {
     /// 1. Compute deterministic facts (signals, gainers, losers) locally — these
     ///    are always correct and never hallucinated.
     /// 2. Hand those facts to **`LocalLLM.generateOnDevice`** — local tier only
-    ///    (Apple Intelligence → Ollama) — to write a natural, concise briefing.
+    ///    (Ollama) — to write a natural, concise briefing.
     ///    The tool description + header label this "on-device / computed locally,"
     ///    so we must NEVER route through `LocalLLM.generate` (which would go to
     ///    the user's pinned cloud brain — a privacy/honesty violation).

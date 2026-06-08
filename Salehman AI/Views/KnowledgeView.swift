@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// — which returns nil rather than falling back to a cloud brain. We say so
 /// plainly instead of silently sending the document off-device.
 private let onDeviceUnavailableMessage =
-    "No on-device model is available right now, so I can't answer privately. Turn on Apple Intelligence or start Ollama to use Knowledge on this Mac."
+    "No on-device model is available right now, so I can't answer privately. Start Ollama (an on-device model) to use Knowledge privately on this Mac."
 
 /// The Knowledge tab — a private, on-device document vault you can chat with. Add
 /// files (button or drag-and-drop; extracted on-device by `AttachmentLoader`) or

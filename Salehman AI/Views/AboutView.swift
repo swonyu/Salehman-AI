@@ -19,10 +19,10 @@ struct AboutView: View {
     private let capabilities: [Capability] = [
         .init(icon: "lock.shield.fill",
               title: "Private, on-device",
-              body: "Runs locally via Apple Intelligence or your bundled MLX Salehman model. Nothing leaves the Mac unless you pin a cloud brain yourself."),
+              body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Many brains, one Salehman",
-              body: "Apple Intelligence, MLX, Ollama, or your own fine-tuned model. Check several brains to rotate through them — one per message."),
+              body: "MLX, Ollama, DeepSeek, and many free cloud brains. Check several to rotate through them — one per message."),
         .init(icon: "wrench.and.screwdriver.fill",
               title: "Real tools, with approval",
               body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),

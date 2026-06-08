@@ -1,7 +1,7 @@
 import Foundation
 
 /// Calls Anthropic's Messages API (cloud) for Claude Haiku 4.5 — the optional
-/// third "brain" alongside Apple Intelligence and local Ollama. Cloud inference
+/// third "brain" alongside local Ollama. Cloud inference
 /// means ~zero local RAM (it can't freeze the Mac), but it needs the user's API
 /// key (entered in Settings) and sends prompts off-device to Anthropic.
 ///

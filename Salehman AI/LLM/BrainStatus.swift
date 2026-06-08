@@ -1,16 +1,15 @@
 import SwiftUI
 import Combine
 
-/// Live, MainActor-observable reading of which brain (Apple Intelligence / Ollama
-/// qwen-coder / none) is currently answering. The header subtitle and any other
-/// UI that wants to show "where is the response coming from" reads from this
-/// singleton instead of guessing from a static setting.
+/// Live, MainActor-observable reading of which brain (Salehman cloud / Ollama
+/// qwen-coder / a cloud brain / none) is currently answering. The header subtitle
+/// and any other UI that wants to show "where is the response coming from" reads
+/// from this singleton instead of guessing from a static setting.
 ///
 /// Refresh strategy:
 /// * Polled every `pollInterval` seconds (cheap — `OllamaClient` already
 ///   memoizes reachability for 30s, so the call is mostly a Swift task hop).
-/// * Refreshed immediately whenever the user flips Apple Intelligence in
-///   Settings (`AppSettings.useAppleIntelligence`).
+/// * Refreshed immediately whenever the user changes the brain preference.
 /// * Refreshable on demand via `refresh()` (call after a model send fails).
 @MainActor
 final class BrainStatus: ObservableObject {
@@ -63,11 +62,10 @@ final class BrainStatus: ObservableObject {
         return await OllamaClient.hasModel(OllamaClient.visionModel)
     }
 
-    /// Color hint for the status dot. Green when Apple Intelligence is driving,
-    /// blue when the Ollama fallback is, orange when nothing's reachable.
+    /// Color hint for the status dot. Blue when the Ollama brain is driving,
+    /// brand accent for Salehman, orange when nothing's reachable.
     var dotColor: Color {
         switch brain {
-        case .appleIntelligence: return .green
         case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
         case .salehman:          return DS.Palette.accent                          // the brand's own model
         case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
@@ -98,12 +96,9 @@ final class BrainStatus: ObservableObject {
     }
 
     /// SF Symbol identifying the active brain — lets the header show *which*
-    /// brain is driving as a glyph instead of a text label. The Apple brain
-    /// deliberately uses a neutral "sparkles" (not apple.logo) to keep the
-    /// chrome on-brand and avoid surfacing the provider.
+    /// brain is driving as a glyph instead of a text label.
     var symbol: String {
         switch brain {
-        case .appleIntelligence: return "sparkles"
         case .ollamaCoder:       return "chevron.left.forwardslash.chevron.right"
         case .salehman:          return "crown.fill"
         case .unslothStudio:     return "cpu"
@@ -134,13 +129,8 @@ final class BrainStatus: ObservableObject {
     }
 
     private func observeSettings() {
-        // Refresh immediately when either of the two switches that affect
-        // brain selection moves — without these, the header label sits stale
-        // until the next 10s poll tick.
-        AppSettings.shared.$useAppleIntelligence
-            .removeDuplicates()
-            .sink { [weak self] _ in Task { await self?.refresh() } }
-            .store(in: &cancellables)
+        // Refresh immediately when the brain preference moves — without this, the
+        // header label sits stale until the next 10s poll tick.
         AppSettings.shared.$brainPreference
             .removeDuplicates()
             .sink { [weak self] _ in Task { await self?.refresh() } }
