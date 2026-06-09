@@ -12,21 +12,14 @@ final class MemoryStore: @unchecked Sendable {
     static let shared = MemoryStore()
     private let lock = NSLock()
     private var items: [MemoryItem] = []
-
-    private var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let dir = base.appendingPathComponent("SalehmanAI", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("memory.json")
-    }
+    private let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
 
     private init() {
-        if let data = try? Data(contentsOf: fileURL),
-           let saved = try? JSONDecoder().decode([MemoryItem].self, from: data) {
-            items = saved
-        }
+        items = store.load(defaultValue: [])
     }
+
+    /// Persist `items`. Callers already hold `lock`.
+    private func persist() { try? store.save(items) }
 
     private func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
@@ -40,7 +33,7 @@ final class MemoryStore: @unchecked Sendable {
         lock.lock()
         if !items.contains(where: { $0.text.caseInsensitiveCompare(t) == .orderedSame }) {
             items.append(item)
-            if let data = try? JSONEncoder().encode(items) { try? data.write(to: fileURL, options: .atomic) }
+            persist()
         }
         lock.unlock()
     }
@@ -55,7 +48,7 @@ final class MemoryStore: @unchecked Sendable {
     func delete(_ text: String) {
         lock.lock()
         items.removeAll { $0.text == text }
-        if let data = try? JSONEncoder().encode(items) { try? data.write(to: fileURL, options: .atomic) }
+        persist()
         lock.unlock()
     }
 
@@ -63,7 +56,7 @@ final class MemoryStore: @unchecked Sendable {
     func clear() {
         lock.lock()
         items.removeAll()
-        if let data = try? JSONEncoder().encode(items) { try? data.write(to: fileURL, options: .atomic) }
+        persist()
         lock.unlock()
     }
 

@@ -16,15 +16,13 @@ enum Theme {
 
 struct ContentView: View {
     @State private var mission: String = ""
-    @State private var messages: [ChatMessage] = []
-    @State private var isRunning: Bool = false
+    @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var brainStatus = BrainStatus.shared
     @State private var attachment: Attachment?
     @State private var loadingAttachment = false
-    @State private var runningTask: Task<Void, Never>?
     @State private var showSettings = false
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
@@ -104,7 +102,7 @@ struct ContentView: View {
         }
         .animation(DS.Motion.spring, value: approval.pending?.id)
         .sheet(isPresented: $showSettings) { SettingsView() }
-        .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { send($0) }) }
+        .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { submit($0) }) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -113,16 +111,16 @@ struct ContentView: View {
             Text("Save the current message as a reusable prompt.")
         }
         .onAppear {
-            if messages.isEmpty { messages = ChatStore.load() }
+            if vm.messages.isEmpty { vm.messages = ChatStore.load() }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
         }
-        .onChange(of: messages) { _, new in ChatStore.scheduleSave(new) }
+        .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
         .onChange(of: speechIn.transcript) { _, t in if speechIn.isListening { mission = t } }
         // Menu-bar command bridges (two-parameter onChange: $1 is the NEW value).
-        .onChange(of: app.newChatRequested) { _, v in if v { startNewChat(); app.newChatRequested = false } }
-        .onChange(of: app.stopRequested) { _, v in if v { stop(); app.stopRequested = false } }
+        .onChange(of: app.newChatRequested) { _, v in if v { newChat(); app.newChatRequested = false } }
+        .onChange(of: app.stopRequested) { _, v in if v { vm.stop(); app.stopRequested = false } }
         .onChange(of: app.showSettingsRequested) { _, v in if v { showSettings = true; app.showSettingsRequested = false } }
         .onChange(of: app.showLiveRequested) { _, v in if v { showLive = true; app.showLiveRequested = false } }
         .onChange(of: app.toggleSearchRequested) { _, v in
@@ -164,24 +162,24 @@ struct ContentView: View {
                             .frame(width: 7, height: 7)
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
-                    Text(isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
+                    Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.red)
                 } else {
-                    BrainStatusDot(isRunning: isRunning, color: brainStatus.dotColor)
+                    BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
                     // AI status shown as a per-brain GLYPH, not a text label: the
                     // colored dot + a brain icon that pulses while thinking. The
                     // brain name stays available on hover and to VoiceOver.
                     Image(systemName: brainStatus.symbol)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(
-                            isRunning
+                            vm.isRunning
                                 ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
                                                                startPoint: .leading, endPoint: .trailing))
                                 : AnyShapeStyle(brainStatus.dotColor)
                         )
-                        .symbolEffect(.pulse, isActive: isRunning)
-                        .help(isRunning ? "Thinking…" : brainStatus.label)
+                        .symbolEffect(.pulse, isActive: vm.isRunning)
+                        .help(vm.isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
                     // when the Grok brain is active. Tapping opens Settings so the
                     // user can complete the Anthropic→Grok migration or confirm
@@ -197,16 +195,16 @@ struct ContentView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
                 ? "Salehman AI, Unrestricted Mode"
-                : (isRunning ? "Salehman AI, thinking" : "Salehman AI, \(brainStatus.label)"))
+                : (vm.isRunning ? "Salehman AI, thinking" : "Salehman AI, \(brainStatus.label)"))
 
             Spacer()
 
             // Export conversation
             Menu {
-                Button { ChatExporter.copyToPasteboard(messages) } label: {
+                Button { ChatExporter.copyToPasteboard(vm.messages) } label: {
                     Label("Copy as Markdown", systemImage: "doc.on.clipboard")
                 }
-                Button { ChatExporter.savePanel(messages) } label: {
+                Button { ChatExporter.savePanel(vm.messages) } label: {
                     Label("Save as Markdown…", systemImage: "square.and.arrow.down")
                 }
             } label: {
@@ -220,7 +218,7 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 30)
-            .disabled(messages.isEmpty)
+            .disabled(vm.messages.isEmpty)
             .help("Export this conversation")
             .accessibilityLabel("Export this conversation")
 
@@ -243,7 +241,7 @@ struct ContentView: View {
             // is the bridge that opens it.)
 
             // New chat
-            CircleIconButton(systemName: "square.and.pencil", help: "New chat") { startNewChat() }
+            CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
 
             if settings.unrestrictedTools {
                 // Prominent Unrestricted Mode badge (red, tappable to exit the mode)
@@ -297,8 +295,8 @@ struct ContentView: View {
     // MARK: Conversation
     private var filteredMessages: [ChatMessage] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard searching, !q.isEmpty else { return messages }
-        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }
+        guard searching, !q.isEmpty else { return vm.messages }
+        return vm.messages.filter { $0.text.localizedCaseInsensitiveContains(q) }
     }
 
     private var conversation: some View {
@@ -307,12 +305,12 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        if messages.isEmpty && !isRunning {
+                        if vm.messages.isEmpty && !vm.isRunning {
                             emptyState
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
-                            // Tight 4pt default gap: grouped same-sender messages
+                            // Tight 4pt default gap: grouped same-sender vm.messages
                                 // stay snug; first-in-group bubbles add +10 top
                                 // padding to land at the normal 14pt gap between
                                 // groups (see `isFirstInGroup`).
@@ -326,11 +324,11 @@ struct ContentView: View {
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
                                     let isLast  = isLastInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: regenerate,
+                                                  onRegenerate: vm.regenerate,
                                                   isLastInGroup: isLast)
                                         .padding(.top, isFirst ? 10 : 0)
                                 }
-                                if isRunning { RunningProgressView() }
+                                if vm.isRunning { RunningProgressView() }
                                 // Bottom sentinel: 1pt invisible view that
                                 // flips `atBottom`. Reliable visibility-based
                                 // "at bottom?" without a parallel scroll
@@ -345,16 +343,16 @@ struct ContentView: View {
                         }
                     }
                     // PROTECTED PATH: the streaming/auto-scroll triggers stay
-                    // exactly as they were — only the messages.count branch
+                    // exactly as they were — only the vm.messages.count branch
                     // gains an `atBottom` gate so a scrolled-up user isn't
-                    // yanked back when a reply lands. `isRunning` keeps
+                    // yanked back when a reply lands. `vm.isRunning` keeps
                     // unconditional scroll (deliberate: when a new turn starts
                     // the user wants to follow it).
-                    .onChange(of: messages.count) { _, _ in
+                    .onChange(of: vm.messages.count) { _, _ in
                         if atBottom { scrollToBottom(proxy) }
                         else { unreadCount += 1 }
                     }
-                    .onChange(of: isRunning) { _, _ in scrollToBottom(proxy) }
+                    .onChange(of: vm.isRunning) { _, _ in scrollToBottom(proxy) }
 
                     // Floating "↓ Latest / N new" pill — only when scrolled up.
                     if !atBottom {
@@ -374,9 +372,9 @@ struct ContentView: View {
 
     // MARK: Grouping & time-separator helpers
     // Avatar/tail belongs on the LAST message of a same-sender burst (Apple
-    // Messages convention). A "burst" = consecutive same-sender messages within
+    // Messages convention). A "burst" = consecutive same-sender vm.messages within
     // a 5-min window. Separator inserts on a >30-min gap or a different
-    // calendar day. All read from `filteredMessages` so hidden/system messages
+    // calendar day. All read from `filteredMessages` so hidden/system vm.messages
     // never create phantom group breaks.
     private func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
         guard let prev else { return false }
@@ -419,8 +417,8 @@ struct ContentView: View {
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(DS.Motion.smooth) {
-            if isRunning { proxy.scrollTo("typing", anchor: .bottom) }
-            else { proxy.scrollTo(messages.last?.id, anchor: .bottom) }
+            if vm.isRunning { proxy.scrollTo("typing", anchor: .bottom) }
+            else { proxy.scrollTo(vm.messages.last?.id, anchor: .bottom) }
         }
     }
 
@@ -450,7 +448,7 @@ struct ContentView: View {
                       spacing: 12) {
                 ForEach(suggestions, id: \.self) { s in
                     SuggestionCard(icon: s.icon, title: s.title, subtitle: s.subtitle) {
-                        send(s.prompt)
+                        submit(s.prompt)
                     }
                 }
             }
@@ -539,7 +537,7 @@ struct ContentView: View {
                         .textFieldStyle(.plain)
                         .lineLimit(1...6)
                         .focused($inputFocused)
-                        .onSubmit { send(mission) }
+                        .onSubmit { submit(mission) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -573,15 +571,15 @@ struct ContentView: View {
                                  help: "Dictate with your voice") { speechIn.toggle() }
 
                 // Stop while generating, otherwise Send
-                if isRunning {
+                if vm.isRunning {
                     CircleIconButton(systemName: "stop.fill", size: 40, iconSize: 15,
                                      tint: .red, ring: .red,
-                                     help: "Stop generating (⌘.)") { stop() }
+                                     help: "Stop generating (⌘.)") { vm.stop() }
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     CircleIconButton(systemName: "arrow.up", size: 40, iconSize: 16,
                                      tint: .white, filled: canSend, disabled: !canSend,
-                                     help: "Send") { send(mission) }
+                                     help: "Send") { submit(mission) }
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -589,7 +587,7 @@ struct ContentView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(.ultraThinMaterial)
-        .animation(DS.Motion.snappy, value: isRunning)
+        .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
     private func attachmentChip(icon: String, title: String, removable: Bool) -> some View {
@@ -611,7 +609,7 @@ struct ContentView: View {
     }
 
     private var canSend: Bool {
-        guard !isRunning, !loadingAttachment else { return false }
+        guard !vm.isRunning, !loadingAttachment else { return false }
         return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil
     }
 
@@ -678,156 +676,23 @@ struct ContentView: View {
     }
 
     // MARK: New chat / stop
-    private func startNewChat() {
-        stop()
-        Task { await Orchestrator.reset() }
-        withAnimation(DS.Motion.spring) { messages.removeAll() }
-        searching = false
-        searchQuery = ""
-    }
+    // MARK: Send / chat actions — the conversation now lives in `vm` (ChatViewModel).
 
-    /// Cancel an in-flight response and return the UI to a ready state.
-    private func stop() {
-        runningTask?.cancel()
-        runningTask = nil
-        isRunning = false
-        MissionProgress.shared.finish()
-    }
-
-    /// Re-answer: drop this assistant reply (and anything after it) and re-run
-    /// the user message that preceded it, without duplicating the user bubble.
-    private func regenerate(_ message: ChatMessage) {
-        guard !isRunning, !message.isUser, let idx = messages.firstIndex(of: message) else { return }
-        guard let priorUser = messages[..<idx].last(where: { $0.isUser }) else { return }
-        // Strip any "📎 attachment" marker line from the displayed user text.
-        let clean = priorUser.text
-            .components(separatedBy: "\n")
-            .filter { !$0.hasPrefix("📎") }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return }
-        withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
-        send(clean, recordUser: false)
-    }
-
-    // MARK: Send
-    private func send(_ text: String, recordUser: Bool = true) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isRunning, !loadingAttachment else { return }
+    /// Send the composed input through `vm`, then clear the view's input + attachment.
+    private func submit(_ text: String, recordUser: Bool = true) {
+        guard !loadingAttachment else { return }
         let att = attachment
-        guard !trimmed.isEmpty || att != nil else { return }
-
-        // Pasted a YouTube link, media URL, or audio/video file path → transcribe it.
-        if att == nil, let media = MediaTranscribe.detect(trimmed) {
-            transcribeMedia(media, raw: trimmed)
-            return
-        }
-
-        // What the user sees in their bubble.
-        var displayed = trimmed
-        if let att { displayed += (displayed.isEmpty ? "" : "\n\n") + "📎 \(att.name)" }
-
-        let question = trimmed
-        if recordUser {
-            messages.append(ChatMessage(id: UUID(), text: displayed, isUser: true, timestamp: Date()))
-        }
+        inputFocused = true
+        vm.send(text: text, attachment: att, recordUser: recordUser)
         mission = ""
         attachment = nil
-        // Rotation mode (≥2 brains checked): hop to the next chosen brain so this
-        // message is answered by it (the whole pipeline reads the updated pin).
-        settings.advanceRotation()
-        isRunning = true
-        inputFocused = true
-
-        runningTask = Task {
-            // Build the message the agents receive (resolving image vision first).
-            var missionToSend = question.isEmpty
-                ? "Please look at the attached \(att?.kind ?? "file")." : question
-            if let att {
-                var content = att.extractedText
-                // For images, prefer true vision (qwen2.5vl) over plain Apple Vision.
-                if att.isImage, AppSettings.shared.useVision, let fileURL = att.fileURL,
-                   let data = try? Data(contentsOf: fileURL),
-                   let seen = await OllamaClient.vision(imageData: data, question: question) {
-                    content = "What the vision model sees:\n\(seen)"
-                }
-                missionToSend += "\n\n[Attached \(att.kind) \"\(att.name)\"]\n\(content)"
-            }
-
-            // Auto-continue loop (claude-autocontinue): normally ONE turn, but if the
-            // owner left Auto-continue on and the reply looks unfinished, keep going
-            // ("continue") up to a cap so they don't have to nudge it each time. Stop
-            // cancels the whole loop. Each continuation flows through the same pipeline,
-            // so it inherits the conversation history recorded by AgentPipeline.run.
-            var turnPrompt = missionToSend
-            var autoContinues = 0
-            let maxAutoContinues = 4
-            while true {
-                let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                            timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
-                    messages.append(reply)
-                    if AppSettings.shared.autoSpeak {
-                        SpeechOut.shared.speak(result.output, id: reply.id)
-                    }
-                }
-                if AppSettings.autoContinueEnabled, autoContinues < maxAutoContinues,
-                   AgentPipeline.looksIncomplete(result.output) {
-                    autoContinues += 1
-                    turnPrompt = "continue"
-                    continue
-                }
-                break
-            }
-            await MainActor.run { isRunning = false }
-            // Refresh the header brain dot now — it otherwise lags up to ~10s, so
-            // this reflects reality right after a send (e.g. a brain that just failed).
-            await BrainStatus.shared.refresh()
-        }
     }
 
-    // MARK: Media transcription (YouTube link / audio file → transcript + summary)
-    private func transcribeMedia(_ source: MediaTranscribe.Source, raw: String) {
-        messages.append(ChatMessage(id: UUID(), text: raw, isUser: true, timestamp: Date()))
-        mission = ""
-        isRunning = true            // reuse the existing typing indicator
-        inputFocused = true
-
-        runningTask = Task {
-            let transcript = await MediaTranscribe.transcribe(source)
-            if Task.isCancelled { return }
-
-            // 1) Post the raw transcript.
-            await MainActor.run {
-                messages.append(ChatMessage(id: UUID(), text: "📝 Transcript\n\n\(transcript)",
-                                            isUser: false, timestamp: Date()))
-            }
-
-            // Skip the summary if transcription failed or there's too little text.
-            guard transcript.count > 40,
-                  !transcript.hasPrefix("Couldn't"),
-                  !transcript.contains("no captions") else {
-                await MainActor.run { isRunning = false }
-                return
-            }
-
-            // 2) Auto-summarize (cap the input so the on-device model isn't overrun).
-            let capped = transcript.count > 8000 ? String(transcript.prefix(8000)) + "…" : transcript
-            let prompt = "Summarize this transcript and list the key points and any "
-                       + "action items. Reply in the transcript's language:\n\n\(capped)"
-            let result = await Orchestrator.runAndReturnResult(mission: prompt)
-            if Task.isCancelled { return }
-            await MainActor.run {
-                let reply = ChatMessage(id: UUID(), text: result.output, isUser: false, timestamp: Date())
-                messages.append(reply)
-                isRunning = false
-                if AppSettings.shared.autoSpeak {
-                    SpeechOut.shared.speak(result.output, id: reply.id)
-                }
-            }
-        }
+    /// New chat: clear the conversation (vm) + the view's search UI.
+    private func newChat() {
+        vm.startNewChat()
+        searching = false
+        searchQuery = ""
     }
 }
 

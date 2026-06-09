@@ -82,24 +82,14 @@ final class ScratchpadStore: ObservableObject {
     // MARK: Persistence
 
     private struct Snapshot: Codable { var notes: [Note]; var tasks: [TaskItem] }
-
-    private var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SalehmanAI", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("scratchpad.json")
-    }
+    private let store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
 
     private func save() {
-        let snap = Snapshot(notes: notes, tasks: tasks)
-        if let data = try? JSONEncoder().encode(snap) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
+        try? store.save(Snapshot(notes: notes, tasks: tasks))
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        let snap = store.load(defaultValue: Snapshot(notes: [], tasks: []))
         notes = snap.notes
         tasks = snap.tasks
     }
