@@ -323,7 +323,8 @@ enum OllamaClient {
                 if (json["done"] as? Bool) == true { break }
             }
         } catch {
-            // Network/stream errors fall through with whatever we have so far.
+            // Network/stream errors — surface what we accumulated so the UI can decide.
+            print("[OllamaClient] chatStream error: \(error)")
         }
         let trimmed = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
