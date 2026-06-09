@@ -389,3 +389,11 @@ struct CloudKeyHintBanner: View {
         .foregroundStyle(Color.orange)
     }
 }
+
+    // MARK: Glassmorphism & Materials (premium macOS depth & translucency)
+    enum Glass {
+        static let ultraThin = Material.ultraThinMaterial
+        static let thin      = Material.thinMaterial
+        static let regular   = Material.regularMaterial
+        static let thick     = Material.thickMaterial
+    }
