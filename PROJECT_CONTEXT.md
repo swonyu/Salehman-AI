@@ -107,7 +107,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `Views/` — UI (ContentView + SettingsView = Chat B's lane)
 | File | Purpose |
 |---|---|
-| `ContentView.swift` | The chat UI (1108 lines): message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. |
+| `ContentView.swift` | The chat UI: message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. Presentation/input/focus/search only — the conversation + send pipeline live in `ChatViewModel`. |
+| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
 | `SettingsView.swift` | Settings panel (1170 lines): Apple-Intelligence toggle, **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, performance/voice/privacy/status sections. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**6 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |

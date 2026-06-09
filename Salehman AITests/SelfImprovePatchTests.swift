@@ -57,7 +57,7 @@ struct SelfImprovePatchTests {
             END
             """
             #expect(SelfImprove.applyPatch(patch, to: url.path))
-            let after = try? String(contentsOf: url)
+            let after = try? String(contentsOf: url, encoding: .utf8)
             #expect((after?.contains("REPLACED")) ?? false)
             #expect((after?.contains("line1")) ?? false)
             #expect((after?.contains("line2")) == false)   // line 2 was the replaced one
@@ -68,9 +68,9 @@ struct SelfImprovePatchTests {
     func applyPatchOutOfBoundsReturnsFalseAndDoesNotModify() {
         withTempRoots { root in
             let url = writeScratch("one\ntwo\n", under: root)
-            let orig = try? String(contentsOf: url)
+            let orig = try? String(contentsOf: url, encoding: .utf8)
             #expect(SelfImprove.applyPatch("REPLACE_RANGE: 10-12\nWITH:\nX\nEND", to: url.path) == false)
-            #expect((try? String(contentsOf: url)) == orig)
+            #expect((try? String(contentsOf: url, encoding: .utf8)) == orig)
         }
     }
 
@@ -138,7 +138,7 @@ struct SelfImprovePatchTests {
             #expect(SelfImprove.applyPatch("REPLACE_RANGE: 1-1\nWITH:\nPATCH2\nEND", to: url.path))
 
             // The source file ends at the SECOND edit…
-            #expect(try String(contentsOf: url).contains("PATCH2"))
+            #expect(try String(contentsOf: url, encoding: .utf8).contains("PATCH2"))
 
             // …but the backup must still hold the TRUE pre-edit ORIGINAL, never
             // PATCH1. This actually reads the backup dir — the previous version only
@@ -148,7 +148,7 @@ struct SelfImprovePatchTests {
             let runDir = URL(fileURLWithPath: backupRootPath)
                 .appendingPathComponent(SelfImprove.backupTimestampForTesting)
             let backedUp = runDir.appendingPathComponent(url.lastPathComponent)
-            let backupText = try #require(try? String(contentsOf: backedUp),
+            let backupText = try #require(try? String(contentsOf: backedUp, encoding: .utf8),
                                           "the pre-edit backup copy should exist")
             #expect(backupText.contains("ORIGINAL"))
             #expect(backupText.contains("PATCH1") == false)

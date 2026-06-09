@@ -77,11 +77,9 @@ enum Transcriber {
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("salehman_audio_\(UUID().uuidString).m4a")
         guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else { return url }
-        export.outputURL = out
-        export.outputFileType = .m4a
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            export.exportAsynchronously { cont.resume() }
-        }
+        // Modern async export (macOS 15+; deployment target is 26.5) — replaces the
+        // deprecated `exportAsynchronously(completionHandler:)`.
+        try? await export.export(to: out, as: .m4a)
         return FileManager.default.fileExists(atPath: out.path) ? out : url
     }
 }
