@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 16:47 +03 · Swift files: 119 · Swift LOC: 22225_
+_Generated: 2026-06-09 17:09 +03 · Swift files: 120 · Swift LOC: 22465_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11784,7 +11784,7 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeSyntaxView.swift (124 lines) =====
+===== FILE: Salehman AI/Views/CodeSyntaxView.swift (164 lines) =====
 ```swift
 import SwiftUI
 
@@ -11840,6 +11840,25 @@ enum CodeSyntax {
         return a
     }
 
+    /// Add a highlight background to every (case-insensitive) occurrence of `term`
+    /// in `line` — used by find-in-file.
+    static func markMatches(_ a: inout AttributedString, _ line: String, _ term: String) {
+        guard !term.isEmpty else { return }
+        var from = line.startIndex
+        while let r = line.range(of: term, options: .caseInsensitive, range: from..<line.endIndex) {
+            let start = line.distance(from: line.startIndex, to: r.lowerBound)
+            let len = line.distance(from: r.lowerBound, to: r.upperBound)
+            let chars = a.characters
+            if len > 0,
+               let lo = chars.index(chars.startIndex, offsetBy: start, limitedBy: chars.endIndex),
+               let hi = chars.index(lo, offsetBy: len, limitedBy: chars.endIndex) {
+                a[lo..<hi].backgroundColor = Color.yellow.opacity(0.35)
+            }
+            from = r.upperBound
+            if from >= line.endIndex { break }
+        }
+    }
+
     private static func apply(_ re: NSRegularExpression?, _ a: inout AttributedString, _ line: String, _ color: Color) {
         guard let re else { return }
         let ns = line as NSString
@@ -11877,6 +11896,8 @@ enum CodeSyntax {
 struct CodeTextView: View {
     let content: String
     let ext: String
+    var searchTerm: String = ""     // find-in-file: highlight matches
+    var scrollLine: Int? = nil      // when this changes, scroll to that 1-based line
 
     private var lines: [String] {
         content.isEmpty ? [] : content.components(separatedBy: "\n")
@@ -11890,29 +11911,48 @@ struct CodeTextView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let gutter = String(lines.count).count
-            ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(String(format: "%\(gutter)d", i + 1))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.26))
-                            Text(CodeSyntax.highlight(line, ext: ext))
-                                .font(.system(size: 11.5, design: .monospaced))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: true, vertical: false)
+            ScrollViewReader { proxy in
+                ScrollView([.vertical, .horizontal]) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(String(format: "%\(gutter)d", i + 1))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.26))
+                                Text(highlighted(line))
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .padding(.horizontal, 10)
+                            .id(i + 1)   // 1-based line number = scroll id
                         }
-                        .padding(.horizontal, 10)
                     }
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
+                .onChange(of: scrollLine) { _, t in scroll(proxy, to: t) }
+                .onAppear { scroll(proxy, to: scrollLine) }
             }
+        }
+    }
+
+    private func highlighted(_ line: String) -> AttributedString {
+        var a = CodeSyntax.highlight(line, ext: ext)
+        if !searchTerm.isEmpty { CodeSyntax.markMatches(&a, line, searchTerm) }
+        return a
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to line: Int?) {
+        guard let line else { return }
+        // Defer so the (lazy) target row exists before we scroll to it.
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(line, anchor: .center) }
         }
     }
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (827 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (911 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12118,7 +12158,13 @@ struct CodeView: View {
     @State private var runningTask: Task<Void, Never>?
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
-    @State private var fileFilter = ""   // live filter for the (flat) file list
+    @State private var fileFilter = ""   // live filter for the file list
+    @State private var expandedDirs: Set<String> = []   // open folders in the tree
+    // Find-in-file (the open file) + scroll target shared with diff-jump.
+    @State private var fileSearch = ""
+    @State private var searchMatchLines: [Int] = []   // 1-based lines containing a match
+    @State private var searchIndex = 0
+    @State private var scrollLine: Int? = nil         // drives CodeTextView scroll
 
     /// Files matching the current filter (by relative path, case-insensitive).
     private var filteredFiles: [URL] {
@@ -12208,16 +12254,32 @@ struct CodeView: View {
                 emptyTreeHint
             } else {
                 fileFilterField
-                let shown = filteredFiles
-                if shown.isEmpty {
-                    Text("No files match \u{201C}\(fileFilter)\u{201D}")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding()
-                } else {
+                if !fileFilter.isEmpty {
+                    // Filtering → flat matched list (faster to scan than a tree).
+                    let shown = filteredFiles
+                    if shown.isEmpty {
+                        Text("No files match \u{201C}\(fileFilter)\u{201D}")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding()
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 1) {
+                                ForEach(shown, id: \.self) { url in fileRow(url) }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+                } else if let root = ws.projectRoot {
+                    // No filter → collapsible folder tree.
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(shown, id: \.self) { url in fileRow(url) }
+                            ForEach(FileTreeBuilder.build(files: ws.files, root: root)) { node in
+                                FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
+                                    ws.select(url)
+                                    rightPane = ws.changedFiles.contains(url) ? .diff : .file
+                                }
+                            }
                         }
                         .padding(.vertical, 6)
                     }
@@ -12543,8 +12605,58 @@ struct CodeView: View {
     }
 
     private var fileView: some View {
-        // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
-        CodeTextView(content: ws.fileContent, ext: ws.selectedFile?.pathExtension ?? "")
+        VStack(spacing: 0) {
+            fileSearchBar
+            // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
+            CodeTextView(content: ws.fileContent,
+                         ext: ws.selectedFile?.pathExtension ?? "",
+                         searchTerm: fileSearch,
+                         scrollLine: scrollLine)
+        }
+        .onChange(of: ws.selectedFile) { _, _ in clearSearch() }
+    }
+
+    private var fileSearchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 10))
+            TextField("Find in file", text: $fileSearch)
+                .textFieldStyle(.plain).font(.system(size: 11))
+                .onSubmit { jumpMatch(+1) }
+            if !fileSearch.isEmpty {
+                Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
+                    .font(.system(size: 10, design: .monospaced))
+                Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
+                Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
+                Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .font(.system(size: 11)).foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.white.opacity(0.04))
+        .onChange(of: fileSearch) { _, _ in recomputeMatches() }
+    }
+
+    private func clearSearch() {
+        fileSearch = ""; searchMatchLines = []; searchIndex = 0
+    }
+
+    private func recomputeMatches() {
+        guard !fileSearch.isEmpty else { searchMatchLines = []; searchIndex = 0; return }
+        searchMatchLines = ws.fileContent.components(separatedBy: "\n").enumerated().compactMap { i, line in
+            line.range(of: fileSearch, options: .caseInsensitive) != nil ? i + 1 : nil
+        }
+        searchIndex = 0
+        scrollLine = searchMatchLines.first
+    }
+
+    /// Cycle to the next (+1) / previous (-1) match and scroll to it.
+    private func jumpMatch(_ dir: Int) {
+        guard !searchMatchLines.isEmpty else { return }
+        searchIndex = (searchIndex + dir + searchMatchLines.count) % searchMatchLines.count
+        scrollLine = searchMatchLines[searchIndex]
     }
 
     private var diffView: some View {
@@ -12560,20 +12672,32 @@ struct CodeView: View {
                 ScrollView([.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(rows, id: \.line.id) { row in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
-                                    .foregroundStyle(.white.opacity(0.22))
-                                Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
-                                    .foregroundStyle(.white.opacity(0.22))
-                                Text(symbol(row.line.kind)).fontWeight(.bold)
-                                    .foregroundStyle(color(row.line.kind)).frame(width: 10)
-                                Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
-                                    .fixedSize(horizontal: true, vertical: false)
-                                Spacer(minLength: 0)
+                            Button {
+                                // Jump to this line in the file view.
+                                if let target = row.new ?? row.old {
+                                    rightPane = .file
+                                    scrollLine = target
+                                }
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                        .foregroundStyle(.white.opacity(0.22))
+                                    Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                        .foregroundStyle(.white.opacity(0.22))
+                                    Text(symbol(row.line.kind)).fontWeight(.bold)
+                                        .foregroundStyle(color(row.line.kind)).frame(width: 10)
+                                    Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Spacer(minLength: 0)
+                                }
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .padding(.horizontal, 8).padding(.vertical, 1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(bg(row.line.kind))
+                                .contentShape(Rectangle())
                             }
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .padding(.horizontal, 8).padding(.vertical, 1)
-                            .background(bg(row.line.kind))
+                            .buttonStyle(.plain)
+                            .help("Jump to line \(row.new ?? row.old ?? 0) in the file")
                         }
                     }
                     .padding(.vertical, 6)
@@ -14452,6 +14576,126 @@ struct CopilotSignInView: View {
                 }
             }
         }
+    }
+}
+```
+
+===== FILE: Salehman AI/Views/FileTree.swift (116 lines) =====
+```swift
+import SwiftUI
+
+// MARK: - File tree model
+//
+// The Code tab's workspace exposes a FLAT `[URL]`; this builds a real folder
+// hierarchy from it so the sidebar can be a collapsible tree instead of one long
+// flat list.
+
+struct FileNode: Identifiable {
+    let id: String          // relative path — stable identity
+    let name: String        // last path component
+    let url: URL?           // file URL; nil for a directory
+    var children: [FileNode]
+    var isDir: Bool { url == nil }
+}
+
+enum FileTreeBuilder {
+    /// Build a sorted hierarchy (folders first, then files; case-insensitive) from a
+    /// flat list of file URLs under `root`.
+    static func build(files: [URL], root: URL) -> [FileNode] {
+        final class Box { var dirs: [String: Box] = [:]; var files: [(String, URL)] = [] }
+        let rootBox = Box()
+        let prefix = root.path + "/"
+        for url in files {
+            let rel = url.path.hasPrefix(prefix) ? String(url.path.dropFirst(prefix.count)) : url.lastPathComponent
+            let parts = rel.split(separator: "/").map(String.init)
+            guard !parts.isEmpty else { continue }
+            var box = rootBox
+            for dir in parts.dropLast() {
+                let next = box.dirs[dir] ?? Box()
+                box.dirs[dir] = next
+                box = next
+            }
+            box.files.append((parts.last!, url))
+        }
+        func nodes(_ box: Box, prefix: String) -> [FileNode] {
+            let dirs = box.dirs.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                .map { name -> FileNode in
+                    let path = prefix.isEmpty ? name : prefix + "/" + name
+                    return FileNode(id: path, name: name, url: nil, children: nodes(box.dirs[name]!, prefix: path))
+                }
+            let files = box.files
+                .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+                .map { FileNode(id: $0.1.path, name: $0.0, url: $0.1, children: []) }
+            return dirs + files
+        }
+        return nodes(rootBox, prefix: "")
+    }
+}
+
+// MARK: - Recursive tree row
+//
+// A View struct (NOT a @ViewBuilder func) so it can reference itself — recursive
+// opaque return types don't compile. Folders toggle into `expanded`; files call back.
+
+struct FileTreeRow: View {
+    let node: FileNode
+    let depth: Int
+    @Binding var expanded: Set<String>
+    @ObservedObject var ws: CodeWorkspace
+    let onSelect: (URL) -> Void
+
+    var body: some View {
+        if node.isDir {
+            let isOpen = expanded.contains(node.id)
+            Button {
+                if isOpen { expanded.remove(node.id) } else { expanded.insert(node.id) }
+            } label: {
+                row {
+                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary).frame(width: 9)
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
+                    Text(node.name)
+                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.8))
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(node.name) folder, \(isOpen ? "expanded" : "collapsed")")
+
+            if isOpen {
+                ForEach(node.children) { child in
+                    FileTreeRow(node: child, depth: depth + 1, expanded: $expanded, ws: ws, onSelect: onSelect)
+                }
+            }
+        } else if let url = node.url {
+            let isSel = ws.selectedFile == url
+            let changed = ws.changedFiles.contains(url)
+            Button { onSelect(url) } label: {
+                row {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : .secondary).frame(width: 9)
+                    Text(node.name)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
+                }
+                .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 5) { content() }
+            .padding(.leading, CGFloat(depth) * 12 + 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 ```
@@ -23960,7 +24204,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1392 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1397 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25341,6 +25585,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `Views/CodeSyntaxView.swift` (new), `Views/CodeView.swift`
 **What & why:** Owner asked to improve the Code tab "way more." Added a real code viewer. New `CodeSyntax` — a lightweight per-line, regex-based highlighter producing a SwiftUI `AttributedString` (types → numbers → keywords → strings → comments, last-wins so strings/comments override keywords inside them; `#`-vs-`//` comment token by file extension). New `CodeTextView` — a line-numbered, highlighted, read-only viewer (LazyVStack of `lineNumber + highlighted line` in a 2-axis ScrollView; lazy so only visible lines highlight → big files stay smooth; `.fixedSize(horizontal:)` keeps long lines from wrapping; per-line text selection). Wired it into `fileView`, and upgraded `diffView` with an old/new line-number gutter (`numberedDiff` walks the `[DiffLine]` assigning numbers without changing the model) + the same highlighting. Pure SwiftUI (no NSTextView/ruler) — verifiable by build, smooth, visually correct by construction.
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. (Fixed a self-inflicted name collision mid-build — a `color()` helper shadowed by a `color:` param → renamed to `setColor`.)
+
+## 2026-06-09 · 🌳 Code tab: collapsible folder tree + find-in-file + click-diff-to-jump
+**Files:** `Views/FileTree.swift` (new), `Views/CodeSyntaxView.swift`, `Views/CodeView.swift`
+**What & why:** Owner: "I want all" (the three follow-ons I'd offered). **(1) Folder tree** — `FileTreeBuilder` turns the workspace's flat `[URL]` into a real folder hierarchy; `FileTreeRow` (a recursive View struct — a recursive `@ViewBuilder func` can't compile, opaque-type recursion) renders it with expand/collapse, folder/file icons, changed-dot + selection. Sidebar shows the tree when not filtering, the flat matched list when filtering. **(2) Find-in-file** — `CodeTextView` gained `searchTerm` (match background via `CodeSyntax.markMatches`) + a `scrollLine` that scrolls via `ScrollViewReader` (rows `.id`'d by 1-based line number); `fileView` got a search bar with a match counter and up/down next-prev that recomputes match lines and jumps. **(3) Click-diff-to-jump** — diff rows are now buttons; clicking one switches to the File pane and scrolls to that line (uses the new/old line number from `numberedDiff`). Shared `scrollLine` state drives both find and diff-jump.
+**Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. All pure SwiftUI, additive, pipeline untouched. (Build-verified, not visually — palette/scroll behavior is the owner's to eyeball; easy to tune.)
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

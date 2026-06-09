@@ -202,7 +202,13 @@ struct CodeView: View {
     @State private var runningTask: Task<Void, Never>?
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
-    @State private var fileFilter = ""   // live filter for the (flat) file list
+    @State private var fileFilter = ""   // live filter for the file list
+    @State private var expandedDirs: Set<String> = []   // open folders in the tree
+    // Find-in-file (the open file) + scroll target shared with diff-jump.
+    @State private var fileSearch = ""
+    @State private var searchMatchLines: [Int] = []   // 1-based lines containing a match
+    @State private var searchIndex = 0
+    @State private var scrollLine: Int? = nil         // drives CodeTextView scroll
 
     /// Files matching the current filter (by relative path, case-insensitive).
     private var filteredFiles: [URL] {
@@ -292,16 +298,32 @@ struct CodeView: View {
                 emptyTreeHint
             } else {
                 fileFilterField
-                let shown = filteredFiles
-                if shown.isEmpty {
-                    Text("No files match \u{201C}\(fileFilter)\u{201D}")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding()
-                } else {
+                if !fileFilter.isEmpty {
+                    // Filtering → flat matched list (faster to scan than a tree).
+                    let shown = filteredFiles
+                    if shown.isEmpty {
+                        Text("No files match \u{201C}\(fileFilter)\u{201D}")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding()
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 1) {
+                                ForEach(shown, id: \.self) { url in fileRow(url) }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+                } else if let root = ws.projectRoot {
+                    // No filter → collapsible folder tree.
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(shown, id: \.self) { url in fileRow(url) }
+                            ForEach(FileTreeBuilder.build(files: ws.files, root: root)) { node in
+                                FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
+                                    ws.select(url)
+                                    rightPane = ws.changedFiles.contains(url) ? .diff : .file
+                                }
+                            }
                         }
                         .padding(.vertical, 6)
                     }
@@ -627,8 +649,58 @@ struct CodeView: View {
     }
 
     private var fileView: some View {
-        // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
-        CodeTextView(content: ws.fileContent, ext: ws.selectedFile?.pathExtension ?? "")
+        VStack(spacing: 0) {
+            fileSearchBar
+            // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
+            CodeTextView(content: ws.fileContent,
+                         ext: ws.selectedFile?.pathExtension ?? "",
+                         searchTerm: fileSearch,
+                         scrollLine: scrollLine)
+        }
+        .onChange(of: ws.selectedFile) { _, _ in clearSearch() }
+    }
+
+    private var fileSearchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 10))
+            TextField("Find in file", text: $fileSearch)
+                .textFieldStyle(.plain).font(.system(size: 11))
+                .onSubmit { jumpMatch(+1) }
+            if !fileSearch.isEmpty {
+                Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
+                    .font(.system(size: 10, design: .monospaced))
+                Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
+                Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
+                Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .font(.system(size: 11)).foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.white.opacity(0.04))
+        .onChange(of: fileSearch) { _, _ in recomputeMatches() }
+    }
+
+    private func clearSearch() {
+        fileSearch = ""; searchMatchLines = []; searchIndex = 0
+    }
+
+    private func recomputeMatches() {
+        guard !fileSearch.isEmpty else { searchMatchLines = []; searchIndex = 0; return }
+        searchMatchLines = ws.fileContent.components(separatedBy: "\n").enumerated().compactMap { i, line in
+            line.range(of: fileSearch, options: .caseInsensitive) != nil ? i + 1 : nil
+        }
+        searchIndex = 0
+        scrollLine = searchMatchLines.first
+    }
+
+    /// Cycle to the next (+1) / previous (-1) match and scroll to it.
+    private func jumpMatch(_ dir: Int) {
+        guard !searchMatchLines.isEmpty else { return }
+        searchIndex = (searchIndex + dir + searchMatchLines.count) % searchMatchLines.count
+        scrollLine = searchMatchLines[searchIndex]
     }
 
     private var diffView: some View {
@@ -644,20 +716,32 @@ struct CodeView: View {
                 ScrollView([.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(rows, id: \.line.id) { row in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
-                                    .foregroundStyle(.white.opacity(0.22))
-                                Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
-                                    .foregroundStyle(.white.opacity(0.22))
-                                Text(symbol(row.line.kind)).fontWeight(.bold)
-                                    .foregroundStyle(color(row.line.kind)).frame(width: 10)
-                                Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
-                                    .fixedSize(horizontal: true, vertical: false)
-                                Spacer(minLength: 0)
+                            Button {
+                                // Jump to this line in the file view.
+                                if let target = row.new ?? row.old {
+                                    rightPane = .file
+                                    scrollLine = target
+                                }
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                        .foregroundStyle(.white.opacity(0.22))
+                                    Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                        .foregroundStyle(.white.opacity(0.22))
+                                    Text(symbol(row.line.kind)).fontWeight(.bold)
+                                        .foregroundStyle(color(row.line.kind)).frame(width: 10)
+                                    Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Spacer(minLength: 0)
+                                }
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .padding(.horizontal, 8).padding(.vertical, 1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(bg(row.line.kind))
+                                .contentShape(Rectangle())
                             }
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .padding(.horizontal, 8).padding(.vertical, 1)
-                            .background(bg(row.line.kind))
+                            .buttonStyle(.plain)
+                            .help("Jump to line \(row.new ?? row.old ?? 0) in the file")
                         }
                     }
                     .padding(.vertical, 6)

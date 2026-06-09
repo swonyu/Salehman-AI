@@ -52,6 +52,25 @@ enum CodeSyntax {
         return a
     }
 
+    /// Add a highlight background to every (case-insensitive) occurrence of `term`
+    /// in `line` — used by find-in-file.
+    static func markMatches(_ a: inout AttributedString, _ line: String, _ term: String) {
+        guard !term.isEmpty else { return }
+        var from = line.startIndex
+        while let r = line.range(of: term, options: .caseInsensitive, range: from..<line.endIndex) {
+            let start = line.distance(from: line.startIndex, to: r.lowerBound)
+            let len = line.distance(from: r.lowerBound, to: r.upperBound)
+            let chars = a.characters
+            if len > 0,
+               let lo = chars.index(chars.startIndex, offsetBy: start, limitedBy: chars.endIndex),
+               let hi = chars.index(lo, offsetBy: len, limitedBy: chars.endIndex) {
+                a[lo..<hi].backgroundColor = Color.yellow.opacity(0.35)
+            }
+            from = r.upperBound
+            if from >= line.endIndex { break }
+        }
+    }
+
     private static func apply(_ re: NSRegularExpression?, _ a: inout AttributedString, _ line: String, _ color: Color) {
         guard let re else { return }
         let ns = line as NSString
@@ -89,6 +108,8 @@ enum CodeSyntax {
 struct CodeTextView: View {
     let content: String
     let ext: String
+    var searchTerm: String = ""     // find-in-file: highlight matches
+    var scrollLine: Int? = nil      // when this changes, scroll to that 1-based line
 
     private var lines: [String] {
         content.isEmpty ? [] : content.components(separatedBy: "\n")
@@ -102,23 +123,42 @@ struct CodeTextView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let gutter = String(lines.count).count
-            ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(String(format: "%\(gutter)d", i + 1))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.26))
-                            Text(CodeSyntax.highlight(line, ext: ext))
-                                .font(.system(size: 11.5, design: .monospaced))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: true, vertical: false)
+            ScrollViewReader { proxy in
+                ScrollView([.vertical, .horizontal]) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(String(format: "%\(gutter)d", i + 1))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.26))
+                                Text(highlighted(line))
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .padding(.horizontal, 10)
+                            .id(i + 1)   // 1-based line number = scroll id
                         }
-                        .padding(.horizontal, 10)
                     }
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
+                .onChange(of: scrollLine) { _, t in scroll(proxy, to: t) }
+                .onAppear { scroll(proxy, to: scrollLine) }
             }
+        }
+    }
+
+    private func highlighted(_ line: String) -> AttributedString {
+        var a = CodeSyntax.highlight(line, ext: ext)
+        if !searchTerm.isEmpty { CodeSyntax.markMatches(&a, line, searchTerm) }
+        return a
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to line: Int?) {
+        guard let line else { return }
+        // Defer so the (lazy) target row exists before we scroll to it.
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(line, anchor: .center) }
         }
     }
 }
