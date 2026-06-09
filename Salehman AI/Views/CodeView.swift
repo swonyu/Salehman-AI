@@ -209,6 +209,7 @@ struct CodeView: View {
     @State private var searchMatchLines: [Int] = []   // 1-based lines containing a match
     @State private var searchIndex = 0
     @State private var scrollLine: Int? = nil         // drives CodeTextView scroll
+    @FocusState private var findFocused: Bool         // ⌘F focuses the find-in-file field
 
     /// Files matching the current filter (by relative path, case-insensitive).
     private var filteredFiles: [URL] {
@@ -255,6 +256,31 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
+        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…).
+        .onChange(of: ws.selectedFile) { _, sel in revealInTree(sel) }
+        // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
+        .background {
+            Group {
+                Button("") { if ws.selectedFile != nil { rightPane = .file; findFocused = true } }
+                    .keyboardShortcut("f", modifiers: .command)
+                Button("") { if isRunning { stop() } }
+                    .keyboardShortcut(".", modifiers: .command)
+            }
+            .opacity(0).frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Open every ancestor folder of `url` in the tree so the selected file is visible.
+    private func revealInTree(_ url: URL?) {
+        guard let url, let root = ws.projectRoot,
+              url.path.hasPrefix(root.path + "/") else { return }
+        let rel = String(url.path.dropFirst(root.path.count + 1))
+        var path = ""
+        for part in rel.split(separator: "/").dropLast() {
+            path = path.isEmpty ? String(part) : path + "/" + part
+            expandedDirs.insert(path)
+        }
     }
 
     // MARK: File tree (left)
@@ -268,6 +294,7 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(DS.Palette.accent)
+                .keyboardShortcut("o", modifiers: [.command, .shift])
                 Spacer()
                 if ws.projectRoot != nil {
                     Button { reviewProject() } label: {
@@ -275,7 +302,8 @@ struct CodeView: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
-                    .help("Pack the open folder and have Salehman review it — bugs, risks, improvements")
+                    .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
+                    .keyboardShortcut("r", modifiers: .command)
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -368,13 +396,14 @@ struct CodeView: View {
     private func fileRow(_ url: URL) -> some View {
         let isSel = ws.selectedFile == url
         let changed = ws.changedFiles.contains(url)
+        let icon = FileKind.icon(for: url)
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : .secondary)
+                Image(systemName: icon.symbol)
+                    .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : icon.tint)
                 Text(relativePath(url))
                     .font(.system(size: 11.5, design: .monospaced))
                     .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
@@ -389,6 +418,7 @@ struct CodeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { fileActionsMenu(url) }
     }
 
     private func relativePath(_ url: URL) -> String {
@@ -665,6 +695,7 @@ struct CodeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 10))
             TextField("Find in file", text: $fileSearch)
                 .textFieldStyle(.plain).font(.system(size: 11))
+                .focused($findFocused)
                 .onSubmit { jumpMatch(+1) }
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")

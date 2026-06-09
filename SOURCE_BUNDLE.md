@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 17:09 +03 · Swift files: 120 · Swift LOC: 22465_
+_Generated: 2026-06-09 20:51 +03 · Swift files: 120 · Swift LOC: 22542_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11784,7 +11784,7 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeSyntaxView.swift (164 lines) =====
+===== FILE: Salehman AI/Views/CodeSyntaxView.swift (166 lines) =====
 ```swift
 import SwiftUI
 
@@ -11925,6 +11925,8 @@ struct CodeTextView: View {
                                     .fixedSize(horizontal: true, vertical: false)
                             }
                             .padding(.horizontal, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(i + 1 == scrollLine ? Color.yellow.opacity(0.10) : .clear)
                             .id(i + 1)   // 1-based line number = scroll id
                         }
                     }
@@ -11952,7 +11954,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (911 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (942 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12165,6 +12167,7 @@ struct CodeView: View {
     @State private var searchMatchLines: [Int] = []   // 1-based lines containing a match
     @State private var searchIndex = 0
     @State private var scrollLine: Int? = nil         // drives CodeTextView scroll
+    @FocusState private var findFocused: Bool         // ⌘F focuses the find-in-file field
 
     /// Files matching the current filter (by relative path, case-insensitive).
     private var filteredFiles: [URL] {
@@ -12211,6 +12214,31 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
+        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…).
+        .onChange(of: ws.selectedFile) { _, sel in revealInTree(sel) }
+        // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
+        .background {
+            Group {
+                Button("") { if ws.selectedFile != nil { rightPane = .file; findFocused = true } }
+                    .keyboardShortcut("f", modifiers: .command)
+                Button("") { if isRunning { stop() } }
+                    .keyboardShortcut(".", modifiers: .command)
+            }
+            .opacity(0).frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Open every ancestor folder of `url` in the tree so the selected file is visible.
+    private func revealInTree(_ url: URL?) {
+        guard let url, let root = ws.projectRoot,
+              url.path.hasPrefix(root.path + "/") else { return }
+        let rel = String(url.path.dropFirst(root.path.count + 1))
+        var path = ""
+        for part in rel.split(separator: "/").dropLast() {
+            path = path.isEmpty ? String(part) : path + "/" + part
+            expandedDirs.insert(path)
+        }
     }
 
     // MARK: File tree (left)
@@ -12224,6 +12252,7 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(DS.Palette.accent)
+                .keyboardShortcut("o", modifiers: [.command, .shift])
                 Spacer()
                 if ws.projectRoot != nil {
                     Button { reviewProject() } label: {
@@ -12231,7 +12260,8 @@ struct CodeView: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
-                    .help("Pack the open folder and have Salehman review it — bugs, risks, improvements")
+                    .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
+                    .keyboardShortcut("r", modifiers: .command)
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -12324,13 +12354,14 @@ struct CodeView: View {
     private func fileRow(_ url: URL) -> some View {
         let isSel = ws.selectedFile == url
         let changed = ws.changedFiles.contains(url)
+        let icon = FileKind.icon(for: url)
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : .secondary)
+                Image(systemName: icon.symbol)
+                    .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : icon.tint)
                 Text(relativePath(url))
                     .font(.system(size: 11.5, design: .monospaced))
                     .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
@@ -12345,6 +12376,7 @@ struct CodeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { fileActionsMenu(url) }
     }
 
     private func relativePath(_ url: URL) -> String {
@@ -12621,6 +12653,7 @@ struct CodeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 10))
             TextField("Find in file", text: $fileSearch)
                 .textFieldStyle(.plain).font(.system(size: 11))
+                .focused($findFocused)
                 .onSubmit { jumpMatch(+1) }
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
@@ -14580,9 +14613,51 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (116 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (160 lines) =====
 ```swift
 import SwiftUI
+import AppKit
+
+// MARK: - File type icon / tint + per-file actions
+
+enum FileKind {
+    /// An SF Symbol + tint color for a file, chosen by extension. Color does most
+    /// of the work (symbols stay conservative so they always resolve).
+    static func icon(for url: URL) -> (symbol: String, tint: Color) {
+        switch url.pathExtension.lowercased() {
+        case "swift":                         return ("swift", .orange)
+        case "py":                            return ("chevron.left.forwardslash.chevron.right", Color(red: 0.30, green: 0.62, blue: 0.92))
+        case "js", "jsx", "mjs", "cjs":       return ("curlybraces", .yellow)
+        case "ts", "tsx":                     return ("curlybraces", Color(red: 0.20, green: 0.52, blue: 0.92))
+        case "json":                          return ("curlybraces", .green)
+        case "yml", "yaml", "toml":           return ("curlybraces", .teal)
+        case "md", "markdown", "txt", "rst":  return ("doc.text", .gray)
+        case "html", "xml", "css", "scss":    return ("chevron.left.forwardslash.chevron.right", .pink)
+        case "sh", "bash", "zsh":             return ("terminal", .green)
+        case "c", "cpp", "cc", "h", "hpp", "m", "mm": return ("chevron.left.forwardslash.chevron.right", .blue)
+        case "rs", "go", "rb", "java", "kt":  return ("chevron.left.forwardslash.chevron.right", .orange)
+        case "png", "jpg", "jpeg", "gif", "heic", "svg", "webp", "pdf": return ("photo", .purple)
+        default:                              return ("doc", .secondary)
+        }
+    }
+}
+
+/// Right-click actions for a file row (shared by the tree + the flat filtered list).
+@ViewBuilder
+func fileActionsMenu(_ url: URL) -> some View {
+    Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
+        Label("Reveal in Finder", systemImage: "folder")
+    }
+    Button {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.path, forType: .string)
+    } label: { Label("Copy Path", systemImage: "doc.on.doc") }
+    Button {
+        guard let s = try? String(contentsOf: url, encoding: .utf8) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+    } label: { Label("Copy Contents", systemImage: "doc.plaintext") }
+}
 
 // MARK: - File tree model
 //
@@ -14671,10 +14746,11 @@ struct FileTreeRow: View {
         } else if let url = node.url {
             let isSel = ws.selectedFile == url
             let changed = ws.changedFiles.contains(url)
+            let icon = FileKind.icon(for: url)
             Button { onSelect(url) } label: {
                 row {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : .secondary).frame(width: 9)
+                    Image(systemName: icon.symbol)
+                        .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : icon.tint).frame(width: 9)
                     Text(node.name)
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
@@ -14685,6 +14761,7 @@ struct FileTreeRow: View {
                 .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .contextMenu { fileActionsMenu(url) }
         }
     }
 
@@ -24204,7 +24281,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1397 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1402 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25590,6 +25667,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `Views/FileTree.swift` (new), `Views/CodeSyntaxView.swift`, `Views/CodeView.swift`
 **What & why:** Owner: "I want all" (the three follow-ons I'd offered). **(1) Folder tree** — `FileTreeBuilder` turns the workspace's flat `[URL]` into a real folder hierarchy; `FileTreeRow` (a recursive View struct — a recursive `@ViewBuilder func` can't compile, opaque-type recursion) renders it with expand/collapse, folder/file icons, changed-dot + selection. Sidebar shows the tree when not filtering, the flat matched list when filtering. **(2) Find-in-file** — `CodeTextView` gained `searchTerm` (match background via `CodeSyntax.markMatches`) + a `scrollLine` that scrolls via `ScrollViewReader` (rows `.id`'d by 1-based line number); `fileView` got a search bar with a match counter and up/down next-prev that recomputes match lines and jumps. **(3) Click-diff-to-jump** — diff rows are now buttons; clicking one switches to the File pane and scrolls to that line (uses the new/old line number from `numberedDiff`). Shared `scrollLine` state drives both find and diff-jump.
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. All pure SwiftUI, additive, pipeline untouched. (Build-verified, not visually — palette/scroll behavior is the owner's to eyeball; easy to tune.)
+
+## 2026-06-09 · 🪄 Code tab refinements: file-type icons, context menu, shortcuts, auto-reveal
+**Files:** `Views/FileTree.swift`, `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`
+**What & why:** Owner: "refine and improve the code tab even more." Added: **file-type icons + tints** (`FileKind.icon` — Swift/py/js/json/md/sh/images… colored, in both tree + flat list); a **right-click context menu** on files (`fileActionsMenu`: Reveal in Finder, Copy Path, Copy Contents); **keyboard shortcuts** (⌘⇧O open folder, ⌘R review, ⌘F focus find-in-file, ⌘. stop — the latter two via hidden zero-size buttons); **auto-reveal** (`revealInTree` expands every ancestor folder when a file becomes selected — e.g. from a diff-jump or AI edit); and a **current-line tint** in `CodeTextView` so you can see where find/diff-jump landed.
+**Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. Pure SwiftUI/AppKit, additive. Build-verified (owner to eyeball icon palette + that ⌘F/⌘. actually fire — hidden-button shortcuts can be environment-dependent).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

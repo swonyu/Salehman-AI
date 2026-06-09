@@ -137,6 +137,8 @@ struct CodeTextView: View {
                                     .fixedSize(horizontal: true, vertical: false)
                             }
                             .padding(.horizontal, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(i + 1 == scrollLine ? Color.yellow.opacity(0.10) : .clear)
                             .id(i + 1)   // 1-based line number = scroll id
                         }
                     }
