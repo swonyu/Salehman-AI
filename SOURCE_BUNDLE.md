@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 21:34 +03 · Swift files: 120 · Swift LOC: 22545_
+_Generated: 2026-06-10 02:09 +03 · Swift files: 124 · Swift LOC: 22896_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (631 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (632 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -504,9 +504,10 @@ enum AgentPipeline {
                         if let handler = AgentRegistry.handler(for: spec.name) {
                             output = await handler(input)
                         } else {
-                            output = await LocalLLM.generate(
-                                buildPrompt(spec: spec, mission: mission, history: history, context: phaseContext),
-                                maxTokens: spec.full ? Thresholds.fullTokens : Thresholds.shortTokens)
+                            let prompt = buildPrompt(spec: spec, mission: mission, history: history, context: phaseContext)
+                            let adapter = BrainAdapterFactory.adapter(for: brain)
+                            output = (try? await adapter.complete(messages: [LLMMessage(role: .user, content: prompt)]))
+                                ?? LocalLLM.offMessage
                         }
                         await MainActor.run { MissionProgress.shared.setDone(i) }
                         return (i, output)
@@ -2934,6 +2935,44 @@ nonisolated final class KnowledgeStore: @unchecked Sendable {
 }
 ```
 
+===== FILE: Salehman AI/LLM/AnthropicBrainAdapter.swift (34 lines) =====
+```swift
+//  AnthropicBrainAdapter.swift
+//  Salehman AI
+
+import Foundation
+
+/// BrainAdapter that routes completions through AnthropicClient (Claude Haiku).
+struct AnthropicBrainAdapter: BrainAdapter {
+    var id: BrainPreference { .claudeHaiku }
+    var isConfigured: Bool { AnthropicClient.isConfigured }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        let (system, prompt) = brainAdapterPrompt(from: messages)
+        guard let reply = await AnthropicClient.chat(prompt: prompt, system: system) else {
+            throw BrainError.unavailable
+        }
+        return reply
+    }
+
+    func stream(messages: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
+        let (system, prompt) = brainAdapterPrompt(from: messages)
+        return AsyncThrowingStream { continuation in
+            Task {
+                let result = await AnthropicClient.chatStream(prompt: prompt, system: system) { partial in
+                    continuation.yield(partial)
+                }
+                if result == nil {
+                    continuation.finish(throwing: BrainError.unavailable)
+                } else {
+                    continuation.finish()
+                }
+            }
+        }
+    }
+}
+```
+
 ===== FILE: Salehman AI/LLM/AnthropicClient.swift (127 lines) =====
 ```swift
 import Foundation
@@ -3061,6 +3100,91 @@ enum AnthropicClient {
             return "[Claude Haiku error \(status): \(msg)]"
         }
         return "[Claude Haiku request failed (HTTP \(status)). Check your Anthropic API key in Settings.]"
+    }
+}
+```
+
+===== FILE: Salehman AI/LLM/BrainAdapter.swift (81 lines) =====
+```swift
+//  BrainAdapter.swift
+//  Salehman AI
+
+import Foundation
+
+/// Minimal typed message for BrainAdapter. Mirrors the role/content shape the existing
+/// cloud clients build as [String: Any] dicts, but gives call sites a type-safe handle.
+struct LLMMessage: Sendable {
+    enum Role: String, Sendable { case system, user, assistant }
+    let role: Role
+    let content: String
+}
+
+/// Abstraction over any LLM backend — local (MLX, Ollama) or remote (cloud keys).
+/// No existing code is required to conform yet; defined here for staged adoption.
+protocol BrainAdapter: Sendable {
+    var id: BrainPreference { get }
+    var isConfigured: Bool { get }
+    func complete(messages: [LLMMessage]) async throws -> String
+    func stream(messages: [LLMMessage]) -> AsyncThrowingStream<String, Error>
+}
+
+enum BrainError: Error {
+    case unavailable
+}
+
+/// Extracts the optional system prompt and flattens remaining turns into a single
+/// prompt string compatible with single-turn completion APIs (OllamaClient, AnthropicClient).
+func brainAdapterPrompt(from messages: [LLMMessage]) -> (system: String?, prompt: String) {
+    let system = messages.first(where: { $0.role == .system })?.content
+    let body = messages.filter { $0.role != .system }
+    let prompt = body.count == 1
+        ? body[0].content
+        : body.map { "\($0.role.rawValue.capitalized): \($0.content)" }.joined(separator: "\n")
+    return (system, prompt)
+}
+
+/// Maps a `LocalLLM.Brain` to the right `BrainAdapter`. Returns a dedicated adapter
+/// for Ollama and Anthropic; all other brains get `LocalLLMFallbackAdapter`, which
+/// delegates to `LocalLLM.generate()`. Adding a new brain never requires touching
+/// AgentPipeline — only a new adapter struct and a case here.
+enum BrainAdapterFactory {
+    nonisolated static func adapter(for brain: LocalLLM.Brain) -> any BrainAdapter {
+        switch brain {
+        case .ollamaCoder:  return OllamaBrainAdapter()
+        case .claudeHaiku:  return AnthropicBrainAdapter()
+        default:
+            return LocalLLMFallbackAdapter(id: AppSettings.brainPreferenceCurrent)
+        }
+    }
+}
+
+/// Catch-all adapter: delegates to `LocalLLM.generate()` for every brain type that
+/// doesn't have a dedicated adapter yet. Keeps AgentPipeline free of direct
+/// `LocalLLM.generate()` calls while staged adoption continues.
+private struct LocalLLMFallbackAdapter: BrainAdapter {
+    let id: BrainPreference
+    var isConfigured: Bool { LocalLLM.isAvailable }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        let (_, prompt) = brainAdapterPrompt(from: messages)
+        let reply = await LocalLLM.generate(prompt)
+        if reply == LocalLLM.offMessage { throw BrainError.unavailable }
+        return reply
+    }
+
+    func stream(messages: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
+        let (_, prompt) = brainAdapterPrompt(from: messages)
+        return AsyncThrowingStream { continuation in
+            Task {
+                let reply = await LocalLLM.generate(prompt)
+                if reply == LocalLLM.offMessage {
+                    continuation.finish(throwing: BrainError.unavailable)
+                } else {
+                    continuation.yield(reply)
+                    continuation.finish()
+                }
+            }
+        }
     }
 }
 ```
@@ -4208,7 +4332,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1815 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1846 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5070,16 +5194,31 @@ enum LocalLLM {
     /// so defining the string once prevents drift between providers.
     /// Base cloud prompt. `cloudSystemPrompt` (below) is what callers use — it
     /// appends the Unrestricted-mode directives when the owner has that on.
-    nonisolated private static let cloudSystemPromptBase = """
-    You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
-    CRITICAL LANGUAGE RULE: reply in the SAME language as the user's latest \
-    message. If their message is in English, reply ONLY in English; if it is in \
-    Arabic, reply in Arabic. Never switch languages on your own. \
-    Lead with the answer first, then only the reasoning that helps — skip filler. \
-    Use markdown only when it adds clarity (lists for 3+ items, fenced code for code). \
-    You don't have access to this Mac's terminal or \
-    local tools in this mode — if a task needs running a command, say so and \
-    suggest the command as text.
+    nonisolated static let cloudSystemPromptBase = """
+    You are Salehman AI — a fast, precise, deeply capable assistant. You reason \
+    carefully, write excellent code, and always lead with the answer.
+
+    LANGUAGE (critical): reply in the EXACT language the user wrote in. \
+    English message → English only. Arabic message → Arabic only. \
+    Never switch languages on your own.
+
+    HOW TO RESPOND:
+    • Lead with the answer. No preamble ("Great!", "Sure!", "Of course!"), \
+    no trailing sign-offs ("Let me know if...").
+    • Match length to complexity: a factual question gets one sentence; a hard \
+    problem gets a thorough solution.
+    • Markdown only when it genuinely helps: fenced code for code, bullet lists \
+    for 3+ parallel items. No headers for replies under 5 lines.
+    • When you write code: complete, correct, production-ready. No TODOs, no \
+    placeholders, no simplified examples. Handle edge cases.
+    • When you don't know: say so directly. Never fabricate.
+
+    MEMORY: When you learn something durable about the user — their name, a \
+    preference, how they like to work, their project context — use the \
+    remember_fact tool to store it. This is how you get better for them over time.
+
+    TOOLS: In this mode you have no terminal or web access. If a task needs \
+    running a command, suggest the exact command as text.
     """
 
     /// Cloud system prompt, with the Unrestricted-mode addendum folded in when the
@@ -5138,16 +5277,24 @@ enum LocalLLM {
     /// System prompt for Ollama in single-turn `chat(...)` — it has no local
     /// tools, so it answers from knowledge and suggests commands as text.
     nonisolated static let ollamaChatSystem = """
-    You are Salehman AI, a helpful, concise, friendly assistant created by Saleh. \
-    CRITICAL LANGUAGE RULE: reply in the SAME language as the user's latest \
-    message. If their message is in English, reply ONLY in English; if it is in \
-    Arabic, reply in Arabic. Never switch languages on your own (you are a \
-    multilingual model and must not default to Arabic or any other language). \
-    You cannot call tools (no terminal, no web search, no self-improve) right \
-    now — just answer from your knowledge: lead with the answer, keep it clear and \
-    brief, and use markdown only when it adds clarity (lists, fenced code). If a \
-    question really requires running a command on this Mac, say so plainly and \
-    suggest the command as text.
+    You are Salehman AI — a fast, precise, capable assistant running locally on \
+    this device.
+
+    LANGUAGE (critical): reply in the EXACT language the user wrote in. \
+    English → English only. Arabic → Arabic only. You are multilingual — \
+    never default to any single language.
+
+    HOW TO RESPOND:
+    • Lead with the answer. No filler openers or trailing sign-offs.
+    • Match length to complexity: short for facts, thorough for hard problems.
+    • Markdown only when it helps: fenced code for code, bullets for lists. \
+    No headers for short replies.
+    • Code: complete, correct, production-ready. No TODOs or placeholders.
+    • Don't know something: say so directly.
+
+    TOOLS: Running in local mode — no terminal, web search, or other tools \
+    right now. Answer from your knowledge. If a task truly needs a command, \
+    show the exact command the user can run.
     """
 
     // MARK: - Ollama tool-calling (the LOCAL/free brain controls the terminal)
@@ -5273,20 +5420,28 @@ enum LocalLLM {
     ]
 
     nonisolated static let ollamaToolSystem = """
-    You are Salehman AI, a helpful assistant created by Saleh, running on this Mac. \
-    You CAN control the terminal: call the run_terminal_command tool to actually run \
-    shell commands and complete the task — don't just describe a command, run it. \
-    Prefer safe, read-only commands unless the user clearly asked to modify \
-    something; the user approves each command before it executes. After a command's \
-    result comes back, briefly explain what it shows. You can also manage the user's \
-    on-device data: search_documents (their private Knowledge base), capture_note and \
-    add_task (their Notes & to-dos), remember_fact (long-term memory), and pack_repository \
-    (read an entire code folder at once, Repomix-style) — call these to actually save, look \
-    things up, or read code, don't just say you will. When web access is on you also \
-    have web_search and fetch_url — use them for current info or to read a page. \
-    CRITICAL LANGUAGE RULE: reply \
-    in the SAME language as the user's latest message (English → English only, \
-    Arabic → Arabic); never switch on your own.
+    You are Salehman AI — a fast, precise assistant running on this Mac with \
+    full tool access. ACT; don't describe what you could do.
+
+    LANGUAGE (critical): reply in the EXACT language the user wrote in. \
+    English → English only. Arabic → Arabic only. Never switch on your own.
+
+    HOW TO RESPOND:
+    • Lead with the answer or the first tool call needed. No filler.
+    • Match length to complexity. Code must be complete and production-ready.
+    • After a tool result, briefly summarize what it shows and what's next.
+
+    YOUR TOOLS — use them, don't just mention them:
+    • run_terminal_command: run real shell commands on this Mac. Prefer \
+    read-only commands by default; the user approves each before execution.
+    • search_documents: search the user's private Knowledge base.
+    • capture_note / add_task: save to their Notes and to-do list.
+    • remember_fact: store a durable fact about the user for future sessions. \
+    USE THIS whenever you learn their name, a preference, how they work, or \
+    project context — it's how you get smarter for them over time.
+    • pack_repository: read an entire code folder at once (Repomix-style).
+    • web_search / fetch_url (when web access is on): get current info or \
+    read any page.
     """
 
     /// The tool specs offered to the Ollama loop. Terminal is always available;
@@ -6465,6 +6620,47 @@ actor MemoryManager {
 
     private func applyThermal(_ next: Thermal) {
         thermal = next
+    }
+}
+```
+
+===== FILE: Salehman AI/LLM/OllamaBrainAdapter.swift (37 lines) =====
+```swift
+//  OllamaBrainAdapter.swift
+//  Salehman AI
+
+import Foundation
+
+/// BrainAdapter that routes completions through the local Ollama server.
+/// `isConfigured` is always true — dynamic reachability is the server being up,
+/// not a static API-key flag; `OllamaClient.chat` returns nil when the server
+/// is unreachable, which `complete` converts to `BrainError.unavailable`.
+struct OllamaBrainAdapter: BrainAdapter {
+    var id: BrainPreference { .ollama }
+    var isConfigured: Bool { true }
+
+    func complete(messages: [LLMMessage]) async throws -> String {
+        let (system, prompt) = brainAdapterPrompt(from: messages)
+        guard let reply = await OllamaClient.chat(prompt: prompt, system: system) else {
+            throw BrainError.unavailable
+        }
+        return reply
+    }
+
+    func stream(messages: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
+        let (system, prompt) = brainAdapterPrompt(from: messages)
+        return AsyncThrowingStream { continuation in
+            Task {
+                let result = await OllamaClient.chatStream(prompt: prompt, system: system) { partial in
+                    continuation.yield(partial)
+                }
+                if result == nil {
+                    continuation.finish(throwing: BrainError.unavailable)
+                } else {
+                    continuation.finish()
+                }
+            }
+        }
     }
 }
 ```
@@ -8982,9 +9178,17 @@ nonisolated final class ResumeBox: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/JSONFileStore.swift (41 lines) =====
+===== FILE: Salehman AI/Persistence/JSONFileStore.swift (49 lines) =====
 ```swift
 import Foundation
+
+/// Abstraction for a JSON-backed store — lets tests inject an in-memory fake
+/// instead of hitting disk, without changing any production call sites.
+protocol JSONStore<Item> {
+    associatedtype Item: Codable
+    func load(defaultValue: Item) -> Item
+    func save(_ value: Item) throws
+}
 
 /// Generic, injectable JSON file store — one place for the "encode → atomic write
 /// / decode-or-default" boilerplate the per-feature stores used to repeat:
@@ -8994,7 +9198,7 @@ import Foundation
 ///
 /// `nonisolated` so off-main, lock-guarded callers (e.g. `MemoryStore`) can use it
 /// directly — it holds only value state (a URL + FileManager) and does pure file I/O.
-nonisolated final class JSONFileStore<T: Codable> {
+nonisolated final class JSONFileStore<T: Codable>: JSONStore {
     private let fileURL: URL
     private let fileManager = FileManager.default
 
@@ -9013,7 +9217,7 @@ nonisolated final class JSONFileStore<T: Codable> {
     }
 
     /// Atomically write `value` as JSON.
-    func save(_ value: T) throws {
+    nonisolated func save(_ value: T) throws {
         let data = try JSONEncoder().encode(value)
         try data.write(to: fileURL, options: .atomic)
     }
@@ -9027,7 +9231,7 @@ nonisolated final class JSONFileStore<T: Codable> {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/MemoryStore.swift (90 lines) =====
+===== FILE: Salehman AI/Persistence/MemoryStore.swift (153 lines) =====
 ```swift
 import Foundation
 import NaturalLanguage
@@ -9042,22 +9246,22 @@ struct MemoryItem: Codable {
 final class MemoryStore: @unchecked Sendable {
     static let shared = MemoryStore()
     private let lock = NSLock()
-    private var items: [MemoryItem] = []
-    private let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+    private nonisolated(unsafe) var items: [MemoryItem] = []
+    private nonisolated(unsafe) let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
 
     private init() {
         items = store.load(defaultValue: [])
     }
 
     /// Persist `items`. Callers already hold `lock`.
-    private func persist() { try? store.save(items) }
+    private nonisolated func persist() { try? store.save(items) }
 
-    private func embed(_ text: String) -> [Float]? {
+    private nonisolated func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
         return e.vector(for: text)?.map { Float($0) }   // Float halves the stored-vector RAM
     }
 
-    func remember(_ text: String) {
+    nonisolated func remember(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         let item = MemoryItem(text: t, vector: embed(t))
@@ -9116,6 +9320,69 @@ final class MemoryStore: @unchecked Sendable {
         var dot = 0.0, na = 0.0, nb = 0.0
         for i in 0..<a.count { let x = Double(a[i]), y = Double(b[i]); dot += x*y; na += x*x; nb += y*y }
         return (na == 0 || nb == 0) ? 0 : dot / (na.squareRoot() * nb.squareRoot())
+    }
+
+    // MARK: - Auto-extraction
+
+    /// Extract and store durable facts from a single conversation turn.
+    /// Runs purely from heuristic patterns — no model call, zero latency.
+    /// Called as a fire-and-forget background task after each assistant reply.
+    nonisolated func autoExtract(userMessage: String, reply: String) {
+        let facts = Self.extractFacts(from: userMessage)
+        for fact in facts { remember(fact) }
+    }
+
+    /// Pattern-based fact extractor. Returns zero-or-more short declarative
+    /// strings describing the user. Conservative: only fires on clear first-
+    /// person "I <verb> …" or possessive "my <noun> is …" shapes so we don't
+    /// flood memory with noise.
+    nonisolated static func extractFacts(from text: String) -> [String] {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > 4 else { return [] }
+
+        // Sentence patterns → memory fact templates.
+        // Each pair: (NSRegularExpression pattern, fact prefix).
+        // Capture group 1 is the value to store.
+        let patterns: [(String, String)] = [
+            // Name
+            (#"(?i)\bmy name is ([A-Za-z][A-Za-z '-]{1,40})"#,                  "User's name is"),
+            (#"(?i)\bcall me ([A-Za-z][A-Za-z '-]{1,30})\b"#,                    "User goes by"),
+            // Role / identity
+            (#"(?i)\bi(?:'m| am) (?:a |an )?([a-z][a-z /&-]{2,50}(?:developer|engineer|designer|student|founder|researcher|doctor|manager|analyst|architect|scientist|teacher|writer|freelancer))"#, "User is a"),
+            (#"(?i)\bi work (?:at|for) ([A-Za-z][A-Za-z0-9 .,-]{1,50})"#,       "User works at"),
+            // Language / location
+            (#"(?i)\bi(?:'m| am) from ([A-Za-z][A-Za-z '-]{2,40})"#,             "User is from"),
+            (#"(?i)\bi(?:'m| am) (?:based |living )?in ([A-Za-z][A-Za-z '-]{2,40})"#, "User is in"),
+            // Preferences
+            (#"(?i)\bi (?:prefer|like|love|enjoy) ([a-z][a-z0-9 /+-]{2,60})"#,  "User prefers"),
+            (#"(?i)\bi (?:don't|do not|hate|dislike) (?:like )?([a-z][a-z0-9 /+-]{2,60})"#, "User dislikes"),
+            // Tech / tools
+            (#"(?i)\bi(?:'m| am) using ([A-Za-z][A-Za-z0-9 /.-]{1,50})"#,        "User uses"),
+            (#"(?i)\bwe(?:'re| are) using ([A-Za-z][A-Za-z0-9 /.-]{1,50})"#,     "User's team uses"),
+            // Project
+            (#"(?i)\bi(?:'m| am) (?:building|working on|making) ([a-z][a-z0-9 /,.-]{2,80})"#, "User is building"),
+        ]
+
+        var found: [String] = []
+        for (pattern, prefix) in patterns {
+            guard let rx = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(t.startIndex..., in: t)
+            let matches = rx.matches(in: t, range: range)
+            for m in matches {
+                guard m.numberOfRanges > 1,
+                      let vr = Range(m.range(at: 1), in: t) else { continue }
+                let value = String(t[vr])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".!,"))
+                guard value.count >= 2, value.count < 120 else { continue }
+                // Skip very generic values that add no signal.
+                let lower = value.lowercased()
+                let noise: Set<String> = ["a", "an", "the", "this", "that", "it", "things", "stuff"]
+                guard !noise.contains(lower) else { continue }
+                found.append("\(prefix) \(value).")
+            }
+        }
+        return found
     }
 }
 
@@ -9282,6 +9549,96 @@ final class ScratchpadStore: ObservableObject {
         tasks = snap.tasks
     }
 }
+```
+
+===== FILE: Salehman AI/Persistence/TrainingExporter.swift (86 lines) =====
+```swift
+//  TrainingExporter.swift
+//  Salehman AI
+
+import Foundation
+import AppKit
+import UniformTypeIdentifiers
+
+/// Exports the chat history as a JSONL fine-tuning dataset in ChatML format,
+/// compatible with Unsloth, axolotl, and most modern SFT trainers.
+///
+/// Each line is one training example:
+///   {"messages": [{"role":"system","content":"…"},
+///                 {"role":"user","content":"…"},
+///                 {"role":"assistant","content":"…"}]}
+///
+/// Pair construction: every consecutive user→assistant exchange in the chat
+/// history becomes one training example. The Salehman system prompt is
+/// prepended to each example so the fine-tuned model inherits the persona.
+enum TrainingExporter {
+
+    struct Stats {
+        let examples: Int
+        let skipped: Int
+        let bytes: Int
+    }
+
+    /// Build the JSONL string from a message list. Returns the content and stats.
+    nonisolated static func jsonl(from messages: [ChatMessage]) -> (String, Stats) {
+        let system = LocalLLM.cloudSystemPromptBase  // static, nonisolated
+        var lines: [String] = []
+        var skipped = 0
+        var i = 0
+        while i < messages.count - 1 {
+            let a = messages[i]
+            let b = messages[i + 1]
+            guard a.isUser, !b.isUser else { i += 1; continue }
+            let userText = a.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let assistantText = b.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Skip very short or error-sentinel exchanges — they add noise.
+            guard userText.count >= 10, assistantText.count >= 10,
+                  !assistantText.hasPrefix("["),
+                  !assistantText.contains("request failed") else {
+                skipped += 1; i += 2; continue
+            }
+            let example: [String: Any] = [
+                "messages": [
+                    ["role": "system",    "content": system],
+                    ["role": "user",      "content": userText],
+                    ["role": "assistant", "content": assistantText],
+                ]
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: example),
+               let line = String(data: data, encoding: .utf8) {
+                lines.append(line)
+            }
+            i += 2
+        }
+        let jsonl = lines.joined(separator: "\n")
+        return (jsonl, Stats(examples: lines.count, skipped: skipped, bytes: jsonl.utf8.count))
+    }
+
+    /// Show a save-panel and write the JSONL file. Must be called on the main actor.
+    @MainActor static func savePanel(messages: [ChatMessage]) {
+        let (content, stats) = jsonl(from: messages)
+        guard stats.examples > 0 else {
+            let alert = NSAlert()
+            alert.messageText = "No training examples"
+            alert.informativeText = "The conversation doesn't have enough user/assistant pairs yet."
+            alert.runModal()
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Export Training Data"
+        panel.nameFieldStringValue = "salehman_training.jsonl"
+        panel.allowedContentTypes = [.init(filenameExtension: "jsonl")!]
+        panel.message = "\(stats.examples) examples · \(stats.skipped) skipped · \(stats.bytes / 1024) KB"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+// Allow constructing a UTType from a file extension without crashing when
+// the extension isn't in the system's type database. The force-unwrap above
+// is safe for "jsonl" on macOS 12+ which always resolves custom extensions.
 ```
 
 ===== FILE: Salehman AI/StockSage/StockSageBriefingService.swift (68 lines) =====
@@ -11626,7 +11983,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (157 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (163 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -11730,6 +12087,12 @@ final class ChatViewModel: ObservableObject {
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
                                         timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
                 messages.append(reply)
+                // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
+                let turnQuestion = question, turnReply = result.output
+                let mem = MemoryStore.shared
+                Task.detached(priority: .background) {
+                    mem.autoExtract(userMessage: turnQuestion, reply: turnReply)
+                }
                 if AppSettings.shared.autoSpeak {
                     SpeechOut.shared.speak(result.output, id: reply.id)
                 }
@@ -13027,7 +13390,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1496 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1500 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13237,6 +13600,10 @@ struct ContentView: View {
                 }
                 Button { ChatExporter.savePanel(vm.messages) } label: {
                     Label("Save as Markdown…", systemImage: "square.and.arrow.down")
+                }
+                Divider()
+                Button { TrainingExporter.savePanel(messages: vm.messages) } label: {
+                    Label("Export Training Data (JSONL)…", systemImage: "brain")
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
@@ -24284,7 +24651,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1417 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1589 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25691,6 +26058,46 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Grok proposed a Makefile with build/test/open/clean shortcuts — good idea, but its `advance_tracks.sh` script didn't exist and `| tail -8` piping hid build errors. Rebuilt it clean: `make build` and `make test` grep for errors/warnings/results so nothing is hidden; `make advance` does the real daily cycle (build → test → commit → push); `make open` and `make clean` are as Grok wrote. No advance_tracks.sh needed.
 **Result:** `make help` runs clean. All targets verified.
 
+## 2026-06-09 · grok_terminal_bridge: major Safari auto-mode upgrade
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** Comprehensive improvement to the Safari auto mode: (1) ANSI colours — green/yellow/red/cyan/dim/bold, auto-off when piped. (2) Session state — unique session ID, elapsed time in every log line. (3) Live streaming — `_safari_stream_reply` prints Grok's reply character-by-character as it generates using DOM extraction + page-text fallback. (4) DOM extraction — `_safari_get_last_message` tries multiple selectors before falling back to page text. (5) Error detection — `_safari_detect_error` catches rate limits, logouts, Cloudflare blocks. (6) Graceful Ctrl+C — SIGINT handler sets `_SHUTDOWN` flag, stops after current command. (7) Command dedup — warns if Grok sends the same command twice. (8) Session marker — unique `[B:sessionid]` appended to every sent message for reliable reply boundary detection. (9) `_safari_scroll_bottom` before reading. (10) macOS notification on done/fail. (11) Log file via `--log FILE`. (12) Task chaining via `--tasks t1 t2 t3`. (13) `--no-new-chat` flag. (14) New imports: uuid, signal, pathlib, datetime.
+**Result:** Syntax clean, `--help` verified.
+
+## 2026-06-09 · grok_terminal_bridge: add --safari flag for auto mode via osascript
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** agent-browser's "Chrome for Testing" gets Cloudflare-blocked on grok.com/x.ai. Added `--safari` flag: auto mode now has a Safari path that uses osascript + `do JavaScript` to drive the user's real signed-in Safari — Cloudflare sees a normal browser. New functions: `run_auto_safari`, `_safari_eval`, `_safari_inject_and_send`, `_safari_wait_reply`. React-safe text injection via native HTMLTextAreaElement setter + bubbling input event. One-time setup: Safari → Develop → Allow JavaScript from Apple Events.
+**Result:** `python3 tools/grok_terminal_bridge.py --mode auto --safari "task"` uses Safari. Verified osascript requires the one-time Develop toggle.
+
+## 2026-06-09 · Add scripts/advance_tracks.sh, make advance/ci, .vscode/tasks.json
+**Files:** `scripts/advance_tracks.sh` (new), `Makefile`, `.vscode/tasks.json` (new)
+**What & why:** Grok claimed to have written these but his terminal bridge commands never landed on disk. Built them for real: `advance_tracks.sh` runs build → test → commit (with `--dry-run` / `--push` flags, coloured logging, macOS notification). Makefile gains `make advance`, `make advance-push`, `make advance-dry`, `make ci`. `.vscode/tasks.json` exposes all targets in the Command Palette (Cmd+Shift+P → "Tasks: Run Task").
+**Result:** `make advance-dry` runs clean, `make help` shows all targets.
+
+## 2026-06-09 · Fine-tuning export: tools/finetune_export.py + finetune_export.jsonl
+**Files:** `tools/finetune_export.py` (new), `tools/finetune_export.jsonl` (generated)
+**What & why:** Step 3 of feeding Salehman training data — exports the Claude session JSONL history as xAI fine-tuning format (one `{"messages":[system, user, assistant]}` per line). Key engineering: tool_result records are `type:"user"` in session files and were overwriting `pending_user`, causing near-zero pairs. Fixed by checking block types: only real text-block user turns update pending_user; tool_result user turns are skipped. Result: 345 raw pairs → 112 filtered training examples (372 KB). Each example includes the Salehman AI system prompt so the fine-tuned model inherits the persona.
+**Result:** `tools/finetune_export.jsonl` written, ready to upload at console.x.ai → Fine-tuning → New job.
+
+## 2026-06-09 · Fix Makefile — remove broken advance_tracks.sh targets, fix error hiding
+**Files:** `Makefile`
+**What & why:** Grok's terminal bridge overwrote the Makefile with a version that (a) referenced `./scripts/advance_tracks.sh` which doesn't exist, and (b) piped build output through `| tail -8` / `| tail -12`, hiding actual error lines. Removed the three broken `advance` targets; replaced `| tail` with `2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"` so errors are always visible. `make open` and `make clean` unchanged.
+**Result:** `make build` and `make test` now surface errors. Broken targets removed.
+
+## 2026-06-09 · grok_terminal_bridge.py — comprehensive bug-fix pass
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** Audited and fixed all critical + reliability bugs found by Explore agent review:
+- `parse_commands` no-fence fallback treated prose replies as shell commands → added line-count + `_PROSE_INDICATORS` regex gate; returns `[]` for conversational text
+- `is_done` could false-trigger on primer echo → added `_SESSION_MARKER` module-level constant; guard checks for marker presence
+- `_SESSION_MARKER` was undefined at module level (used in `is_done` but only a local var in `run_auto_safari`) → defined globally after `_SESSION_ID`
+- `_SEEN_CMDS` dedup used exact `cmd.strip()` key → normalized to `' '.join(cmd.split()).lower()` so whitespace-variant duplicates are caught
+- `_safari_stream_reply` could hang indefinitely if Grok's stop-button vanished without new content → added 45s no-progress watchdog (`last_progress_t` + `NO_PROGRESS_SEC`)
+- `_safari_inject_and_send` pressed Enter without verifying paste landed → split into paste + JS readback verify + conditional Enter; System Events stderr now captured and printed on failure
+- DOM traversal in `_safari_get_last_message` walked only 8 levels → increased to 15; added `FOOTER`, `role=main/banner` stop conditions and multi-`pre` container guard
+- `marker = ""` in no-cmd streak path caused `rfind("")` == 0, treating whole page as reply → removed the clear; keep last marker
+- Large payloads sent as single paste (grok.com drops >~4KB) → chunk at `SEND_CHUNK_SIZE=4096` with continuation notes
+- `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
+**Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -25702,6 +26109,138 @@ Wiring (exhaustive switch arms all caught by compiler):
   recommended for parity with the other 6 cloud brains.
 - **Two-session coordination** lives in `COORDINATION.md` — read it before editing
   a file the other session owns.
+[2026-06-09 23:37] Read SOURCE_BUNDLE.md and CODEBASE_REVIEW.md. Identified brainReady switch in SettingsView.swift (8+ cases causing Keychain calls per review P2). Ready for refactor steps (1) BrainAdapter in LocalLLM, (3) extract brainReady.
+
+[2026-06-10] tools/grok_terminal_bridge.py — background-mode injection rewrite
+  Files: tools/grok_terminal_bridge.py
+  What: Rewrote _safari_inject_and_send() with two-tier strategy.
+    Strategy A (new primary): pure JS via 'do JavaScript' — execCommand('insertText')
+    fills the composer, then geometric button scan finds+clicks Send. Zero focus steal;
+    runs entirely in Safari background.
+    Strategy B (fallback): clipboard + System Events quick-switch that saves the
+    previous frontmost app, activates Safari for ~1.2s to paste+Enter, then
+    immediately re-activates the previous app. User sees a brief flash instead of
+    a permanent focus switch.
+  Also: Grok Victor (via bridge session) prepended a project-context comment to
+    tools/grok_terminal_bridge.py and created tools/grok_terminal_bridge.bak.
+    Kept the comment (accurate); .bak file not tracked.
+  Why: User asked bridge to run in background without interrupting work.
+  Result: Bridge now attempts fully silent JS send; System Events is last resort.
+
+[2026-06-10] Salehman AI/Persistence/JSONFileStore.swift — JSONStore protocol
+  Files: Salehman AI/Persistence/JSONFileStore.swift
+  What: Added `protocol JSONStore<Item>` with associated type + primary associated
+    type syntax (Swift 5.7+). JSONFileStore<T> now declares `: JSONStore`. Zero
+    changes to method bodies or call sites.
+  Why: Enables test doubles — tests can inject an in-memory fake conforming to
+    JSONStore instead of writing real files to Application Support.
+  Note: Grok reported this as done but hadn't actually made any file changes.
+    Applied here directly after verification.
+  Result: BUILD SUCCEEDED, no new warnings.
+
+[2026-06-10] tools/grok_terminal_bridge.py — UI noise filter + --auto shortcut
+  Files: tools/grok_terminal_bridge.py
+  What: (1) Added _UI_NOISE regex + _clean_ui_noise() that strips grok.com overlay
+    lines (Upgrade to SuperGrok, SuperGrok, Thinking about your request, Explore/
+    Investigate/Regenerate chips, Like/Dislike/Pin/Delete Chat buttons) before
+    parse_commands() sees the page text — fixes the exit-127 spam from UI elements
+    being run as shell commands. (2) Added --auto flag as shortcut for
+    --mode auto --safari so users don't have to remember the two-part flag.
+  Why: Every bridge session had 3-5 "Upgrade to SuperGrok" lines running as
+    failed commands (exit 127), confusing Grok and wasting turns.
+  Result: Both fixes verified. --auto shows in --help. Grok's patch attempts all
+    failed (quote escaping in python3 -c); applied directly.
+
+## 2026-06-10 — BrainAdapter refactor: OllamaBrainAdapter + AnthropicBrainAdapter + factory
+- What: Completed the BrainAdapter protocol adoption for the agent pipeline.
+  (1) Updated BrainAdapter.swift — removed the `settings: AppSettings` parameter
+      from protocol methods (AppSettings is @MainActor, not Sendable), added
+      BrainError enum, brainAdapterPrompt() helper, BrainAdapterFactory, and
+      LocalLLMFallbackAdapter (catch-all wrapping LocalLLM.generate()).
+  (2) Created LLM/OllamaBrainAdapter.swift — wraps OllamaClient.chat / chatStream.
+  (3) Created LLM/AnthropicBrainAdapter.swift — wraps AnthropicClient.chat / chatStream.
+  (4) Updated AgentPipeline.swift runDraft() — the LocalLLM.generate() fallback in
+      the agent task group is now replaced with BrainAdapterFactory.adapter(for: brain)
+      + adapter.complete(). Adding a new brain type no longer requires editing AgentPipeline.
+- Files: Salehman AI/LLM/BrainAdapter.swift, Salehman AI/LLM/OllamaBrainAdapter.swift,
+         Salehman AI/LLM/AnthropicBrainAdapter.swift, Salehman AI/Agents/AgentPipeline.swift
+- Why: AgentPipeline was calling LocalLLM.generate() directly in the agent loop.
+  Every new brain required editing the pipeline. Factory pattern isolates brain
+  routing to BrainAdapterFactory and the adapter structs.
+- Result: BUILD SUCCEEDED, zero new errors. Grok Victor reported TASK_DONE with
+  fake file paths and placeholder stubs — all real work done directly.
+
+## 2026-06-10 — Make Salehman smarter: system prompts + auto-memory + training export
+- What:
+  (2) Rewrote all three system prompts in LocalLLM.swift (cloudSystemPromptBase,
+      ollamaChatSystem, ollamaToolSystem). New prompts: direct-answer-first,
+      no filler phrases, length-matches-complexity, strong code standards, explicit
+      memory tool instruction, tool-mode describes actual tool usage.
+      Also made cloudSystemPromptBase internal (was private) so TrainingExporter
+      can embed it in training examples.
+  (3) Added MemoryStore.autoExtract(userMessage:reply:) — pattern-based heuristic
+      extractor (11 regex patterns: name, role, location, preferences, tech stack,
+      project). Runs as fire-and-forget background task after every chat reply
+      (ChatViewModel.swift). No LLM call — pure NSRegularExpression.
+      Fixed isolation: items/store → nonisolated(unsafe) (NSLock-guarded),
+      persist/embed/remember/autoExtract → nonisolated.
+      Also made JSONFileStore.save() nonisolated (pure file I/O, no shared state).
+  (4) Created Persistence/TrainingExporter.swift — exports chat history as ChatML
+      JSONL (system+user+assistant per example). Added "Export Training Data (JSONL)…"
+      menu item in ContentView.swift toolbar export menu.
+- Files: LLM/LocalLLM.swift, Persistence/MemoryStore.swift, Persistence/JSONFileStore.swift,
+         Persistence/TrainingExporter.swift, Views/ChatViewModel.swift, Views/ContentView.swift
+- Why: User asked to make Salehman smarter for all users (not just one person).
+  Prompts = immediate intelligence gain; auto-memory = personalization without effort;
+  training export = conversations become model weights later via Unsloth.
+- Result: BUILD SUCCEEDED, zero errors.
+
+## 2026-06-10 — Local fine-tune pipeline (MLX) + dataset reality check
+- What: User asked to "do it all" for the Unsloth fine-tune from the previous
+  entry. Built the local (Path B / Apple Silicon) half of that pipeline, which
+  is the only half runnable without a browser/Google account:
+  (1) `claude-app/.venv` — installed `mlx-lm` (mlx 0.31.2, mlx-lm 0.31.3).
+  (2) Created `tools/export_chat_training.py` — CLI twin of
+      `TrainingExporter.jsonl(from:)`: same pairing rule, same filters
+      (≥10 chars each side, no `[`-prefixed or "request failed" replies), same
+      `cloudSystemPromptBase` system prompt. Lets the export be re-run from a
+      script instead of the app's menu.
+  (3) Created `tools/finetune_local_mlx.sh` — runs `mlx_lm.lora` against
+      `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` (matches the in-app
+      `qwen2.5-coder:7b` Ollama model), with a hard guard: refuses to run
+      below 50 examples, since LoRA on a handful of pairs memorizes those
+      exact exchanges (overfits) instead of generalizing.
+  (4) Ran the export against the real `chat_history.json` (15 messages).
+      **Result: 0 training examples, 5 skipped.** All 5 user/assistant pairs
+      are dev-testing junk ("hi", "f\\", "mjj", "kjkj", "bj") — every user
+      turn is <10 chars, so `TrainingExporter`'s own filter (correctly)
+      drops all of them.
+  (5) Found `tools/finetune_export.jsonl` (112 examples) already exists from
+      a separate, earlier pipeline (`tools/finetune_export.py`, part of the
+      "ingest Claude sessions" work, commit 5dea217). That dataset mines
+      *Claude Code* session transcripts (Saleh ↔ Claude Code, building this
+      app) with a system prompt framing the result as "Salehman AI built by
+      Saleh… answers from deep knowledge of the project," and its documented
+      next step is uploading to console.x.ai (xAI cloud fine-tuning). Did
+      **not** wire this into the new local pipeline or upload anything —
+      flagged for the owner (see chat): it conflicts with the "Salehman is
+      for everyone, not just me" direction from earlier today, and a cloud
+      upload of private session data is a separate decision per CLAUDE.md's
+      local-first stance.
+  (6) Side finding (not fixed, out of this session's lane): two assistant
+      replies in `chat_history.json` are raw
+      `{"name":"run_terminal_command","arguments":{...}}` JSON instead of an
+      executed tool result — looks like a tool-call leaking into the chat as
+      plain text in some path. Worth a look by whoever owns the Ollama
+      tool-calling loop (`Agents/*` / `LLM/OllamaClient.swift`).
+- Files: tools/export_chat_training.py (new), tools/finetune_local_mlx.sh (new),
+         claude-app/.venv (mlx-lm installed)
+- Why: "do it all for me" follow-up to the Unsloth guide — automate everything
+  that's actually automatable locally, and report honestly on what isn't ready.
+- Result: Pipeline built and verified end-to-end (script runs, guard works
+  correctly). No fine-tune executed — there is currently no real-usage data to
+  train on. Once `chat_history.json` has ≥50 genuine exchanges, re-run
+  `python3 tools/export_chat_training.py && bash tools/finetune_local_mlx.sh`.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

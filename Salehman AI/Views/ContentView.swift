@@ -207,6 +207,10 @@ struct ContentView: View {
                 Button { ChatExporter.savePanel(vm.messages) } label: {
                     Label("Save as Markdown…", systemImage: "square.and.arrow.down")
                 }
+                Divider()
+                Button { TrainingExporter.savePanel(messages: vm.messages) } label: {
+                    Label("Export Training Data (JSONL)…", systemImage: "brain")
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 14, weight: .semibold))

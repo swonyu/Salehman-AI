@@ -100,6 +100,12 @@ final class ChatViewModel: ObservableObject {
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
                                         timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
                 messages.append(reply)
+                // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
+                let turnQuestion = question, turnReply = result.output
+                let mem = MemoryStore.shared
+                Task.detached(priority: .background) {
+                    mem.autoExtract(userMessage: turnQuestion, reply: turnReply)
+                }
                 if AppSettings.shared.autoSpeak {
                     SpeechOut.shared.speak(result.output, id: reply.id)
                 }

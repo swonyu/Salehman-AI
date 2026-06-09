@@ -1404,6 +1404,16 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Grok proposed a Makefile with build/test/open/clean shortcuts — good idea, but its `advance_tracks.sh` script didn't exist and `| tail -8` piping hid build errors. Rebuilt it clean: `make build` and `make test` grep for errors/warnings/results so nothing is hidden; `make advance` does the real daily cycle (build → test → commit → push); `make open` and `make clean` are as Grok wrote. No advance_tracks.sh needed.
 **Result:** `make help` runs clean. All targets verified.
 
+## 2026-06-09 · grok_terminal_bridge: major Safari auto-mode upgrade
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** Comprehensive improvement to the Safari auto mode: (1) ANSI colours — green/yellow/red/cyan/dim/bold, auto-off when piped. (2) Session state — unique session ID, elapsed time in every log line. (3) Live streaming — `_safari_stream_reply` prints Grok's reply character-by-character as it generates using DOM extraction + page-text fallback. (4) DOM extraction — `_safari_get_last_message` tries multiple selectors before falling back to page text. (5) Error detection — `_safari_detect_error` catches rate limits, logouts, Cloudflare blocks. (6) Graceful Ctrl+C — SIGINT handler sets `_SHUTDOWN` flag, stops after current command. (7) Command dedup — warns if Grok sends the same command twice. (8) Session marker — unique `[B:sessionid]` appended to every sent message for reliable reply boundary detection. (9) `_safari_scroll_bottom` before reading. (10) macOS notification on done/fail. (11) Log file via `--log FILE`. (12) Task chaining via `--tasks t1 t2 t3`. (13) `--no-new-chat` flag. (14) New imports: uuid, signal, pathlib, datetime.
+**Result:** Syntax clean, `--help` verified.
+
+## 2026-06-09 · grok_terminal_bridge: add --safari flag for auto mode via osascript
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** agent-browser's "Chrome for Testing" gets Cloudflare-blocked on grok.com/x.ai. Added `--safari` flag: auto mode now has a Safari path that uses osascript + `do JavaScript` to drive the user's real signed-in Safari — Cloudflare sees a normal browser. New functions: `run_auto_safari`, `_safari_eval`, `_safari_inject_and_send`, `_safari_wait_reply`. React-safe text injection via native HTMLTextAreaElement setter + bubbling input event. One-time setup: Safari → Develop → Allow JavaScript from Apple Events.
+**Result:** `python3 tools/grok_terminal_bridge.py --mode auto --safari "task"` uses Safari. Verified osascript requires the one-time Develop toggle.
+
 ## 2026-06-09 · Add scripts/advance_tracks.sh, make advance/ci, .vscode/tasks.json
 **Files:** `scripts/advance_tracks.sh` (new), `Makefile`, `.vscode/tasks.json` (new)
 **What & why:** Grok claimed to have written these but his terminal bridge commands never landed on disk. Built them for real: `advance_tracks.sh` runs build → test → commit (with `--dry-run` / `--push` flags, coloured logging, macOS notification). Makefile gains `make advance`, `make advance-push`, `make advance-dry`, `make ci`. `.vscode/tasks.json` exposes all targets in the Command Palette (Cmd+Shift+P → "Tasks: Run Task").
@@ -1419,6 +1429,21 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Grok's terminal bridge overwrote the Makefile with a version that (a) referenced `./scripts/advance_tracks.sh` which doesn't exist, and (b) piped build output through `| tail -8` / `| tail -12`, hiding actual error lines. Removed the three broken `advance` targets; replaced `| tail` with `2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"` so errors are always visible. `make open` and `make clean` unchanged.
 **Result:** `make build` and `make test` now surface errors. Broken targets removed.
 
+## 2026-06-09 · grok_terminal_bridge.py — comprehensive bug-fix pass
+**Files:** `tools/grok_terminal_bridge.py`
+**What & why:** Audited and fixed all critical + reliability bugs found by Explore agent review:
+- `parse_commands` no-fence fallback treated prose replies as shell commands → added line-count + `_PROSE_INDICATORS` regex gate; returns `[]` for conversational text
+- `is_done` could false-trigger on primer echo → added `_SESSION_MARKER` module-level constant; guard checks for marker presence
+- `_SESSION_MARKER` was undefined at module level (used in `is_done` but only a local var in `run_auto_safari`) → defined globally after `_SESSION_ID`
+- `_SEEN_CMDS` dedup used exact `cmd.strip()` key → normalized to `' '.join(cmd.split()).lower()` so whitespace-variant duplicates are caught
+- `_safari_stream_reply` could hang indefinitely if Grok's stop-button vanished without new content → added 45s no-progress watchdog (`last_progress_t` + `NO_PROGRESS_SEC`)
+- `_safari_inject_and_send` pressed Enter without verifying paste landed → split into paste + JS readback verify + conditional Enter; System Events stderr now captured and printed on failure
+- DOM traversal in `_safari_get_last_message` walked only 8 levels → increased to 15; added `FOOTER`, `role=main/banner` stop conditions and multi-`pre` container guard
+- `marker = ""` in no-cmd streak path caused `rfind("")` == 0, treating whole page as reply → removed the clear; keep last marker
+- Large payloads sent as single paste (grok.com drops >~4KB) → chunk at `SEND_CHUNK_SIZE=4096` with continuation notes
+- `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
+**Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -1430,3 +1455,135 @@ Wiring (exhaustive switch arms all caught by compiler):
   recommended for parity with the other 6 cloud brains.
 - **Two-session coordination** lives in `COORDINATION.md` — read it before editing
   a file the other session owns.
+[2026-06-09 23:37] Read SOURCE_BUNDLE.md and CODEBASE_REVIEW.md. Identified brainReady switch in SettingsView.swift (8+ cases causing Keychain calls per review P2). Ready for refactor steps (1) BrainAdapter in LocalLLM, (3) extract brainReady.
+
+[2026-06-10] tools/grok_terminal_bridge.py — background-mode injection rewrite
+  Files: tools/grok_terminal_bridge.py
+  What: Rewrote _safari_inject_and_send() with two-tier strategy.
+    Strategy A (new primary): pure JS via 'do JavaScript' — execCommand('insertText')
+    fills the composer, then geometric button scan finds+clicks Send. Zero focus steal;
+    runs entirely in Safari background.
+    Strategy B (fallback): clipboard + System Events quick-switch that saves the
+    previous frontmost app, activates Safari for ~1.2s to paste+Enter, then
+    immediately re-activates the previous app. User sees a brief flash instead of
+    a permanent focus switch.
+  Also: Grok Victor (via bridge session) prepended a project-context comment to
+    tools/grok_terminal_bridge.py and created tools/grok_terminal_bridge.bak.
+    Kept the comment (accurate); .bak file not tracked.
+  Why: User asked bridge to run in background without interrupting work.
+  Result: Bridge now attempts fully silent JS send; System Events is last resort.
+
+[2026-06-10] Salehman AI/Persistence/JSONFileStore.swift — JSONStore protocol
+  Files: Salehman AI/Persistence/JSONFileStore.swift
+  What: Added `protocol JSONStore<Item>` with associated type + primary associated
+    type syntax (Swift 5.7+). JSONFileStore<T> now declares `: JSONStore`. Zero
+    changes to method bodies or call sites.
+  Why: Enables test doubles — tests can inject an in-memory fake conforming to
+    JSONStore instead of writing real files to Application Support.
+  Note: Grok reported this as done but hadn't actually made any file changes.
+    Applied here directly after verification.
+  Result: BUILD SUCCEEDED, no new warnings.
+
+[2026-06-10] tools/grok_terminal_bridge.py — UI noise filter + --auto shortcut
+  Files: tools/grok_terminal_bridge.py
+  What: (1) Added _UI_NOISE regex + _clean_ui_noise() that strips grok.com overlay
+    lines (Upgrade to SuperGrok, SuperGrok, Thinking about your request, Explore/
+    Investigate/Regenerate chips, Like/Dislike/Pin/Delete Chat buttons) before
+    parse_commands() sees the page text — fixes the exit-127 spam from UI elements
+    being run as shell commands. (2) Added --auto flag as shortcut for
+    --mode auto --safari so users don't have to remember the two-part flag.
+  Why: Every bridge session had 3-5 "Upgrade to SuperGrok" lines running as
+    failed commands (exit 127), confusing Grok and wasting turns.
+  Result: Both fixes verified. --auto shows in --help. Grok's patch attempts all
+    failed (quote escaping in python3 -c); applied directly.
+
+## 2026-06-10 — BrainAdapter refactor: OllamaBrainAdapter + AnthropicBrainAdapter + factory
+- What: Completed the BrainAdapter protocol adoption for the agent pipeline.
+  (1) Updated BrainAdapter.swift — removed the `settings: AppSettings` parameter
+      from protocol methods (AppSettings is @MainActor, not Sendable), added
+      BrainError enum, brainAdapterPrompt() helper, BrainAdapterFactory, and
+      LocalLLMFallbackAdapter (catch-all wrapping LocalLLM.generate()).
+  (2) Created LLM/OllamaBrainAdapter.swift — wraps OllamaClient.chat / chatStream.
+  (3) Created LLM/AnthropicBrainAdapter.swift — wraps AnthropicClient.chat / chatStream.
+  (4) Updated AgentPipeline.swift runDraft() — the LocalLLM.generate() fallback in
+      the agent task group is now replaced with BrainAdapterFactory.adapter(for: brain)
+      + adapter.complete(). Adding a new brain type no longer requires editing AgentPipeline.
+- Files: Salehman AI/LLM/BrainAdapter.swift, Salehman AI/LLM/OllamaBrainAdapter.swift,
+         Salehman AI/LLM/AnthropicBrainAdapter.swift, Salehman AI/Agents/AgentPipeline.swift
+- Why: AgentPipeline was calling LocalLLM.generate() directly in the agent loop.
+  Every new brain required editing the pipeline. Factory pattern isolates brain
+  routing to BrainAdapterFactory and the adapter structs.
+- Result: BUILD SUCCEEDED, zero new errors. Grok Victor reported TASK_DONE with
+  fake file paths and placeholder stubs — all real work done directly.
+
+## 2026-06-10 — Make Salehman smarter: system prompts + auto-memory + training export
+- What:
+  (2) Rewrote all three system prompts in LocalLLM.swift (cloudSystemPromptBase,
+      ollamaChatSystem, ollamaToolSystem). New prompts: direct-answer-first,
+      no filler phrases, length-matches-complexity, strong code standards, explicit
+      memory tool instruction, tool-mode describes actual tool usage.
+      Also made cloudSystemPromptBase internal (was private) so TrainingExporter
+      can embed it in training examples.
+  (3) Added MemoryStore.autoExtract(userMessage:reply:) — pattern-based heuristic
+      extractor (11 regex patterns: name, role, location, preferences, tech stack,
+      project). Runs as fire-and-forget background task after every chat reply
+      (ChatViewModel.swift). No LLM call — pure NSRegularExpression.
+      Fixed isolation: items/store → nonisolated(unsafe) (NSLock-guarded),
+      persist/embed/remember/autoExtract → nonisolated.
+      Also made JSONFileStore.save() nonisolated (pure file I/O, no shared state).
+  (4) Created Persistence/TrainingExporter.swift — exports chat history as ChatML
+      JSONL (system+user+assistant per example). Added "Export Training Data (JSONL)…"
+      menu item in ContentView.swift toolbar export menu.
+- Files: LLM/LocalLLM.swift, Persistence/MemoryStore.swift, Persistence/JSONFileStore.swift,
+         Persistence/TrainingExporter.swift, Views/ChatViewModel.swift, Views/ContentView.swift
+- Why: User asked to make Salehman smarter for all users (not just one person).
+  Prompts = immediate intelligence gain; auto-memory = personalization without effort;
+  training export = conversations become model weights later via Unsloth.
+- Result: BUILD SUCCEEDED, zero errors.
+
+## 2026-06-10 — Local fine-tune pipeline (MLX) + dataset reality check
+- What: User asked to "do it all" for the Unsloth fine-tune from the previous
+  entry. Built the local (Path B / Apple Silicon) half of that pipeline, which
+  is the only half runnable without a browser/Google account:
+  (1) `claude-app/.venv` — installed `mlx-lm` (mlx 0.31.2, mlx-lm 0.31.3).
+  (2) Created `tools/export_chat_training.py` — CLI twin of
+      `TrainingExporter.jsonl(from:)`: same pairing rule, same filters
+      (≥10 chars each side, no `[`-prefixed or "request failed" replies), same
+      `cloudSystemPromptBase` system prompt. Lets the export be re-run from a
+      script instead of the app's menu.
+  (3) Created `tools/finetune_local_mlx.sh` — runs `mlx_lm.lora` against
+      `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` (matches the in-app
+      `qwen2.5-coder:7b` Ollama model), with a hard guard: refuses to run
+      below 50 examples, since LoRA on a handful of pairs memorizes those
+      exact exchanges (overfits) instead of generalizing.
+  (4) Ran the export against the real `chat_history.json` (15 messages).
+      **Result: 0 training examples, 5 skipped.** All 5 user/assistant pairs
+      are dev-testing junk ("hi", "f\\", "mjj", "kjkj", "bj") — every user
+      turn is <10 chars, so `TrainingExporter`'s own filter (correctly)
+      drops all of them.
+  (5) Found `tools/finetune_export.jsonl` (112 examples) already exists from
+      a separate, earlier pipeline (`tools/finetune_export.py`, part of the
+      "ingest Claude sessions" work, commit 5dea217). That dataset mines
+      *Claude Code* session transcripts (Saleh ↔ Claude Code, building this
+      app) with a system prompt framing the result as "Salehman AI built by
+      Saleh… answers from deep knowledge of the project," and its documented
+      next step is uploading to console.x.ai (xAI cloud fine-tuning). Did
+      **not** wire this into the new local pipeline or upload anything —
+      flagged for the owner (see chat): it conflicts with the "Salehman is
+      for everyone, not just me" direction from earlier today, and a cloud
+      upload of private session data is a separate decision per CLAUDE.md's
+      local-first stance.
+  (6) Side finding (not fixed, out of this session's lane): two assistant
+      replies in `chat_history.json` are raw
+      `{"name":"run_terminal_command","arguments":{...}}` JSON instead of an
+      executed tool result — looks like a tool-call leaking into the chat as
+      plain text in some path. Worth a look by whoever owns the Ollama
+      tool-calling loop (`Agents/*` / `LLM/OllamaClient.swift`).
+- Files: tools/export_chat_training.py (new), tools/finetune_local_mlx.sh (new),
+         claude-app/.venv (mlx-lm installed)
+- Why: "do it all for me" follow-up to the Unsloth guide — automate everything
+  that's actually automatable locally, and report honestly on what isn't ready.
+- Result: Pipeline built and verified end-to-end (script runs, guard works
+  correctly). No fine-tune executed — there is currently no real-usage data to
+  train on. Once `chat_history.json` has ≥50 genuine exchanges, re-run
+  `python3 tools/export_chat_training.py && bash tools/finetune_local_mlx.sh`.

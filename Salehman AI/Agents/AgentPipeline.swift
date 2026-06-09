@@ -410,9 +410,10 @@ enum AgentPipeline {
                         if let handler = AgentRegistry.handler(for: spec.name) {
                             output = await handler(input)
                         } else {
-                            output = await LocalLLM.generate(
-                                buildPrompt(spec: spec, mission: mission, history: history, context: phaseContext),
-                                maxTokens: spec.full ? Thresholds.fullTokens : Thresholds.shortTokens)
+                            let prompt = buildPrompt(spec: spec, mission: mission, history: history, context: phaseContext)
+                            let adapter = BrainAdapterFactory.adapter(for: brain)
+                            output = (try? await adapter.complete(messages: [LLMMessage(role: .user, content: prompt)]))
+                                ?? LocalLLM.offMessage
                         }
                         await MainActor.run { MissionProgress.shared.setDone(i) }
                         return (i, output)

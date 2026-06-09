@@ -11,22 +11,22 @@ struct MemoryItem: Codable {
 final class MemoryStore: @unchecked Sendable {
     static let shared = MemoryStore()
     private let lock = NSLock()
-    private var items: [MemoryItem] = []
-    private let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+    private nonisolated(unsafe) var items: [MemoryItem] = []
+    private nonisolated(unsafe) let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
 
     private init() {
         items = store.load(defaultValue: [])
     }
 
     /// Persist `items`. Callers already hold `lock`.
-    private func persist() { try? store.save(items) }
+    private nonisolated func persist() { try? store.save(items) }
 
-    private func embed(_ text: String) -> [Float]? {
+    private nonisolated func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
         return e.vector(for: text)?.map { Float($0) }   // Float halves the stored-vector RAM
     }
 
-    func remember(_ text: String) {
+    nonisolated func remember(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         let item = MemoryItem(text: t, vector: embed(t))
@@ -85,6 +85,69 @@ final class MemoryStore: @unchecked Sendable {
         var dot = 0.0, na = 0.0, nb = 0.0
         for i in 0..<a.count { let x = Double(a[i]), y = Double(b[i]); dot += x*y; na += x*x; nb += y*y }
         return (na == 0 || nb == 0) ? 0 : dot / (na.squareRoot() * nb.squareRoot())
+    }
+
+    // MARK: - Auto-extraction
+
+    /// Extract and store durable facts from a single conversation turn.
+    /// Runs purely from heuristic patterns — no model call, zero latency.
+    /// Called as a fire-and-forget background task after each assistant reply.
+    nonisolated func autoExtract(userMessage: String, reply: String) {
+        let facts = Self.extractFacts(from: userMessage)
+        for fact in facts { remember(fact) }
+    }
+
+    /// Pattern-based fact extractor. Returns zero-or-more short declarative
+    /// strings describing the user. Conservative: only fires on clear first-
+    /// person "I <verb> …" or possessive "my <noun> is …" shapes so we don't
+    /// flood memory with noise.
+    nonisolated static func extractFacts(from text: String) -> [String] {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > 4 else { return [] }
+
+        // Sentence patterns → memory fact templates.
+        // Each pair: (NSRegularExpression pattern, fact prefix).
+        // Capture group 1 is the value to store.
+        let patterns: [(String, String)] = [
+            // Name
+            (#"(?i)\bmy name is ([A-Za-z][A-Za-z '-]{1,40})"#,                  "User's name is"),
+            (#"(?i)\bcall me ([A-Za-z][A-Za-z '-]{1,30})\b"#,                    "User goes by"),
+            // Role / identity
+            (#"(?i)\bi(?:'m| am) (?:a |an )?([a-z][a-z /&-]{2,50}(?:developer|engineer|designer|student|founder|researcher|doctor|manager|analyst|architect|scientist|teacher|writer|freelancer))"#, "User is a"),
+            (#"(?i)\bi work (?:at|for) ([A-Za-z][A-Za-z0-9 .,-]{1,50})"#,       "User works at"),
+            // Language / location
+            (#"(?i)\bi(?:'m| am) from ([A-Za-z][A-Za-z '-]{2,40})"#,             "User is from"),
+            (#"(?i)\bi(?:'m| am) (?:based |living )?in ([A-Za-z][A-Za-z '-]{2,40})"#, "User is in"),
+            // Preferences
+            (#"(?i)\bi (?:prefer|like|love|enjoy) ([a-z][a-z0-9 /+-]{2,60})"#,  "User prefers"),
+            (#"(?i)\bi (?:don't|do not|hate|dislike) (?:like )?([a-z][a-z0-9 /+-]{2,60})"#, "User dislikes"),
+            // Tech / tools
+            (#"(?i)\bi(?:'m| am) using ([A-Za-z][A-Za-z0-9 /.-]{1,50})"#,        "User uses"),
+            (#"(?i)\bwe(?:'re| are) using ([A-Za-z][A-Za-z0-9 /.-]{1,50})"#,     "User's team uses"),
+            // Project
+            (#"(?i)\bi(?:'m| am) (?:building|working on|making) ([a-z][a-z0-9 /,.-]{2,80})"#, "User is building"),
+        ]
+
+        var found: [String] = []
+        for (pattern, prefix) in patterns {
+            guard let rx = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(t.startIndex..., in: t)
+            let matches = rx.matches(in: t, range: range)
+            for m in matches {
+                guard m.numberOfRanges > 1,
+                      let vr = Range(m.range(at: 1), in: t) else { continue }
+                let value = String(t[vr])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".!,"))
+                guard value.count >= 2, value.count < 120 else { continue }
+                // Skip very generic values that add no signal.
+                let lower = value.lowercased()
+                let noise: Set<String> = ["a", "an", "the", "this", "that", "it", "things", "stuff"]
+                guard !noise.contains(lower) else { continue }
+                found.append("\(prefix) \(value).")
+            }
+        }
+        return found
     }
 }
 
