@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 21:27 +03 · Swift files: 120 · Swift LOC: 22545_
+_Generated: 2026-06-09 21:34 +03 · Swift files: 120 · Swift LOC: 22545_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24284,7 +24284,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1412 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1417 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25685,6 +25685,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `tools/ingest_sessions.py` (new); `~/Library/Application Support/SalehmanAI/knowledge.json` (app data, not source), `memory.json` (app data)
 **What & why:** Owner wanted Claude conversation history and curated facts fed into Salehman's on-device Knowledge Base and Memory so Salehman can answer grounded in real project knowledge. `ingest_sessions.py`: reads all 24 Claude JSONL sessions, extracts 1495 substantive assistant blocks, deduplicates, classifies into 12 topics (Swift 6 Concurrency, Brain/LLM Engine, Code Tab, Agent Pipeline, etc.) and appends them as documents to `knowledge.json` (1130 chunks across 12 topic docs). Also writes 22 curated durable facts to `memory.json` (owner name/location, project details, tech stack, preferences, key security notes). Vectors are `null` (NLEmbedding can't run from Python); keyword-search fallback works immediately; the app generates proper semantic vectors on next access.
 **Result:** Script runs clean. 1130 knowledge chunks + 22 memory facts loaded. Script is idempotent — re-running refreshes the session docs (removes then re-adds) without duplicating memory facts already present.
+
+## 2026-06-09 · 🛠 Add Makefile (build/test/advance/open/clean)
+**Files:** `Makefile` (new)
+**What & why:** Grok proposed a Makefile with build/test/open/clean shortcuts — good idea, but its `advance_tracks.sh` script didn't exist and `| tail -8` piping hid build errors. Rebuilt it clean: `make build` and `make test` grep for errors/warnings/results so nothing is hidden; `make advance` does the real daily cycle (build → test → commit → push); `make open` and `make clean` are as Grok wrote. No advance_tracks.sh needed.
+**Result:** `make help` runs clean. All targets verified.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
