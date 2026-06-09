@@ -627,14 +627,8 @@ struct CodeView: View {
     }
 
     private var fileView: some View {
-        ScrollView([.vertical, .horizontal]) {
-            Text(ws.fileContent.isEmpty ? "‹empty file›" : ws.fileContent)
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.9))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-        }
+        // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
+        CodeTextView(content: ws.fileContent, ext: ws.selectedFile?.pathExtension ?? "")
     }
 
     private var diffView: some View {
@@ -644,26 +638,46 @@ struct CodeView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                let ext = ws.selectedFile?.pathExtension ?? ""
+                let rows = numberedDiff(ws.diff)
+                let w = max(2, String(rows.last?.new ?? rows.count).count)
                 ScrollView([.vertical, .horizontal]) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(ws.diff) { line in
-                            HStack(spacing: 6) {
-                                Text(symbol(line.kind)).font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(color(line.kind)).frame(width: 12)
-                                Text(line.text.isEmpty ? " " : line.text)
-                                    .font(.system(size: 11.5, design: .monospaced))
-                                    .foregroundStyle(line.kind == .same ? Color.white.opacity(0.55) : .white)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows, id: \.line.id) { row in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                    .foregroundStyle(.white.opacity(0.22))
+                                Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                    .foregroundStyle(.white.opacity(0.22))
+                                Text(symbol(row.line.kind)).fontWeight(.bold)
+                                    .foregroundStyle(color(row.line.kind)).frame(width: 10)
+                                Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
+                                    .fixedSize(horizontal: true, vertical: false)
                                 Spacer(minLength: 0)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.system(size: 11.5, design: .monospaced))
                             .padding(.horizontal, 8).padding(.vertical, 1)
-                            .background(bg(line.kind))
+                            .background(bg(row.line.kind))
                         }
                     }
                     .padding(.vertical, 6)
                 }
             }
         }
+    }
+
+    /// Annotate diff lines with their old/new file line numbers for the gutter.
+    private func numberedDiff(_ diff: [DiffLine]) -> [(line: DiffLine, old: Int?, new: Int?)] {
+        var out: [(line: DiffLine, old: Int?, new: Int?)] = []
+        var o = 0, n = 0
+        for d in diff {
+            switch d.kind {
+            case .same:   o += 1; n += 1; out.append((d, o, n))
+            case .add:    n += 1;         out.append((d, nil, n))
+            case .remove: o += 1;         out.append((d, o, nil))
+            }
+        }
+        return out
     }
 
     private func symbol(_ k: DiffLine.Kind) -> String { k == .add ? "+" : (k == .remove ? "−" : "") }

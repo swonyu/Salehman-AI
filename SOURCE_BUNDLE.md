@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 16:12 +03 · Swift files: 118 · Swift LOC: 22087_
+_Generated: 2026-06-09 16:47 +03 · Swift files: 119 · Swift LOC: 22225_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11784,7 +11784,135 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (813 lines) =====
+===== FILE: Salehman AI/Views/CodeSyntaxView.swift (124 lines) =====
+```swift
+import SwiftUI
+
+// MARK: - Lightweight syntax highlighter
+//
+// Per-line, regex-based coloring into a SwiftUI `AttributedString`. Deliberately
+// simple (no full parser): good enough to make the Code-tab file viewer + diff
+// read like code rather than a wall of monospace. Language-agnostic defaults with
+// a `#`-vs-`//` comment token chosen by file extension. Applied in priority order
+// so strings/comments override keyword/number coloring that falls inside them.
+enum CodeSyntax {
+    static let base    = Color.white.opacity(0.9)
+    static let keyword = Color(red: 0.92, green: 0.46, blue: 0.70)   // pink
+    static let string  = Color(red: 0.94, green: 0.62, blue: 0.42)   // salmon
+    static let comment = Color(red: 0.42, green: 0.55, blue: 0.50)   // muted green
+    static let number  = Color(red: 0.45, green: 0.78, blue: 0.95)   // cyan
+    static let type    = Color(red: 0.40, green: 0.82, blue: 0.76)   // teal
+
+    private static let keywords: Set<String> = [
+        // Swift
+        "func", "let", "var", "if", "else", "guard", "return", "for", "while", "in", "switch",
+        "case", "default", "struct", "class", "enum", "protocol", "extension", "import", "init",
+        "deinit", "self", "Self", "nil", "true", "false", "public", "private", "internal",
+        "fileprivate", "static", "final", "lazy", "weak", "unowned", "async", "await", "throws",
+        "throw", "try", "do", "catch", "defer", "where", "as", "is", "some", "any", "actor",
+        "nonisolated", "override", "mutating", "convenience", "required", "associatedtype",
+        "typealias", "subscript", "get", "set", "willSet", "didSet", "repeat", "break",
+        "continue", "fallthrough", "inout", "operator",
+        // common cross-language
+        "def", "from", "function", "const", "new", "void", "int", "float", "double", "bool",
+        "string", "null", "undefined", "print", "then", "end", "elif", "lambda", "yield",
+        "with", "not", "and", "or", "None", "True", "False",
+    ]
+
+    private static let keywordRE: NSRegularExpression? = {
+        let body = keywords.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        return try? NSRegularExpression(pattern: "\\b(?:\(body))\\b")
+    }()
+    private static let numberRE = try? NSRegularExpression(pattern: #"\b\d[\d_]*(?:\.\d+)?\b"#)
+    private static let typeRE   = try? NSRegularExpression(pattern: #"\b[A-Z][A-Za-z0-9_]*\b"#)
+    private static let stringRE = try? NSRegularExpression(pattern: #""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'"#)
+    private static let hashCommentExts: Set<String> = ["py", "rb", "sh", "zsh", "bash", "yml", "yaml", "toml", "r", "pl", "rake", "gemspec"]
+
+    static func highlight(_ line: String, ext: String) -> AttributedString {
+        var a = AttributedString(line)
+        a.foregroundColor = base
+        guard !line.isEmpty else { return a }
+        apply(typeRE, &a, line, type)
+        apply(numberRE, &a, line, number)
+        apply(keywordRE, &a, line, keyword)
+        apply(stringRE, &a, line, string)                 // override inside strings
+        applyLineComment(&a, line, ext)                   // override to end of line
+        return a
+    }
+
+    private static func apply(_ re: NSRegularExpression?, _ a: inout AttributedString, _ line: String, _ color: Color) {
+        guard let re else { return }
+        let ns = line as NSString
+        for m in re.matches(in: line, range: NSRange(location: 0, length: ns.length)) {
+            if let r = Range(m.range, in: line) {
+                setColor(&a, line, r, color)
+            }
+        }
+    }
+
+    private static func applyLineComment(_ a: inout AttributedString, _ line: String, _ ext: String) {
+        let token = hashCommentExts.contains(ext.lowercased()) ? "#" : "//"
+        guard let r = line.range(of: token) else { return }
+        setColor(&a, line, r.lowerBound..<line.endIndex, comment)
+    }
+
+    /// Apply `color` to the character range of `line` (mapped onto the AttributedString).
+    private static func setColor(_ a: inout AttributedString, _ line: String, _ range: Range<String.Index>, _ color: Color) {
+        let start = line.distance(from: line.startIndex, to: range.lowerBound)
+        let len = line.distance(from: range.lowerBound, to: range.upperBound)
+        guard len > 0 else { return }
+        let chars = a.characters
+        guard let lo = chars.index(chars.startIndex, offsetBy: start, limitedBy: chars.endIndex),
+              let hi = chars.index(lo, offsetBy: len, limitedBy: chars.endIndex) else { return }
+        a[lo..<hi].foregroundColor = color
+    }
+}
+
+// MARK: - Line-numbered, syntax-highlighted read-only code viewer
+//
+// Pure SwiftUI: a LazyVStack of `lineNumber + highlighted line` rows inside a
+// 2-axis ScrollView. Lazy → only visible lines are highlighted, so big files stay
+// smooth; `.fixedSize(horizontal:)` keeps long lines from wrapping (horizontal
+// scroll instead). Per-line text selection.
+struct CodeTextView: View {
+    let content: String
+    let ext: String
+
+    private var lines: [String] {
+        content.isEmpty ? [] : content.components(separatedBy: "\n")
+    }
+
+    var body: some View {
+        if lines.isEmpty {
+            Text("‹empty file›")
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            let gutter = String(lines.count).count
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(String(format: "%\(gutter)d", i + 1))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.26))
+                            Text(CodeSyntax.highlight(line, ext: ext))
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .padding(.horizontal, 10)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+}
+```
+
+===== FILE: Salehman AI/Views/CodeView.swift (827 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12415,14 +12543,8 @@ struct CodeView: View {
     }
 
     private var fileView: some View {
-        ScrollView([.vertical, .horizontal]) {
-            Text(ws.fileContent.isEmpty ? "‹empty file›" : ws.fileContent)
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.9))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-        }
+        // Syntax-highlighted, line-numbered viewer (see CodeSyntaxView.swift).
+        CodeTextView(content: ws.fileContent, ext: ws.selectedFile?.pathExtension ?? "")
     }
 
     private var diffView: some View {
@@ -12432,26 +12554,46 @@ struct CodeView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                let ext = ws.selectedFile?.pathExtension ?? ""
+                let rows = numberedDiff(ws.diff)
+                let w = max(2, String(rows.last?.new ?? rows.count).count)
                 ScrollView([.vertical, .horizontal]) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(ws.diff) { line in
-                            HStack(spacing: 6) {
-                                Text(symbol(line.kind)).font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(color(line.kind)).frame(width: 12)
-                                Text(line.text.isEmpty ? " " : line.text)
-                                    .font(.system(size: 11.5, design: .monospaced))
-                                    .foregroundStyle(line.kind == .same ? Color.white.opacity(0.55) : .white)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows, id: \.line.id) { row in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(row.old.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                    .foregroundStyle(.white.opacity(0.22))
+                                Text(row.new.map { String(format: "%\(w)d", $0) } ?? String(repeating: "\u{00A0}", count: w))
+                                    .foregroundStyle(.white.opacity(0.22))
+                                Text(symbol(row.line.kind)).fontWeight(.bold)
+                                    .foregroundStyle(color(row.line.kind)).frame(width: 10)
+                                Text(row.line.text.isEmpty ? AttributedString(" ") : CodeSyntax.highlight(row.line.text, ext: ext))
+                                    .fixedSize(horizontal: true, vertical: false)
                                 Spacer(minLength: 0)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.system(size: 11.5, design: .monospaced))
                             .padding(.horizontal, 8).padding(.vertical, 1)
-                            .background(bg(line.kind))
+                            .background(bg(row.line.kind))
                         }
                     }
                     .padding(.vertical, 6)
                 }
             }
         }
+    }
+
+    /// Annotate diff lines with their old/new file line numbers for the gutter.
+    private func numberedDiff(_ diff: [DiffLine]) -> [(line: DiffLine, old: Int?, new: Int?)] {
+        var out: [(line: DiffLine, old: Int?, new: Int?)] = []
+        var o = 0, n = 0
+        for d in diff {
+            switch d.kind {
+            case .same:   o += 1; n += 1; out.append((d, o, n))
+            case .add:    n += 1;         out.append((d, nil, n))
+            case .remove: o += 1;         out.append((d, o, nil))
+            }
+        }
+        return out
     }
 
     private func symbol(_ k: DiffLine.Kind) -> String { k == .add ? "+" : (k == .remove ? "−" : "") }
@@ -23818,7 +23960,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1387 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1392 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25194,6 +25336,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `Views/CodeView.swift`
 **What & why:** Owner asked to improve the Code tab. Three focused, low-risk wins: **(1) file filter** — the file tree was a flat list of EVERY file with no way to narrow it (painful on a real project); added a live filter field (`filteredFiles` by case-insensitive relative path) + a "no files match" state. **(2) Accessibility labels** — the reload, attach, send/stop, and controls-menu buttons were icon-only with `.help` but no `.accessibilityLabel` (CLAUDE.md mandate); added labels (send/stop reads the running state). **(3) Clear conversation** — the Code tab accumulated messages with no reset (unlike Chat); added a "Clear" button shown when the conversation is non-empty. No logic/pipeline changes.
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. (Deferred deeper ideas — diff/file line numbers need reworking the `DiffLine` model; syntax highlighting is a bigger feature.)
+
+## 2026-06-09 · 🎨 Code tab: syntax highlighting + line numbers (file viewer & diff)
+**Files:** `Views/CodeSyntaxView.swift` (new), `Views/CodeView.swift`
+**What & why:** Owner asked to improve the Code tab "way more." Added a real code viewer. New `CodeSyntax` — a lightweight per-line, regex-based highlighter producing a SwiftUI `AttributedString` (types → numbers → keywords → strings → comments, last-wins so strings/comments override keywords inside them; `#`-vs-`//` comment token by file extension). New `CodeTextView` — a line-numbered, highlighted, read-only viewer (LazyVStack of `lineNumber + highlighted line` in a 2-axis ScrollView; lazy so only visible lines highlight → big files stay smooth; `.fixedSize(horizontal:)` keeps long lines from wrapping; per-line text selection). Wired it into `fileView`, and upgraded `diffView` with an old/new line-number gutter (`numberedDiff` walks the `[DiffLine]` assigning numbers without changing the model) + the same highlighting. Pure SwiftUI (no NSTextView/ruler) — verifiable by build, smooth, visually correct by construction.
+**Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. (Fixed a self-inflicted name collision mid-build — a `color()` helper shadowed by a `color:` param → renamed to `setColor`.)
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
