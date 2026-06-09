@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 20:51 +03 · Swift files: 120 · Swift LOC: 22542_
+_Generated: 2026-06-09 21:18 +03 · Swift files: 120 · Swift LOC: 22545_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1327,7 +1327,7 @@ enum SelfImprove {
 
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (578 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (581 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1742,7 +1742,7 @@ final class AppSettings: ObservableObject {
         salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
-        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
+        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
         unslothStudioEndpoint = d.string(forKey: Keys.unslothStudioEndpoint) ?? "" // empty = not configured
@@ -1775,7 +1775,7 @@ final class AppSettings: ObservableObject {
     /// unrecognized — never crashes the chain on a typo.
     nonisolated static var brainPreferenceCurrent: BrainPreference {
         let raw = UserDefaults.standard.string(forKey: Keys.brainPreference) ?? ""
-        return BrainPreference(rawValue: raw) ?? .auto
+        return BrainPreference(rawValue: raw) ?? .salehman
     }
 
     /// Thread-safe reads for tools running off the main actor.
@@ -1787,18 +1787,21 @@ final class AppSettings: ObservableObject {
 }
 
 /// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
-/// which model is asked for the next response.
+/// which model is asked for the next response. **Default: `.salehman`** — the
+/// app's primary identity; cloud-first with a free-tier chain and a local floor.
 ///
+/// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
+///   120B tiers → paid backstop → local MLX/Ollama floor. Self-improves via
+///   DeepSeek critique pass. Works with zero local models if any cloud key is set.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
-/// * `.salehman` — Salehman, cloud-first with a local floor.
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
     case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // the user's OWN local Ollama model (name in `customModelName`); runs nothing else
+    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) + local floor (MLX, Ollama)
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -1839,7 +1842,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .copilot:     return "GitHub Copilot (Cloud)"
         case .openRouter:  return "OpenRouter (Cloud · free models)"
         case .ensemble:    return "All Brains at Once"
-        case .salehman:    return "Salehman (your model)"
+        case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Unsloth Studio (local server)"
         case .vllm:          return "vLLM (local server)"
         }
@@ -24281,7 +24284,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1402 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1407 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25672,6 +25675,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `Views/FileTree.swift`, `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`
 **What & why:** Owner: "refine and improve the code tab even more." Added: **file-type icons + tints** (`FileKind.icon` — Swift/py/js/json/md/sh/images… colored, in both tree + flat list); a **right-click context menu** on files (`fileActionsMenu`: Reveal in Finder, Copy Path, Copy Contents); **keyboard shortcuts** (⌘⇧O open folder, ⌘R review, ⌘F focus find-in-file, ⌘. stop — the latter two via hidden zero-size buttons); **auto-reveal** (`revealInTree` expands every ancestor folder when a file becomes selected — e.g. from a diff-jump or AI edit); and a **current-line tint** in `CodeTextView` so you can see where find/diff-jump landed.
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. Pure SwiftUI/AppKit, additive. Build-verified (owner to eyeball icon palette + that ⌘F/⌘. actually fire — hidden-button shortcuts can be environment-dependent).
+
+## 2026-06-09 · 🧠 Make Salehman AI the default/primary brain
+**Files:** `App/AppSettings.swift`
+**What & why:** Owner: "fix the brain which is salehman ai salehman is the brain." Four fixes: (1) Default `brainPreference` changed from `.auto` to `.salehman` — new users and installs without a stored preference now start on the cloud-first Salehman engine instead of the Ollama-only `.auto` mode that yields "No brain available" on a Mac without Ollama. (2) `brainPreferenceCurrent` nonisolated fallback also changed from `.auto` to `.salehman`. (3) `BrainPreference.title` for `.salehman` renamed from the misleading `"Salehman (your model)"` (sounds like the custom Ollama model) to `"Salehman AI"`. (4) Inline enum comment corrected — it previously said "the user's OWN local Ollama model (name in customModelName); runs nothing else" which is factually wrong; the Salehman engine is cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop → local MLX/Ollama floor). Also updated the `BrainPreference` header comment to call `.salehman` the primary/default brain.
+**Result:** `xcodebuild build` ✓ + all `Salehman AITests` ✓, zero warnings. Pure metadata/routing change — no logic touched, persona and engine chain unchanged.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

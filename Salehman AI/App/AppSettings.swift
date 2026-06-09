@@ -411,7 +411,7 @@ final class AppSettings: ObservableObject {
         salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
-        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
+        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
         unslothStudioEndpoint = d.string(forKey: Keys.unslothStudioEndpoint) ?? "" // empty = not configured
@@ -444,7 +444,7 @@ final class AppSettings: ObservableObject {
     /// unrecognized — never crashes the chain on a typo.
     nonisolated static var brainPreferenceCurrent: BrainPreference {
         let raw = UserDefaults.standard.string(forKey: Keys.brainPreference) ?? ""
-        return BrainPreference(rawValue: raw) ?? .auto
+        return BrainPreference(rawValue: raw) ?? .salehman
     }
 
     /// Thread-safe reads for tools running off the main actor.
@@ -456,18 +456,21 @@ final class AppSettings: ObservableObject {
 }
 
 /// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
-/// which model is asked for the next response.
+/// which model is asked for the next response. **Default: `.salehman`** — the
+/// app's primary identity; cloud-first with a free-tier chain and a local floor.
 ///
+/// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
+///   120B tiers → paid backstop → local MLX/Ollama floor. Self-improves via
+///   DeepSeek critique pass. Works with zero local models if any cloud key is set.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
-/// * `.salehman` — Salehman, cloud-first with a local floor.
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
     case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // the user's OWN local Ollama model (name in `customModelName`); runs nothing else
+    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) + local floor (MLX, Ollama)
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -508,7 +511,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .copilot:     return "GitHub Copilot (Cloud)"
         case .openRouter:  return "OpenRouter (Cloud · free models)"
         case .ensemble:    return "All Brains at Once"
-        case .salehman:    return "Salehman (your model)"
+        case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Unsloth Studio (local server)"
         case .vllm:          return "vLLM (local server)"
         }
