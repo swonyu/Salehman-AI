@@ -21,19 +21,19 @@ enum SelfImprove {
     // again on the next move/rename (the exact failure a9b99be caused). The robust
     // mechanism is the `self_improve_project_root` UserDefaults override below;
     // treat this constant as a dev-only fallback, not the source of truth.
-    static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
+    nonisolated static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
     static let projectFile = "Salehman AI.xcodeproj"
     static let scheme      = "Salehman AI"
 
-    static var projectRoot: String {
+    nonisolated static var projectRoot: String {
         UserDefaults.standard.string(forKey: "self_improve_project_root") ?? defaultRoot
     }
 
-    static var projectRootURL: URL { URL(fileURLWithPath: projectRoot) }
+    nonisolated static var projectRootURL: URL { URL(fileURLWithPath: projectRoot) }
 
     // MARK: - Build
 
-    struct BuildError: Hashable {
+    nonisolated struct BuildError: Hashable {
         let file: String   // absolute path
         let line: Int
         let column: Int?
@@ -76,7 +76,7 @@ enum SelfImprove {
     ///   `/abs/path/File.swift:42:10: error: cannot find 'foo' in scope`
     /// Deduplicates by (file, line, message) so the same error reported by
     /// multiple build phases counts once.
-    static func parseErrors(_ output: String) -> [BuildError] {
+    nonisolated static func parseErrors(_ output: String) -> [BuildError] {
         var seen = Set<BuildError>()
         var ordered: [BuildError] = []
         let pattern = #"^(/[^:\n]+\.(?:swift|m|mm|c|cpp|h)):(\d+):(?:(\d+):)?\s*error:\s*(.+)$"#
@@ -225,7 +225,7 @@ enum SelfImprove {
 
     /// Parses one `REPLACE_RANGE: a-b / WITH: ... / END` block and rewrites
     /// the file atomically. Returns true on success. Backs up first.
-    static func applyPatch(_ patch: String, to file: String) -> Bool {
+    nonisolated static func applyPatch(_ patch: String, to file: String) -> Bool {
         guard isInsideProject(file) else { return false }
         guard let original = try? String(contentsOfFile: file, encoding: .utf8) else { return false }
         var lines = original.components(separatedBy: "\n")
@@ -265,7 +265,7 @@ enum SelfImprove {
     /// True only when `file` resolves to something inside the configured
     /// project root. Prevents a hallucinated path from rewriting unrelated
     /// files on disk.
-    static func isInsideProject(_ file: String) -> Bool {
+    nonisolated static func isInsideProject(_ file: String) -> Bool {
         // `standardizedFileURL` only normalizes path *syntax* (`./`, `../`) — it
         // does NOT resolve symlinks. A symlink planted inside the project that
         // points outside (e.g. `project/evil -> /etc/passwd`) would otherwise
@@ -278,7 +278,7 @@ enum SelfImprove {
         return resolved == root || resolved.hasPrefix(root + "/")
     }
 
-    private static let backupTimestamp: String = {
+    private nonisolated static let backupTimestamp: String = {
         let f = DateFormatter()
         // Pin locale + calendar: on a Hijri-defaulting locale (e.g. en_SA) an
         // unpinned formatter named backup folders like `14471220-…` (year 1447 AH),
@@ -300,7 +300,7 @@ enum SelfImprove {
     /// Root for per-run backup folders. Overridable via UserDefaults
     /// (`self_improve_backup_root`) so tests redirect to a temp dir instead of
     /// littering ~/.salehman_ai_self_improve_backups. Production uses the default.
-    static var backupRoot: URL {
+    nonisolated static var backupRoot: URL {
         if let custom = UserDefaults.standard.string(forKey: "self_improve_backup_root") {
             return URL(fileURLWithPath: custom)
         }
@@ -311,7 +311,7 @@ enum SelfImprove {
     /// Copies the pre-edit contents into a per-run timestamped folder. A single
     /// folder is reused for the whole loop so all edits from one invocation
     /// land together.
-    static func backup(file: String, contents: String) {
+    nonisolated static func backup(file: String, contents: String) {
         let backupDir = backupRoot.appendingPathComponent(backupTimestamp)
         try? FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
         let dest = backupDir.appendingPathComponent(URL(fileURLWithPath: file).lastPathComponent)

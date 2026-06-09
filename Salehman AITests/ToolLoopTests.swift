@@ -16,19 +16,19 @@ struct OllamaToolSpecsTests {
         specs.compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
     }
 
-    @Test func offlineExposesOnlyTerminal() {
-        let n = names(LocalLLM.ollamaToolSpecs(externalAllowed: false))
-        #expect(n == ["run_terminal_command"])
+    @Test func offlineHidesWebTools() {
+        let n = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: false)))
         #expect(!n.contains("web_search"))
         #expect(!n.contains("fetch_url"))
+        // Terminal + on-device tools remain available offline.
+        #expect(n.contains("run_terminal_command"))
+        #expect(n.contains("search_documents"))
     }
 
-    @Test func onlineExposesTerminalPlusWeb() {
-        let n = names(LocalLLM.ollamaToolSpecs(externalAllowed: true))
-        #expect(n.contains("run_terminal_command"))
-        #expect(n.contains("web_search"))
-        #expect(n.contains("fetch_url"))
-        #expect(n.count == 3)
+    @Test func onlineAddsExactlyTheTwoWebTools() {
+        let offline = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: false)))
+        let online = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: true)))
+        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
     }
 }
 
@@ -95,5 +95,26 @@ struct PaidBrainHidingTests {
         #expect(BrainPreference.selectableCases.contains(.salehman))
         #expect(BrainPreference.selectableCases.contains(.gemini))
         #expect(BrainPreference.selectableCases.contains(.freeAuto))
+    }
+}
+
+// MARK: - AgentPipeline.looksIncomplete (auto-continue trigger)
+//
+// Drives the optional claude-autocontinue loop: it must fire on clear "to be
+// continued" signals and stay QUIET on normal complete answers (a false positive
+// would auto-loop "continue" on a finished reply).
+struct AutoContinueDetectorTests {
+    @Test func firesOnCutOffSignals() {
+        #expect(AgentPipeline.looksIncomplete("…couldn't wrap it up. Say \"continue\" and I'll pick up where I left off."))
+        #expect(AgentPipeline.looksIncomplete("(Reached the tool-call limit.)"))
+        #expect(AgentPipeline.looksIncomplete("Here's the start:\n```swift\nfunc foo() {"))  // unterminated fence
+        #expect(AgentPipeline.looksIncomplete("I've outlined the plan. Shall I continue?"))
+    }
+
+    @Test func quietOnCompleteAnswers() {
+        #expect(!AgentPipeline.looksIncomplete("The capital of France is Paris."))
+        #expect(!AgentPipeline.looksIncomplete("Done — here's the code:\n```swift\nlet x = 1\n```\nThat's everything."))
+        #expect(!AgentPipeline.looksIncomplete(""))                  // empty ⇒ not continuable
+        #expect(!AgentPipeline.looksIncomplete("[Groq error 429]"))  // error ⇒ handled elsewhere, not continued
     }
 }

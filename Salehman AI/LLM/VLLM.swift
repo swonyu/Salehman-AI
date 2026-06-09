@@ -22,7 +22,10 @@ enum VLLM {
     // MARK: - Configuration probes
 
     /// True iff the user has entered any endpoint URL at all (loopback or not).
-    static var isConfigured: Bool {
+    /// `nonisolated` so nonisolated reachability gates (`SalehmanEngine.hasAnyCloud`)
+    /// can read it without a Swift-6 isolation warning — it only reads a nonisolated
+    /// `AppSettings` accessor.
+    nonisolated static var isConfigured: Bool {
         !AppSettings.vllmEndpointCurrent.isEmpty
     }
 

@@ -1,8 +1,12 @@
 import Foundation
 import NaturalLanguage
+import Accelerate
 
-/// A document the owner added to their private Knowledge vault.
-struct KnowledgeDoc: Codable, Identifiable, Equatable, Sendable {
+/// A document the owner added to their private Knowledge vault. `nonisolated`
+/// (all-Sendable value type) so its `id`/`name` etc. are readable off the main
+/// actor — the nonisolated `KnowledgeStore` returns these and the test target
+/// reads them; MainActor-default isolation would make that a Swift 6 error.
+nonisolated struct KnowledgeDoc: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var name: String
     var kind: String
@@ -21,7 +25,9 @@ struct KnowledgeChunk: Codable, Equatable, Sendable {
 }
 
 /// A search result: the passage + which document it came from + a score.
-struct KnowledgeHit: Equatable, Sendable {
+/// `nonisolated` so its `Equatable` conformance works from nonisolated contexts
+/// (the test target's `#expect(hit == …)`) — a Swift-6-language-mode error otherwise.
+nonisolated struct KnowledgeHit: Equatable, Sendable {
     var docName: String
     var text: String
     var score: Double
@@ -31,7 +37,7 @@ struct KnowledgeHit: Equatable, Sendable {
 /// (NSLock-guarded, MemoryStore pattern) so the Foundation Models `search_documents`
 /// tool can query it off the main actor, and embedding runs off-main too. Persisted
 /// as one JSON file in Application Support. Nothing leaves the Mac.
-final class KnowledgeStore: @unchecked Sendable {
+nonisolated final class KnowledgeStore: @unchecked Sendable {
     static let shared = KnowledgeStore()
 
     private let lock = NSLock()
@@ -182,10 +188,16 @@ final class KnowledgeStore: @unchecked Sendable {
 
     static func cosine(_ a: [Float], _ b: [Float]) -> Double {
         guard a.count == b.count, !a.isEmpty else { return 0 }
-        var dot = 0.0, na = 0.0, nb = 0.0
-        for i in a.indices { let x = Double(a[i]), y = Double(b[i]); dot += x * y; na += x * x; nb += y * y }
-        let denom = (na.squareRoot() * nb.squareRoot())
-        return denom == 0 ? 0 : dot / denom
+        // Accelerate (vDSP) computes the dot product and both squared norms with
+        // SIMD — markedly faster than the scalar per-element loop on the search hot
+        // path (one cosine per chunk per query), with no change to the math.
+        let n = vDSP_Length(a.count)
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        vDSP_dotpr(a, 1, b, 1, &dot, n)
+        vDSP_svesq(a, 1, &na, n)   // Σ a²
+        vDSP_svesq(b, 1, &nb, n)   // Σ b²
+        let denom = (Double(na).squareRoot() * Double(nb).squareRoot())
+        return denom == 0 ? 0 : Double(dot) / denom
     }
 
     /// Fraction of distinct query terms (≥3 chars) that appear in `text`.
@@ -259,8 +271,15 @@ final class KnowledgeStore: @unchecked Sendable {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        guard let data = try? Data(contentsOf: fileURL) else { return }  // no file yet — fine
+        guard let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else {
+            // The file EXISTS but is corrupt/unreadable. Don't silently start empty and
+            // then save over it (that would lose the whole vault with no warning). Move
+            // the bad file aside so the owner can recover it, then start fresh.
+            let backup = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+            try? FileManager.default.moveItem(at: fileURL, to: backup)
+            return
+        }
         docs = snap.docs
         chunks = snap.chunks
     }

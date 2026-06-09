@@ -15,6 +15,10 @@ struct Salehman_AIApp: App {
         WindowGroup {
             RootView()
                 .frame(minWidth: 720, minHeight: 560)
+                // One-time: seed the "external AI tools" docs into the Knowledge vault
+                // so the assistant can answer about them via search_documents. Runs
+                // off-main and only on the first launch after this version.
+                .task { ExternalToolsKnowledge.seedIfNeeded() }
                 // One global `.tint(...)` so every descendant that uses the SwiftUI
                 // system accent — Buttons/Toggles/Pickers + literal `Color.accentColor`
                 // call sites (SettingsView.brainGridCell, AgentsView, CopilotSignInView) —
@@ -58,21 +62,20 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandMenu("View") {
-                Button("Command Palette…") { app.showCommandPaletteRequested = true }
-                    .keyboardShortcut("k", modifiers: .command)
-                Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Chat") { app.selectedTab = .chat }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("Agents") { app.selectedTab = .agents }
+                Button("Code") { app.selectedTab = .code }
                     .keyboardShortcut("3", modifiers: .command)
-                Button("Markets") { app.selectedTab = .markets }
+                Button("Agents") { app.selectedTab = .agents }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("Notes") { app.selectedTab = .scratchpad }
+                Button("Markets") { app.selectedTab = .markets }
                     .keyboardShortcut("5", modifiers: .command)
-                Button("Knowledge") { app.selectedTab = .knowledge }
+                Button("Notes") { app.selectedTab = .scratchpad }
                     .keyboardShortcut("6", modifiers: .command)
+                Button("Knowledge") { app.selectedTab = .knowledge }
+                    .keyboardShortcut("7", modifiers: .command)
                 Divider()
                 Button("Keyboard Shortcuts") { app.showShortcutsRequested = true }
                     .keyboardShortcut("/", modifiers: .command)

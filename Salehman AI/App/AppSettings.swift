@@ -179,10 +179,20 @@ final class AppSettings: ObservableObject {
     }
 
     /// Self-improvement loop: after Salehman answers, a DeepSeek reasoner (R1-class)
-    /// critiques the answer and Salehman revises it. Smarter replies, ~2–3× slower
-    /// and more quota — default ON per owner; turn off for snappy single-pass.
+    /// critiques the answer and Salehman revises it. Smarter replies, but ~2–3× slower
+    /// and more quota — **default OFF for speed** (owner asked to make it faster);
+    /// turn ON for max-quality single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
+    }
+
+    /// Auto-continue (claude-autocontinue style): when a reply looks unfinished — it
+    /// hit the tool-call round cap, ended on an unterminated code block, or the model
+    /// offered to go on — the chat auto-sends "continue" up to a small cap, so the
+    /// owner needn't nudge it each time. Default ON (owner request); cancellable via
+    /// Stop, and a no-op for normal complete answers.
+    @Published var autoContinue: Bool {
+        didSet { UserDefaults.standard.set(autoContinue, forKey: Keys.autoContinue) }
     }
 
     // UserDefaults keys — `nonisolated` so the policy layer (which runs off
@@ -199,6 +209,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let unrestrictedTools = "set_unrestrictedTools"
         nonisolated static let salehmanLeader    = "set_salehmanLeader"
         nonisolated static let salehmanRefine    = "set_salehmanRefine"
+        nonisolated static let autoContinue      = "set_autoContinue"
         nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
         nonisolated static let speechVoiceID = "set_speechVoiceID"
@@ -334,7 +345,9 @@ final class AppSettings: ObservableObject {
     /// Thread-safe read of the Salehman Leader switch (defaults ON) so the agent
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
-    nonisolated static var salehmanRefineEnabled: Bool { boolDefaultTrue(Keys.salehmanRefine) }
+    nonisolated static var salehmanRefineEnabled: Bool { UserDefaults.standard.bool(forKey: Keys.salehmanRefine) }
+    /// Auto-continue switch (defaults ON) — read off-main by the chat send loop.
+    nonisolated static var autoContinueEnabled: Bool { boolDefaultTrue(Keys.autoContinue) }
 
     /// Thread-safe read of the Offline / Local-Only switch so
     /// `LocalLLM.currentBrain()`, `generateFreeAuto`, and `ToolPolicy` can gate
@@ -367,12 +380,13 @@ final class AppSettings: ObservableObject {
             NSWindow.didExposeNotification,
         ]
         for name in names {
-            let obs = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+            let obs = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    let type: NSWindow.SharingType = self.hideFromCapture ? .none : .readOnly
-                    if let win = note.object as? NSWindow { win.sharingType = type }
-                    // Sweep siblings (sheet + parent, popover stack, etc.).
+                    // `applyCapturePrivacy()` sweeps EVERY window (the one in
+                    // `note.object` included), so we don't read the notification's
+                    // object — that would send a non-Sendable `Notification` across
+                    // the isolation boundary (a Swift 6 language-mode error).
                     self.applyCapturePrivacy()
                 }
             }
@@ -394,7 +408,8 @@ final class AppSettings: ObservableObject {
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
-        salehmanRefine = AppSettings.boolDefaultTrue(Keys.salehmanRefine)  // default ON (owner: self-improve loop)
+        salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
+        autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .auto
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
@@ -447,7 +462,7 @@ final class AppSettings: ObservableObject {
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
 /// * `.salehman` — Salehman, cloud-first with a local floor.
-enum BrainPreference: String, CaseIterable, Identifiable {
+nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
     case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)

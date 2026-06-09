@@ -68,8 +68,11 @@ final class SpeechIn: ObservableObject {
         isListening = false
     }
 
-    deinit {
-        // Tear down audio + recognition resources if the singleton is ever released.
+    // `isolated deinit` (SE-0371) runs teardown on the MainActor, so it may touch
+    // the non-Sendable AVAudioEngine / SFSpeech* properties. A plain (nonisolated)
+    // deinit cannot under the Swift 6 language mode. In practice this singleton
+    // lives for the whole process, so the deinit is belt-and-suspenders anyway.
+    isolated deinit {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         request?.endAudio()

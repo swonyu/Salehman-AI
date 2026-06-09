@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var loadingAttachment = false
     @State private var runningTask: Task<Void, Never>?
     @State private var showSettings = false
+    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
     @State private var searchQuery = ""
@@ -78,6 +79,12 @@ struct ContentView: View {
                 // Warning banner appears above the normal header when active.
                 if settings.unrestrictedTools {
                     unrestrictedBanner
+                }
+                // No-cloud-key notice: the selected brain is silently on the slow
+                // local fallback (or unavailable). Tap "Add key" → Settings.
+                if LocalLLM.lacksCloudKey && !dismissedCloudHint {
+                    CloudKeyHintBanner(onAddKey: { showSettings = true },
+                                       onDismiss: { dismissedCloudHint = true })
                 }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
@@ -476,6 +483,9 @@ struct ContentView: View {
                     Button { Task { await attachLastScreenshot() } } label: {
                         Label("Send last screenshot", systemImage: "camera.viewfinder")
                     }
+                    Button { Task { await pasteImage() } } label: {
+                        Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                    }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
@@ -622,6 +632,30 @@ struct ContentView: View {
         inputFocused = true
     }
 
+    /// Paste an image from the clipboard — a copied file (e.g. from Finder) OR raw
+    /// image data (a screenshot or copied image). Lets the owner ⌘⇧4-to-clipboard or
+    /// copy a picture, then attach it here (the "I can't paste pictures" fix).
+    @MainActor private func pasteImage() async {
+        let pb = NSPasteboard.general
+        // 1) A copied file URL.
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], let url = urls.first {
+            loadingAttachment = true
+            attachment = await AttachmentLoader.load(url: url)
+            loadingAttachment = false; inputFocused = true; return
+        }
+        // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.
+        if let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pasted-\(UUID().uuidString).png")
+            try? png.write(to: tmp)
+            loadingAttachment = true
+            attachment = await AttachmentLoader.load(url: tmp)
+            loadingAttachment = false; inputFocused = true
+        }
+    }
+
     @MainActor private func attachLastScreenshot() async {
         loadingAttachment = true
         if let url = AttachmentLoader.lastScreenshot() {
@@ -720,17 +754,34 @@ struct ContentView: View {
                 missionToSend += "\n\n[Attached \(att.kind) \"\(att.name)\"]\n\(content)"
             }
 
-            let result = await Orchestrator.runAndReturnResult(mission: missionToSend)
-            if Task.isCancelled { return }
-            await MainActor.run {
-                let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                        timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
-                messages.append(reply)
-                isRunning = false
-                if AppSettings.shared.autoSpeak {
-                    SpeechOut.shared.speak(result.output, id: reply.id)
+            // Auto-continue loop (claude-autocontinue): normally ONE turn, but if the
+            // owner left Auto-continue on and the reply looks unfinished, keep going
+            // ("continue") up to a cap so they don't have to nudge it each time. Stop
+            // cancels the whole loop. Each continuation flows through the same pipeline,
+            // so it inherits the conversation history recorded by AgentPipeline.run.
+            var turnPrompt = missionToSend
+            var autoContinues = 0
+            let maxAutoContinues = 4
+            while true {
+                let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
+                                            timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
+                    messages.append(reply)
+                    if AppSettings.shared.autoSpeak {
+                        SpeechOut.shared.speak(result.output, id: reply.id)
+                    }
                 }
+                if AppSettings.autoContinueEnabled, autoContinues < maxAutoContinues,
+                   AgentPipeline.looksIncomplete(result.output) {
+                    autoContinues += 1
+                    turnPrompt = "continue"
+                    continue
+                }
+                break
             }
+            await MainActor.run { isRunning = false }
             // Refresh the header brain dot now — it otherwise lags up to ~10s, so
             // this reflects reality right after a send (e.g. a brain that just failed).
             await BrainStatus.shared.refresh()
@@ -1130,7 +1181,6 @@ struct MessageBubble: View {
                     // Always mounted (keyboard / VoiceOver can reach them); hover
                     // just lifts the opacity so they recede until you point at the row.
                     actionButton("doc.on.doc", "Copy") { copyText() }
-                        .opacity(hovering ? 1 : 0.45)
                     if !message.isUser, onRegenerate != nil {
                         actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                             .opacity(hovering ? 1 : 0.45)
@@ -1327,9 +1377,15 @@ private struct BrainStatusDot: View {
                 .shadow(color: active.opacity(0.6), radius: 3)
         }
         .animation(.easeInOut(duration: 0.25), value: isRunning)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                pulse = true
+        // Only run the repeating pulse WHILE generating. `pulse` is used solely under
+        // `isRunning`, so when idle (the common case) we cancel it — otherwise this
+        // always-visible header dot redraws every frame forever (idle CPU/GPU + battery
+        // drain, very visible when the Mac is throttled in Low Power Mode).
+        .onChange(of: isRunning, initial: true) { _, running in
+            if running {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+            } else {
+                pulse = false
             }
         }
     }

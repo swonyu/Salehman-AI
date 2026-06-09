@@ -7,7 +7,9 @@
 
 import XCTest
 
-final class Salehman_AIUITestsLaunchTests: XCTestCase {
+// `nonisolated` so the XCTestCase overrides match the superclass's isolation under
+// this target's MainActor-default setting (see sibling file). Test methods stay `@MainActor`.
+nonisolated final class Salehman_AIUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

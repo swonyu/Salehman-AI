@@ -21,5 +21,7 @@ import Foundation
 /// came first, a test failing mid-acquisition would unlock a lock it never
 /// took and trap.)
 enum BrainPreferenceTestLock {
-    nonisolated(unsafe) static let lock = NSLock()
+    // NSLock is already Sendable, so a plain `static let` is fine — no
+    // `nonisolated(unsafe)` needed (and the compiler flags it as redundant).
+    static let lock = NSLock()
 }

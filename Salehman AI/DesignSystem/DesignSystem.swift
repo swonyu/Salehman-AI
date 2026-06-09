@@ -353,3 +353,39 @@ struct SuperGrokBadge: View {
         .buttonStyle(.plain)
     }
 }
+
+// MARK: - Cloud-key hint banner
+/// Amber notice shown when the selected brain needs a cloud key but none is set,
+/// so the slow local fallback (or dead-end) is never silent. Shared by the Chat
+/// and Code tabs; each passes its own "open Settings" + dismiss actions.
+/// `LocalLLM.lacksCloudKey` decides when to show it; `noCloudKeyHint` is the copy.
+struct CloudKeyHintBanner: View {
+    let onAddKey: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bolt.slash.fill")
+                .font(.system(size: 12, weight: .bold))
+            Text(LocalLLM.noCloudKeyHint)
+                .font(.caption.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Add key", action: onAddKey)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(.orange)
+                .font(.caption)
+                .accessibilityLabel("Add a cloud key in Settings")
+            Button(action: onDismiss) {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss cloud key notice")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 5)
+        .background(Color.orange.opacity(0.12))
+        .foregroundStyle(Color.orange)
+    }
+}

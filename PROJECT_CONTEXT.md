@@ -31,7 +31,7 @@ OpenRouter). It has a multi-agent pipeline, on-device tools (shell, mouse/keyboa
 control, vision, transcription, web), live audio transcription, a StockSage
 market-analysis subsystem, and persistent chat + long-term memory.
 
-- **Language / runtime:** Swift 6, strict concurrency, `-default-isolation=MainActor`.
+- **Language / runtime:** Swift 6 **language mode** (`SWIFT_VERSION = 6.0`, enforced as of 2026-06-09 — data races are compile errors, not warnings), `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target and, mirrored, the test targets. Off-main work is explicitly `nonisolated`/`nonisolated(unsafe)`.
   Pure utility statics are marked `nonisolated`.
 - **UI:** SwiftUI, custom dark "DS" design system (no stock chrome).
 - **Secrets:** API keys live ONLY in the macOS **Keychain** (never UserDefaults,
@@ -194,6 +194,14 @@ The assistant can run shell commands, control the mouse/keyboard, fetch the web,
 read/transcribe local files, and self-edit. This is intended (a user-authorized
 local assistant), but gated:
 - **`ToolPolicy`** decides whether non-local tools are active.
+- **Tool loop** (`LocalLLM.chatOllamaWithTools` / `chatOpenAICompatWithTools`) — the
+  set of tools any brain (local Ollama or OpenAI-compatible cloud) can actually call.
+  Built by `ollamaToolSpecs(externalAllowed:)`; executed by the shared
+  `runLocalTool(_:_:)` (on-device) + per-loop switch (terminal/web). **Always
+  available** (on-device, no network): `run_terminal_command` (approval-gated),
+  `search_documents`, `capture_note`, `add_task`, `remember_fact`. **Only when
+  external access is on:** `web_search`, `fetch_url`. The spec list *is* the security
+  gate — a model can't call a tool it was never handed (pinned by `OllamaToolGateTests`).
 - **`CommandApprovalCenter`** gates shell exec behind a UI approval (toggle:
   `confirmationEnabled`).
 - **`WebTools.fetch`** has an SSRF denylist (no `file://`/non-web schemes; no

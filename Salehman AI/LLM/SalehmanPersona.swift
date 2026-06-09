@@ -103,9 +103,26 @@ enum SalehmanPersona {
     a reason — show them why.
     """
 
+    /// The persona that engines actually receive — the base `systemPrompt` with
+    /// the Unrestricted-mode directives folded in **only when the owner has that
+    /// toggle on** (otherwise it's returned unchanged, so normal mode keeps its
+    /// usual guardrails and tone). Computed (not a `let`) so flipping the toggle
+    /// takes effect on the next message without an app restart, exactly like
+    /// `LocalLLM.cloudSystemPrompt`.
+    ///
+    /// Why this exists: `SalehmanEngine` feeds this to every brain (cloud + local),
+    /// so the red "UNRESTRICTED" banner now matches what the model is actually told.
+    /// Previously every Salehman path passed the raw `systemPrompt`, so the
+    /// addendum was silently skipped and Unrestricted Mode was a no-op for the
+    /// Salehman brain. (The harm-to-others floor lives in the addendum itself and
+    /// in `ToolPolicy.CommandRisk`, so this does not weaken those.)
+    nonisolated static var activeSystemPrompt: String {
+        LocalLLM.applyUnrestricted(systemPrompt)
+    }
+
     /// Combine the persona with the live tool menu so Salehman knows which tools
     /// are actually wired right now. Pure + nonisolated.
     nonisolated static func instructions(toolMenu: String) -> String {
-        systemPrompt + "\n\n## Tools available right now\n" + toolMenu
+        activeSystemPrompt + "\n\n## Tools available right now\n" + toolMenu
     }
 }

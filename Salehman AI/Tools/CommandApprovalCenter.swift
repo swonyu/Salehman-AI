@@ -51,7 +51,10 @@ final class CommandApprovalCenter: ObservableObject {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.sessionBypass = false }
+            guard let self else { return }
+            // Bind a local constant so the concurrent Task captures an immutable
+            // value (not the outer closure's captured `self`), satisfying Swift 6.
+            Task { @MainActor in self.sessionBypass = false }
         }
     }
 
@@ -68,6 +71,13 @@ final class CommandApprovalCenter: ObservableObject {
         if AppSettings.shared.unrestrictedTools { return true }
         // Deliberate, persisted opt-out (Settings/chip) fully bypasses.
         if !confirmationEnabled { return true }
+        // Allowlist fast-path (additive): commands made up ENTIRELY of provably
+        // read-only inspectors (ls/cat/grep/stat…) skip the prompt even with
+        // confirmations ON. They cannot mutate, escalate, exec, or exfiltrate,
+        // and `Shell.isBlocked` already ran — so this only trims approval fatigue
+        // on the safe commands the model runs constantly, keeping the real
+        // prompts meaningful. Anything outside the allowlist falls straight through.
+        if ToolPolicy.CommandRisk.isDefinitelySafe(command) { return true }
         // "Always run" session bypass — but risky commands always re-confirm.
         // Go to `ToolPolicy.CommandRisk.looksRisky` directly (the single source of
         // the risk vocabulary). The old `Self.looksRisky` thin alias was removed —

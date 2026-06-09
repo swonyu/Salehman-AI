@@ -32,3 +32,8 @@ salehman-training/
 *.safetensors
 *.bin
 *.mlmodelc/
+
+# Local, non-app artifacts moved out of the Xcode source root (DEVELOPMENT_LOG
+# 2026-06-08): a nested repo copy + the claude-autocontinue browser extension
+# (its own git repo). Kept on disk, but not part of this app — don't track.
+External Artifacts/

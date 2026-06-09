@@ -7,7 +7,7 @@ import Combine
 /// in three places (LocalLLM.swift, MemoryManager.swift, AppSettings.swift) —
 /// the magic 1_073_741_824 literal isn't self-documenting, and three copies
 /// drift the day someone "tunes" one without grepping for the other two.
-enum ByteConstants {
+nonisolated enum ByteConstants {
     /// Bytes per gibibyte (2^30). Use to convert `ProcessInfo.physicalMemory` to GB.
     static let bytesPerGB = 1_073_741_824
 }

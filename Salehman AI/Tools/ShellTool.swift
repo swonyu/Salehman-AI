@@ -12,7 +12,7 @@ enum Shell {
     // the old per-type deprecated aliases were removed after confirming nothing
     // referenced them.
 
-    struct Result {
+    nonisolated struct Result {
         let exitCode: Int32
         let output: String
         let timedOut: Bool
@@ -24,7 +24,7 @@ enum Shell {
     /// every other caller). Lock-guarded because `run` executes off the main
     /// actor while the Code tab sets this from `@MainActor`.
     private nonisolated(unsafe) static var _workingDirectory: URL?
-    private static let wdLock = NSLock()
+    private nonisolated static let wdLock = NSLock()
     nonisolated static var workingDirectory: URL? {
         get { wdLock.lock(); defer { wdLock.unlock() }; return _workingDirectory }
         set { wdLock.lock(); defer { wdLock.unlock() }; _workingDirectory = newValue }
@@ -33,7 +33,7 @@ enum Shell {
     /// Returns the matched pattern/command if `command` is refused, else `nil`.
     /// Two layers: dangerous substrings (operations/paths, anywhere) + dangerous
     /// command names (leading token of each chained segment).
-    static func isBlocked(_ command: String) -> String? {
+    nonisolated static func isBlocked(_ command: String) -> String? {
         // Delegate to the single source (ToolPolicy.CommandRisk). The old private
         // lets are now thin deprecated forwards for any other references.
         return ToolPolicy.CommandRisk.isBlocked(command)
@@ -42,7 +42,7 @@ enum Shell {
     /// Run a command with `/bin/zsh -c`. Blocks the calling (background) task
     /// until completion or timeout. Uses a DispatchSource timer + waitUntilExit
     /// instead of a busy-polling `usleep` loop.
-    static func run(_ command: String, timeout: TimeInterval = 60) -> Result {
+    nonisolated static func run(_ command: String, timeout: TimeInterval = 60) -> Result {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", command]
@@ -128,7 +128,7 @@ enum Shell {
 }
 
 /// Thread-safe accumulator for pipe output read on a background readability handler.
-private final class OutputCollector: @unchecked Sendable {
+private nonisolated final class OutputCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var _data = Data()
     func append(_ chunk: Data) {
@@ -141,7 +141,7 @@ private final class OutputCollector: @unchecked Sendable {
 }
 
 /// Tiny lock-protected boolean shared between the timer handler and the caller.
-private final class AtomicBool: @unchecked Sendable {
+private nonisolated final class AtomicBool: @unchecked Sendable {
     private let lock = NSLock()
     private var _value = false
     var value: Bool {

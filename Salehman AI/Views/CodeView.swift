@@ -34,17 +34,38 @@ final class CodeWorkspace: ObservableObject {
     private static let rootKey = "code_projectRoot"
 
     init() {
-        guard let path = UserDefaults.standard.string(forKey: Self.rootKey) else { return }
+        // Under unit tests the test host launches the app; auto-scanning a real repo
+        // here floods the parallel suite with file I/O (it flaked file-sensitive tests
+        // like RepoPackerTests). Skip auto-open in tests — the feature still runs in
+        // the real app.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+        // Open the last project, or default to the owner's Salehman AI repo if present,
+        // so the Code tab is ready-to-use by default (no "Open Folder" step needed).
+        guard let path = UserDefaults.standard.string(forKey: Self.rootKey) ?? Self.defaultProjectPath() else { return }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { return }
         let url = URL(fileURLWithPath: path, isDirectory: true)
         projectRoot = url
         Shell.workingDirectory = url
-        reload()
+        Task { await reload() }
+    }
+
+    /// Default project when none was saved — the owner's Salehman AI repo if it
+    /// exists, so the Code tab opens to a real project instead of an empty prompt.
+    private static func defaultProjectPath() -> String? {
+        [NSHomeDirectory() + "/Desktop/Salehman AI", NSHomeDirectory() + "/Salehman AI"]
+            .first { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// Directories that would flood the tree / diff snapshots — skipped wholesale.
-    private static let skipDirs: Set<String> = ["node_modules", ".build", "DerivedData", ".git", "Pods", ".next", "dist", "build"]
+    /// Reuses `RepoPacker.skipDirs` (deps / build output / VCS / caches, one source
+    /// of truth) and adds this repo's own non-source folders: `External Artifacts/`
+    /// (a full DUPLICATE of the repo + the browser extension — it was doubling the
+    /// scan and freezing the tab) and `salehman-training/` (a ~1 GB local llama.cpp
+    /// + model kit). Without these the Code tab recursively read a doubled tree on
+    /// the main actor → the "lagging/stuck" the owner reported.
+    private static let skipDirs: Set<String> =
+        RepoPacker.skipDirs.union(["External Artifacts", "salehman-training"])
     private static let codeExts: Set<String> = [
         "swift","js","ts","tsx","jsx","py","json","md","txt","html","css","scss",
         "sh","zsh","c","cpp","cc","h","hpp","m","mm","go","rs","rb","java","kt",
@@ -62,25 +83,33 @@ final class CodeWorkspace: ObservableObject {
         Shell.workingDirectory = url          // terminal + edits now run in the project
         UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
         selectedFile = nil; fileContent = ""; diff = []; changedFiles = []
-        reload()
+        Task { await reload() }
     }
 
-    func reload() {
+    /// Scan the project tree OFF the main actor — file enumeration was blocking the
+    /// UI at launch and on every refresh (part of the "lag"). Publishes `files` on main.
+    func reload() async {
         guard let root = projectRoot else { files = []; return }
-        var out: [URL] = []
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey]
-        if let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys,
-                                                   options: [.skipsHiddenFiles]) {
-            for case let u as URL in en {
-                if out.count >= 3000 { break }
-                if (try? u.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                    if Self.skipDirs.contains(u.lastPathComponent) { en.skipDescendants() }
-                    continue
+        let skip = Self.skipDirs, exts = Self.codeExts
+        files = await Task.detached(priority: .utility) { () -> [URL] in
+            var out: [URL] = []
+            let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey]
+            if let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys,
+                                                       options: [.skipsHiddenFiles]) {
+                // `nextObject()` instead of `for-in`: an NSEnumerator's sync
+                // `makeIterator` is unavailable from this async (`Task.detached`)
+                // context under Swift 6.
+                while let u = en.nextObject() as? URL {
+                    if out.count >= 3000 { break }
+                    if (try? u.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                        if skip.contains(u.lastPathComponent) { en.skipDescendants() }
+                        continue
+                    }
+                    if exts.contains(u.pathExtension.lowercased()) { out.append(u) }
                 }
-                if Self.codeExts.contains(u.pathExtension.lowercased()) { out.append(u) }
             }
-        }
-        files = out.sorted { $0.path < $1.path }
+            return out.sorted { $0.path < $1.path }
+        }.value
     }
 
     func select(_ url: URL) {
@@ -95,24 +124,34 @@ final class CodeWorkspace: ObservableObject {
     }
 
     /// Capture every file's content right before a run, so post-run diffs are real.
-    func snapshotAll() {
-        var snap: [URL: String] = [:]
-        for u in files where (try? u.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0 < 400_000 {
-            if let s = try? String(contentsOf: u, encoding: .utf8) { snap[u] = s }
-        }
-        snapshots = snap
+    /// File reads run OFF the main actor — this used to block the UI at the start of
+    /// every Code-tab send (a big chunk of the "lag").
+    func snapshotAll() async {
+        let urls = files
+        snapshots = await Task.detached(priority: .utility) { () -> [URL: String] in
+            var snap: [URL: String] = [:]
+            for u in urls where (try? u.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0 < 400_000 {
+                if let s = try? String(contentsOf: u, encoding: .utf8) { snap[u] = s }
+            }
+            return snap
+        }.value
     }
 
-    /// After a run: rescan (the agent may have created files), then flag every
-    /// file whose content changed vs. the pre-run snapshot.
-    func refreshAfterRun() {
-        reload()
-        var changed: [URL] = []
-        for u in files {
-            let now = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
-            let before = snapshots[u] ?? ""
-            if before != now { changed.append(u) }
-        }
+    /// After a run: rescan (the agent may have created files), then flag every file
+    /// whose content changed vs. the pre-run snapshot. The content diff reads run OFF
+    /// the main actor so a big project doesn't freeze the UI after each run.
+    func refreshAfterRun() async {
+        await reload()
+        let urls = files
+        let before = snapshots
+        let changed = await Task.detached(priority: .utility) { () -> [URL] in
+            var c: [URL] = []
+            for u in urls {
+                let now = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
+                if (before[u] ?? "") != now { c.append(u) }
+            }
+            return c
+        }.value
         changedFiles = changed
         if let first = changed.first { select(first) }
     }
@@ -152,29 +191,57 @@ final class CodeWorkspace: ObservableObject {
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
     @ObservedObject private var progress = MissionProgress.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var approval = CommandApprovalCenter.shared
+    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
     @State private var input = ""
     @State private var isRunning = false
     @State private var rightPane: RightPane = .file
     @State private var runningTask: Task<Void, Never>?
+    @State private var attachedFile: URL?
+    @State private var attachedText: String = ""
 
     enum RightPane: String, CaseIterable { case file = "File", diff = "Diff" }
 
     var body: some View {
-        HSplitView {
-            fileTree
-                .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
-
-            VSplitView {
-                chatPane
-                    .frame(minHeight: 220)
-                inspectorPane
-                    .frame(minHeight: 160)
+        VStack(spacing: 0) {
+            // No-cloud-key notice: Review / coding here silently falls back to the
+            // slow local model (or can't fit the codebase). Tap "Add key" → Settings
+            // (ContentView stays mounted in RootView, so its sheet handles this).
+            if LocalLLM.lacksCloudKey && !dismissedCloudHint {
+                CloudKeyHintBanner(onAddKey: { AppState.shared.showSettingsRequested = true },
+                                   onDismiss: { dismissedCloudHint = true })
             }
-            .frame(minWidth: 420)
+            HSplitView {
+                fileTree
+                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+
+                VSplitView {
+                    chatPane
+                        .frame(minHeight: 220)
+                    inspectorPane
+                        .frame(minHeight: 160)
+                }
+                .frame(minWidth: 420)
+            }
+            .background(Color.black.opacity(0.18))
+            // Inline command-approval card — the SAME gate as the Chat tab, so terminal /
+            // file-edit commands the AI runs here still prompt for approval (unless
+            // Unrestricted is on).
+            .overlay(alignment: .bottom) {
+                if let pending = approval.pending, !settings.unrestrictedTools {
+                    ApprovalCard(command: pending.command,
+                                 onRun: { approval.resolve(true) },
+                                 onCancel: { approval.resolve(false) },
+                                 onAlways: { approval.alwaysAllow() })
+                        .padding(.bottom, 80).padding(.horizontal, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(DS.Motion.spring, value: approval.pending?.id)
         }
-        .background(Color.black.opacity(0.18))
     }
 
     // MARK: File tree (left)
@@ -190,7 +257,14 @@ struct CodeView: View {
                 .foregroundStyle(DS.Palette.accent)
                 Spacer()
                 if ws.projectRoot != nil {
-                    Button { ws.reload() } label: { Image(systemName: "arrow.clockwise") }
+                    Button { reviewProject() } label: {
+                        Label("Review", systemImage: "sparkles.rectangle.stack")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .help("Pack the open folder and have Salehman review it — bugs, risks, improvements")
+                    .disabled(isRunning)
+                    Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Rescan project files")
                 }
@@ -350,8 +424,19 @@ struct CodeView: View {
                 .foregroundStyle(msg.isUser ? Color.white.opacity(0.6) : DS.Palette.accent)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 4) {
-                Text(msg.isUser ? "You" : "Salehman")
-                    .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(msg.isUser ? "You" : "Salehman")
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    if !msg.isUser {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(msg.text, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc").font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy this message")
+                    }
+                }
                 MarkdownText(text: msg.text)
             }
             Spacer(minLength: 0)
@@ -379,25 +464,73 @@ struct CodeView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .lineLimit(1...5)
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                .onSubmit(send)
-
-            Button(action: isRunning ? stop : send) {
-                Image(systemName: isRunning ? "stop.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(isRunning ? Color.red : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : DS.Palette.accent))
+        VStack(spacing: 6) {
+            if let att = attachedFile {
+                HStack(spacing: 6) {
+                    Image(systemName: "paperclip").font(.system(size: 10))
+                    Text(att.lastPathComponent).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+                    Button { attachedFile = nil; attachedText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Color.white.opacity(0.05), in: Capsule())
             }
-            .buttonStyle(.plain)
-            .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+            HStack(spacing: 8) {
+                controlsMenu
+                Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Attach a file as context")
+
+                TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .onSubmit(send)
+
+                Button {
+                    // Explicit body, not `action: isRunning ? stop : send`: unifying
+                    // two method references into one closure ICEs the type-checker
+                    // ("failed to produce diagnostic") under the Swift 6 language mode.
+                    if isRunning { stop() } else { send() }
+                } label: {
+                    Image(systemName: isRunning ? "stop.fill" : "arrow.up.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(isRunning ? Color.red : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : DS.Palette.accent))
+                }
+                .buttonStyle(.plain)
+                .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
         .padding(10)
         .background(.ultraThinMaterial)
+    }
+
+    /// Quick controls (brain / effort / toggles) — the Code-tab equivalent of the
+    /// model/effort/thinking menu, so you don't have to open Settings to switch.
+    private var controlsMenu: some View {
+        Menu {
+            Picker("Brain", selection: $settings.brainPreference) {
+                ForEach(BrainPreference.selectableCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Effort", selection: $settings.responseMode) {
+                ForEach(AppSettings.ResponseMode.allCases) { Text($0.title).tag($0) }
+            }
+            Divider()
+            Toggle("Auto-continue", isOn: $settings.autoContinue)
+            Toggle("Web access", isOn: $settings.webAccess)
+            Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
+        } label: {
+            Image(systemName: "slider.horizontal.3").font(.system(size: 16))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(.secondary)
+        .help("Brain, effort & toggles")
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
@@ -497,25 +630,123 @@ struct CodeView: View {
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
         isRunning = true
-        ws.snapshotAll()
 
         let projectLine = ws.projectRoot.map {
             "Project folder (your working directory for terminal + file edits): \($0.path)\n\n"
         } ?? ""
+        let attached = attachedText.isEmpty ? "" : "\n\nAttached file \"\(attachedFile?.lastPathComponent ?? "file")\":\n\(attachedText)"
         let mission = """
         \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
 
-        Task: \(text)
+        Task: \(text)\(attached)
         """
+        attachedFile = nil; attachedText = ""
 
         runningTask = Task {
+            await ws.snapshotAll()                       // off-main pre-run snapshot
             let reply = await AgentPipeline.run(mission: mission)
+            if Task.isCancelled { return }
             await MainActor.run {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
                 MissionProgress.shared.finish()
-                ws.refreshAfterRun()
+            }
+            await ws.refreshAfterRun()                   // off-main post-run diff
+            await MainActor.run {
                 if !ws.changedFiles.isEmpty { rightPane = .diff }
+            }
+        }
+    }
+
+    /// Attach a local file as context for the next message.
+    private func attachFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Attach"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        attachedFile = url
+        let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? "(binary or unreadable file)"
+        attachedText = raw.count > 20_000 ? String(raw.prefix(20_000)) + "\n…(truncated)" : raw
+    }
+
+    /// "Review": Repomix-style — pack the open folder (off the main actor) into one
+    /// digest and have Salehman review it: summary, bugs/risks, prioritized
+    /// improvements, anything off. One click after Open Folder → choose a folder.
+    private func reviewProject() {
+        guard let root = ws.projectRoot, !isRunning else { return }
+        isRunning = true
+        messages.append(ChatMessage(id: UUID(), text: "🔍 Review \(root.lastPathComponent)", isUser: true, timestamp: Date()))
+        runningTask = Task {
+            // Start a CLEAN thread: clear any stale context so a prior review/chat
+            // can't bleed in, then (below, via a normal run) RECORD this review so a
+            // follow-up like "fix them all" knows what "them" refers to.
+            await ConversationStore.shared.reset()
+            let packed = await Task.detached(priority: .userInitiated) { RepoPacker.pack(rootPath: root.path) }.value
+            // Honesty gate: a whole-codebase review is only trustworthy on a brain
+            // that can actually INGEST the codebase. With no cloud key the only brain
+            // is the local qwen2.5-coder at a 4096-token window (~12 KB of text) — it
+            // would see a tiny fraction and hallucinate findings (observed repeatedly:
+            // it "reviewed" code it never saw). Refuse instead of emitting guesswork;
+            // small folders that DO fit the window still go through.
+            let localContextBudget = 12_000
+            if !SalehmanEngine.hasAnyCloud && packed.digest.count > localContextBudget {
+                let pct = max(1, Int((Double(localContextBudget) / Double(packed.digest.count)) * 100))
+                let msg = """
+                ⚠️ Can't give a trustworthy review here.
+
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the only brain is the local qwen2.5-coder — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+
+                To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
+                """
+                await MainActor.run {
+                    messages.append(ChatMessage(id: UUID(), text: msg, isUser: false, timestamp: Date()))
+                    isRunning = false
+                    MissionProgress.shared.finish()
+                }
+                return
+            }
+            let cap = 180_000
+            let shown = String(packed.digest.prefix(cap))
+            // Be HONEST about truncation: if the model only sees part of the project,
+            // tell it so — otherwise it hallucinates "truncated file" / "missing X"
+            // findings about code it simply wasn't shown (observed in the wild).
+            let partial = packed.truncated || packed.digest.count > cap
+            let warn = partial
+                ? "\n\n⚠️ IMPORTANT: This is a PARTIAL view — the project was truncated to fit. Do NOT claim a file is missing, truncated, or absent based on this; only comment on what you can actually SEE below. If you need a specific file, ask for it by name.\n"
+                : ""
+            let mission = """
+            Review this codebase (\(packed.fileCount) files, \(RepoPacker.byteString(packed.totalBytes))).\(warn)
+            1. A 2–3 line summary of what it is.
+            2. Concrete bugs or risks you can see (reference file names).
+            3. The highest-value improvements, prioritized.
+            4. Anything that looks off or inconsistent.
+            Be specific and practical — and only about what's actually shown below.
+
+            \(shown)
+            """
+            // Normal run (records the review) — context was just reset above, so it's
+            // clean AND the findings are remembered for a follow-up like "fix them all".
+            // Hard timeout so Review can NEVER hang on "Working…" forever: a slow or
+            // stuck brain shouldn't spin indefinitely. 60 s is generous for a real
+            // cloud review; past that we stop and say why instead of leaving a spinner.
+            let timeoutSeconds: UInt64 = 60
+            let reply: String = await withTaskGroup(of: String?.self) { group in
+                group.addTask { await AgentPipeline.run(mission: mission) }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first ?? "⏱️ Review stopped — it took longer than \(timeoutSeconds)s. The current brain is too slow for a whole-codebase review. Add a fast cloud key (Groq / Cerebras, free) in Settings → Brain, or open a smaller folder."
+            }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
+                isRunning = false
+                MissionProgress.shared.finish()
             }
         }
     }

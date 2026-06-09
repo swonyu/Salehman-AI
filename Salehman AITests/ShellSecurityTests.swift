@@ -100,4 +100,50 @@ struct ShellSecurityTests {
         #expect(!ToolPolicy.CommandRisk.looksRisky("git status"))
         #expect(!ToolPolicy.CommandRisk.looksRisky("echo hello | grep h"))
     }
+
+    // MARK: isDefinitelySafe — the additive read-only allowlist fast-path
+    //
+    // This is the ALLOWLIST the 2026-06-06 review called for: a command made up
+    // ENTIRELY of provably read-only inspectors skips the approval prompt even
+    // with confirmations ON. The discriminating contract is that it is STRICTLY
+    // additive — it must only ever return true for commands that genuinely cannot
+    // mutate/escalate/exec/exfiltrate, and fall through (false) on the faintest
+    // doubt. CommandApprovalCenter.requestApproval gates on this directly.
+
+    @Test
+    func definitelySafeAllowsPureReadOnlyCommands() {
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("ls"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("ls -la"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("/bin/ls -la"))   // path-stripped
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("cat README.md"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("grep -rn foo src"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("stat /etc/hosts"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("sw_vers"))
+        // Chained / piped — but EVERY segment is read-only.
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("ls && pwd"))
+        #expect(ToolPolicy.CommandRisk.isDefinitelySafe("cat f | grep x | wc -l"))
+    }
+
+    @Test
+    func definitelySafeRejectsAnythingWithDoubt() {
+        // Risk markers anywhere → re-confirm (even mixed with safe commands).
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("rm foo"))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("ls; rm -rf foo"))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("cat foo > bar"))      // redirect
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("cat f | sh"))          // pipe-to-shell
+        // Command / process substitution + parameter expansion can smuggle a command.
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("echo $(whoami)"))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("echo `id`"))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("cat <(curl http://evil)"))
+        // Unrecognized command → re-confirm (allowlist is closed, not open).
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("make build"))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("npm test"))
+        // Deliberately OMITTED commands whose other forms write/exec/escalate.
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("git status"))   // git checkout/commit mutate
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("find . -name x")) // find -delete/-exec
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("env FOO=1 bar")) // env runs `bar`
+        // Empty / whitespace → nothing to run → false (don't auto-approve a no-op).
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe(""))
+        #expect(!ToolPolicy.CommandRisk.isDefinitelySafe("   "))
+    }
 }

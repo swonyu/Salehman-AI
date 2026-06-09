@@ -1,6 +1,6 @@
 import Foundation
 import ScreenCaptureKit
-import Speech
+@preconcurrency import Speech   // SFSpeech* types/closures predate Swift concurrency (not Sendable)
 import AVFoundation
 import CoreMedia
 import CoreGraphics
@@ -59,22 +59,31 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
 
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "salehman.live.audio")
-    private var capturing = false        // queue-confined
+    // The worker surface below is CONFINED to `queue` (never the main actor), so
+    // `nonisolated(unsafe)` is the honest annotation under MainActor-default
+    // isolation: the compiler stops treating these as main-actor state, and the
+    // queue closures that touch them stop warning. UI (@Published) state above
+    // stays main-actor and is updated only via `DispatchQueue.main.async`.
+    private nonisolated(unsafe) var capturing = false        // queue-confined
 
-    private final class LangRec {
+    // `nonisolated` + `@unchecked Sendable`: a per-recognizer scratch record used
+    // ONLY on `queue`. nonisolated so its fields aren't main-actor-isolated;
+    // @unchecked Sendable so it can be captured (weakly) by the SFSpeech recognition
+    // callback. Safety rests on queue-confinement, not the type system.
+    private nonisolated final class LangRec: @unchecked Sendable {
         let recognizer: SFSpeechRecognizer
         var request: SFSpeechAudioBufferRecognitionRequest?
         var task: SFSpeechRecognitionTask?
         var partial = ""
         init(_ r: SFSpeechRecognizer) { recognizer = r }
     }
-    private var recs: [LangRec] = []     // queue-confined
-    private var segment = 0
+    private nonisolated(unsafe) var recs: [LangRec] = []     // queue-confined
+    private nonisolated(unsafe) var segment = 0
     private let maxLines = 1_500
-    private var audioBufCount = 0        // queue-confined diagnostic
-    private var callbackCount = 0        // any-type callback diagnostic
-    private var lastPublishedPartial = ""        // queue-confined: throttle gate
-    private var lastPublishAt: CFTimeInterval = 0 // queue-confined: throttle gate
+    private nonisolated(unsafe) var audioBufCount = 0        // queue-confined diagnostic
+    private nonisolated(unsafe) var callbackCount = 0        // any-type callback diagnostic
+    private nonisolated(unsafe) var lastPublishedPartial = ""        // queue-confined: throttle gate
+    private nonisolated(unsafe) var lastPublishAt: CFTimeInterval = 0 // queue-confined: throttle gate
 
     func toggle() { isRunning ? stop() : start() }
 
@@ -91,7 +100,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     // lag when the panel opened. Build with -D LIVE_TRANSCRIBE_DEBUG to re-enable.
     // The @autoclosure means the log string isn't even built in release.
     private static let logURL = URL(fileURLWithPath: "/tmp/salehman_live.log")
-    private func dlog(_ s: @autoclosure () -> String) {
+    private nonisolated func dlog(_ s: @autoclosure () -> String) {
         #if LIVE_TRANSCRIBE_DEBUG
         let line = "\(Date()) \(s())\n"
         guard let data = line.data(using: .utf8) else { return }
@@ -107,7 +116,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         dlog("begin()")
         let speechOK = await requestSpeechAuth()
         dlog("speechAuth=\(speechOK)")
-        guard speechOK else { await setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
+        guard speechOK else { setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
 
         // System-audio capture needs Screen Recording access (it does NOT share or
         // record your screen). Trigger the prompt up front.
@@ -140,13 +149,13 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
             startTasks()
         }
         guard !recs.isEmpty else {
-            await setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
+            setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
             return
         }
 
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else { await setStatus("No display available."); return }
+            guard let display = content.displays.first else { setStatus("No display available."); return }
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
@@ -187,11 +196,11 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
 
     // MARK: - Recognition (queue-only)
 
-    private func startTasks() {
+    private nonisolated func startTasks() {
         for rec in recs { startTask(rec) }
     }
 
-    private func startTask(_ rec: LangRec) {
+    private nonisolated func startTask(_ rec: LangRec) {
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if rec.recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
@@ -208,23 +217,33 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
                 if let result {
                     rec.partial = result.bestTranscription.formattedString
                     if rec.partial.count <= 3 || result.isFinal {
-                        self.dlog("partial[\(rec.recognizer.locale.identifier)] final=\(result.isFinal): \(rec.partial.prefix(40))")
+                        // Pre-extract Sendable locals (String/Bool) so the dlog
+                        // autoclosure doesn't capture the non-Sendable `rec`/`result`
+                        // — otherwise it can't cross into this @Sendable queue block
+                        // under the Swift 6 language mode ("sending … () -> String").
+                        let loc = rec.recognizer.locale.identifier
+                        let isFinal = result.isFinal
+                        let preview = String(rec.partial.prefix(40))
+                        self.dlog("partial[\(loc)] final=\(isFinal): \(preview)")
                     }
                     self.publishPartial()
                     if result.isFinal { self.commit() }
                 } else if let error {
-                    self.dlog("rec ERROR[\(rec.recognizer.locale.identifier)]: \((error as NSError).domain) \((error as NSError).code)")
+                    let loc = rec.recognizer.locale.identifier
+                    let nsErr = error as NSError
+                    let dom = nsErr.domain, code = nsErr.code   // Sendable locals
+                    self.dlog("rec ERROR[\(loc)]: \(dom) \(code)")
                     self.restart(rec, segmentAtStart: segmentAtStart)
                 }
             }
         }
     }
 
-    private var bestPartial: String {
+    private nonisolated var bestPartial: String {
         recs.map { $0.partial }.max(by: { $0.count < $1.count }) ?? ""
     }
 
-    private func commit() {
+    private nonisolated func commit() {
         let text = bestPartial.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
             DispatchQueue.main.async {
@@ -249,7 +268,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         }
     }
 
-    private func restart(_ rec: LangRec, segmentAtStart: Int) {
+    private nonisolated func restart(_ rec: LangRec, segmentAtStart: Int) {
         guard capturing, segment == segmentAtStart else { return }
         rec.task?.cancel(); rec.request?.endAudio()
         rec.task = nil; rec.request = nil; rec.partial = ""
@@ -260,7 +279,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     /// when the text actually changed. Recognition callbacks fire far faster than
     /// that, and each push re-rendered the whole transcript — the old behavior was
     /// a big part of the lag. `commit()` flushes the final text via teardown.
-    private func publishPartial() {
+    private nonisolated func publishPartial() {
         let text = bestPartial
         let now = CACurrentMediaTime()
         guard text != lastPublishedPartial, now - lastPublishAt >= 0.11 else { return }
@@ -271,7 +290,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
 
     // MARK: - Audio delivery
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         callbackCount += 1
         if callbackCount <= 4 { dlog("callback#\(callbackCount) type=\(type == .audio ? "audio" : (type == .screen ? "screen" : "other")) ready=\(CMSampleBufferDataIsReady(sampleBuffer))") }
         guard capturing, type == .audio, CMSampleBufferDataIsReady(sampleBuffer) else { return }
@@ -291,7 +310,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         for rec in recs { rec.request?.append(pcm) }
     }
 
-    private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+    private nonisolated static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
         guard let fmtDesc = CMSampleBufferGetFormatDescription(sampleBuffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc),
               let format = AVAudioFormat(streamDescription: asbd) else { return nil }
@@ -303,7 +322,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         return status == noErr ? pcm : nil
     }
 
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         dlog("didStopWithError: \(error)")
         DispatchQueue.main.async { self.status = "Stopped: \(error.localizedDescription)"; self.isRunning = false }
         queue.async { self.teardownTasks() }
@@ -318,7 +337,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     }
 
     /// MUST run on `queue`.
-    private func teardownTasks() {
+    private nonisolated func teardownTasks() {
         capturing = false
         segment += 1
         lastPublishedPartial = ""; lastPublishAt = 0   // reset the throttle gate

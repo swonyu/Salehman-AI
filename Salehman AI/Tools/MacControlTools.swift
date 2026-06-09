@@ -11,7 +11,11 @@ enum MacControl {
     nonisolated static func accessibilityGranted() -> Bool { AXIsProcessTrusted() }
 
     nonisolated static func promptAccessibility() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // `kAXTrustedCheckOptionPrompt` is imported as a mutable C global, which
+        // Swift 6 flags as shared mutable state. Its value is the stable, public
+        // key string, so use the literal directly — identical dictionary, no
+        // reference to the non-concurrency-safe global.
+        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
     }
 

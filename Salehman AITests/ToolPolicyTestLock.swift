@@ -11,5 +11,6 @@ import Foundation
 /// `withCleanPolicy` helpers acquire this before touching the globals and release it
 /// after restoring them. Mirrors `BrainPreferenceTestLock`.
 enum ToolPolicyTestLock {
-    nonisolated(unsafe) static let lock = NSLock()
+    // NSLock is already Sendable, so a plain `static let` suffices.
+    static let lock = NSLock()
 }

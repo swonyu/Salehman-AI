@@ -36,6 +36,11 @@ enum SalehmanEngine {
             || NvidiaClient.shared.hasKey()   || OpenRouterClient.shared.hasKey()
             || CerebrasClient.shared.hasKey()  || GroqClient.shared.hasKey()
             || MistralClient.shared.hasKey()   || DeepSeekClient.shared.hasKey()
+            // Standalone cloud brains the owner may have pinned a key for — now
+            // honored by `tryStandaloneClouds`, so they count as "cloud reachable"
+            // (previously a Gemini/Claude/Grok/OpenAI-only setup read as "no cloud").
+            || GeminiClient.hasKey()           || GrokClient.hasKey()
+            || OpenAIClient.hasKey()           || AnthropicClient.isConfigured
     }
 
     // MARK: - Non-streaming
@@ -48,17 +53,21 @@ enum SalehmanEngine {
                          userPrompt: String? = nil,
                          maxTokens: Int? = nil) async -> String? {
         if VLLM.isConfigured,
-           let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) { return r }
+           let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
         if UnslothStudio.isConfigured,
-           let r = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) { return r }
+           let r = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
 
         for entry in cloudChain(routing: userPrompt ?? prompt) {
             if let r = await tryCloud(entry.client, model: entry.model, prompt: prompt) { return r }
         }
+        // Then the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI /
+        // Claude) — not in the curated free chain — so ANY configured cloud key
+        // makes Salehman work on the cloud, not just the six free coders.
+        if let r = await tryStandaloneClouds(prompt: prompt) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: prompt, maxTokens: maxTokens ?? 1024) { return r }
-        if let r = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.systemPrompt) { return r }
+        if let r = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
         return nil
     }
 
@@ -70,19 +79,21 @@ enum SalehmanEngine {
     static func generateStream(prompt: String,
                                userPrompt: String? = nil,
                                maxTokens: Int? = nil,
-                               onUpdate: @escaping (String) -> Void) async -> String? {
+                               onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
         if VLLM.isConfigured,
-           let r = await VLLM.chatStream(prompt: prompt, system: SalehmanPersona.systemPrompt, onUpdate: onUpdate) { return r }
+           let r = await VLLM.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
         if UnslothStudio.isConfigured,
-           let r = await UnslothStudio.chatStream(prompt: prompt, system: SalehmanPersona.systemPrompt, onUpdate: onUpdate) { return r }
+           let r = await UnslothStudio.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
 
         for entry in cloudChain(routing: userPrompt ?? prompt) {
             if let r = await tryCloudStream(entry.client, model: entry.model, prompt: prompt, onUpdate: onUpdate) { return r }
         }
+        // Owner's standalone cloud keys (Gemini / Grok / OpenAI / Claude), streamed.
+        if let r = await tryStandaloneCloudsStream(prompt: prompt, onUpdate: onUpdate) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generateStream(prompt: prompt, maxTokens: maxTokens ?? 1024, onUpdate: onUpdate) { return r }
-        if let r = await OllamaClient.chatStream(prompt: prompt, system: SalehmanPersona.systemPrompt, onUpdate: onUpdate) { return r }
+        if let r = await OllamaClient.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
         return nil
     }
 
@@ -95,9 +106,9 @@ enum SalehmanEngine {
     /// local floor keeps tools too (`ollamaReply`).
     static func generateWithTools(message: String, userPrompt: String? = nil) async -> String? {
         if VLLM.isConfigured,
-           let r = await VLLM.chatWithTools(message, systemPrompt: SalehmanPersona.systemPrompt) { return r }
+           let r = await VLLM.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
         if UnslothStudio.isConfigured,
-           let r = await UnslothStudio.chatWithTools(message, systemPrompt: SalehmanPersona.systemPrompt) { return r }
+           let r = await UnslothStudio.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
 
         for entry in cloudChain(routing: userPrompt ?? message) {
             guard entry.client.hasKey() else { continue }
@@ -105,16 +116,19 @@ enum SalehmanEngine {
             if let r = await LocalLLM.chatOpenAICompatWithTools(client: entry.client,
                                                                 model: model,
                                                                 message: message,
-                                                                systemPrompt: SalehmanPersona.systemPrompt) {
+                                                                systemPrompt: SalehmanPersona.activeSystemPrompt) {
                 return r
             }
             // Tools unsupported by this model → plain chat before moving on.
             if let r = await tryCloud(entry.client, model: entry.model, prompt: message) { return r }
         }
+        // Owner's standalone cloud keys (plain chat — these clients don't share the
+        // OpenAI-compat tool loop; a real answer still beats the local floor).
+        if let r = await tryStandaloneClouds(prompt: message) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: message) { return r }
-        if let r = await LocalLLM.ollamaReply(message, systemPrompt: SalehmanPersona.systemPrompt) { return r }
+        if let r = await LocalLLM.ollamaReply(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
         return nil
     }
 
@@ -246,7 +260,7 @@ enum SalehmanEngine {
                          prompt: String) async -> String? {
         guard client.hasKey() else { return nil }
         guard let reply = await client.chat(prompt: prompt,
-                                            system: SalehmanPersona.systemPrompt,
+                                            system: SalehmanPersona.activeSystemPrompt,
                                             model: model) else { return nil }
         if OpenAICompatibleClient.isErrorReply(reply, displayName: client.displayName) { return nil }
         return reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reply
@@ -258,14 +272,56 @@ enum SalehmanEngine {
     static func tryCloudStream(_ client: OpenAICompatibleClient,
                                model: String?,
                                prompt: String,
-                               onUpdate: @escaping (String) -> Void) async -> String? {
+                               onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
         guard client.hasKey() else { return nil }
         guard let reply = await client.chatStream(prompt: prompt,
-                                                  system: SalehmanPersona.systemPrompt,
+                                                  system: SalehmanPersona.activeSystemPrompt,
                                                   model: model,
                                                   onUpdate: onUpdate) else { return nil }
         if OpenAICompatibleClient.isErrorReply(reply, displayName: client.displayName) { return nil }
         return reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reply
+    }
+
+    /// Try the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI / Claude),
+    /// each with the Salehman persona, skipping any that error or return nil. These
+    /// are NOT in `cloudChain` (the curated free-coder list with bespoke API shapes),
+    /// so without this a user whose only cloud key is one of these would never reach
+    /// the cloud on the Salehman brain. Free-tier Gemini first, then the pinned paid
+    /// brains — preserves "free-first" since this runs only after the free chain.
+    static func tryStandaloneClouds(prompt: String) async -> String? {
+        let persona = SalehmanPersona.activeSystemPrompt
+        if GeminiClient.hasKey(),
+           let r = await GeminiClient.chat(prompt: prompt, system: persona, model: AppSettings.geminiModelCurrent),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if GrokClient.hasKey(),
+           let r = await GrokClient.chat(prompt: prompt, system: persona, model: AppSettings.grokModelCurrent),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if OpenAIClient.hasKey(),
+           let r = await OpenAIClient.chat(prompt: prompt, system: persona, model: AppSettings.openAIModelCurrent),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if AnthropicClient.isConfigured,
+           let r = await AnthropicClient.chat(prompt: prompt, system: persona),
+           !AgentPipeline.isErrorReply(r) { return r }
+        return nil
+    }
+
+    /// Streaming sibling of `tryStandaloneClouds`. Same order + error-skip.
+    static func tryStandaloneCloudsStream(prompt: String,
+                                          onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
+        let persona = SalehmanPersona.activeSystemPrompt
+        if GeminiClient.hasKey(),
+           let r = await GeminiClient.chatStream(prompt: prompt, system: persona, model: AppSettings.geminiModelCurrent, onUpdate: onUpdate),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if GrokClient.hasKey(),
+           let r = await GrokClient.chatStream(prompt: prompt, system: persona, model: AppSettings.grokModelCurrent, onUpdate: onUpdate),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if OpenAIClient.hasKey(),
+           let r = await OpenAIClient.chatStream(prompt: prompt, system: persona, model: AppSettings.openAIModelCurrent, onUpdate: onUpdate),
+           !AgentPipeline.isErrorReply(r) { return r }
+        if AnthropicClient.isConfigured,
+           let r = await AnthropicClient.chatStream(prompt: prompt, system: persona, onUpdate: onUpdate),
+           !AgentPipeline.isErrorReply(r) { return r }
+        return nil
     }
 
     /// Picks which DeepSeek brain finalizes a given prompt when the paid backstop

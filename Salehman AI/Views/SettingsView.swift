@@ -141,8 +141,11 @@ struct SettingsView: View {
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
-                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, a bit slower & more quota. On by default.",
+                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
                                "arrow.triangle.2.circlepath", $settings.salehmanRefine)
+                        toggle("Auto-continue",
+                               "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
+                               "forward.end.alt.fill", $settings.autoContinue)
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {

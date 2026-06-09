@@ -141,7 +141,9 @@ final class BrainStatus: ObservableObject {
             .store(in: &cancellables)
     }
 
-    deinit {
+    // `isolated deinit` (SE-0371) so teardown runs on the MainActor and may touch
+    // the non-Sendable `Timer?`. A nonisolated deinit can't under Swift 6.
+    isolated deinit {
         timer?.invalidate()
     }
 }

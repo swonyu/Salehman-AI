@@ -7,7 +7,10 @@
 
 import XCTest
 
-final class Salehman_AIUITests: XCTestCase {
+// `nonisolated`: this target is MainActor-default (mirrors the app), but XCTestCase's
+// init/setUpWithError/… are nonisolated — overriding them from a MainActor-isolated
+// class is a Swift 6 error. The per-test methods keep their own `@MainActor`.
+nonisolated final class Salehman_AIUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

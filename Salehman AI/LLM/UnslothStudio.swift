@@ -24,8 +24,10 @@ enum UnslothStudio {
     // MARK: - Configuration probes
 
     /// True iff the user has entered any endpoint URL at all (loopback or not).
-    /// Used by `BrainStatus` and the chat-brain gate.
-    static var isConfigured: Bool {
+    /// Used by `BrainStatus` and the chat-brain gate. `nonisolated` so nonisolated
+    /// reachability gates (`SalehmanEngine.hasAnyCloud`) can read it without a
+    /// Swift-6 isolation warning — it only reads a nonisolated `AppSettings` accessor.
+    nonisolated static var isConfigured: Bool {
         !AppSettings.unslothStudioEndpointCurrent.isEmpty
     }
 

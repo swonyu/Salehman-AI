@@ -91,9 +91,39 @@ enum LocalLLM {
         isAvailable ? "cloud/local brain configured" : "no brain configured"
     }
 
+    /// True when the selected brain is one that USES a cloud key when present,
+    /// but none is saved — so replies silently fall back to the slow local model
+    /// (`.salehman` / `.freeAuto` / `.freeCoding`) or dead-end (`.cloudCoding`).
+    /// Scoped to exactly those four: a pinned cloud brain already shows
+    /// `unavailableMessage` (it returns `.none`, never a silent local fallback),
+    /// and `.auto` / `.ollama` / `.unslothStudio` / `.vllm` are deliberately local
+    /// — a cloud key wouldn't be used there, so nagging would be wrong. Drives the
+    /// amber "add a cloud key" banner in the Chat / Code views so the slow path is
+    /// never silent. Cheap Keychain-existence check; safe to read each SwiftUI render.
+    nonisolated static var lacksCloudKey: Bool {
+        switch AppSettings.brainPreferenceCurrent {
+        case .salehman, .freeAuto, .freeCoding:
+            return !SalehmanEngine.hasAnyCloud
+        case .cloudCoding:
+            // Cloud Coding uses its OWN curated coder roster (DeepSeek/Cerebras/Groq/
+            // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
+            // accurate check is that roster's reachability. Otherwise the banner would
+            // wrongly hide for a user whose only key is Gemini while Cloud Coding still
+            // can't answer.
+            return !cloudCodingReachable()
+        default:
+            return false
+        }
+    }
+
+    /// One-line, actionable nudge for the `lacksCloudKey` banner. Honest across
+    /// all four modes (slow local fallback for three, unavailable for cloudCoding).
+    nonisolated static let noCloudKeyHint =
+        "No cloud key — replies are slow (local fallback) or unavailable. Add a free Groq or Cerebras key in Settings → Brain for ~1-second answers."
+
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
-    enum Brain: Equatable {
+    nonisolated enum Brain: Equatable {
         case ollamaCoder
         case salehman                                // Salehman — cloud-first, local floor
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
@@ -913,7 +943,7 @@ enum LocalLLM {
     /// JSON tool spec handed to Ollama's `/api/chat`. Mirrors the Apple-Intelligence
     /// `RunTerminalCommandTool`, so the free local qwen brain gets the SAME terminal
     /// capability — gated by the SAME `CommandApprovalCenter` + blocked-command list.
-    nonisolated static let terminalToolSpec: [String: Any] = [
+    nonisolated(unsafe) static let terminalToolSpec: [String: Any] = [
         "type": "function",
         "function": [
             "name": "run_terminal_command",
@@ -935,7 +965,7 @@ enum LocalLLM {
     /// (web access on AND not Offline mode). Read-only network reads, so no approval
     /// card (matches the FM `WebSearchTool`/`FetchURLTool` gating). `Web.fetch` keeps
     /// its SSRF guard.
-    nonisolated static let webSearchSpec: [String: Any] = [
+    nonisolated(unsafe) static let webSearchSpec: [String: Any] = [
         "type": "function",
         "function": [
             "name": "web_search",
@@ -947,7 +977,7 @@ enum LocalLLM {
             ],
         ],
     ]
-    nonisolated static let fetchURLSpec: [String: Any] = [
+    nonisolated(unsafe) static let fetchURLSpec: [String: Any] = [
         "type": "function",
         "function": [
             "name": "fetch_url",
@@ -960,13 +990,87 @@ enum LocalLLM {
         ],
     ]
 
+    // MARK: On-device tools (no network) — knowledge search + Notes / tasks / memory.
+    // Always offered (even in Offline mode) and shared by BOTH the Ollama and the
+    // cloud OpenAI-compatible tool loops via `runLocalTool`. These restore the
+    // capabilities the AI lost when the Apple-Intelligence tool session was removed
+    // (DEVELOPMENT_LOG 2026-06-08) — the stores stayed; the assistant's access didn't.
+    nonisolated(unsafe) static let searchDocumentsSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "search_documents",
+            "description": "Search the user's private on-device Knowledge base (documents and text they've added) and return the most relevant passages with their source names. Use whenever the user asks about their own files, notes, or documents. On-device only — nothing leaves the Mac.",
+            "parameters": [
+                "type": "object",
+                "properties": ["query": ["type": "string", "description": "What to look for in the user's documents."]],
+                "required": ["query"],
+            ],
+        ],
+    ]
+    nonisolated(unsafe) static let captureNoteSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "capture_note",
+            "description": "Save a note to the user's local Notes. Use when they ask to note/jot/save something, or to record a useful takeaway worth keeping. Stored on-device.",
+            "parameters": [
+                "type": "object",
+                "properties": ["text": ["type": "string", "description": "The note text to save."]],
+                "required": ["text"],
+            ],
+        ],
+    ]
+    nonisolated(unsafe) static let addTaskSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "add_task",
+            "description": "Add a to-do item to the user's local task list. Use when they ask to add a task, remember to do something, or set a reminder/to-do. Stored on-device.",
+            "parameters": [
+                "type": "object",
+                "properties": ["title": ["type": "string", "description": "The task title — what needs doing."]],
+                "required": ["title"],
+            ],
+        ],
+    ]
+    nonisolated(unsafe) static let rememberFactSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "remember_fact",
+            "description": "Store a durable fact about the user (a preference, a personal detail, an ongoing project) in long-term memory so it can inform future answers. Use when they share something worth remembering, or ask you to remember it. Stored on-device.",
+            "parameters": [
+                "type": "object",
+                "properties": ["fact": ["type": "string", "description": "The fact to remember, phrased as a standalone statement."]],
+                "required": ["fact"],
+            ],
+        ],
+    ]
+
+    /// `pack_repository` — Repomix/Gitingest-style "read a whole codebase at once".
+    /// Handled in the async tool switch (NOT `runLocalTool`) because packing reads
+    /// many files and runs off the main actor via `RepoPacker`.
+    nonisolated(unsafe) static let packRepositorySpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "pack_repository",
+            "description": "Pack an entire local code folder into ONE dense, AI-friendly digest (file tree + every text file's contents) — like Repomix/Gitingest — so you can read a whole codebase at once. Pass an absolute or ~ path. To pack a remote GitHub repo, first clone it with run_terminal_command ('git clone --depth 1 <url> /tmp/repo') then pack '/tmp/repo'. The full digest is also saved to a file; very large repos are capped inline.",
+            "parameters": [
+                "type": "object",
+                "properties": ["path": ["type": "string", "description": "Local folder to pack, e.g. ~/Desktop/myproject or the current project root."]],
+                "required": ["path"],
+            ],
+        ],
+    ]
+
     nonisolated static let ollamaToolSystem = """
     You are Salehman AI, a helpful assistant created by Saleh, running on this Mac. \
     You CAN control the terminal: call the run_terminal_command tool to actually run \
     shell commands and complete the task — don't just describe a command, run it. \
     Prefer safe, read-only commands unless the user clearly asked to modify \
     something; the user approves each command before it executes. After a command's \
-    result comes back, briefly explain what it shows. When web access is on you also \
+    result comes back, briefly explain what it shows. You can also manage the user's \
+    on-device data: search_documents (their private Knowledge base), capture_note and \
+    add_task (their Notes & to-dos), remember_fact (long-term memory), and pack_repository \
+    (read an entire code folder at once, Repomix-style) — call these to actually save, look \
+    things up, or read code, don't just say you will. When web access is on you also \
     have web_search and fetch_url — use them for current info or to read a page. \
     CRITICAL LANGUAGE RULE: reply \
     in the SAME language as the user's latest message (English → English only, \
@@ -978,7 +1082,15 @@ enum LocalLLM {
     /// not Offline mode). Pure + nonisolated so the security gate — "the local
     /// brain is never even *shown* web tools while offline" — is unit-testable.
     nonisolated static func ollamaToolSpecs(externalAllowed: Bool) -> [[String: Any]] {
-        externalAllowed ? [terminalToolSpec, webSearchSpec, fetchURLSpec] : [terminalToolSpec]
+        // On-device tools (terminal + knowledge/notes/tasks/memory) touch no network,
+        // so they're ALWAYS offered — Offline mode doesn't restrict them. The web
+        // tools are added ONLY when external access is on: a model can't call a tool
+        // it was never handed (the real security gate; see OllamaToolGateTests).
+        let onDevice: [[String: Any]] = [
+            terminalToolSpec, searchDocumentsSpec, captureNoteSpec, addTaskSpec,
+            rememberFactSpec, packRepositorySpec,
+        ]
+        return externalAllowed ? onDevice + [webSearchSpec, fetchURLSpec] : onDevice
     }
 
     /// Sendable mirror of `ollamaToolSpecs` exposing just the tool names — the
@@ -990,6 +1102,78 @@ enum LocalLLM {
         ollamaToolSpecs(externalAllowed: externalAllowed).compactMap {
             ($0["function"] as? [String: Any])?["name"] as? String
         }
+    }
+
+    /// Executes an on-device tool (no network): knowledge search + writing to the
+    /// user's Notes / tasks / long-term memory. Shared by BOTH tool loops so every
+    /// brain — local Ollama or any OpenAI-compatible cloud — gets the same on-device
+    /// capabilities. Returns `nil` when `name` isn't one of these, so the caller
+    /// falls through to the terminal / web / unknown branches. MainActor-isolated
+    /// because `ScratchpadStore` is `@MainActor`; the tool loops already run there,
+    /// so callers invoke it synchronously. All four tools are non-destructive writes
+    /// to the user's own local stores, so (like the prior FM tools) they need no
+    /// approval card — only the terminal does.
+    static func runLocalTool(_ name: String, _ args: [String: String]) -> String? {
+        switch name {
+        case "search_documents":
+            let query = (args["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return "No search query was provided." }
+            let hits = KnowledgeStore.shared.search(query: query, k: 5)
+            guard !hits.isEmpty else {
+                return KnowledgeStore.shared.isEmpty()
+                    ? "The Knowledge base is empty — the user hasn't added any documents yet."
+                    : "No matching passages were found in the user's documents."
+            }
+            return hits.enumerated()
+                .map { "\($0.offset + 1). [\($0.element.docName)] \($0.element.text)" }
+                .joined(separator: "\n\n")
+        case "capture_note":
+            let text = (args["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return "No note text was provided." }
+            ScratchpadStore.shared.addNote(text)
+            return "Saved to Notes: \"\(text)\""
+        case "add_task":
+            let title = (args["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return "No task title was provided." }
+            ScratchpadStore.shared.addTask(title)
+            return "Added task: \"\(title)\""
+        case "remember_fact":
+            let fact = (args["fact"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fact.isEmpty else { return "No fact was provided." }
+            MemoryStore.shared.remember(fact)
+            return "Got it — I'll remember that: \"\(fact)\""
+        default:
+            return nil
+        }
+    }
+
+    /// `pack_repository` tool handler. Packs a LOCAL folder into one AI-friendly
+    /// digest via `RepoPacker`, OFF the main actor (a big repo would otherwise hitch
+    /// the UI). Writes the full digest to a temp file and returns a capped inline
+    /// slice + stats + the file path, so a huge repo can't blow the chat context.
+    /// (Remote repos: the model clones with `run_terminal_command` first, then packs
+    /// the local path — keeps this tool network-free.)
+    nonisolated static func runPackRepository(_ args: [String: String]) async -> String {
+        let path = (args["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return "Provide a local folder 'path' to pack." }
+        let expanded = (path as NSString).expandingTildeInPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else {
+            return "No folder found at \(path)."
+        }
+        let result = await Task.detached(priority: .userInitiated) {
+            RepoPacker.pack(rootPath: expanded)
+        }.value
+        // Save the full digest so nothing is lost when the inline return is capped.
+        let outURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("salehman-pack-\(result.rootName).md")
+        try? result.digest.write(to: outURL, atomically: true, encoding: .utf8)
+
+        let header = "Packed \(result.fileCount) files (\(RepoPacker.byteString(result.totalBytes)), \(result.skippedCount) skipped) from \(result.rootName). Full digest saved to \(outURL.path).\n\n"
+        let inlineCap = 120_000
+        if result.digest.count <= inlineCap { return header + result.digest }
+        return header + String(result.digest.prefix(inlineCap))
+            + "\n\n…[inline digest capped; open the saved file above for the full pack]"
     }
 
     /// Ollama WITH tool-calling: the local/free qwen brain runs the terminal via the
@@ -1019,12 +1203,20 @@ enum LocalLLM {
             return try? JSONSerialization.data(withJSONObject: body)
         }
 
-        let maxRounds = 5
+        // Headroom for multi-step tasks (was 5 — too low; coding/tool chains
+        // routinely needed more and hit the cap, surfacing "(Reached the tool-call
+        // limit.)" to the user). We also remember the model's most recent prose so a
+        // cap-out returns real content instead of that bare message.
+        let maxRounds = 8
+        var lastAssistantText = ""
         for _ in 0..<maxRounds {
             guard let data = bodyData(includeTools: true),
-                  let turn = await OllamaClient.chatTurn(bodyData: data) else { return nil }
+                  let turn = await OllamaClient.chatTurn(bodyData: data) else {
+                return lastAssistantText.isEmpty ? nil : lastAssistantText
+            }
+            if !turn.text.isEmpty { lastAssistantText = turn.text }
             if turn.toolCalls.isEmpty {
-                return turn.text.isEmpty ? nil : turn.text
+                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
@@ -1035,29 +1227,44 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in turn.toolCalls {
                 let result: String
-                switch call.name {
-                case "run_terminal_command":
-                    result = await Shell.runApproved(call.arguments["command"] ?? "")
-                case "web_search":
-                    // Defense-in-depth: refuse a web tool if external access is off
-                    // (it shouldn't reach here — the spec is only sent when allowed).
-                    result = ToolPolicy.isExternalAllowed
-                        ? await Web.search(call.arguments["query"] ?? "")
-                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
-                case "fetch_url":
-                    result = ToolPolicy.isExternalAllowed
-                        ? await Web.fetch(call.arguments["url"] ?? "")
-                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
-                default:
-                    result = "Unknown tool '\(call.name)'."
+                if let local = Self.runLocalTool(call.name, call.arguments) {
+                    // On-device tool (knowledge/notes/tasks/memory): no network, no
+                    // approval card. Returns nil for the terminal/web tools below.
+                    result = local
+                } else {
+                    switch call.name {
+                    case "run_terminal_command":
+                        result = await Shell.runApproved(call.arguments["command"] ?? "")
+                    case "web_search":
+                        // Defense-in-depth: refuse a web tool if external access is off
+                        // (it shouldn't reach here — the spec is only sent when allowed).
+                        result = ToolPolicy.isExternalAllowed
+                            ? await Web.search(call.arguments["query"] ?? "")
+                            : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "fetch_url":
+                        result = ToolPolicy.isExternalAllowed
+                            ? await Web.fetch(call.arguments["url"] ?? "")
+                            : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "pack_repository":
+                        result = await Self.runPackRepository(call.arguments)
+                    default:
+                        result = "Unknown tool '\(call.name)'."
+                    }
                 }
                 messages.append(["role": "tool", "content": result])
             }
         }
-        // Hit the round cap — one final tool-free turn for a summary.
+        // Hit the round cap — ask once more with tools OFF for a direct final
+        // answer, nudging the model to wrap up using what the tools already returned.
+        messages.append(["role": "user",
+                         "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
-              let final = await OllamaClient.chatTurn(bodyData: data) else { return nil }
-        return final.text.isEmpty ? "(Reached the tool-call limit.)" : final.text
+              let final = await OllamaClient.chatTurn(bodyData: data) else {
+            return lastAssistantText.isEmpty ? nil : lastAssistantText
+        }
+        if !final.text.isEmpty { return final.text }
+        if !lastAssistantText.isEmpty { return lastAssistantText }
+        return "I worked through several steps but couldn't wrap it up in one go. Say \"continue\" and I'll pick up where I left off."
     }
 
     // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
@@ -1097,12 +1304,18 @@ enum LocalLLM {
             return try? JSONSerialization.data(withJSONObject: body)
         }
 
-        let maxRounds = 5
+        // Same headroom + last-prose memory as the Ollama loop (see note there):
+        // 5 rounds was too low and surfaced "(Reached the tool-call limit.)".
+        let maxRounds = 8
+        var lastAssistantText = ""
         for _ in 0..<maxRounds {
             guard let data = bodyData(includeTools: true),
-                  let turn = await client.chatTurnWithTools(bodyData: data) else { return nil }
+                  let turn = await client.chatTurnWithTools(bodyData: data) else {
+                return lastAssistantText.isEmpty ? nil : lastAssistantText
+            }
+            if !turn.text.isEmpty { lastAssistantText = turn.text }
             if turn.toolCalls.isEmpty {
-                return turn.text.isEmpty ? nil : turn.text
+                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
             // assistant message carry the `tool_calls` array so the following
@@ -1121,29 +1334,44 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in turn.toolCalls {
                 let result: String
-                switch call.name {
-                case "run_terminal_command":
-                    result = await Shell.runApproved(call.arguments["command"] ?? "")
-                case "web_search":
-                    // Defense-in-depth: refuse a web tool if external access is off
-                    // (it shouldn't reach here — the spec is only sent when allowed).
-                    result = ToolPolicy.isExternalAllowed
-                        ? await Web.search(call.arguments["query"] ?? "")
-                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
-                case "fetch_url":
-                    result = ToolPolicy.isExternalAllowed
-                        ? await Web.fetch(call.arguments["url"] ?? "")
-                        : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
-                default:
-                    result = "Unknown tool '\(call.name)'."
+                if let local = Self.runLocalTool(call.name, call.arguments) {
+                    // On-device tool (knowledge/notes/tasks/memory): no network, no
+                    // approval card. Returns nil for the terminal/web tools below.
+                    result = local
+                } else {
+                    switch call.name {
+                    case "run_terminal_command":
+                        result = await Shell.runApproved(call.arguments["command"] ?? "")
+                    case "web_search":
+                        // Defense-in-depth: refuse a web tool if external access is off
+                        // (it shouldn't reach here — the spec is only sent when allowed).
+                        result = ToolPolicy.isExternalAllowed
+                            ? await Web.search(call.arguments["query"] ?? "")
+                            : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "fetch_url":
+                        result = ToolPolicy.isExternalAllowed
+                            ? await Web.fetch(call.arguments["url"] ?? "")
+                            : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "pack_repository":
+                        result = await Self.runPackRepository(call.arguments)
+                    default:
+                        result = "Unknown tool '\(call.name)'."
+                    }
                 }
                 messages.append(["role": "tool", "tool_call_id": call.id, "content": result])
             }
         }
-        // Hit the round cap — one final tool-free turn for a summary.
+        // Hit the round cap — ask once more with tools OFF for a direct final
+        // answer, nudging the model to wrap up using what the tools already returned.
+        messages.append(["role": "user",
+                         "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
-              let final = await client.chatTurnWithTools(bodyData: data) else { return nil }
-        return final.text.isEmpty ? "(Reached the tool-call limit.)" : final.text
+              let final = await client.chatTurnWithTools(bodyData: data) else {
+            return lastAssistantText.isEmpty ? nil : lastAssistantText
+        }
+        if !final.text.isEmpty { return final.text }
+        if !lastAssistantText.isEmpty { return lastAssistantText }
+        return "I worked through several steps but couldn't wrap it up in one go. Say \"continue\" and I'll pick up where I left off."
     }
 
     /// Ollama reply — tool-calling first (so the local brain can run the terminal),
@@ -1307,7 +1535,7 @@ enum LocalLLM {
     /// for swapping the sentinel for the context-aware text.
     static func generateStreaming(_ rawPrompt: String, maxTokens: Int? = nil,
                                   cachePrefix: String? = nil,
-                                  onUpdate: @escaping (String) -> Void) async -> String {
+                                  onUpdate: @escaping @Sendable (String) -> Void) async -> String {
         // `cachePrefix` (e.g. the stable conversation history): Anthropic caches it
         // as its own `cache_control` block; xAI Grok / OpenAI auto-cache a stable
         // prefix server-side — both benefit because we put it FIRST. Every other

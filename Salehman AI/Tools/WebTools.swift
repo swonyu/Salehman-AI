@@ -85,7 +85,11 @@ enum Web {
     /// the redirect guard and the security tests can reach it. IPv6 literal checks
     /// are gated on `host.contains(":")` so real domains (e.g. `fc…​.com`) aren't
     /// falsely blocked by the `fc/fd` unique-local prefix.
-    static func ssrfRejectionReason(_ url: URL) -> String? {
+    /// `nonisolated`: a pure function of the URL (no shared state), so it can run
+    /// on URLSession's delegate queue. Required because `RedirectGuard` (a
+    /// nonisolated `URLSessionTaskDelegate`) calls it on every redirect — a
+    /// MainActor-isolated method there is a hard error under the Swift 6 language mode.
+    nonisolated static func ssrfRejectionReason(_ url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             return "Refused: only http/https URLs can be fetched."
         }
@@ -137,8 +141,9 @@ enum Web {
     }
 
     /// True if `host` is a dotted-quad IPv4 in a loopback / private / link-local /
-    /// unspecified range. Non-IPv4 strings return false.
-    static func isPrivateIPv4(_ host: String) -> Bool {
+    /// unspecified range. Non-IPv4 strings return false. `nonisolated` (pure) so
+    /// `ssrfRejectionReason` can call it from the nonisolated redirect guard.
+    nonisolated static func isPrivateIPv4(_ host: String) -> Bool {
         let parts = host.split(separator: ".")
         guard parts.count == 4, let a = Int(parts[0]), let b = Int(parts[1]),
               Int(parts[2]) != nil, Int(parts[3]) != nil else { return false }
@@ -159,7 +164,7 @@ enum Web {
 
     // internal (not private) so WebToolsOfflineGateTests can pin stripHTML + decodeDDG behavior exactly.
     // No logic change; was only called internally before.
-    static func stripHTML(_ html: String) -> String {
+    nonisolated static func stripHTML(_ html: String) -> String {
         var s = html
         // Remove script/style blocks.
         for tag in ["script", "style", "head", "nav", "footer"] {
@@ -178,7 +183,7 @@ enum Web {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func decodeEntities(_ s: String) -> String {
+    private nonisolated static func decodeEntities(_ s: String) -> String {
         var r = s
         let map = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#x27;": "'", "&nbsp;": " "]
         for (k, v) in map { r = r.replacingOccurrences(of: k, with: v) }
@@ -187,7 +192,7 @@ enum Web {
 
     /// DuckDuckGo wraps links like //duckduckgo.com/l/?uddg=ENCODED
     // internal (not private) so WebToolsOfflineGateTests can pin decodeDDG exactly.
-    static func decodeDDG(_ link: String) -> String {
+    nonisolated static func decodeDDG(_ link: String) -> String {
         guard let range = link.range(of: "uddg=") else {
             return link.hasPrefix("//") ? "https:" + link : link
         }

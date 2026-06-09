@@ -16,7 +16,7 @@ import Foundation
 
 struct LiveTranscriberSegmentTests {
 
-    @Test
+    @Test @MainActor
     func stopIsSafeAndLeavesTranscriberIdle() {
         // stop() is the only capture-control call safe to make without ever
         // starting (no TCC), and "after stop the transcriber is not running" is a

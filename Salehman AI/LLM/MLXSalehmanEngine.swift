@@ -166,7 +166,7 @@ actor MLXSalehmanEngine {
         // input. We embed the Salehman persona as the system role so the
         // identity + language-mirror rules apply to every generation.
         let userInput = UserInput(messages: [
-            ["role": "system", "content": SalehmanPersona.systemPrompt],
+            ["role": "system", "content": SalehmanPersona.activeSystemPrompt],
             ["role": "user", "content": prompt],
         ])
 
@@ -195,7 +195,7 @@ actor MLXSalehmanEngine {
         guard isReady, let container = modelContainer else { return nil }
 
         let userInput = UserInput(messages: [
-            ["role": "system", "content": SalehmanPersona.systemPrompt],
+            ["role": "system", "content": SalehmanPersona.activeSystemPrompt],
             ["role": "user", "content": prompt],
         ])
 

@@ -1,6 +1,6 @@
 import Foundation
 import AppKit
-import Vision
+@preconcurrency import Vision   // VNImageRequestHandler/VNRecognizeTextRequest aren't Sendable
 import PDFKit
 
 /// An item the user attached to a message. `extractedText` is what the
@@ -149,8 +149,10 @@ enum AttachmentLoader {
     }
 }
 
-/// Ensures a continuation resumes exactly once.
-final class ResumeBox: @unchecked Sendable {
+/// Ensures a continuation resumes exactly once. `nonisolated` (lock-guarded,
+/// `@unchecked Sendable`) so the Vision/Speech callbacks — which run in
+/// nonisolated contexts — can call `resumeOnce()` without a Swift 6 isolation error.
+nonisolated final class ResumeBox: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
     func resumeOnce() -> Bool {

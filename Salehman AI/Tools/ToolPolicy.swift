@@ -159,7 +159,73 @@ enum ToolPolicy {
             "tee ", "cp ", "ln ", "scp ", "ditto ", "curl ", "wget ",
             // persistence / system configuration
             "defaults write", "crontab", "launchctl", "systemsetup",
+            // SwiftPM commands that MUTATE project structure: an agent ran
+            // `swift package init` + `swift build` inside the Xcode source folder
+            // and broke the build (a stray Package.swift + .build bundled as
+            // resources, 2026-06-08). Force approval so it can't happen silently.
+            "swift package", "swift build", "swift test",
         ]
+
+        /// **Allowlist (additive safe fast-path).** Provably read-only command
+        /// *names*: under NO flag combination can any of these mutate the
+        /// filesystem, change permissions/ownership, kill processes, escalate
+        /// privileges, run another program, or reach the network. A command made
+        /// up ENTIRELY of these — across every chained segment, with no risky
+        /// markers, redirects, command substitution, or pipe-into-interpreter —
+        /// is safe to run without an approval prompt (see `isDefinitelySafe`).
+        ///
+        /// This is the allowlist the 2026-06-06 review called for: it only ever
+        /// REDUCES prompts for the inspection commands the model runs constantly
+        /// (`ls`/`cat`/`grep`/`stat`…), which keeps the real approval prompts
+        /// meaningful instead of drowned in `ls` confirmations. It NEVER grants
+        /// anything — `Shell.isBlocked` already ran — and any doubt falls through
+        /// to the normal gate. Deliberately conservative: `git`/`find`/`sort`/`env`
+        /// are OMITTED because some of their forms write, exec, or escalate.
+        static let safeLeadingCommands: Set<String> = [
+            "ls", "pwd", "echo", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep",
+            "which", "whoami", "id", "date", "cal", "hostname", "uname", "arch",
+            "df", "du", "file", "stat", "basename", "dirname", "realpath",
+            "tree", "uptime", "sw_vers", "ps", "diff", "cmp", "nl", "cut",
+        ]
+
+        /// Shell features that can smuggle a second, unvetted command past the
+        /// per-segment token check (command/process substitution, parameter
+        /// expansion). Their presence forces the normal approval path. (`>`/`<`
+        /// redirects are already covered: `>` is a risky marker and triggers
+        /// `looksRisky`; input `<` can only re-read a file, still read-only.)
+        private static let intentHiders: [String] = ["$(", "${", "`", "<(", ">("]
+
+        /// True only when EVERY chained segment's leading token is in
+        /// `safeLeadingCommands` AND the command carries no risky markers,
+        /// command/process substitution, or pipe-into-interpreter. A single
+        /// unrecognized token or risk signal → false (re-confirm). Pure +
+        /// nonisolated, like `looksRisky`, so the same actor-safety/determinism
+        /// contracts hold and it can be unit-tested directly.
+        static func isDefinitelySafe(_ command: String) -> Bool {
+            let lower = command.lowercased()
+            // Any risk signal (">", "rm ", sudo, `… | sh`, …) disqualifies first.
+            if looksRisky(lower) { return false }
+            if intentHiders.contains(where: lower.contains) { return false }
+            // Operator-aware split (mirrors `isBlocked`): collapse two-char
+            // operators to a sentinel, then split on the control operators so
+            // every segment's leading token gets checked.
+            let sep = "\u{0}"
+            let normalized = lower
+                .replacingOccurrences(of: "&&", with: sep)
+                .replacingOccurrences(of: "||", with: sep)
+                .replacingOccurrences(of: "|&", with: sep)
+            let segments = normalized.components(separatedBy: CharacterSet(charactersIn: ";|&\n\r`" + sep))
+            var sawCommand = false
+            for raw in segments {
+                let segment = raw.trimmingCharacters(in: .whitespaces)
+                if segment.isEmpty { continue }
+                guard let firstToken = segment.split(separator: " ").first else { return false }
+                let name = firstToken.split(separator: "/").last.map(String.init) ?? String(firstToken)
+                guard safeLeadingCommands.contains(name) else { return false }
+                sawCommand = true
+            }
+            return sawCommand   // false for an all-empty command (nothing to run)
+        }
 
         /// Interpreters that, on the RECEIVING end of a pipe, mean "execute whatever
         /// was just produced" — i.e. `curl … | sh` / `… |bash` (remote/arbitrary

@@ -16,8 +16,11 @@ part.
   this app" doc. When you change the app's structure (new file, new brain, new
   tool, removed module), update PROJECT_CONTEXT.md so an external reader stays
   correct.
-- Before the owner hands the app to an external AI/person, regenerate the
-  single-file source dump: `bash tools/bundle_source.sh` → `SOURCE_BUNDLE.md`.
+- **Keep [`SOURCE_BUNDLE.md`](SOURCE_BUNDLE.md) complete** — owner directive
+  (2026-06-08): it must contain EVERY line of the app's current source. After any
+  code change, regenerate it with `bash tools/bundle_source.sh` so it always reflects
+  all the code we've written. (Also regenerate before handing the app to an external
+  AI/person.)
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) holds the deep data-flow; keep it honest.
 
 ## 🛠 Build / test (canonical commands)

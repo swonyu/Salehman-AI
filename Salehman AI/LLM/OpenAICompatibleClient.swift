@@ -17,7 +17,12 @@ import Foundation
 /// string only exists in memory as (1) the `Data` parameter in `KeychainStore.write`
 /// when the user types it, and (2) the `Authorization: Bearer …` header bytes
 /// on the outbound request.
-struct OpenAICompatibleClient: Sendable {
+/// `nonisolated`: a pure value-type config holder whose methods only do
+/// networking (URLSession) + thread-safe Keychain reads — no main-actor state.
+/// Marking it nonisolated lets reachability gates AND the test target read its
+/// config properties (`baseURL`, `displayName`, …) off the main actor, which the
+/// Swift 6 language mode requires (MainActor-default isolation would pin them).
+nonisolated struct OpenAICompatibleClient: Sendable {
 
     // MARK: - Configuration
 
@@ -71,8 +76,11 @@ struct OpenAICompatibleClient: Sendable {
     /// servers (`requiresKey == false`), we always return true — the URL is
     /// what gates reachability, and the caller validates it before constructing
     /// the client. Synchronous — no HTTP probe so `BrainStatus` polling stays
-    /// sub-millisecond.
-    func hasKey() -> Bool {
+    /// sub-millisecond. `nonisolated` — it only reads value-type fields on this
+    /// `Sendable` struct plus the thread-safe `KeychainStore`, so reachability
+    /// gates (`SalehmanEngine.hasAnyCloud`, `cloudCodingReachable`) can call it
+    /// off the main actor without a Swift-6 isolation warning.
+    nonisolated func hasKey() -> Bool {
         if !requiresKey { return true }
         guard let account = keychainAccount else { return false }
         return KeychainStore.has(account)

@@ -88,7 +88,7 @@ enum Transcriber {
 
 /// Thread-safe string box for sharing the latest partial transcript across the
 /// recognition callback and the timeout fallback.
-private final class LockedString: @unchecked Sendable {
+private nonisolated final class LockedString: @unchecked Sendable {
     private let lock = NSLock()
     private var _value = ""
     var value: String {

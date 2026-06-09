@@ -2,8 +2,11 @@ import Foundation
 import SwiftUI
 import Combine
 
-/// One agent in the team.
-struct AgentSpec: Identifiable {
+/// One agent in the team. `nonisolated` + `Sendable` (all stored properties are
+/// Sendable value types) so a spec can be captured by the concurrent task-group
+/// closures in `run` and read off the main actor — a Swift 6 language-mode error
+/// otherwise, since MainActor-default isolation would pin its members to the main actor.
+nonisolated struct AgentSpec: Identifiable, Sendable {
     let id = UUID()
     let name: String
     let icon: String
@@ -70,7 +73,7 @@ final class MissionProgress: ObservableObject {
 /// Named tuning thresholds for the pipeline — were inline magic numbers scattered
 /// across the transcript store, the agent runner, and the triviality/length
 /// heuristics. Collected here so they're discoverable and tunable in one place.
-private enum Thresholds {
+private nonisolated enum Thresholds {
     static let maxTurnLength = 4_000      // chars: cap one stored transcript turn
     static let turnHistorySize = 8        // rolling transcript turns kept
     static let fullTokens = 700           // max tokens for a "full" agent reply
@@ -82,24 +85,54 @@ private enum Thresholds {
 }
 
 /// Keeps a short rolling transcript so non-chat agents have conversation context.
+/// **Self-persisting** (JSON in Application Support) so conversation CONTEXT survives
+/// an app restart: the displayed chat already persisted, but this in-memory store used
+/// to start empty on every launch — so the AI "forgot" the conversation after a
+/// relaunch even though the chat still showed the messages. New Chat clears it.
 actor ConversationStore {
     static let shared = ConversationStore()
-    private var turns: [(role: String, text: String)] = []
+
+    /// Codable mirror of a turn (tuples aren't Codable).
+    private struct Turn: Codable { var role: String; var text: String }
+    private var turns: [Turn] = []
+
+    // Inline the disk read so the actor's `init` doesn't call an actor-isolated
+    // method (a Swift-6 isolation error). `fileURL` is pure path logic — no actor
+    // state — so it's `nonisolated` and usable from both `init` and `save`.
+    init() {
+        if let data = try? Data(contentsOf: Self.fileURL),
+           let saved = try? JSONDecoder().decode([Turn].self, from: data) {
+            turns = saved
+        }
+    }
+
+    private nonisolated static var fileURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("SalehmanAI", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("conversation.json")
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(turns) { try? data.write(to: Self.fileURL, options: .atomic) }
+    }
 
     func add(role: String, text: String) {
         // Cap each stored turn so a single huge paste can't bloat memory or the
         // prompt context that every later agent inherits.
         let capped = text.count > Thresholds.maxTurnLength
             ? String(text.prefix(Thresholds.maxTurnLength)) + "…" : text
-        turns.append((role, capped))
+        turns.append(Turn(role: role, text: capped))
         if turns.count > Thresholds.turnHistorySize {
             turns.removeFirst(turns.count - Thresholds.turnHistorySize)
         }
+        save()
     }
     func transcript() -> String {
         turns.map { "\($0.role): \($0.text)" }.joined(separator: "\n")
     }
-    func reset() { turns.removeAll() }
+    func reset() { turns.removeAll(); save() }
 }
 
 /// Runs the full multi-agent pipeline for one user message.
@@ -108,7 +141,15 @@ enum AgentPipeline {
         // Every user-facing reply funnels through here, so this is the one place
         // Salehman gets the last word: produce the draft via the normal brain
         // pipeline, then (when Salehman Leader is ON) finalize it through Salehman.
-        var draft = await runDraft(mission: mission)
+        //
+        // Read the PAST transcript up front (before this turn is recorded) so EVERY
+        // mode can see the conversation — including the short-circuit ensemble /
+        // free-auto / coding paths that bypass the multi-agent team. Without this, a
+        // reply like "yes" / "continue" reached the brain with zero context. (A one-shot
+        // that must NOT inherit context — e.g. the Code-tab Review — calls
+        // `ConversationStore.reset()` first instead, then this records cleanly.)
+        let priorHistory = await ConversationStore.shared.transcript()
+        var draft = await runDraft(mission: mission, priorHistory: priorHistory)
 
         // UNIVERSAL SAFETY NET — the chat must NEVER surface a raw provider error.
         // If the selected brain failed (e.g. cloudCoding with every coder
@@ -116,15 +157,26 @@ enum AgentPipeline {
         // with the cloud-first Salehman engine, which cascades the free providers
         // and ULTIMATELY the local Ollama model — so the user gets a real answer
         // instead of "[Provider error 429]". Only fires on a genuine error sentinel,
-        // so normal replies pay nothing.
+        // so normal replies pay nothing. The rescue gets the conversation context too.
         if isErrorReply(draft) {
-            if let rescue = await SalehmanEngine.generate(prompt: mission, userPrompt: mission),
+            let rescuePrompt = withConversationContext(mission, history: priorHistory)
+            if let rescue = await SalehmanEngine.generate(prompt: rescuePrompt, userPrompt: mission),
                !isErrorReply(rescue) {
                 draft = rescue
             }
         }
 
-        return await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+        let finalAnswer = await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+
+        // Record the turn HERE — the single chokepoint every mode funnels through —
+        // so the short-circuit modes (which `return` before the multi-agent team's
+        // old recording site) ALSO persist history. Skip recording an error/off reply
+        // so a failed turn can't poison the next turn's context.
+        if !isErrorReply(finalAnswer) {
+            await ConversationStore.shared.add(role: "User", text: mission)
+            await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
+        }
+        return finalAnswer
     }
 
     /// True when a draft is an error/off sentinel rather than a real answer, so
@@ -142,7 +194,49 @@ enum AgentPipeline {
             || (lower.contains(" error ") && t.contains(where: \.isNumber))
     }
 
-    private static func runDraft(mission: String) async -> String {
+    /// Folds the recent conversation transcript into a single prompt for the
+    /// short-circuit modes (ensemble / free-auto / free-coding / cloud-coding),
+    /// which bypass the multi-agent team's own history handling. Without it, a reply
+    /// like "yes" / "continue" reaches the brain with no idea what came before.
+    /// No-op when there's no history yet (first turn). The transcript is already
+    /// length-capped by `ConversationStore`, so this can't bloat the prompt.
+    nonisolated static func withConversationContext(_ mission: String, history: String) -> String {
+        let h = history.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !h.isEmpty else { return mission }
+        return """
+        Conversation so far (most recent last) — use it to interpret the new message \
+        (e.g. a short "yes" / "no" / "continue" refers to what was just discussed):
+        \(h)
+
+        New message from the user:
+        \(mission)
+        """
+    }
+
+    /// Heuristic: does this reply look like the assistant STOPPED mid-task and would
+    /// continue if nudged? Drives the optional auto-continue loop (claude-autocontinue
+    /// style). CONSERVATIVE — only fires on clear "to be continued" signals: the
+    /// tool-loop round-cap fallback, an unterminated ``` code block, or the model
+    /// explicitly offering to go on. Never fires on a normal complete answer. Pure +
+    /// nonisolated → unit-testable.
+    nonisolated static func looksIncomplete(_ reply: String) -> Bool {
+        let t = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !isErrorReply(t) else { return false }
+        let lower = t.lowercased()
+        if lower.contains("reached the tool-call limit") || lower.contains("say \"continue\"") {
+            return true
+        }
+        // Unterminated code fence ⇒ the answer was cut off mid-block.
+        if (t.components(separatedBy: "```").count - 1) % 2 == 1 { return true }
+        // The model explicitly offering to go on — check only the tail so the word
+        // "continue" appearing mid-answer doesn't trigger a false continuation.
+        let tail = String(lower.suffix(140))
+        let offers = ["shall i continue", "should i continue", "want me to continue",
+                      "like me to continue", "continue?", "to be continued", "(continued)"]
+        return offers.contains { tail.contains($0) }
+    }
+
+    private static func runDraft(mission: String, priorHistory: String) async -> String {
         // Don't gate the pipeline on a single brain — when one's off, the
         // LocalLLM layer transparently falls back to Ollama qwen-coder so the
         // agents keep working with the local brain. We only bail out when
@@ -150,12 +244,17 @@ enum AgentPipeline {
         let brain = await LocalLLM.currentBrain()
         if brain == .none { return LocalLLM.offMessage }
 
+        // The short-circuit modes below bypass the multi-agent team (and the history
+        // handling further down), so fold the recent transcript into the prompt here
+        // so they remember the conversation. No-op on the first turn (empty history).
+        let contextualMission = withConversationContext(mission, history: priorHistory)
+
         // "All Brains at Once" bypasses the multi-agent team entirely: ensemble
         // means "ask every reachable brain the raw prompt, show all answers",
         // not "run the 15-agent pipeline on one brain". The complexity/spec
         // logic below doesn't apply.
         if LocalLLM.isEnsembleMode {
-            return await LocalLLM.generateEnsemble(mission)
+            return await LocalLLM.generateEnsemble(contextualMission)
         }
 
         // "Free · Auto" likewise bypasses the multi-agent team: it races the
@@ -168,22 +267,22 @@ enum AgentPipeline {
         // no-tool race.
         if LocalLLM.isFreeAutoMode {
             if AppSettings.unrestrictedToolsEnabled {
-                return await LocalLLM.freeAutoReplyWithTools(mission)
+                return await LocalLLM.freeAutoReplyWithTools(contextualMission)
             }
-            return await LocalLLM.generateFreeAuto(mission)
+            return await LocalLLM.generateFreeAuto(contextualMission)
         }
 
         // FreeCoding: a coding-focused loop over the free coders + DeepSeek. Always
         // tool-capable (coding wants to build/run/test), so it bypasses the
         // multi-agent team too and routes straight to `freeCodingReply`.
         if LocalLLM.isFreeCodingMode {
-            return await LocalLLM.freeCodingReply(mission)
+            return await LocalLLM.freeCodingReply(contextualMission)
         }
 
         // Cloud Coding: cloud-only "best coders" loop — same tool-capable bypass,
         // no local model (zero RAM / no lag).
         if LocalLLM.isCloudCodingMode {
-            return await LocalLLM.cloudCodingReply(mission)
+            return await LocalLLM.cloudCodingReply(contextualMission)
         }
 
         // How many agents run is a function of BOTH the user's response-mode
@@ -228,11 +327,14 @@ enum AgentPipeline {
             }
         }
 
-        var history = await ConversationStore.shared.transcript()
+        // `let` (not `var`): an immutable `history` can be captured by the phase's
+        // concurrent task-group closures. A mutable `var` stays "accessible to
+        // main-actor code", so sending such a closure is a Swift 6 data-race error.
+        let baseTranscript = await ConversationStore.shared.transcript()
         let memories = MemoryStore.shared.recall(mission)
-        if !memories.isEmpty {
-            history = "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + history
-        }
+        let history = memories.isEmpty
+            ? baseTranscript
+            : "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + baseTranscript
         // Structured backbone: a MissionPlan + MissionMemory accumulate the run,
         // and the per-agent handlers are looked up from AgentRegistry.
         let plan = MissionPlan(mission: mission,
@@ -347,8 +449,8 @@ enum AgentPipeline {
         memory.recordOutcome(Outcome(successRating: rating, notes: memory.getSummary()))
         lastOutcome = memory.outcome
 
-        await ConversationStore.shared.add(role: "User", text: mission)
-        await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
+        // (Conversation recording moved to `run()` so ALL modes — not just this
+        // multi-agent path — persist history. See the chokepoint note there.)
         return finalAnswer
     }
 
@@ -363,7 +465,7 @@ enum AgentPipeline {
     /// app (the chat send-path serializes missions); if concurrent missions ever
     /// become real, return the outcome from `run()` instead of stashing it here.
     private nonisolated(unsafe) static var _lastOutcome: Outcome?
-    private static let lastOutcomeLock = NSLock()
+    private nonisolated static let lastOutcomeLock = NSLock()
     nonisolated static var lastOutcome: Outcome? {
         get { lastOutcomeLock.lock(); defer { lastOutcomeLock.unlock() }; return _lastOutcome }
         set { lastOutcomeLock.lock(); defer { lastOutcomeLock.unlock() }; _lastOutcome = newValue }
@@ -419,8 +521,11 @@ enum AgentPipeline {
         return true
     }
 
-    /// Task-complexity tiers that decide how many agents run.
-    enum MissionComplexity { case simple, moderate, hard }
+    /// Task-complexity tiers that decide how many agents run. `nonisolated` so
+    /// its (implicit) `Equatable` conformance is usable from nonisolated contexts
+    /// — e.g. `#expect(complexity == .hard)` in the test target, which would be a
+    /// hard error under the Swift 6 language mode otherwise.
+    nonisolated enum MissionComplexity { case simple, moderate, hard }
 
     /// Classify a message's complexity from cheap text heuristics (no model
     /// call — zero added latency). Only `.hard` can unlock the full 15-agent
