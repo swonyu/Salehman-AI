@@ -1404,6 +1404,21 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Grok proposed a Makefile with build/test/open/clean shortcuts — good idea, but its `advance_tracks.sh` script didn't exist and `| tail -8` piping hid build errors. Rebuilt it clean: `make build` and `make test` grep for errors/warnings/results so nothing is hidden; `make advance` does the real daily cycle (build → test → commit → push); `make open` and `make clean` are as Grok wrote. No advance_tracks.sh needed.
 **Result:** `make help` runs clean. All targets verified.
 
+## 2026-06-09 · Add scripts/advance_tracks.sh, make advance/ci, .vscode/tasks.json
+**Files:** `scripts/advance_tracks.sh` (new), `Makefile`, `.vscode/tasks.json` (new)
+**What & why:** Grok claimed to have written these but his terminal bridge commands never landed on disk. Built them for real: `advance_tracks.sh` runs build → test → commit (with `--dry-run` / `--push` flags, coloured logging, macOS notification). Makefile gains `make advance`, `make advance-push`, `make advance-dry`, `make ci`. `.vscode/tasks.json` exposes all targets in the Command Palette (Cmd+Shift+P → "Tasks: Run Task").
+**Result:** `make advance-dry` runs clean, `make help` shows all targets.
+
+## 2026-06-09 · Fine-tuning export: tools/finetune_export.py + finetune_export.jsonl
+**Files:** `tools/finetune_export.py` (new), `tools/finetune_export.jsonl` (generated)
+**What & why:** Step 3 of feeding Salehman training data — exports the Claude session JSONL history as xAI fine-tuning format (one `{"messages":[system, user, assistant]}` per line). Key engineering: tool_result records are `type:"user"` in session files and were overwriting `pending_user`, causing near-zero pairs. Fixed by checking block types: only real text-block user turns update pending_user; tool_result user turns are skipped. Result: 345 raw pairs → 112 filtered training examples (372 KB). Each example includes the Salehman AI system prompt so the fine-tuned model inherits the persona.
+**Result:** `tools/finetune_export.jsonl` written, ready to upload at console.x.ai → Fine-tuning → New job.
+
+## 2026-06-09 · Fix Makefile — remove broken advance_tracks.sh targets, fix error hiding
+**Files:** `Makefile`
+**What & why:** Grok's terminal bridge overwrote the Makefile with a version that (a) referenced `./scripts/advance_tracks.sh` which doesn't exist, and (b) piped build output through `| tail -8` / `| tail -12`, hiding actual error lines. Removed the three broken `advance` targets; replaced `| tail` with `2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"` so errors are always visible. `make open` and `make clean` unchanged.
+**Result:** `make build` and `make test` now surface errors. Broken targets removed.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

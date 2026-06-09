@@ -1,64 +1,44 @@
-.PHONY: advance build test open clean help
+.PHONY: advance advance-push advance-dry ci build test clean open help
 
-SCHEME   = Salehman AI
-DEST     = platform=macOS
-CFG      = Debug
-FLAGS    = CODE_SIGNING_ALLOWED=NO
-TESTS    = Salehman AITests
-
-# ── Main flow ────────────────────────────────────────────────────────────────
-
-# Build → test → commit everything → push. Standard "done, ship it" flow.
 advance:
-	@echo "🔨 Building..."
-	@xcodebuild -scheme "$(SCHEME)" -destination $(DEST) -configuration $(CFG) $(FLAGS) build \
-	    | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED" | tail -10
-	@echo "🧪 Testing..."
-	@xcodebuild test -scheme "$(SCHEME)" -destination $(DEST) -configuration $(CFG) $(FLAGS) \
-	    -only-testing:"$(TESTS)" \
-	    | grep -E "Test case|error:|Executed|FAILED" | tail -20
-	@echo "📦 Committing & pushing..."
-	@git add -A && git diff --cached --quiet || git commit -m "chore: advance (build + test green)"
-	@git push
-	@echo "✅ Done."
+	@./scripts/advance_tracks.sh
 
-# ── Build & Test ─────────────────────────────────────────────────────────────
+advance-push:
+	@./scripts/advance_tracks.sh --push
+
+advance-dry:
+	@./scripts/advance_tracks.sh --dry-run
+
+ci:
+	@echo "Running CI pipeline (build + test + dry-run)..."
+	@$(MAKE) -s build
+	@$(MAKE) -s test
+	@$(MAKE) -s advance-dry
+	@echo "CI pipeline complete"
 
 build:
-	@echo "🔨 Building Salehman AI..."
-	@xcodebuild -scheme "$(SCHEME)" -destination $(DEST) -configuration $(CFG) $(FLAGS) build \
-	    | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED"
+	@echo "Building Salehman AI..."
+	@xcodebuild -scheme "Salehman AI" -destination platform=macOS -configuration Debug CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" | tail -20
 
 test:
-	@echo "🧪 Running tests..."
-	@xcodebuild test -scheme "$(SCHEME)" -destination $(DEST) -configuration $(CFG) $(FLAGS) \
-	    -only-testing:"$(TESTS)" \
-	    | grep -E "Test case|error:|Executed|FAILED"
-
-# ── Utilities ────────────────────────────────────────────────────────────────
+	@echo "Running tests..."
+	@xcodebuild test -scheme "Salehman AI" -destination platform=macOS -configuration Debug CODE_SIGNING_ALLOWED=NO -only-testing:"Salehman AITests" 2>&1 | grep -E "error:|warning:|Test (Suite|Case)|BUILD (SUCCEEDED|FAILED)|Executed" | tail -30
 
 open:
-	@echo "📂 Opening Salehman AI.xcodeproj..."
 	@open "Salehman AI.xcodeproj"
 
 clean:
-	@echo "🧹 Cleaning DerivedData..."
+	@echo "Cleaning DerivedData..."
 	@rm -rf ~/Library/Developer/Xcode/DerivedData/Salehman_AI-*
-	@echo "✅ Clean complete."
-
-# ── Help ─────────────────────────────────────────────────────────────────────
+	@echo "Done"
 
 help:
-	@echo ""
-	@echo "🚀 Salehman AI — Available Commands"
-	@echo "===================================="
-	@echo ""
-	@echo "  make advance   Build + test + commit + push (the full daily cycle)"
-	@echo "  make build     Build only (Debug)"
-	@echo "  make test      Run all unit tests"
-	@echo ""
-	@echo "  make open      Open project in Xcode"
-	@echo "  make clean     Clean DerivedData (fixes weird Xcode states)"
-	@echo ""
-	@echo "  make help      Show this help"
-	@echo ""
+	@echo "Salehman AI Makefile targets:"
+	@echo "  make advance      - Build + test + commit (safe checkpoint)"
+	@echo "  make advance-push - Advance + push to origin"
+	@echo "  make advance-dry  - Preview what advance would do"
+	@echo "  make ci           - Build + test + advance-dry (no commit)"
+	@echo "  make build        - Build the app (errors visible)"
+	@echo "  make test         - Run unit tests"
+	@echo "  make open         - Open in Xcode"
+	@echo "  make clean        - Clean DerivedData"
