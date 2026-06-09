@@ -27,17 +27,20 @@ struct RootView: View {
                     ContentView()
                         .opacity(app.selectedTab == .chat ? 1 : 0)
                         .allowsHitTesting(app.selectedTab == .chat)
+                        .animation(DS.Motion.spring, value: app.selectedTab)
 
                     if visitedCode || app.selectedTab == .code {
                         CodeView()
                             .opacity(app.selectedTab == .code ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .code)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
 
                     if visitedAgents || app.selectedTab == .agents {
                         AgentsView()
                             .opacity(app.selectedTab == .agents ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .agents)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
 
                     if visitedMarkets || app.selectedTab == .markets {
