@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 21:18 +03 · Swift files: 120 · Swift LOC: 22545_
+_Generated: 2026-06-09 21:27 +03 · Swift files: 120 · Swift LOC: 22545_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24284,7 +24284,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1407 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1412 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25680,6 +25680,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Files:** `App/AppSettings.swift`
 **What & why:** Owner: "fix the brain which is salehman ai salehman is the brain." Four fixes: (1) Default `brainPreference` changed from `.auto` to `.salehman` — new users and installs without a stored preference now start on the cloud-first Salehman engine instead of the Ollama-only `.auto` mode that yields "No brain available" on a Mac without Ollama. (2) `brainPreferenceCurrent` nonisolated fallback also changed from `.auto` to `.salehman`. (3) `BrainPreference.title` for `.salehman` renamed from the misleading `"Salehman (your model)"` (sounds like the custom Ollama model) to `"Salehman AI"`. (4) Inline enum comment corrected — it previously said "the user's OWN local Ollama model (name in customModelName); runs nothing else" which is factually wrong; the Salehman engine is cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop → local MLX/Ollama floor). Also updated the `BrainPreference` header comment to call `.salehman` the primary/default brain.
 **Result:** `xcodebuild build` ✓ + all `Salehman AITests` ✓, zero warnings. Pure metadata/routing change — no logic touched, persona and engine chain unchanged.
+
+## 2026-06-09 · 🧠 Ingest Claude sessions → Knowledge Base + Memory
+**Files:** `tools/ingest_sessions.py` (new); `~/Library/Application Support/SalehmanAI/knowledge.json` (app data, not source), `memory.json` (app data)
+**What & why:** Owner wanted Claude conversation history and curated facts fed into Salehman's on-device Knowledge Base and Memory so Salehman can answer grounded in real project knowledge. `ingest_sessions.py`: reads all 24 Claude JSONL sessions, extracts 1495 substantive assistant blocks, deduplicates, classifies into 12 topics (Swift 6 Concurrency, Brain/LLM Engine, Code Tab, Agent Pipeline, etc.) and appends them as documents to `knowledge.json` (1130 chunks across 12 topic docs). Also writes 22 curated durable facts to `memory.json` (owner name/location, project details, tech stack, preferences, key security notes). Vectors are `null` (NLEmbedding can't run from Python); keyword-search fallback works immediately; the app generates proper semantic vectors on next access.
+**Result:** Script runs clean. 1130 knowledge chunks + 22 memory facts loaded. Script is idempotent — re-running refreshes the session docs (removes then re-adds) without duplicating memory facts already present.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
