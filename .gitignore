@@ -37,3 +37,9 @@ salehman-training/
 # 2026-06-08): a nested repo copy + the claude-autocontinue browser extension
 # (its own git repo). Kept on disk, but not part of this app — don't track.
 External Artifacts/
+
+# Stray build/tooling junk (a grok-polish `git add -A` swept these in 2026-06-09)
+__pycache__/
+*.pyc
+*.profraw
+Bash tool output*

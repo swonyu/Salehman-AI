@@ -1,7 +1,0 @@
-=== ContentView send path: what generates the reply? ===
-Salehman AI/Views/ContentView.swift:676:        Task { await Orchestrator.reset() }
-Salehman AI/Views/ContentView.swift:754:            // so it inherits the conversation history recorded by AgentPipeline.run.
-Salehman AI/Views/ContentView.swift:759:                let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
-Salehman AI/Views/ContentView.swift:770:                   AgentPipeline.looksIncomplete(result.output) {
-Salehman AI/Views/ContentView.swift:813:            let result = await Orchestrator.runAndReturnResult(mission: prompt)
-Salehman AI/Views/ContentView.swift:1494:    /// `generateStreaming` invokes `onUpdate(offMessage)` when both brains are
