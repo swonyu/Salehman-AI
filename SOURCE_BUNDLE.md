@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-09 15:47 +03 · Swift files: 118 · Swift LOC: 22033_
+_Generated: 2026-06-09 16:12 +03 · Swift files: 118 · Swift LOC: 22087_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11784,7 +11784,7 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (759 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (813 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11990,6 +11990,13 @@ struct CodeView: View {
     @State private var runningTask: Task<Void, Never>?
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
+    @State private var fileFilter = ""   // live filter for the (flat) file list
+
+    /// Files matching the current filter (by relative path, case-insensitive).
+    private var filteredFiles: [URL] {
+        guard !fileFilter.isEmpty else { return ws.files }
+        return ws.files.filter { relativePath($0).localizedCaseInsensitiveContains(fileFilter) }
+    }
 
     enum RightPane: String, CaseIterable { case file = "File", diff = "Diff" }
 
@@ -12055,6 +12062,7 @@ struct CodeView: View {
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Rescan project files")
+                        .accessibilityLabel("Rescan project files")
                 }
             }
             .padding(10)
@@ -12071,15 +12079,44 @@ struct CodeView: View {
             if ws.files.isEmpty {
                 emptyTreeHint
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(ws.files, id: \.self) { url in fileRow(url) }
+                fileFilterField
+                let shown = filteredFiles
+                if shown.isEmpty {
+                    Text("No files match \u{201C}\(fileFilter)\u{201D}")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(shown, id: \.self) { url in fileRow(url) }
+                        }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
                 }
             }
         }
         .background(.ultraThinMaterial)
+    }
+
+    /// Live filter field for the file list (the tree is a flat list of every file,
+    /// which gets long on a real project).
+    private var fileFilterField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
+            TextField("Filter files", text: $fileFilter)
+                .textFieldStyle(.plain).font(.system(size: 11))
+            if !fileFilter.isEmpty {
+                Button { fileFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Clear file filter")
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
     private var emptyTreeHint: some View {
@@ -12129,6 +12166,20 @@ struct CodeView: View {
 
     private var chatPane: some View {
         VStack(spacing: 0) {
+            // Clear the Code-tab conversation (it otherwise accumulates with no reset).
+            if !messages.isEmpty {
+                HStack {
+                    Spacer()
+                    Button { messages.removeAll() } label: {
+                        Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Clear this conversation")
+                    .accessibilityLabel("Clear this conversation")
+                    .disabled(isRunning)
+                }
+                .padding(.horizontal, 12).padding(.top, 8)
+            }
             // Agent steps — feature: plan / agent steps view.
             if isRunning && !progress.steps.isEmpty {
                 agentSteps
@@ -12270,6 +12321,7 @@ struct CodeView: View {
                 Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Attach a file as context")
+                    .accessibilityLabel("Attach a file as context")
 
                 TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -12291,6 +12343,7 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
         }
         .padding(10)
@@ -12319,6 +12372,7 @@ struct CodeView: View {
         .fixedSize()
         .foregroundStyle(.secondary)
         .help("Brain, effort & toggles")
+        .accessibilityLabel("Brain, effort and toggles")
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
@@ -23764,7 +23818,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1378 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1387 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -25131,8 +25185,17 @@ Wiring (exhaustive switch arms all caught by compiler):
 **What & why:** Owner asked me to do properly the two refactors Grok left broken/half-baked. **(a) ChatViewModel:** extracted the conversation state (`messages`, `isRunning`, `runningTask`) + the REAL send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue loop, vision, speech — not a stub) out of the 1600-line `ContentView` into a `@MainActor ObservableObject`. ContentView now holds a `@StateObject vm` and keeps only input/focus/search; a `submit(_:)` helper passes the composed text + attachment to `vm.send` and clears the view's input, and `newChat()` wraps `vm.startNewChat()` + search reset. Rewired ~50 references via a ContentView-scoped perl with lookarounds (skipping parameter labels like `isRunning:` and already-prefixed `.x`), compiler-verified each. **(b) JSONFileStore:** cleaned up the committed `JSONFileStore<T>` (fixed Grok's blank-line-between-every-line formatting; made it `nonisolated` so off-main `MemoryStore` can call it — it was MainActor-isolated by default, which is why Grok's adoption didn't compile), then adopted it in `MemoryStore` (one `persist()` replacing 3 duplicated encode/atomic-write blocks; load via `store.load(defaultValue:)`) and `ScratchpadStore` (save/load via the store). Same filenames (`memory.json`/`scratchpad.json`) → existing data preserved.
 **Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`). Behavior-preserving; the chat pipeline is unchanged, just relocated. (SOURCE_BUNDLE.md regen deferred to the end of the follow-on full-cleanup pass to avoid regenerating twice.)
 
+## 2026-06-09 · 🧹 Full code cleanup — zero warnings across both targets
+**Files:** `Media/Transcriber.swift`, `Salehman AITests/SelfImprovePatchTests.swift`, `PROJECT_CONTEXT.md`, `SOURCE_BUNDLE.md`
+**What & why:** Owner asked for a full code cleanup. Drove it off the most objective signal — a clean build's complete warning list — which (after the Swift 6 migration) was down to deprecations only. Fixed them: **app target** — `Transcriber.extractAudioIfNeeded` now uses the modern async `export(to:as:)` instead of the macOS-15-deprecated `exportAsynchronously(completionHandler:)` (deployment target is 26.5, so no availability guard needed); **test target** — 5 `String(contentsOf:)` calls in `SelfImprovePatchTests` migrated to `String(contentsOf:encoding:)`. Verified no other un-encoded `String(contentsOf:)` remains anywhere. Updated PROJECT_CONTEXT (ContentView/ChatViewModel split) and regenerated SOURCE_BUNDLE.md (118 swift files, 22,033 LOC).
+**Result:** `xcodebuild clean test` → **ZERO warnings, zero errors across the app AND test targets**, `** TEST SUCCEEDED **`. The codebase is now: true Swift 6 language mode, warning-clean, green. Removed the macOS-15-deprecation standing note below (resolved). NOTE: "everything" is a large surface — this pass covered all compiler-surfaced issues + the prior Swift-6 sweep; a deeper structural audit (dead-code hunt, doc-file declutter) wasn't attempted (the `GROK_*.md` onboarding docs are intentionally kept per CLAUDE.md).
+
+## 2026-06-09 · ✨ Code tab improvements (filter, a11y, clear conversation)
+**Files:** `Views/CodeView.swift`
+**What & why:** Owner asked to improve the Code tab. Three focused, low-risk wins: **(1) file filter** — the file tree was a flat list of EVERY file with no way to narrow it (painful on a real project); added a live filter field (`filteredFiles` by case-insensitive relative path) + a "no files match" state. **(2) Accessibility labels** — the reload, attach, send/stop, and controls-menu buttons were icon-only with `.help` but no `.accessibilityLabel` (CLAUDE.md mandate); added labels (send/stop reads the running state). **(3) Clear conversation** — the Code tab accumulated messages with no reset (unlike Chat); added a "Clear" button shown when the conversation is non-empty. No logic/pipeline changes.
+**Result:** `xcodebuild build` ✓ + `Salehman AITests` ✓ (`** TEST SUCCEEDED **`), zero warnings. (Deferred deeper ideas — diff/file line numbers need reworking the `DiffLine` model; syntax highlighting is a bigger feature.)
+
 ## Standing notes / known issues
-- **macOS-15 deprecation (2026-06-09):** `Media/Transcriber.swift:83` still uses `AVAssetExportSession.exportAsynchronously(completionHandler:)`, deprecated in macOS 15. Not a concurrency issue (left untouched by the Swift 6 migration); migrate to `export(to:as:)` when the file-transcription path is next revised.
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
@@ -25960,7 +26023,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: PROJECT_CONTEXT.md (270 lines) =====
+===== FILE: PROJECT_CONTEXT.md (271 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -26070,7 +26133,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `Views/` — UI (ContentView + SettingsView = Chat B's lane)
 | File | Purpose |
 |---|---|
-| `ContentView.swift` | The chat UI (1108 lines): message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. |
+| `ContentView.swift` | The chat UI: message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. Presentation/input/focus/search only — the conversation + send pipeline live in `ChatViewModel`. |
+| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
 | `SettingsView.swift` | Settings panel (1170 lines): Apple-Intelligence toggle, **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, performance/voice/privacy/status sections. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**6 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |

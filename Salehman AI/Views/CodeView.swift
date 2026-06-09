@@ -202,6 +202,13 @@ struct CodeView: View {
     @State private var runningTask: Task<Void, Never>?
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
+    @State private var fileFilter = ""   // live filter for the (flat) file list
+
+    /// Files matching the current filter (by relative path, case-insensitive).
+    private var filteredFiles: [URL] {
+        guard !fileFilter.isEmpty else { return ws.files }
+        return ws.files.filter { relativePath($0).localizedCaseInsensitiveContains(fileFilter) }
+    }
 
     enum RightPane: String, CaseIterable { case file = "File", diff = "Diff" }
 
@@ -267,6 +274,7 @@ struct CodeView: View {
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Rescan project files")
+                        .accessibilityLabel("Rescan project files")
                 }
             }
             .padding(10)
@@ -283,15 +291,44 @@ struct CodeView: View {
             if ws.files.isEmpty {
                 emptyTreeHint
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(ws.files, id: \.self) { url in fileRow(url) }
+                fileFilterField
+                let shown = filteredFiles
+                if shown.isEmpty {
+                    Text("No files match \u{201C}\(fileFilter)\u{201D}")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(shown, id: \.self) { url in fileRow(url) }
+                        }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
                 }
             }
         }
         .background(.ultraThinMaterial)
+    }
+
+    /// Live filter field for the file list (the tree is a flat list of every file,
+    /// which gets long on a real project).
+    private var fileFilterField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
+            TextField("Filter files", text: $fileFilter)
+                .textFieldStyle(.plain).font(.system(size: 11))
+            if !fileFilter.isEmpty {
+                Button { fileFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Clear file filter")
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
     private var emptyTreeHint: some View {
@@ -341,6 +378,20 @@ struct CodeView: View {
 
     private var chatPane: some View {
         VStack(spacing: 0) {
+            // Clear the Code-tab conversation (it otherwise accumulates with no reset).
+            if !messages.isEmpty {
+                HStack {
+                    Spacer()
+                    Button { messages.removeAll() } label: {
+                        Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Clear this conversation")
+                    .accessibilityLabel("Clear this conversation")
+                    .disabled(isRunning)
+                }
+                .padding(.horizontal, 12).padding(.top, 8)
+            }
             // Agent steps — feature: plan / agent steps view.
             if isRunning && !progress.steps.isEmpty {
                 agentSteps
@@ -482,6 +533,7 @@ struct CodeView: View {
                 Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Attach a file as context")
+                    .accessibilityLabel("Attach a file as context")
 
                 TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -503,6 +555,7 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
         }
         .padding(10)
@@ -531,6 +584,7 @@ struct CodeView: View {
         .fixedSize()
         .foregroundStyle(.secondary)
         .help("Brain, effort & toggles")
+        .accessibilityLabel("Brain, effort and toggles")
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
