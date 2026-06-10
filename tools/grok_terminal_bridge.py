@@ -827,21 +827,24 @@ def _safari_open_own_window(url: str) -> bool:
 
     Used in parallel mode so each agent drives its own window without clashing."""
     global _SAFARI_WIN
+    # Capture the new window's id IMMEDIATELY (no delay) so a sibling agent opening
+    # its own window can't slip in and become "front window" between create+read.
+    # Cascade the position by current window count so N agents don't stack exactly.
     osa = (
         'tell application "Safari"\n'
-        f'  set newDoc to make new document with properties {{URL:"{url}"}}\n'
-        '  delay 0.6\n'
-        '  set wid to id of front window\n'
-        # park it in the bottom-right corner, small, so it stays off your way
+        f'  make new document with properties {{URL:"{url}"}}\n'
+        '  set wid to id of window 1\n'
+        '  set n to (count of windows)\n'
+        '  set k to ((n - 1) * 60) mod 600\n'
         '  try\n'
-        '    set bounds of window id wid to {1400, 760, 1760, 1040}\n'
+        '    set bounds of window id wid to {100 + k, 80 + k, 760 + k, 620 + k}\n'
         '  end try\n'
         '  return wid\n'
         'end tell'
     )
     r = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True, timeout=30)
     wid = (r.stdout or "").strip()
-    if wid.isdigit():
+    if wid.lstrip("-").isdigit():
         _SAFARI_WIN = f"id {wid}"
         _log(f"opened own Safari window id {wid} (targeting it by id)", "ok")
         return True
@@ -1621,10 +1624,21 @@ def main() -> None:
     ap.add_argument("--max-commands", type=int, default=0, metavar="N",
                     help="Stop after N commands (0 = unlimited). Safety cap for unattended "
                          "parallel --yolo runs so a loop can't run forever.")
+    ap.add_argument("--safari-window", action="store_true",
+                    help="Safari mode: open + drive this agent's OWN Safari window (targeted by id). "
+                         "Lets several Safari agents run side-by-side without fighting over one window.")
+    ap.add_argument("--think", action="store_true",
+                    help="Turn on grok.com's deep-reasoning 'Think' mode before sending the task.")
+    ap.add_argument("--loop", action="store_true",
+                    help="Keep working after [[DONE]] — re-prime the agent for the next task in its "
+                         "lane and continue until --max-commands (set one!) or you stop it.")
     args = ap.parse_args()
     global _VERIFY, _GROK_SESSION, _LABEL, _COORDINATE_LANE, _MAX_COMMANDS
+    global _SAFARI_OWN_WINDOW, _THINK
     _VERIFY = args.verify
     _MAX_COMMANDS = max(0, args.max_commands)
+    _SAFARI_OWN_WINDOW = args.safari_window
+    _THINK = args.think
 
     # Per-instance browser session + human label (the keys to safe parallelism).
     _GROK_SESSION = args.session_name
@@ -1632,10 +1646,11 @@ def main() -> None:
     # Coordinate explicitly, or implicitly whenever this is a non-default (parallel) session.
     if args.coordinate or args.session_name != "grok-bridge":
         _COORDINATE_LANE = _LABEL
-    # Safari can't be isolated per-instance (it drives `window 1`) — warn loudly.
-    if args.session_name != "grok-bridge" and (args.safari or args.auto):
-        print(_yellow("⚠  --session-name isolates agent-browser, NOT Safari. For parallel "
-                      "bridges use --mode auto (not --auto/--safari), or they'll fight over one window."))
+    # agent-browser parallelism needs a unique --session-name; Safari parallelism
+    # needs --safari-window. Warn if a parallel agent-browser session forgot the name.
+    if args.session_name != "grok-bridge" and (args.safari or args.auto) and not args.safari_window:
+        print(_yellow("⚠  For parallel SAFARI agents use --safari-window (own window per agent). "
+                      "--session-name only isolates agent-browser, not Safari."))
 
     # --auto is a shortcut for --mode auto --safari
     if args.auto:
@@ -1711,14 +1726,27 @@ def main() -> None:
             run_autofix(cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo)
 
         elif args.mode == "auto" and args.safari:
-            for i, task in enumerate(task_list):
-                if i > 0:
-                    _log(f"task {i+1}/{len(task_list)}: {task!r}")
-                # Only open a new chat on the first task (or if --no-new-chat not set)
-                run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
-                                new_chat=(not args.no_new_chat or i == 0))
-                if _SHUTDOWN:
+            def _under_cap() -> bool:
+                return not _MAX_COMMANDS or _CMD_COUNT < _MAX_COMMANDS
+            loop_task = (
+                "Find the single next high-value improvement in your assigned lane and do it. "
+                "Read files before editing, verify each change with git diff, keep the build green. "
+                f"If there is genuinely nothing useful left, reply {DONE_SENTINEL}.")
+            first = True
+            while True:
+                for i, task in enumerate(task_list):
+                    if i > 0 or not first:
+                        _log(f"task: {task!r}")
+                    run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
+                                    new_chat=(not args.no_new_chat or i == 0 or not first))
+                    if _SHUTDOWN or not _under_cap():
+                        break
+                first = False
+                # --loop: after the task list, keep pulling new work until stopped/capped.
+                if not args.loop or _SHUTDOWN or not _under_cap():
                     break
+                _log("loop: fetching next task …", "info")
+                task_list = [loop_task]
 
         elif args.mode == "auto":
             run_auto(task_list[0] if task_list else "", cwd=cwd,
