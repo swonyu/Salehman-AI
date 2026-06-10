@@ -1629,13 +1629,21 @@ def main() -> None:
     ap.add_argument("--loop", action="store_true",
                     help="Keep working after [[DONE]] — re-prime the agent for the next task in its "
                          "lane and continue until --max-commands (set one!) or you stop it.")
+    ap.add_argument("--safari-target", metavar="REF", default=None,
+                    help="Exact AppleScript tab this agent drives, e.g. 'tab 3 of window id 603'. "
+                         "Set by run_parallel_safari.sh, which pre-creates N tabs SEQUENTIALLY "
+                         "(race-free) and assigns one per agent. Overrides --safari-window self-open.")
     args = ap.parse_args()
     global _VERIFY, _GROK_SESSION, _LABEL, _COORDINATE_LANE, _MAX_COMMANDS
-    global _SAFARI_OWN_WINDOW, _THINK
+    global _SAFARI_OWN_WINDOW, _THINK, _SAFARI_TARGET
     _VERIFY = args.verify
     _MAX_COMMANDS = max(0, args.max_commands)
     _SAFARI_OWN_WINDOW = args.safari_window
     _THINK = args.think
+    # A launcher-assigned tab is race-free: use it directly (navigate branch), never self-open.
+    if args.safari_target:
+        _SAFARI_TARGET = args.safari_target
+        _SAFARI_OWN_WINDOW = True
 
     # Per-instance browser session + human label (the keys to safe parallelism).
     _GROK_SESSION = args.session_name

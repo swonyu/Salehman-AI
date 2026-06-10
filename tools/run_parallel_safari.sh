@@ -42,26 +42,56 @@ if ! defaults read com.apple.Safari AllowJavaScriptFromAppleEvents >/dev/null 2>
 fi
 
 mkdir -p "$HOME/grok_sessions"
-echo "🦋 launching $# parallel SAFARI agents (own window each · Think on · loop on)"
-echo "   repo=$REPO   max-commands/agent=$MAX_CMDS   stagger=${STAGGER}s"
-echo "   tip: run this from a separate macOS Space so the windows stay off your way."
+N=$#
+echo "🦋 launching $N parallel SAFARI agents (own tab each · Think on · loop on)"
+echo "   repo=$REPO   max-commands/agent=$MAX_CMDS"
+echo "   tip: run this from a separate macOS Space so the tabs stay off your way."
 echo
+
+# ── Pre-create N grok.com tabs in ONE fresh window, SEQUENTIALLY (race-free). ──
+# Each agent then drives an assigned tab by index — no two agents can converge on
+# the same tab (the bug when each agent opened its own). Returns "WID:idx1 idx2 …".
+echo "→ creating $N grok.com tabs (race-free) …"
+MAP=$(osascript <<OSA
+tell application "Safari"
+  activate
+  set newDoc to make new document with properties {URL:"https://grok.com"}
+  set wid to id of front window
+  set idxs to (index of current tab of front window as string)
+  repeat with j from 2 to $N
+    set t to make new tab at end of tabs of window id wid with properties {URL:"https://grok.com"}
+    set idxs to idxs & " " & (index of t as string)
+  end repeat
+  return (wid as string) & ":" & idxs
+end tell
+OSA
+)
+WID="${MAP%%:*}"
+IDXS="${MAP#*:}"
+if [ -z "$WID" ] || [ "$WID" = "$MAP" ]; then
+  echo "✗ couldn't pre-create Safari tabs (is 'Allow JavaScript from Apple Events' on?). MAP=$MAP" >&2
+  exit 1
+fi
+echo "   window id $WID · tabs: $IDXS"
+read -r -a TABIDX <<< "$IDXS"
+echo "→ waiting 6s for the tabs to load grok.com …"; sleep 6
 
 i=0
 for task in "$@"; do
-  i=$((i + 1))
-  name="safari-$i"
+  name="safari-$((i + 1))"
   out="$HOME/grok_sessions/${name}.out"
-  printf '  • %-9s ⟶  %s\n' "$name" "${task:0:60}"
+  target="tab ${TABIDX[$i]} of window id $WID"
+  printf '  • %-9s [%s] ⟶  %s\n' "$name" "$target" "${task:0:48}"
   nohup python3 "$BRIDGE" \
     --auto --yolo \
-    --safari-window --think --loop \
+    --safari-target "$target" --think --loop \
     --session-name "$name" --label "$name" --coordinate \
     --max-commands "$MAX_CMDS" \
     --cwd "$REPO" \
     "$task" > "$out" 2>&1 < /dev/null &
   disown 2>/dev/null || true
-  sleep "$STAGGER"   # let each Safari window open + register its id before the next
+  i=$((i + 1))
+  sleep "$STAGGER"
 done
 
 cat <<EOF
