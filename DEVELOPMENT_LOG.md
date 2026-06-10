@@ -1807,3 +1807,34 @@ Wiring (exhaustive switch arms all caught by compiler):
   Manifest now tracks all 25 Claude sessions (0 new on this run — already ingested
   in an earlier real run). LaunchAgent loaded via `launchctl load` and confirmed
   in `launchctl list`.
+
+## 2026-06-10 — SelfCritique engine: first Core Intelligence primitive (self-correction)
+- What: New `SelfCritique.refine(question:draft:maxRounds:generate:)` — asks the model
+  to critique its own draft for substantive flaws, then rewrite to fix them, looping
+  until the critic emits `NO_ISSUES` or `maxRounds` is hit. `generate` is an injected
+  `@Sendable (String) async -> String` closure, so the loop is testable without a live
+  model and pinnable by the caller to the on-device tier (`generateOnDevice`) or the
+  full router (`generate`). All members `nonisolated` (the target builds with
+  `-default-isolation=MainActor`) so it can run off the main actor. Standalone for now —
+  NOT yet wired into LocalLLM/AgentPipeline (that's a follow-up in the owning lane) so it
+  lands with zero conflict with either session's files.
+- Files: `Salehman AI/Intelligence/SelfCritique.swift` (new), `Salehman AITests/SelfCritiqueTests.swift` (new, 6 tests)
+- How it was built (honest record): drafted as a hard task for a Grok terminal-bridge
+  session (`grok/self-critique-engine-20260610-0621`, session e736466210). Two problems
+  surfaced: (1) the Grok account was throttled to the gated "Heavy" model ("Upgrade to
+  SuperGrok" chrome, truncated/duplicate turns, ~0 progress in 5 turns); (2) the task
+  brief I wrote had a path-doubling bug — it said `Salehman AI/Salehman AI/Intelligence/`,
+  but from the repo root the app source is one level (`Salehman AI/Intelligence/`); the
+  CLAUDE.md `Salehman AI/Salehman AI/` is written from `~/Desktop/`, not the cwd. Grok
+  actually self-corrected the path and was mid-write when I stopped the throttled session.
+  I then landed the verified code directly at the correct path.
+- Also fixed (pre-existing, unrelated): the build was transiently red with
+  `CodeView.swift:992 Extraneous '}'` even though that file is 942 clean lines — stale
+  DerivedData from an earlier `self_improve` auto-fix attempt that had left a
+  `CodeView.swift.bak.20260610_062032` backup. That `.bak` was being bundled into the
+  `.app`'s Resources (synchronized folders copy non-`.swift` files as resources). Removed
+  the stray backup; clean rebuild purged the stale derived file.
+- Result: BUILD SUCCEEDED; `SelfCritiqueTests` 6/6 green (stops-on-approve,
+  refine-then-converge, cap-at-maxRounds, empty-draft short-circuit,
+  blank-rewrite-keeps-prior, token-in-prose). Uncommitted on the grok branch pending
+  owner decision to commit/merge.

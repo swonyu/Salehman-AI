@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 04:52 +03 · Swift files: 125 · Swift LOC: 23219_
+_Generated: 2026-06-10 06:32 +03 · Swift files: 127 · Swift LOC: 23431_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2483,6 +2483,126 @@ struct CloudKeyHintBanner: View {
         static let regular   = Material.regularMaterial
         static let thick     = Material.thickMaterial
     }
+```
+
+===== FILE: Salehman AI/Intelligence/SelfCritique.swift (116 lines) =====
+```swift
+import Foundation
+
+/// SelfCritique -- a self-correction pass for Salehman AI's Core Intelligence.
+///
+/// Given a question and a draft answer, it asks the model to critique its own
+/// draft for substantive flaws, then rewrite to fix them, looping until the
+/// critic reports no issues or `maxRounds` is reached. This is the first
+/// primitive of the Core Intelligence layer: ruthless self-correction applied
+/// to any generated answer.
+///
+/// `generate` is injected (a Sendable async closure) so this is:
+///   * testable without a live model (pass a scripted generator), and
+///   * pinnable by the caller to the on-device tier (LocalLLM.generateOnDevice)
+///     or the full router (LocalLLM.generate).
+///
+/// All members are nonisolated so the loop can run off the main actor (e.g.
+/// from AgentPipeline's task group). The project builds with
+/// -default-isolation=MainActor, so without these annotations every static here
+/// would be implicitly main-actor isolated.
+enum SelfCritique {
+
+    /// Outcome of a refine pass.
+    struct Outcome: Sendable {
+        let answer: String        // best answer after refinement
+        let rounds: Int           // critique->rewrite cycles actually run
+        let critiques: [String]   // each round's critique text (transparency/debug)
+        let converged: Bool       // true iff the loop stopped because the critic approved
+
+        nonisolated init(answer: String, rounds: Int, critiques: [String], converged: Bool) {
+            self.answer = answer
+            self.rounds = rounds
+            self.critiques = critiques
+            self.converged = converged
+        }
+    }
+
+    /// Sentinel the critic emits when the draft needs no changes.
+    nonisolated(unsafe) static let approvedToken = "NO_ISSUES"
+
+    /// Run the self-critique loop.
+    /// - Parameters:
+    ///   - question: the original user question/task.
+    ///   - draft: the first-pass answer to improve.
+    ///   - maxRounds: hard cap on critique->rewrite cycles (clamped to >= 0).
+    ///   - generate: async text generator (model call), injected for testability.
+    nonisolated static func refine(
+        question: String,
+        draft: String,
+        maxRounds: Int = 2,
+        generate: @Sendable (String) async -> String
+    ) async -> Outcome {
+        var current = draft
+        var critiques: [String] = []
+
+        let rounds = max(0, maxRounds)
+        if rounds == 0 || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return Outcome(answer: current, rounds: 0, critiques: critiques, converged: false)
+        }
+
+        for round in 1...rounds {
+            let critique = await generate(critiquePrompt(question: question, answer: current))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            critiques.append(critique)
+
+            if isApproved(critique) {
+                return Outcome(answer: current, rounds: round, critiques: critiques, converged: true)
+            }
+
+            let rewritten = await generate(rewritePrompt(question: question, answer: current, critique: critique))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rewritten.isEmpty {
+                current = rewritten
+            }
+        }
+
+        return Outcome(answer: current, rounds: rounds, critiques: critiques, converged: false)
+    }
+
+    /// True when the critique signals the answer is good enough. Accepts the
+    /// sentinel anywhere in the (case-insensitive) text -- small models tend to
+    /// wrap it in prose ("I find NO_ISSUES here.") -- and treats an empty
+    /// critique as "nothing to fix".
+    nonisolated static func isApproved(_ critique: String) -> Bool {
+        let trimmed = critique.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        return trimmed.uppercased().contains(approvedToken)
+    }
+
+    nonisolated static func critiquePrompt(question: String, answer: String) -> String {
+        """
+        You are a ruthless critic. Find every substantive flaw in the ANSWER as a response to the QUESTION: factual errors, missing steps, weak reasoning, unsupported claims, ambiguity, or anything that makes it less useful. Be specific and terse; list only real problems.
+        If the answer has no substantive problems, reply with exactly: \(approvedToken)
+
+        QUESTION:
+        \(question)
+
+        ANSWER:
+        \(answer)
+        """
+    }
+
+    nonisolated static func rewritePrompt(question: String, answer: String, critique: String) -> String {
+        """
+        Rewrite the ANSWER so it fully addresses the QUESTION and fixes every issue in the CRITIQUE. Keep what was correct; repair what was flawed. Output ONLY the improved answer -- no preamble, no commentary, no mention of the critique.
+
+        QUESTION:
+        \(question)
+
+        ANSWER:
+        \(answer)
+
+        CRITIQUE:
+        \(critique)
+        """
+    }
+}
 ```
 
 ===== FILE: Salehman AI/Knowledge/ExternalToolsKnowledge.swift (156 lines) =====
@@ -22776,6 +22896,106 @@ struct SSRFGuardUnitTests {
 }
 ```
 
+===== FILE: Salehman AITests/SelfCritiqueTests.swift (96 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+@Suite struct SelfCritiqueTests {
+
+    /// A scripted generator: returns canned outputs in order so the loop can be
+    /// driven deterministically without a live model. An actor because it is
+    /// captured by the @Sendable async closure SelfCritique.refine expects.
+    actor Script {
+        private var responses: [String]
+        private(set) var prompts: [String] = []
+        init(_ responses: [String]) { self.responses = responses }
+        func next(_ prompt: String) -> String {
+            prompts.append(prompt)
+            return responses.isEmpty ? "" : responses.removeFirst()
+        }
+    }
+
+    @Test func stopsImmediatelyWhenCriticApproves() async {
+        let script = Script(["NO_ISSUES"])
+        let out = await SelfCritique.refine(
+            question: "What is 2+2?",
+            draft: "4",
+            maxRounds: 3,
+            generate: { await script.next($0) }
+        )
+        #expect(out.answer == "4")
+        #expect(out.rounds == 1)
+        #expect(out.converged == true)
+        #expect(out.critiques == ["NO_ISSUES"])
+    }
+
+    @Test func refinesThenConverges() async {
+        // Round 1: critique finds a flaw -> rewrite. Round 2: critic approves.
+        let script = Script(["The answer omits the carry.", "4 (with carry shown)", "NO_ISSUES"])
+        let out = await SelfCritique.refine(
+            question: "Add 2+2 and show work.",
+            draft: "4",
+            maxRounds: 3,
+            generate: { await script.next($0) }
+        )
+        #expect(out.answer == "4 (with carry shown)")
+        #expect(out.rounds == 2)
+        #expect(out.converged == true)
+    }
+
+    @Test func stopsAtMaxRoundsWithoutConverging() async {
+        // Critic never approves; loop must cap at maxRounds and return last rewrite.
+        let script = Script(["flaw A", "draft v2", "flaw B", "draft v3", "flaw C", "draft v4"])
+        let out = await SelfCritique.refine(
+            question: "Q",
+            draft: "draft v1",
+            maxRounds: 2,
+            generate: { await script.next($0) }
+        )
+        #expect(out.rounds == 2)
+        #expect(out.converged == false)
+        #expect(out.answer == "draft v3")   // two rewrites applied
+        #expect(out.critiques.count == 2)
+    }
+
+    @Test func emptyDraftReturnsImmediately() async {
+        let script = Script(["should not be called"])
+        let out = await SelfCritique.refine(
+            question: "Q",
+            draft: "   ",
+            maxRounds: 3,
+            generate: { await script.next($0) }
+        )
+        #expect(out.rounds == 0)
+        #expect(out.converged == false)
+        let calls = await script.prompts.count
+        #expect(calls == 0)
+    }
+
+    @Test func blankRewriteKeepsPriorAnswer() async {
+        // Critic finds a flaw but the rewrite comes back empty -> keep the draft.
+        let script = Script(["flaw", "   ", "NO_ISSUES"])
+        let out = await SelfCritique.refine(
+            question: "Q",
+            draft: "good enough",
+            maxRounds: 3,
+            generate: { await script.next($0) }
+        )
+        #expect(out.answer == "good enough")
+        #expect(out.converged == true)
+    }
+
+    @Test func approvalTokenDetectedInsideProse() {
+        #expect(SelfCritique.isApproved("Honestly I find NO_ISSUES here.") == true)
+        #expect(SelfCritique.isApproved("no_issues") == true)   // case-insensitive
+        #expect(SelfCritique.isApproved("") == true)            // empty = nothing to fix
+        #expect(SelfCritique.isApproved("This is wrong.") == false)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/SelfImprovePatchTests.swift (157 lines) =====
 ```swift
 import Testing
@@ -24978,7 +25198,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1781 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1840 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26760,6 +26980,65 @@ Wiring (exhaustive switch arms all caught by compiler):
   (to bypass fake-DONE guard) — reverted and branch discarded.
 - Files: tools/grok_terminal_bridge.py
 - Result: Python syntax OK. ingest_sessions.py confirmed clean.
+
+## 2026-06-10 — ingest_sessions.py: real fix landed + Grok-session ingestion + launchd daemon
+- What: Finished the `addedAt` date-bug fix that was left half-done (a stray
+  `MANIFEST_FILE = Path.home() / .salehman_ingest_manifest.json` syntax error with
+  missing quotes). Rewrote the script: `_SWIFT_REF`/`NOW_SECS` (seconds since
+  2001-01-01, matching Swift `JSONDecoder`'s default `.deferredToDate`) used for
+  every `addedAt`; `save_json` now writes to `.tmp` then atomic `.replace()`; new
+  `chunk_text()` (Python port of `KnowledgeStore.chunk()`, 800/150 overlap); new
+  `--incremental` mode tracked via `~/.salehman_ingest_manifest.json` (skips
+  already-processed `*.jsonl`); new `--grok-sessions` mode parses
+  `~/grok_sessions/*.log` (turn markers, CMD lines, outputs, done/in-progress
+  status) into one knowledge doc per session, added additively so past Grok runs
+  stay in the knowledge base. Also added a new `com.salehmanai.ingest` LaunchAgent
+  (`WatchPaths` on `~/grok_sessions` and the Claude session dir, `ThrottleInterval`
+  60s, runs `--incremental --grok-sessions`) so the knowledge base grows on its own.
+  Two parallel sessions converged on this independently this session: my rewrite
+  and Grok's own verification pass (`py_compile` + standalone float-date test) both
+  confirmed the same fix; only Grok's 1-line audit comment remained as a diff.
+- Files: tools/ingest_sessions.py; `~/Library/LaunchAgents/com.salehmanai.ingest.plist` (new, outside repo)
+- Why: `knowledge.json` was perpetually corrupting to `.corrupt-UUID` because the
+  ingester wrote ISO date strings for `addedAt` but Swift's `JSONDecoder` default
+  date strategy expects a `Double`. Owner also wants Salehman's knowledge base to
+  passively absorb what Grok works on.
+- Result: Real (non-dry-run) run succeeded — `knowledge.json` saved with 16 docs /
+  1450 chunks, including 5 new Grok session-log docs (4 done, 1 in-progress).
+  Manifest now tracks all 25 Claude sessions (0 new on this run — already ingested
+  in an earlier real run). LaunchAgent loaded via `launchctl load` and confirmed
+  in `launchctl list`.
+
+## 2026-06-10 — SelfCritique engine: first Core Intelligence primitive (self-correction)
+- What: New `SelfCritique.refine(question:draft:maxRounds:generate:)` — asks the model
+  to critique its own draft for substantive flaws, then rewrite to fix them, looping
+  until the critic emits `NO_ISSUES` or `maxRounds` is hit. `generate` is an injected
+  `@Sendable (String) async -> String` closure, so the loop is testable without a live
+  model and pinnable by the caller to the on-device tier (`generateOnDevice`) or the
+  full router (`generate`). All members `nonisolated` (the target builds with
+  `-default-isolation=MainActor`) so it can run off the main actor. Standalone for now —
+  NOT yet wired into LocalLLM/AgentPipeline (that's a follow-up in the owning lane) so it
+  lands with zero conflict with either session's files.
+- Files: `Salehman AI/Intelligence/SelfCritique.swift` (new), `Salehman AITests/SelfCritiqueTests.swift` (new, 6 tests)
+- How it was built (honest record): drafted as a hard task for a Grok terminal-bridge
+  session (`grok/self-critique-engine-20260610-0621`, session e736466210). Two problems
+  surfaced: (1) the Grok account was throttled to the gated "Heavy" model ("Upgrade to
+  SuperGrok" chrome, truncated/duplicate turns, ~0 progress in 5 turns); (2) the task
+  brief I wrote had a path-doubling bug — it said `Salehman AI/Salehman AI/Intelligence/`,
+  but from the repo root the app source is one level (`Salehman AI/Intelligence/`); the
+  CLAUDE.md `Salehman AI/Salehman AI/` is written from `~/Desktop/`, not the cwd. Grok
+  actually self-corrected the path and was mid-write when I stopped the throttled session.
+  I then landed the verified code directly at the correct path.
+- Also fixed (pre-existing, unrelated): the build was transiently red with
+  `CodeView.swift:992 Extraneous '}'` even though that file is 942 clean lines — stale
+  DerivedData from an earlier `self_improve` auto-fix attempt that had left a
+  `CodeView.swift.bak.20260610_062032` backup. That `.bak` was being bundled into the
+  `.app`'s Resources (synchronized folders copy non-`.swift` files as resources). Removed
+  the stray backup; clean rebuild purged the stale derived file.
+- Result: BUILD SUCCEEDED; `SelfCritiqueTests` 6/6 green (stops-on-approve,
+  refine-then-converge, cap-at-maxRounds, empty-draft short-circuit,
+  blank-rewrite-keeps-prior, token-in-prose). Uncommitted on the grok branch pending
+  owner decision to commit/merge.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
