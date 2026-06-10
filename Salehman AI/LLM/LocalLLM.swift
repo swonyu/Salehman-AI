@@ -881,7 +881,7 @@ enum LocalLLM {
     preference, how they like to work, their project context — use the \
     remember_fact tool to store it. This is how you get better for them over time.
 
-    TOOLS: In this mode you have no terminal or web access. If a task needs \
+    TOOLS: In this mode you have no local tools or web access. If a task needs \
     running a command, suggest the exact command as text.
     """
 
@@ -1602,6 +1602,9 @@ enum LocalLLM {
         // `UnslothStudio.isLocalLoopback`. A user-typed public URL would NOT
         // satisfy the privacy promise, so we don't route here in that case.
         if UnslothStudio.isLocalLoopback, let reply = await UnslothStudio.chat(prompt: prompt) { return reply }
+        // vLLM: same loopback guard — only qualifies as on-device when the
+        // configured endpoint is localhost/127.0.0.1/::1 (see VLLM.isLocalLoopback).
+        if VLLM.isLocalLoopback, let reply = await VLLM.chat(prompt: prompt) { return reply }
         return nil
     }
 

@@ -35,7 +35,7 @@ enum SelfCritique {
     }
 
     /// Sentinel the critic emits when the draft needs no changes.
-    nonisolated(unsafe) static let approvedToken = "NO_ISSUES"
+    nonisolated static let approvedToken = "NO_ISSUES"
 
     /// Run the self-critique loop.
     /// - Parameters:

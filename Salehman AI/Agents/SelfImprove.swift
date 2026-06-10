@@ -57,7 +57,7 @@ enum SelfImprove {
         let cmd = """
         cd \(shellQuote(projectRoot)) && \
         xcodebuild -project \(shellQuote(projectFile)) -scheme \(shellQuote(scheme)) \
-        -configuration Debug -destination 'platform=macOS' \(action) \
+        -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \(action) \
         > \(shellQuote(logURL.path)) 2>&1
         """
         let result = Shell.run(cmd, timeout: TimeInterval(timeoutSec))

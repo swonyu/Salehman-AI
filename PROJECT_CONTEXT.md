@@ -269,3 +269,10 @@ Tests run **in parallel** — never have two tests mutate the same global (`User
 ---
 
 _Keep this file current. Last refreshed: 2026-06-05._
+
+
+## 9. New Intelligence Layer Additions (2026-06-10)
+
+### Effort Control
+The Effort control in Salehman AI/Intelligence/Effort.swift provides runtime-adjustable reasoning depth, token budget, and computational effort for the intelligence layer. It enables the orchestrator (and agents) to scale effort per-task — low for quick factual answers, high for complex multi-step reasoning or self-critique. This is a core Phase 1 deliverable for quality-over-quantity intelligence.
+
