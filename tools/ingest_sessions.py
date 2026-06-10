@@ -411,3 +411,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+# [2026-06-10] Incremental manifest + date fix verified and integrated.

@@ -1779,3 +1779,31 @@ Wiring (exhaustive switch arms all caught by compiler):
   (to bypass fake-DONE guard) — reverted and branch discarded.
 - Files: tools/grok_terminal_bridge.py
 - Result: Python syntax OK. ingest_sessions.py confirmed clean.
+
+## 2026-06-10 — ingest_sessions.py: real fix landed + Grok-session ingestion + launchd daemon
+- What: Finished the `addedAt` date-bug fix that was left half-done (a stray
+  `MANIFEST_FILE = Path.home() / .salehman_ingest_manifest.json` syntax error with
+  missing quotes). Rewrote the script: `_SWIFT_REF`/`NOW_SECS` (seconds since
+  2001-01-01, matching Swift `JSONDecoder`'s default `.deferredToDate`) used for
+  every `addedAt`; `save_json` now writes to `.tmp` then atomic `.replace()`; new
+  `chunk_text()` (Python port of `KnowledgeStore.chunk()`, 800/150 overlap); new
+  `--incremental` mode tracked via `~/.salehman_ingest_manifest.json` (skips
+  already-processed `*.jsonl`); new `--grok-sessions` mode parses
+  `~/grok_sessions/*.log` (turn markers, CMD lines, outputs, done/in-progress
+  status) into one knowledge doc per session, added additively so past Grok runs
+  stay in the knowledge base. Also added a new `com.salehmanai.ingest` LaunchAgent
+  (`WatchPaths` on `~/grok_sessions` and the Claude session dir, `ThrottleInterval`
+  60s, runs `--incremental --grok-sessions`) so the knowledge base grows on its own.
+  Two parallel sessions converged on this independently this session: my rewrite
+  and Grok's own verification pass (`py_compile` + standalone float-date test) both
+  confirmed the same fix; only Grok's 1-line audit comment remained as a diff.
+- Files: tools/ingest_sessions.py; `~/Library/LaunchAgents/com.salehmanai.ingest.plist` (new, outside repo)
+- Why: `knowledge.json` was perpetually corrupting to `.corrupt-UUID` because the
+  ingester wrote ISO date strings for `addedAt` but Swift's `JSONDecoder` default
+  date strategy expects a `Double`. Owner also wants Salehman's knowledge base to
+  passively absorb what Grok works on.
+- Result: Real (non-dry-run) run succeeded — `knowledge.json` saved with 16 docs /
+  1450 chunks, including 5 new Grok session-log docs (4 done, 1 in-progress).
+  Manifest now tracks all 25 Claude sessions (0 new on this run — already ingested
+  in an earlier real run). LaunchAgent loaded via `launchctl load` and confirmed
+  in `launchctl list`.
