@@ -1676,3 +1676,16 @@ Wiring (exhaustive switch arms all caught by compiler):
   the real Application Support data. `JSONFileStore` already had `baseDirectory:`;
   MemoryStore just needed to expose it.
 - Result: TEST SUCCEEDED (2 new passing, 3 still skipped pending ScratchpadStore seam).
+
+## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
+- What: Updated `tools/start_grok_session.sh` to generate semantic branch names
+  from the task description (`grok/<task-slug>-<timestamp>` instead of bare
+  timestamp). Added new `tools/cleanup_grok_branches.sh` — deletes `grok/*`
+  branches merged into `main` (safe mode, default) or all `grok/*` branches with
+  `--force`. macOS-compatible: uses `if [ -n "$MERGED" ]` guard instead of
+  `xargs -r` (GNU-only).
+- Files: tools/start_grok_session.sh, tools/cleanup_grok_branches.sh
+- Why: Grok Victor proposed this pattern so branches are self-documenting
+  (e.g. `grok/scratchpad-store-seam-20260610-1430`). `cleanup_grok_branches.sh`
+  closes the loop — stale experiment branches accumulate quickly with AI sessions.
+- Result: Scripts executable, smoke-tested (branch creation logic verified).
