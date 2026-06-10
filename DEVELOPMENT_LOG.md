@@ -1659,3 +1659,20 @@ Wiring (exhaustive switch arms all caught by compiler):
 - Why: Grok's Protocol v1.2/v1.3 uses `\`\`\`diff` blocks for Swift edits (safer than
   heredoc for special-char heavy Swift code). The bridge now handles them natively.
 - Result: Python syntax OK, `--verify` + diff-block handling verified.
+
+## 2026-06-10 — MemoryStore injectable seam + 2 PersistenceRoundTripTests enabled
+- What: Added `MemoryStore.init(baseDirectory: URL)` testing seam so tests can
+  back the store with a temp directory instead of Application Support. Changed
+  `private nonisolated(unsafe) let store` from an inline-initializer property to
+  a type-only declaration, with both `private init()` (production) and the new
+  `init(baseDirectory:)` (tests) explicitly setting it. Enabled and wrote bodies for
+  2 of the 5 `PersistenceRoundTripTests`: `memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank`
+  (verifies dedup + blank no-op) and `memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings`
+  (verifies keyword fallback + k cap). The 3 scratchpad/stocksage tests remain disabled
+  pending the same seam on `ScratchpadStore`.
+- Files: Salehman AI/Persistence/MemoryStore.swift,
+         Salehman AITests/PersistenceRoundTripTests.swift
+- Why: §3 refactor milestone — enables hermetic persistence tests without touching
+  the real Application Support data. `JSONFileStore` already had `baseDirectory:`;
+  MemoryStore just needed to expose it.
+- Result: TEST SUCCEEDED (2 new passing, 3 still skipped pending ScratchpadStore seam).

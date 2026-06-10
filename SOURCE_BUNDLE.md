@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 03:29 +03 · Swift files: 124 · Swift LOC: 22962_
+_Generated: 2026-06-10 03:41 +03 · Swift files: 124 · Swift LOC: 22994_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9267,7 +9267,7 @@ nonisolated final class JSONFileStore<T: Codable>: JSONStore {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/MemoryStore.swift (153 lines) =====
+===== FILE: Salehman AI/Persistence/MemoryStore.swift (161 lines) =====
 ```swift
 import Foundation
 import NaturalLanguage
@@ -9283,10 +9283,18 @@ final class MemoryStore: @unchecked Sendable {
     static let shared = MemoryStore()
     private let lock = NSLock()
     private nonisolated(unsafe) var items: [MemoryItem] = []
-    private nonisolated(unsafe) let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+    private nonisolated(unsafe) let store: JSONFileStore<[MemoryItem]>
 
     private init() {
-        items = store.load(defaultValue: [])
+        self.store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+        self.items = store.load(defaultValue: [])
+    }
+
+    /// Testing seam — backs the store with `baseDirectory` instead of Application Support
+    /// so tests stay hermetic and never touch the real data directory.
+    init(baseDirectory: URL) {
+        self.store = JSONFileStore<[MemoryItem]>(filename: "memory.json", baseDirectory: baseDirectory)
+        self.items = store.load(defaultValue: [])
     }
 
     /// Persist `items`. Callers already hold `lock`.
@@ -22119,7 +22127,7 @@ struct OpenRouterPreferenceTests {
 }
 ```
 
-===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (35 lines) =====
+===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (59 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -22136,12 +22144,36 @@ import Foundation
 
 struct PersistenceRoundTripTests {
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank() {
+    @Test func memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = MemoryStore(baseDirectory: dir)
+        store.remember("Saleh loves Swift")
+        store.remember("SALEH LOVES SWIFT")  // case-insensitive duplicate — must be dropped
+        store.remember("")                    // blank — no-op
+        store.remember("   ")                 // whitespace-only — no-op
+
+        #expect(store.allFacts().count == 1)
+        #expect(store.allFacts().first == "Saleh loves Swift")
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings() {
+    @Test func memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = MemoryStore(baseDirectory: dir)
+        store.remember("User loves coffee")
+        store.remember("User hates rain")
+        store.remember("User builds iOS apps")
+        store.remember("User is a developer")
+
+        let results = store.recall("coffee drinks", k: 2)
+        // Keyword fallback: "coffee" matches "User loves coffee"; k=2 caps the result
+        #expect(results.contains("User loves coffee"))
+        #expect(results.count <= 2)
     }
 
     @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
@@ -24717,7 +24749,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1661 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1678 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26379,6 +26411,23 @@ Wiring (exhaustive switch arms all caught by compiler):
 - Why: Grok's Protocol v1.2/v1.3 uses `\`\`\`diff` blocks for Swift edits (safer than
   heredoc for special-char heavy Swift code). The bridge now handles them natively.
 - Result: Python syntax OK, `--verify` + diff-block handling verified.
+
+## 2026-06-10 — MemoryStore injectable seam + 2 PersistenceRoundTripTests enabled
+- What: Added `MemoryStore.init(baseDirectory: URL)` testing seam so tests can
+  back the store with a temp directory instead of Application Support. Changed
+  `private nonisolated(unsafe) let store` from an inline-initializer property to
+  a type-only declaration, with both `private init()` (production) and the new
+  `init(baseDirectory:)` (tests) explicitly setting it. Enabled and wrote bodies for
+  2 of the 5 `PersistenceRoundTripTests`: `memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank`
+  (verifies dedup + blank no-op) and `memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings`
+  (verifies keyword fallback + k cap). The 3 scratchpad/stocksage tests remain disabled
+  pending the same seam on `ScratchpadStore`.
+- Files: Salehman AI/Persistence/MemoryStore.swift,
+         Salehman AITests/PersistenceRoundTripTests.swift
+- Why: §3 refactor milestone — enables hermetic persistence tests without touching
+  the real Application Support data. `JSONFileStore` already had `baseDirectory:`;
+  MemoryStore just needed to expose it.
+- Result: TEST SUCCEEDED (2 new passing, 3 still skipped pending ScratchpadStore seam).
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

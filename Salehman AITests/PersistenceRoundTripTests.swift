@@ -13,12 +13,36 @@ import Foundation
 
 struct PersistenceRoundTripTests {
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank() {
+    @Test func memoryStoreRememberDedupesCaseInsensitiveAndNoOpsOnBlank() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = MemoryStore(baseDirectory: dir)
+        store.remember("Saleh loves Swift")
+        store.remember("SALEH LOVES SWIFT")  // case-insensitive duplicate — must be dropped
+        store.remember("")                    // blank — no-op
+        store.remember("   ")                 // whitespace-only — no-op
+
+        #expect(store.allFacts().count == 1)
+        #expect(store.allFacts().first == "Saleh loves Swift")
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings() {
+    @Test func memoryStoreRecallFallsBackToKeywordAndCapsAtKOnEmptyEmbeddings() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = MemoryStore(baseDirectory: dir)
+        store.remember("User loves coffee")
+        store.remember("User hates rain")
+        store.remember("User builds iOS apps")
+        store.remember("User is a developer")
+
+        let results = store.recall("coffee drinks", k: 2)
+        // Keyword fallback: "coffee" matches "User loves coffee"; k=2 caps the result
+        #expect(results.contains("User loves coffee"))
+        #expect(results.count <= 2)
     }
 
     @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))

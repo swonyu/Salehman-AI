@@ -12,10 +12,18 @@ final class MemoryStore: @unchecked Sendable {
     static let shared = MemoryStore()
     private let lock = NSLock()
     private nonisolated(unsafe) var items: [MemoryItem] = []
-    private nonisolated(unsafe) let store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+    private nonisolated(unsafe) let store: JSONFileStore<[MemoryItem]>
 
     private init() {
-        items = store.load(defaultValue: [])
+        self.store = JSONFileStore<[MemoryItem]>(filename: "memory.json")
+        self.items = store.load(defaultValue: [])
+    }
+
+    /// Testing seam — backs the store with `baseDirectory` instead of Application Support
+    /// so tests stay hermetic and never touch the real data directory.
+    init(baseDirectory: URL) {
+        self.store = JSONFileStore<[MemoryItem]>(filename: "memory.json", baseDirectory: baseDirectory)
+        self.items = store.load(defaultValue: [])
     }
 
     /// Persist `items`. Callers already hold `lock`.
