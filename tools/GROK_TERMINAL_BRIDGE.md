@@ -127,6 +127,59 @@ Make REAL edits. git diff will be verified after DONE.
 - Name the exact files to change and the exact files to leave alone
 - Give before/after snippets for edits — Grok fails at inference, succeeds at copy
 - Always end with "Do NOT run: git commit/push/reset" — let Claude Code handle commits
+- **Verify the file exists before writing the brief** — Grok will hallucinate task descriptions
+  using file names that don't exist in the project. Run `find . -name "*.swift" | grep -i keyword`
+  first, or ask Claude Code to confirm the target file exists.
+
+### Real Phase 1 example (ScratchpadStore injectable seam, 2026-06-10)
+
+This task ran successfully against the updated primer:
+
+```bash
+cd "/Users/saleh/Desktop/Salehman AI" && \
+python3 "tools/grok_terminal_bridge.py" --auto --yolo \
+  --cwd "/Users/saleh/Desktop/Salehman AI" \
+  --branch "scratchpad-store-seam" \
+  "$(cat /tmp/grok_task.txt)"
+```
+
+Task brief (`/tmp/grok_task.txt`):
+```
+TASK: Add injectable testing seam to ScratchpadStore + enable 2 disabled tests.
+
+CONTEXT:
+- JSONFileStore already accepts baseDirectory: URL? in its init.
+- MemoryStore was JUST updated (commit 4d9e70d) with the same pattern — use it as your model.
+
+STEP 1 — Read these files first:
+CMD: sed -n '1,25p' "Salehman AI/Persistence/MemoryStore.swift"
+CMD: sed -n '1,100p' "Salehman AI/Persistence/ScratchpadStore.swift"
+
+STEP 2 — Apply this EXACT change to ScratchpadStore.swift.
+Change:
+  private let store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
+  private init() { load() }
+To:
+  private let store: JSONFileStore<Snapshot>
+  private init() {
+      self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
+      load()
+  }
+  init(testingBaseDirectory: URL) {
+      self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json", baseDirectory: testingBaseDirectory)
+      load()
+  }
+
+STEP 3 — Build:
+CMD: xcodebuild -scheme "Salehman AI" -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
+
+Files to change: Salehman AI/Persistence/ScratchpadStore.swift
+Do NOT touch: MarketsView.swift, StockSage/, or any other file.
+Do NOT run: git commit, git push, git reset.
+```
+
+**Note:** This task was ultimately completed by Claude Code because Grok went into roleplay mode
+before the updated primer was deployed. With the new primer, the same task should run cleanly.
 
 ---
 
