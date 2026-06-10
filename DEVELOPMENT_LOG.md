@@ -1692,6 +1692,28 @@ Wiring (exhaustive switch arms all caught by compiler):
   Only the StockSage test remains disabled.
 - Result: TEST SUCCEEDED — 4/4 PersistenceRoundTripTests passing, zero warnings.
 
+## 2026-06-10 — grok_terminal_bridge.py: 6 session-failure bugs fixed
+- What:
+  1. "Upgrade to SuperGrok" UI banner bleeds INLINE into command text (not just whole
+     lines) — added `_UI_NOISE_INLINE` pass-1 regex sub before the existing line filter.
+  2. `_safari_stream_reply` printed raw uncleaned DOM text live — now applies
+     `_clean_ui_noise()` to `raw` before display/comparison.
+  3. `_safari_get_last_message` Strategy 1 used `innerText` for code elements, which
+     includes CSS overlay content — switched to `textContent`.
+  4. Fenced code blocks containing prose (`"Verifying the terminal environment • 5s"`)
+     were run as shell commands (exit 127) — added `_block_looks_like_shell()` validator;
+     `parse_commands` Priority 2 now rejects non-shell blocks.
+  5. Duplicate commands warned but still executed — now skipped with a note in the
+     report sent back to Grok.
+  6. Fake-DONE guard only fired when git was completely clean, missing sessions with
+     pre-existing uncommitted changes — now snapshots `git status --porcelain` at
+     session start and compares on DONE (unchanged = fake done).
+  Also: `_primer_for` now explicitly warns Grok that task code fences are context-only,
+  not the expected output format (fixes Grok copying ```run from task briefs).
+- Files: tools/grok_terminal_bridge.py
+- Why: All six bugs were visible in the c4074a68c0 bridge session output.
+- Result: Python syntax OK. No runtime test (requires Safari + Grok).
+
 ## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
 - What: Updated `tools/start_grok_session.sh` to generate semantic branch names
   from the task description (`grok/<task-slug>-<timestamp>` instead of bare

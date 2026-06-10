@@ -260,6 +260,32 @@ _LOOKS_LIKE_CMD = re.compile(r"^[\w./\-\"'`${}()\[\]\\|<>&;: ]+$", re.MULTILINE)
 
 _CMD_PREFIX = re.compile(r"^CMD:\s*(.+)$", re.MULTILINE)
 
+# First non-empty token of a valid shell command starts with a path character,
+# a common built-in name, or a variable assignment. Used to reject prose-in-fences.
+_SHELL_FIRST_TOKEN = re.compile(
+    r"^\s*("
+    r"[\./~\$]|"                   # path / $VAR
+    r"[A-Z_]+=|"                   # VAR=value export
+    r"git|cd|ls|cat|sed|grep|awk|python3?|swift|xcode|bash|zsh|sh\s|"
+    r"echo|mkdir|rm|mv|cp|find|curl|wget|tee|chmod|diff|patch|"
+    r"make|env|export|unset|head|tail|wc|sort|tr|cut|pbcopy|open|"
+    r"xcodebuild|swift\s|pod\s|npm\s|yarn\s|ruby\s|perl\s|php\s"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _block_looks_like_shell(block: str) -> bool:
+    """Return True if the first non-empty, non-comment line looks like a shell command.
+    Filters out prose blocks Grok sometimes wraps in code fences
+    (e.g. 'Analyzing the terminal output • 5s')."""
+    for line in block.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        return bool(_SHELL_FIRST_TOKEN.match(line))
+    return False
+
 
 def _collect_diff_cmds(reply: str, session_id: str) -> list[str]:
     """Extract ```diff blocks, write each to a temp file, return git-apply commands.
@@ -278,7 +304,13 @@ def _collect_diff_cmds(reply: str, session_id: str) -> list[str]:
     return cmds
 
 
-# grok.com UI noise — suggestion chips and upsell banners that bleed into page text
+# grok.com UI noise — suggestion chips and upsell banners that bleed into page text.
+# Two patterns: _UI_NOISE_INLINE for inline removal (banner appears mid-line because
+# the CSS overlay is positioned over code text), _UI_NOISE for whole-line drops.
+_UI_NOISE_INLINE = re.compile(
+    r"Upgrade to SuperGrok\s*|SuperGrok\s*",
+    re.IGNORECASE,
+)
 _UI_NOISE = re.compile(
     r"Upgrade to SuperGrok|SuperGrok|"
     r"Thinking about your request|"
@@ -291,10 +323,16 @@ _UI_NOISE = re.compile(
 
 
 def _clean_ui_noise(text: str) -> str:
-    """Strip grok.com UI overlay lines so they never reach parse_commands."""
+    """Strip grok.com UI overlay noise so it never reaches parse_commands.
+
+    Two-pass: (1) inline substitution removes banners that bleed mid-line
+    (e.g. 'sed -n Upgrade to SuperGrok\'1,25p\''); (2) whole-line removal
+    drops chip/suggestion lines that survived the first pass.
+    """
     if not text:
         return text
-    return "\n".join(
+    text = _UI_NOISE_INLINE.sub("", text)   # pass 1: inline removal
+    return "\n".join(                        # pass 2: whole-line removal
         line for line in text.splitlines()
         if not _UI_NOISE.search(line)
     )
@@ -315,8 +353,9 @@ def parse_commands(grok_text: str) -> list[str]:
     if cmd_lines:
         return cmd_lines
 
-    # Priority 2: fenced code blocks
-    blocks = [m.strip() for m in _FENCE.findall(grok_text) if m.strip()]
+    # Priority 2: fenced code blocks — only those whose first line looks like shell
+    blocks = [m.strip() for m in _FENCE.findall(grok_text)
+              if m.strip() and _block_looks_like_shell(m.strip())]
     if blocks:
         return blocks
 
@@ -383,7 +422,10 @@ def _primer_for(cwd: str, task: str) -> str:
     return (PRIMER
             + f"\nNOTE: every command ALREADY runs inside: {cwd}\n"
               "So do NOT `cd` there, and never put ~ inside quotes (zsh won't expand it) —\n"
-              "use absolute paths or paths relative to that directory.\n\n"
+              "use absolute paths or paths relative to that directory.\n"
+              "IMPORTANT: The task below may contain ```run / ```bash examples as CONTEXT.\n"
+              "Do NOT copy that format. YOUR responses must always use the CMD: prefix,\n"
+              "never code fences. One CMD: line, then stop and wait.\n\n"
             + task)
 
 
@@ -724,7 +766,9 @@ def _safari_get_last_message() -> str | None:
       if (pres.length > 0) {
         var lastPre = pres[pres.length - 1];
         var codeEl = lastPre.querySelector('code') || lastPre;
-        var codeText = (codeEl.innerText || codeEl.textContent || '').trim();
+        // textContent (not innerText) avoids CSS overlay contamination — innerText
+        // includes floating UI banners ("Upgrade to SuperGrok") positioned over code.
+        var codeText = (codeEl.textContent || '').trim();
         if (codeText && codeText.length > 1) {
           // Check full page for [[DONE]] so we don't miss the finish signal
           var pageText = document.body.innerText || '';
@@ -923,8 +967,12 @@ def _safari_stream_reply(marker: str, timeout: int = 240) -> str:
             break
         generating = _safari_is_generating()
 
-        # Try DOM extraction (precise), fall back to page-text+marker
+        # Try DOM extraction (precise), fall back to page-text+marker.
+        # Clean noise before length comparison and display so overlay text
+        # (e.g. "Upgrade to SuperGrok" banners) doesn't corrupt the diff.
         raw = _safari_get_last_message()
+        if raw:
+            raw = _clean_ui_noise(raw)
         if raw and len(raw) > len(last_reply):
             new_chars = raw[len(last_reply):]
             print(new_chars, end="", flush=True)
@@ -1026,6 +1074,11 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         _safari_new_chat()
         time.sleep(0.5)
 
+    # Snapshot git state at session start — used by fake-DONE guard.
+    # Comparing vs current state (not just "is clean?") correctly handles
+    # sessions that begin with pre-existing uncommitted changes.
+    _, _session_git_start, _ = run_command("git status --porcelain", cwd=cwd)
+
     # Build primer with the session marker so we can find the first reply boundary
     marker = _SESSION_MARKER
     primer = _primer_for(cwd, task) + f"\n{marker}"
@@ -1065,11 +1118,15 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         if is_done(reply):
             if _VERIFY:
                 git_state = _git_verify(cwd)
-                if "clean — no uncommitted changes" in git_state:
-                    _log("⚠️  fake DONE — git shows no changes; pushing back …", "warn")
+                _, current_git, _ = run_command("git status --porcelain", cwd=cwd)
+                # Compare vs snapshot taken at session start, not just "is clean?".
+                # This fires correctly even when pre-existing uncommitted changes exist.
+                if current_git.strip() == _session_git_start.strip():
+                    _log("⚠️  fake DONE — git unchanged vs session start; pushing back …", "warn")
                     pushback = (f"{git_state}\n\n⚠️ FAKE_COMPLETION_DETECTED: "
-                                f"git shows ZERO file changes. You claimed task complete "
-                                f"but made no real edits. Provide concrete edit commands now.\n{marker}")
+                                f"git shows ZERO file changes since this session started. "
+                                f"You claimed task complete but made no real edits. "
+                                f"Provide concrete edit commands now.\n{marker}")
                     _safari_inject_and_send(pushback)
                     continue
             _log("[[DONE]] — task complete", "ok")
@@ -1091,14 +1148,15 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
 
         no_cmd_streak = 0
 
-        # Run each command, warn on duplicates
+        # Run each command; skip (don't re-run) duplicates detected this session
         reports: list[str] = []
         for cmd in cmds:
             norm_key = ' '.join(cmd.split()).lower()
             if norm_key in _SEEN_CMDS:
-                _log(f"duplicate command detected: {cmd[:80]}", "warn")
-            else:
-                _SEEN_CMDS.add(norm_key)
+                _log(f"duplicate command (skipped): {cmd[:80]}", "warn")
+                reports.append(f"$ {cmd}\n(skipped — already executed this session)")
+                continue
+            _SEEN_CMDS.add(norm_key)
             if _SHUTDOWN:
                 break
             reports.append(gate_and_run(cmd, cwd=cwd, auto_approve=auto_approve, yolo=yolo))
