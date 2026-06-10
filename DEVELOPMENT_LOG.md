@@ -1714,6 +1714,23 @@ Wiring (exhaustive switch arms all caught by compiler):
 - Why: All six bugs were visible in the c4074a68c0 bridge session output.
 - Result: Python syntax OK. No runtime test (requires Safari + Grok).
 
+## 2026-06-10 — grok_terminal_bridge: primer overhaul + --branch flag + auto-log + docs
+- What:
+  1. PRIMER rewritten — shorter, stricter. "YOUR ENTIRE REPLY = one CMD: line."
+     Added explicit rules: read before editing (cat first), verify each edit (git diff),
+     run git diff --stat before [[DONE]], no prose/markdown/fences.
+  2. `--branch NAME` flag — creates `grok/<slug>-<timestamp>` and switches to it inline,
+     replacing the need to run start_grok_session.sh separately.
+  3. Auto-log in --auto mode — writes to `~/grok_sessions/<session>.log` by default
+     so every session is captured without passing --log.
+  4. `tools/GROK_TERMINAL_BRIDGE.md` — official reference doc: all commands, task brief
+     template, flag table, what Grok is good/bad at, protocol explanation.
+- Files: tools/grok_terminal_bridge.py, tools/GROK_TERMINAL_BRIDGE.md
+- Why: Grok went into "orchestrator roleplay" mode in the c4074a68c0 session because
+  the primer allowed prose replies. Stricter format rules + explicit pre-edit/pre-done
+  requirements address the root cause. --branch makes one-command launch simpler.
+- Result: Python syntax OK.
+
 ## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
 - What: Updated `tools/start_grok_session.sh` to generate semantic branch names
   from the task description (`grok/<task-slug>-<timestamp>` instead of bare

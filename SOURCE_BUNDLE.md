@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 04:07 +03 · Swift files: 124 · Swift LOC: 23027_
+_Generated: 2026-06-10 04:14 +03 · Swift files: 124 · Swift LOC: 23027_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24782,7 +24782,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1728 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1745 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26498,6 +26498,23 @@ Wiring (exhaustive switch arms all caught by compiler):
 - Files: tools/grok_terminal_bridge.py
 - Why: All six bugs were visible in the c4074a68c0 bridge session output.
 - Result: Python syntax OK. No runtime test (requires Safari + Grok).
+
+## 2026-06-10 — grok_terminal_bridge: primer overhaul + --branch flag + auto-log + docs
+- What:
+  1. PRIMER rewritten — shorter, stricter. "YOUR ENTIRE REPLY = one CMD: line."
+     Added explicit rules: read before editing (cat first), verify each edit (git diff),
+     run git diff --stat before [[DONE]], no prose/markdown/fences.
+  2. `--branch NAME` flag — creates `grok/<slug>-<timestamp>` and switches to it inline,
+     replacing the need to run start_grok_session.sh separately.
+  3. Auto-log in --auto mode — writes to `~/grok_sessions/<session>.log` by default
+     so every session is captured without passing --log.
+  4. `tools/GROK_TERMINAL_BRIDGE.md` — official reference doc: all commands, task brief
+     template, flag table, what Grok is good/bad at, protocol explanation.
+- Files: tools/grok_terminal_bridge.py, tools/GROK_TERMINAL_BRIDGE.md
+- Why: Grok went into "orchestrator roleplay" mode in the c4074a68c0 session because
+  the primer allowed prose replies. Stricter format rules + explicit pre-edit/pre-done
+  requirements address the root cause. --branch makes one-command launch simpler.
+- Result: Python syntax OK.
 
 ## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
 - What: Updated `tools/start_grok_session.sh` to generate semantic branch names

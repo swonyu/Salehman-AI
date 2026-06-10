@@ -387,30 +387,27 @@ def is_done(grok_text: str) -> bool:
 
 
 PRIMER = textwrap.dedent(f"""\
-    You are operating my REAL Mac terminal. I run every command you send and paste \
-back the real output. You NEVER run anything yourself.
+    You are operating my REAL Mac terminal. I paste back real output. \
+You NEVER run anything yourself — no built-in runner, no sandbox, no DeepSearch.
 
-    ⚠️  CRITICAL:
-    • Do NOT use your built-in code runner, Build tool, DeepSearch, or sandbox.
-    • Do NOT execute code yourself or show results from your own environment.
+    YOUR ENTIRE REPLY = one line only:
+        CMD: <shell command>
 
-    COMMAND FORMAT — use this exact format for every command, no exceptions:
-        CMD: <the shell command here>
+    No prose. No markdown. No code fences. No headers. No commentary. Just CMD:.
 
-    That is a line starting with the four characters "CMD: " followed by the command.
-    Nothing else on the line. No code fences, no backticks, no $, no commentary.
+    RULES — breaking any = task failure:
+    1. ONE CMD: per reply. Stop. Wait for real output before the next command.
+    2. READ before editing — cat the target file first; never write from memory.
+    3. VERIFY each edit — git diff <file> after every write to confirm the change.
+    4. No assumed results — never state something worked without seeing its output.
+    5. DONE check — before signalling done, run:
+       CMD: git diff --stat && git status --porcelain
+       If git shows zero changes, the task is NOT complete. Issue more commands.
+    6. Signal done — reply with ONLY this exact line (nothing else):
+       {DONE_SENTINEL}
 
-    PROTOCOL:
-    • Send EXACTLY ONE "CMD: ..." line per reply. Then STOP and wait for my output.
-    • One command at a time. Never send two CMD lines without seeing output in between.
-    • This is a real macOS machine — /Users/saleh/..., /bin/zsh, Darwin.
-    • Don't claim any result until you've seen its real pasted output.
-    • When the task is fully done AND proven by real output: reply with only {DONE_SENTINEL}.
-
-    Your FIRST reply must be exactly this line (nothing else):
+    Your FIRST reply (nothing else, no explanation):
     CMD: pwd && uname -a && whoami
-
-    Then wait for my output before sending anything else.
 
     Task:
     """)
@@ -1407,8 +1404,12 @@ def main() -> None:
                     help="After each command batch, append git status + diff --stat to the feedback sent to Grok.")
     ap.add_argument("--no-new-chat", action="store_true",
                     help="Don't click New Chat on start (reuse the current grok.com conversation).")
+    ap.add_argument("--branch", metavar="NAME",
+                    help="Create grok/<NAME>-<timestamp> branch and switch to it before running "
+                         "(inline equivalent of start_grok_session.sh).")
     ap.add_argument("--log", metavar="FILE",
-                    help="Append all turns + commands to this log file.")
+                    help="Append all turns + commands to this log file. "
+                         "In --auto mode a default log is written to ~/grok_sessions/<session>.log.")
     args = ap.parse_args()
     global _VERIFY
     _VERIFY = args.verify
@@ -1422,10 +1423,13 @@ def main() -> None:
     if args.mode == "auto" and not args.verify:
         _VERIFY = True
 
-    # --log
+    # --log  (auto mode defaults to ~/grok_sessions/<session>.log so every run is captured)
     global _LOG_PATH
     if args.log:
         _LOG_PATH = Path(args.log).expanduser()
+    elif args.mode == "auto":
+        _LOG_PATH = Path.home() / "grok_sessions" / f"{_SESSION_ID}.log"
+    if _LOG_PATH:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _LOG_PATH.open("a") as fh:
             fh.write(f"\n{'='*60}\nSession {_SESSION_ID}  started {datetime.now().isoformat()}\n")
@@ -1452,6 +1456,19 @@ def main() -> None:
     cwd = os.path.abspath(os.path.expanduser(args.cwd))
     if not os.path.isdir(cwd):
         sys.exit(f"--cwd is not a directory: {cwd}")
+
+    # --branch: create and switch to grok/<slug>-<timestamp> (like start_grok_session.sh)
+    if args.branch:
+        slug = re.sub(r"[^a-z0-9-]+", "-", args.branch.lower().strip()).strip("-")[:40]
+        ts   = datetime.now().strftime("%Y%m%d-%H%M")
+        branch = f"grok/{slug}-{ts}"
+        r = subprocess.run(["git", "checkout", "-b", branch], cwd=cwd,
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.exit(f"git checkout -b {branch} failed:\n{r.stderr.strip()}")
+        print(_green(f"  ✓ branch: {branch}"))
+        print(_dim(f"    merge:   git checkout main && git merge {branch}"))
+        print(_dim(f"    discard: git checkout main && git branch -D {branch}"))
 
     approval = _red("YOLO") if args.yolo else (_yellow("auto-safe") if args.auto_approve else "confirm-dangerous")
     browser  = _cyan("Safari") if args.safari else "agent-browser"
