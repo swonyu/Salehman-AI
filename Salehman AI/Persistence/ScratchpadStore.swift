@@ -29,7 +29,17 @@ final class ScratchpadStore: ObservableObject {
     @Published private(set) var notes: [Note] = []
     @Published private(set) var tasks: [TaskItem] = []
 
-    private init() { load() }
+    private let store: JSONFileStore<Snapshot>
+
+    private init() {
+        self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
+        load()
+    }
+
+    init(testingBaseDirectory: URL) {
+        self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json", baseDirectory: testingBaseDirectory)
+        load()
+    }
 
     // MARK: Mutations (UI + tools)
 
@@ -82,7 +92,6 @@ final class ScratchpadStore: ObservableObject {
     // MARK: Persistence
 
     private struct Snapshot: Codable { var notes: [Note]; var tasks: [TaskItem] }
-    private let store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
 
     private func save() {
         try? store.save(Snapshot(notes: notes, tasks: tasks))

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 03:45 +03 · Swift files: 124 · Swift LOC: 22994_
+_Generated: 2026-06-10 03:56 +03 · Swift files: 124 · Swift LOC: 23027_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9495,7 +9495,7 @@ final class PromptLibrary: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (96 lines) =====
+===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (105 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -9528,7 +9528,17 @@ final class ScratchpadStore: ObservableObject {
     @Published private(set) var notes: [Note] = []
     @Published private(set) var tasks: [TaskItem] = []
 
-    private init() { load() }
+    private let store: JSONFileStore<Snapshot>
+
+    private init() {
+        self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
+        load()
+    }
+
+    init(testingBaseDirectory: URL) {
+        self.store = JSONFileStore<Snapshot>(filename: "scratchpad.json", baseDirectory: testingBaseDirectory)
+        load()
+    }
 
     // MARK: Mutations (UI + tools)
 
@@ -9581,7 +9591,6 @@ final class ScratchpadStore: ObservableObject {
     // MARK: Persistence
 
     private struct Snapshot: Codable { var notes: [Note]; var tasks: [TaskItem] }
-    private let store = JSONFileStore<Snapshot>(filename: "scratchpad.json")
 
     private func save() {
         try? store.save(Snapshot(notes: notes, tasks: tasks))
@@ -22127,7 +22136,7 @@ struct OpenRouterPreferenceTests {
 }
 ```
 
-===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (59 lines) =====
+===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (83 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -22176,12 +22185,36 @@ struct PersistenceRoundTripTests {
         #expect(results.count <= 2)
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent() {
+    @Test @MainActor func scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = ScratchpadStore(testingBaseDirectory: dir)
+        store.addTask("Buy groceries")
+        store.addTask("Buy milk")
+
+        #expect(store.completeTask(matching: "milk") == true)
+        #expect(store.tasks.first(where: { $0.title == "Buy milk" })?.done == true)
+        #expect(store.tasks.first(where: { $0.title == "Buy groceries" })?.done == false)
+        #expect(store.completeTask(matching: "milk") == false)
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func scratchpadSnapshotRoundTripsOrderAndIDs() {
+    @Test @MainActor func scratchpadSnapshotRoundTripsOrderAndIDs() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = ScratchpadStore(testingBaseDirectory: dir)
+        store.addNote("Note A")
+        store.addNote("Note B")
+        store.addTask("Task X")
+
+        let store2 = ScratchpadStore(testingBaseDirectory: dir)
+        #expect(store2.notes.count == 2)
+        #expect(store2.tasks.count == 1)
+        #expect(store2.notes.map { $0.text } == store.notes.map { $0.text })
+        #expect(store2.tasks.first?.title == "Task X")
     }
 
     @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
@@ -24749,7 +24782,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1691 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1706 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26428,6 +26461,21 @@ Wiring (exhaustive switch arms all caught by compiler):
   the real Application Support data. `JSONFileStore` already had `baseDirectory:`;
   MemoryStore just needed to expose it.
 - Result: TEST SUCCEEDED (2 new passing, 3 still skipped pending ScratchpadStore seam).
+
+## 2026-06-10 — ScratchpadStore injectable seam + 2 more PersistenceRoundTripTests enabled
+- What: Added `ScratchpadStore.init(testingBaseDirectory: URL)` testing seam (same
+  pattern as MemoryStore commit 4d9e70d). Changed `private let store` from inline
+  initializer to type-only declaration; both `private init()` (production singleton)
+  and the new `init(testingBaseDirectory:)` (tests) set it explicitly. Enabled and
+  wrote bodies for `scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent`
+  (verifies substring match, idempotency) and `scratchpadSnapshotRoundTripsOrderAndIDs`
+  (verifies persist + round-trip via a second store instance). Test functions annotated
+  `@MainActor` to avoid redundant-`await` warnings from Swift Testing.
+- Files: Salehman AI/Persistence/ScratchpadStore.swift,
+         Salehman AITests/PersistenceRoundTripTests.swift
+- Why: §3 refactor milestone — scratchpad persistence now hermetically testable.
+  Only the StockSage test remains disabled.
+- Result: TEST SUCCEEDED — 4/4 PersistenceRoundTripTests passing, zero warnings.
 
 ## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
 - What: Updated `tools/start_grok_session.sh` to generate semantic branch names

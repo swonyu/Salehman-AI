@@ -45,12 +45,36 @@ struct PersistenceRoundTripTests {
         #expect(results.count <= 2)
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent() {
+    @Test @MainActor func scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = ScratchpadStore(testingBaseDirectory: dir)
+        store.addTask("Buy groceries")
+        store.addTask("Buy milk")
+
+        #expect(store.completeTask(matching: "milk") == true)
+        #expect(store.tasks.first(where: { $0.title == "Buy milk" })?.done == true)
+        #expect(store.tasks.first(where: { $0.title == "Buy groceries" })?.done == false)
+        #expect(store.completeTask(matching: "milk") == false)
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func scratchpadSnapshotRoundTripsOrderAndIDs() {
+    @Test @MainActor func scratchpadSnapshotRoundTripsOrderAndIDs() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = ScratchpadStore(testingBaseDirectory: dir)
+        store.addNote("Note A")
+        store.addNote("Note B")
+        store.addTask("Task X")
+
+        let store2 = ScratchpadStore(testingBaseDirectory: dir)
+        #expect(store2.notes.count == 2)
+        #expect(store2.tasks.count == 1)
+        #expect(store2.notes.map { $0.text } == store.notes.map { $0.text })
+        #expect(store2.tasks.first?.title == "Task X")
     }
 
     @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))

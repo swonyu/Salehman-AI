@@ -1677,6 +1677,21 @@ Wiring (exhaustive switch arms all caught by compiler):
   MemoryStore just needed to expose it.
 - Result: TEST SUCCEEDED (2 new passing, 3 still skipped pending ScratchpadStore seam).
 
+## 2026-06-10 — ScratchpadStore injectable seam + 2 more PersistenceRoundTripTests enabled
+- What: Added `ScratchpadStore.init(testingBaseDirectory: URL)` testing seam (same
+  pattern as MemoryStore commit 4d9e70d). Changed `private let store` from inline
+  initializer to type-only declaration; both `private init()` (production singleton)
+  and the new `init(testingBaseDirectory:)` (tests) set it explicitly. Enabled and
+  wrote bodies for `scratchpadCompleteTaskMatchesFirstOpenBySubstringAndIdempotent`
+  (verifies substring match, idempotency) and `scratchpadSnapshotRoundTripsOrderAndIDs`
+  (verifies persist + round-trip via a second store instance). Test functions annotated
+  `@MainActor` to avoid redundant-`await` warnings from Swift Testing.
+- Files: Salehman AI/Persistence/ScratchpadStore.swift,
+         Salehman AITests/PersistenceRoundTripTests.swift
+- Why: §3 refactor milestone — scratchpad persistence now hermetically testable.
+  Only the StockSage test remains disabled.
+- Result: TEST SUCCEEDED — 4/4 PersistenceRoundTripTests passing, zero warnings.
+
 ## 2026-06-10 — Semantic grok/* branch naming + cleanup_grok_branches.sh
 - What: Updated `tools/start_grok_session.sh` to generate semantic branch names
   from the task description (`grok/<task-slug>-<timestamp>` instead of bare
