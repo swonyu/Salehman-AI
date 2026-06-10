@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 02:09 +03 · Swift files: 124 · Swift LOC: 22896_
+_Generated: 2026-06-10 03:05 +03 · Swift files: 124 · Swift LOC: 22962_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -4332,7 +4332,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1846 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1882 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5543,6 +5543,34 @@ enum LocalLLM {
             + "\n\n…[inline digest capped; open the saved file above for the full pack]"
     }
 
+    // MARK: - Robust Tool-Call Recovery
+
+    /// Some local models (qwen2.5-coder:7b included) occasionally emit a tool
+    /// call as plain JSON text in `message.content` rather than in `tool_calls`.
+    /// Without this guard that raw JSON leaks to the user as the reply.
+    /// Returns (name, arguments) when text is recognisably a tool call, nil otherwise.
+    nonisolated static func parseTextAsToolCall(_ text: String) -> (name: String, arguments: [String: String])? {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("```") {
+            if let newline = trimmed.firstIndex(of: "\n") {
+                trimmed = String(trimmed[trimmed.index(after: newline)...])
+            }
+            if trimmed.hasSuffix("```") { trimmed = String(trimmed.dropLast(3)) }
+            trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let known: Set<String> = [
+            "run_terminal_command", "web_search", "fetch_url", "pack_repository",
+            "search_documents", "capture_note", "add_task", "remember_fact",
+        ]
+        guard let data = trimmed.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = obj["name"] as? String, known.contains(name),
+              let argsDict = obj["arguments"] as? [String: Any] else { return nil }
+        var args: [String: String] = [:]
+        for (k, v) in argsDict { args[k] = "\(v)" }
+        return (name, args)
+    }
+
     /// Ollama WITH tool-calling: the local/free qwen brain runs the terminal via the
     /// SAME approval gate + `Shell.runApproved` executor as the local brain. The
     /// model decides whether to call the tool; if it just answers, we return that
@@ -5582,17 +5610,21 @@ enum LocalLLM {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
             if !turn.text.isEmpty { lastAssistantText = turn.text }
-            if turn.toolCalls.isEmpty {
+            var toolCalls = turn.toolCalls
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+                toolCalls = [OllamaClient.ToolCall(name: recovered.name, arguments: recovered.arguments)]
+            }
+            if toolCalls.isEmpty {
                 return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
             var assistantMsg: [String: Any] = ["role": "assistant", "content": turn.text]
-            assistantMsg["tool_calls"] = turn.toolCalls.map { call -> [String: Any] in
+            assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 ["function": ["name": call.name, "arguments": call.arguments]]
             }
             messages.append(assistantMsg)
-            for call in turn.toolCalls {
+            for call in toolCalls {
                 let result: String
                 if let local = Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
@@ -5681,7 +5713,11 @@ enum LocalLLM {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
             if !turn.text.isEmpty { lastAssistantText = turn.text }
-            if turn.toolCalls.isEmpty {
+            var toolCalls = turn.toolCalls
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+                toolCalls = [OpenAICompatibleClient.ToolCall(id: "recovered_0", name: recovered.name, arguments: recovered.arguments)]
+            }
+            if toolCalls.isEmpty {
                 return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
@@ -5692,14 +5728,14 @@ enum LocalLLM {
                 "role": "assistant",
                 "content": turn.text.isEmpty ? NSNull() : turn.text,
             ]
-            assistantMsg["tool_calls"] = turn.toolCalls.map { call -> [String: Any] in
+            assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 let argsJSON = (try? JSONSerialization.data(withJSONObject: call.arguments))
                     .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                 return ["id": call.id, "type": "function",
                         "function": ["name": call.name, "arguments": argsJSON]]
             }
             messages.append(assistantMsg)
-            for call in turn.toolCalls {
+            for call in toolCalls {
                 let result: String
                 if let local = Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
@@ -21822,7 +21858,7 @@ struct OllamaRAMBenchmarkTests {
 }
 ```
 
-===== FILE: Salehman AITests/OllamaToolCallParsingTests.swift (82 lines) =====
+===== FILE: Salehman AITests/OllamaToolCallParsingTests.swift (112 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -21904,6 +21940,36 @@ struct OllamaToolCallParsingTests {
         #expect(parsed?.toolCalls.count == 1)
         #expect(parsed?.toolCalls.first?.name == "fetch_url")
         #expect(parsed?.toolCalls.first?.arguments["url"] == "https://example.com")
+    }
+
+    // MARK: - parseTextAsToolCall
+
+    /// Flat JSON with no fence — the exact shape from the confirmed chat_history.json leak.
+    @Test func recoversFlatToolCallJSON() {
+        let text = #"{"name": "run_terminal_command", "arguments": {"command": "ls -la"}}"#
+        let r = LocalLLM.parseTextAsToolCall(text)
+        #expect(r?.name == "run_terminal_command")
+        #expect(r?.arguments["command"] == "ls -la")
+    }
+
+    /// Same content wrapped in a triple-backtick JSON fence — models sometimes add this.
+    @Test func recoversFencedToolCallJSON() {
+        let text = "```json\n{\"name\": \"web_search\", \"arguments\": {\"query\": \"swift 6\"}}\n```"
+        let r = LocalLLM.parseTextAsToolCall(text)
+        #expect(r?.name == "web_search")
+        #expect(r?.arguments["query"] == "swift 6")
+    }
+
+    /// Normal prose that happens to contain braces must not be recovered.
+    @Test func returnsNilForProseWithBraces() {
+        let prose = "Use a dict like {\"key\": \"value\"} in Swift."
+        #expect(LocalLLM.parseTextAsToolCall(prose) == nil)
+    }
+
+    /// Valid JSON structure but unknown tool name — not a call this app handles.
+    @Test func returnsNilForUnknownToolName() {
+        let text = #"{"name": "send_email", "arguments": {"to": "a@b.com"}}"#
+        #expect(LocalLLM.parseTextAsToolCall(text) == nil)
     }
 }
 ```
@@ -24651,7 +24717,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1589 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1610 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26241,6 +26307,27 @@ Wiring (exhaustive switch arms all caught by compiler):
   correctly). No fine-tune executed — there is currently no real-usage data to
   train on. Once `chat_history.json` has ≥50 genuine exchanges, re-run
   `python3 tools/export_chat_training.py && bash tools/finetune_local_mlx.sh`.
+
+## 2026-06-10 — Fix tool-call JSON leak (qwen text-mode tool calls)
+- What: Added `LocalLLM.parseTextAsToolCall(_:)` and wired it into both
+  `chatOllamaWithTools` and `chatOpenAICompatWithTools`. When a local model
+  emits a tool call as plain JSON text in `message.content` rather than in
+  the structured `tool_calls` field, the loop now recovers it — strips any
+  triple-backtick fence, parses the JSON, validates the tool name against the
+  known set, and executes it as a real tool call instead of returning the raw
+  JSON to the user. Added 4 unit tests in `OllamaToolCallParsingTests.swift`.
+  Also attempted the fix via `tools/grok_terminal_bridge.py --auto --yolo`
+  first (Grok correctly diagnosed the bug but refused to emit shell commands
+  for Swift edits — 0 changes, bridge stopped after 3 strikes).
+- Files: Salehman AI/LLM/LocalLLM.swift,
+         Salehman AITests/OllamaToolCallParsingTests.swift
+- Why: `chat_history.json` contained 2 of 5 assistant replies as raw
+  `{"name":"run_terminal_command","arguments":{...}}` JSON blobs. Root cause:
+  the `chatOllamaWithTools` loop only checked the structured `tool_calls`
+  field; when the model wrote the call in `content` instead (a fallback
+  behaviour of some Ollama models), the loop hit the `toolCalls.isEmpty`
+  branch and returned the raw JSON as the final user-visible reply.
+- Result: BUILD SUCCEEDED, zero new errors.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

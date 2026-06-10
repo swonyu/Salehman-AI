@@ -1587,3 +1587,24 @@ Wiring (exhaustive switch arms all caught by compiler):
   correctly). No fine-tune executed — there is currently no real-usage data to
   train on. Once `chat_history.json` has ≥50 genuine exchanges, re-run
   `python3 tools/export_chat_training.py && bash tools/finetune_local_mlx.sh`.
+
+## 2026-06-10 — Fix tool-call JSON leak (qwen text-mode tool calls)
+- What: Added `LocalLLM.parseTextAsToolCall(_:)` and wired it into both
+  `chatOllamaWithTools` and `chatOpenAICompatWithTools`. When a local model
+  emits a tool call as plain JSON text in `message.content` rather than in
+  the structured `tool_calls` field, the loop now recovers it — strips any
+  triple-backtick fence, parses the JSON, validates the tool name against the
+  known set, and executes it as a real tool call instead of returning the raw
+  JSON to the user. Added 4 unit tests in `OllamaToolCallParsingTests.swift`.
+  Also attempted the fix via `tools/grok_terminal_bridge.py --auto --yolo`
+  first (Grok correctly diagnosed the bug but refused to emit shell commands
+  for Swift edits — 0 changes, bridge stopped after 3 strikes).
+- Files: Salehman AI/LLM/LocalLLM.swift,
+         Salehman AITests/OllamaToolCallParsingTests.swift
+- Why: `chat_history.json` contained 2 of 5 assistant replies as raw
+  `{"name":"run_terminal_command","arguments":{...}}` JSON blobs. Root cause:
+  the `chatOllamaWithTools` loop only checked the structured `tool_calls`
+  field; when the model wrote the call in `content` instead (a fallback
+  behaviour of some Ollama models), the loop hit the `toolCalls.isEmpty`
+  branch and returned the raw JSON as the final user-visible reply.
+- Result: BUILD SUCCEEDED, zero new errors.

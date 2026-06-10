@@ -79,4 +79,34 @@ struct OllamaToolCallParsingTests {
         #expect(parsed?.toolCalls.first?.name == "fetch_url")
         #expect(parsed?.toolCalls.first?.arguments["url"] == "https://example.com")
     }
+
+    // MARK: - parseTextAsToolCall
+
+    /// Flat JSON with no fence — the exact shape from the confirmed chat_history.json leak.
+    @Test func recoversFlatToolCallJSON() {
+        let text = #"{"name": "run_terminal_command", "arguments": {"command": "ls -la"}}"#
+        let r = LocalLLM.parseTextAsToolCall(text)
+        #expect(r?.name == "run_terminal_command")
+        #expect(r?.arguments["command"] == "ls -la")
+    }
+
+    /// Same content wrapped in a triple-backtick JSON fence — models sometimes add this.
+    @Test func recoversFencedToolCallJSON() {
+        let text = "```json\n{\"name\": \"web_search\", \"arguments\": {\"query\": \"swift 6\"}}\n```"
+        let r = LocalLLM.parseTextAsToolCall(text)
+        #expect(r?.name == "web_search")
+        #expect(r?.arguments["query"] == "swift 6")
+    }
+
+    /// Normal prose that happens to contain braces must not be recovered.
+    @Test func returnsNilForProseWithBraces() {
+        let prose = "Use a dict like {\"key\": \"value\"} in Swift."
+        #expect(LocalLLM.parseTextAsToolCall(prose) == nil)
+    }
+
+    /// Valid JSON structure but unknown tool name — not a call this app handles.
+    @Test func returnsNilForUnknownToolName() {
+        let text = #"{"name": "send_email", "arguments": {"to": "a@b.com"}}"#
+        #expect(LocalLLM.parseTextAsToolCall(text) == nil)
+    }
 }

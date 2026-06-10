@@ -1207,6 +1207,34 @@ enum LocalLLM {
             + "\n\n…[inline digest capped; open the saved file above for the full pack]"
     }
 
+    // MARK: - Robust Tool-Call Recovery
+
+    /// Some local models (qwen2.5-coder:7b included) occasionally emit a tool
+    /// call as plain JSON text in `message.content` rather than in `tool_calls`.
+    /// Without this guard that raw JSON leaks to the user as the reply.
+    /// Returns (name, arguments) when text is recognisably a tool call, nil otherwise.
+    nonisolated static func parseTextAsToolCall(_ text: String) -> (name: String, arguments: [String: String])? {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("```") {
+            if let newline = trimmed.firstIndex(of: "\n") {
+                trimmed = String(trimmed[trimmed.index(after: newline)...])
+            }
+            if trimmed.hasSuffix("```") { trimmed = String(trimmed.dropLast(3)) }
+            trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let known: Set<String> = [
+            "run_terminal_command", "web_search", "fetch_url", "pack_repository",
+            "search_documents", "capture_note", "add_task", "remember_fact",
+        ]
+        guard let data = trimmed.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = obj["name"] as? String, known.contains(name),
+              let argsDict = obj["arguments"] as? [String: Any] else { return nil }
+        var args: [String: String] = [:]
+        for (k, v) in argsDict { args[k] = "\(v)" }
+        return (name, args)
+    }
+
     /// Ollama WITH tool-calling: the local/free qwen brain runs the terminal via the
     /// SAME approval gate + `Shell.runApproved` executor as the local brain. The
     /// model decides whether to call the tool; if it just answers, we return that
@@ -1246,17 +1274,21 @@ enum LocalLLM {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
             if !turn.text.isEmpty { lastAssistantText = turn.text }
-            if turn.toolCalls.isEmpty {
+            var toolCalls = turn.toolCalls
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+                toolCalls = [OllamaClient.ToolCall(name: recovered.name, arguments: recovered.arguments)]
+            }
+            if toolCalls.isEmpty {
                 return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
             var assistantMsg: [String: Any] = ["role": "assistant", "content": turn.text]
-            assistantMsg["tool_calls"] = turn.toolCalls.map { call -> [String: Any] in
+            assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 ["function": ["name": call.name, "arguments": call.arguments]]
             }
             messages.append(assistantMsg)
-            for call in turn.toolCalls {
+            for call in toolCalls {
                 let result: String
                 if let local = Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
@@ -1345,7 +1377,11 @@ enum LocalLLM {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
             if !turn.text.isEmpty { lastAssistantText = turn.text }
-            if turn.toolCalls.isEmpty {
+            var toolCalls = turn.toolCalls
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+                toolCalls = [OpenAICompatibleClient.ToolCall(id: "recovered_0", name: recovered.name, arguments: recovered.arguments)]
+            }
+            if toolCalls.isEmpty {
                 return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
@@ -1356,14 +1392,14 @@ enum LocalLLM {
                 "role": "assistant",
                 "content": turn.text.isEmpty ? NSNull() : turn.text,
             ]
-            assistantMsg["tool_calls"] = turn.toolCalls.map { call -> [String: Any] in
+            assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 let argsJSON = (try? JSONSerialization.data(withJSONObject: call.arguments))
                     .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                 return ["id": call.id, "type": "function",
                         "function": ["name": call.name, "arguments": argsJSON]]
             }
             messages.append(assistantMsg)
-            for call in turn.toolCalls {
+            for call in toolCalls {
                 let result: String
                 if let local = Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
