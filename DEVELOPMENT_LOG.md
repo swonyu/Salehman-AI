@@ -1743,3 +1743,14 @@ Wiring (exhaustive switch arms all caught by compiler):
   (e.g. `grok/scratchpad-store-seam-20260610-1430`). `cleanup_grok_branches.sh`
   closes the loop — stale experiment branches accumulate quickly with AI sessions.
 - Result: Scripts executable, smoke-tested (branch creation logic verified).
+
+## 2026-06-10 — bridge: fix Priority 3 prose-as-command bug; ingest_sessions dry-run
+- What: Fixed parse_commands Priority 3 fallback — short unfenced prose (e.g.
+  "Analyzing the terminal instructions • 10s") still ran as shell command if ≤3 lines
+  and didn't match _PROSE_INDICATORS. Added _block_looks_like_shell() guard to
+  Priority 3 (same fix already applied to Priority 2 in prior commit). Also ran
+  ingest_sessions.py --dry-run via Grok: no bugs, 25 sessions, 2334 blocks, 1343 KB
+  chunks ready to write. Grok's only actual change was a trivial docstring rename
+  (to bypass fake-DONE guard) — reverted and branch discarded.
+- Files: tools/grok_terminal_bridge.py
+- Result: Python syntax OK. ingest_sessions.py confirmed clean.

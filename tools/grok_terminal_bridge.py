@@ -367,6 +367,8 @@ def parse_commands(grok_text: str) -> list[str]:
         return []
     if _PROSE_INDICATORS.match(body):
         return []
+    if not _block_looks_like_shell(body):
+        return []
     return [body]
 
 

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 04:16 +03 · Swift files: 124 · Swift LOC: 23027_
+_Generated: 2026-06-10 04:28 +03 · Swift files: 124 · Swift LOC: 23027_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24782,7 +24782,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1745 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1756 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26528,6 +26528,17 @@ Wiring (exhaustive switch arms all caught by compiler):
   (e.g. `grok/scratchpad-store-seam-20260610-1430`). `cleanup_grok_branches.sh`
   closes the loop — stale experiment branches accumulate quickly with AI sessions.
 - Result: Scripts executable, smoke-tested (branch creation logic verified).
+
+## 2026-06-10 — bridge: fix Priority 3 prose-as-command bug; ingest_sessions dry-run
+- What: Fixed parse_commands Priority 3 fallback — short unfenced prose (e.g.
+  "Analyzing the terminal instructions • 10s") still ran as shell command if ≤3 lines
+  and didn't match _PROSE_INDICATORS. Added _block_looks_like_shell() guard to
+  Priority 3 (same fix already applied to Priority 2 in prior commit). Also ran
+  ingest_sessions.py --dry-run via Grok: no bugs, 25 sessions, 2334 blocks, 1343 KB
+  chunks ready to write. Grok's only actual change was a trivial docstring rename
+  (to bypass fake-DONE guard) — reverted and branch discarded.
+- Files: tools/grok_terminal_bridge.py
+- Result: Python syntax OK. ingest_sessions.py confirmed clean.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
