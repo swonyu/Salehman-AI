@@ -28,6 +28,8 @@ BRIDGE="$SCRIPT_DIR/grok_terminal_bridge.py"
 REPO="${REPO:-$( cd "$SCRIPT_DIR/.." && pwd )}"
 MAX_CMDS="${MAX_CMDS:-60}"
 STAGGER="${STAGGER:-4}"
+# Think (reasoning) mode ON by default; opt out with THINK=0 to save the reasoning quota.
+THINK_FLAG="--think"; [ "${THINK:-1}" = "0" ] && THINK_FLAG=""
 
 if [ "$#" -eq 0 ]; then
   echo "usage: $0 \"task 1\" \"task 2\" ...   (one quoted task per parallel agent)" >&2
@@ -102,7 +104,7 @@ for task in "$@"; do
   printf '  • %-9s [%s] ⟶  %s\n' "$name" "$target" "${task:0:48}"
   nohup python3 "$BRIDGE" \
     --auto --yolo \
-    --safari-target "$target" --think --loop \
+    --safari-target "$target" $THINK_FLAG --loop \
     --session-name "$name" --label "$name" --coordinate \
     --max-commands "$MAX_CMDS" \
     --cwd "$REPO" \

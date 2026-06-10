@@ -919,7 +919,11 @@ def _safari_is_generating() -> bool:
 def _safari_detect_error() -> str | None:
     """Return a short error description if grok.com shows an error state, else None."""
     txt = _safari_page_text().lower()
-    if "rate limit" in txt or "too many requests" in txt:
+    # grok's real rate-limit wording — the literal "rate limit" rarely appears;
+    # what shows is "N minutes before limit is gone / continue once it resets".
+    if ("rate limit" in txt or "too many requests" in txt
+            or "before limit is gone" in txt or "once it resets" in txt
+            or "you've reached your limit" in txt or "reached your limit" in txt):
         return "rate limit"
     if "sign in" in txt or "sign up" in txt:
         return "logged out"
@@ -928,6 +932,20 @@ def _safari_detect_error() -> str | None:
     if "cloudflare" in txt or "you are unable to access" in txt:
         return "cloudflare block"
     return None
+
+
+def _safari_rate_limit_wait_seconds(default: int = 120, cap: int = 900) -> int:
+    """Read grok's stated reset ('N minutes/hours before limit is gone') and pick a
+    sane re-probe interval: at least 60s, never more than `cap` (15min) in one nap so
+    we wake up and notice an early reset instead of looking frozen for an hour."""
+    import re
+    txt = _safari_page_text().lower()
+    m = re.search(r"(\d+)\s*(hour|hr|minute|min)", txt)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        secs = n * 3600 if unit.startswith(("hour", "hr")) else n * 60
+        return min(cap, max(60, secs))
+    return default
 
 
 def _safari_get_last_message() -> str | None:
@@ -1298,8 +1316,11 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
             if err in ("rate limit", "logged out"):
                 _rate_limit_hits = getattr(run_auto_safari, "_rate_limit_hits", 0) + 1
                 run_auto_safari._rate_limit_hits = _rate_limit_hits  # type: ignore[attr-defined]
-                wait = min(30 * _rate_limit_hits, 300)  # 30s, 60s, 90s … cap at 5min
-                _log(f"Pausing {wait}s then retrying (hit #{_rate_limit_hits}) …")
+                # Use grok's stated reset window if shown; else escalate 30s→5min.
+                wait = (_safari_rate_limit_wait_seconds()
+                        if err == "rate limit" else min(30 * _rate_limit_hits, 300))
+                _log(f"{err} — backing off {wait}s then re-checking (hit #{_rate_limit_hits}; "
+                     f"agent stays alive, no spin) …", "warn")
                 time.sleep(wait)
                 continue
 
