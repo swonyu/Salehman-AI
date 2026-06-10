@@ -102,7 +102,7 @@ for task in "$@"; do
   out="$HOME/grok_sessions/${name}.out"
   target="tab ${TABIDX[$i]} of window id $WID"
   printf '  • %-9s [%s] ⟶  %s\n' "$name" "$target" "${task:0:48}"
-  nohup python3 "$BRIDGE" \
+  nohup python3 -u "$BRIDGE" \
     --auto --yolo \
     --safari-target "$target" $THINK_FLAG --loop \
     --session-name "$name" --label "$name" --coordinate \

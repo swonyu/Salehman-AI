@@ -1962,3 +1962,34 @@ Grok safari lanes (safari-1/3/5) are appending malformed loose-line claims at th
 instead of board rows — flagged in the Notes entry.
 **Result:** Docs-only; no build impact. Watch for a second clobber — if it recurs, the restore step in
 whatever automation is doing it needs to exclude COORDINATION.md / DEVELOPMENT_LOG.md.
+
+## 2026-06-10 — Parallel Safari Grok fleet (race-free) + rate-limit backoff + chat-trained Salehman
+**Files:** `tools/grok_terminal_bridge.py`, `tools/run_parallel_safari.sh`, `tools/PARALLEL_GROK_GUIDE.md`
+(new), `salehman-training/{mac,runpod}/01_prepare_data.py`, `salehman-training/dataset_combined.jsonl`
+(gitignored), `salehman-training/build_chat_dataset.py`.
+**What & why:** Owner wanted N Grok web agents working the repo in parallel, non-stop, off-screen.
+- **Race-free parallel Safari.** First tried per-agent own-window (`--safari-window`) — all agents grabbed
+  the SAME window id (Safari opens `make new document` as a TAB, not a window). Switched to per-TAB
+  targeting — still collided (all got `tab 3`): each agent opened+captured its own tab and they raced.
+  **Fix that worked:** the launcher pre-creates N tabs SEQUENTIALLY in one window (no race) and hands each
+  agent its exact tab via a new `--safari-target "tab K of window id W"` flag. Verified 5 and 7 agents on
+  distinct tabs.
+- **RAM auto-limit:** launcher reads `hw.memsize` and caps agents (16 GB → 3; override `MAX_AGENTS`).
+  Added after 10 grok.com tabs pinned a 16 GB Mac (each tab ~1 GB).
+- **Rate-limit handling:** the existing backoff never fired because `_safari_detect_error` matched only
+  "rate limit"/"too many requests" while grok actually says "N minutes before limit is gone / once it
+  resets." Added those markers + `_safari_rate_limit_wait_seconds()` (reads grok's stated reset, naps ≤15min
+  re-probing). Agents now WAIT instead of spinning at 0 cmds burning RAM. **Cause of the cap:** running
+  fleets with `--think` (reasoning model = tightest quota) exhausted even SuperGrok Heavy's hourly bucket.
+  Made `--think` a default with `THINK=0` opt-out.
+- **Unbuffered logs** (`python3 -u`) so `~/grok_sessions/*.out` stream live (were block-buffered → looked empty).
+- **Chat-trained Salehman:** `build_chat_dataset.py` extracted 289 scrubbed Saleh↔Claude pairs (0 secret
+  leaks, verified) → `dataset_combined.jsonl` (578 w/ persona style). Repointed both training kits'
+  `01_prepare_data.py` from `dataset_saleh_style.jsonl` → `dataset_combined.jsonl` (DATASET= override,
+  style fallback), and inject a `SALEHMAN_SYSTEM` persona system-turn into every example (520/520 verified)
+  so the fine-tune learns identity + voice, not just Q→A.
+**Result:** bridge `py_compile` clean, launcher `bash -n` clean; commits on `feat/effort-grok-tooling`.
+Grok-agent net output was low-value (2 usable tools `grok_cleanup.py`/`bundle_check.sh`, one gutted-file
+regression reverted, one hallucinated wrong-path file) — unsupervised Grok needs `git diff` review before
+keeping anything. Training upload to RunPod is owner-run (data-egress guard correctly blocks auto-upload of
+personal chat data).
