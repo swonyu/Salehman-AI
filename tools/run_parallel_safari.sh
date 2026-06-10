@@ -42,9 +42,26 @@ if ! defaults read com.apple.Safari AllowJavaScriptFromAppleEvents >/dev/null 2>
 fi
 
 mkdir -p "$HOME/grok_sessions"
-N=$#
+
+# ── Auto-detect a SAFE agent limit from this Mac's RAM ────────────────────────
+# Each grok.com tab is a heavy SPA (~1-1.5 GB resident). Reserve ~10 GB for macOS
+# + your apps, then ~2 GB per agent, clamped to [1, 8]. Override with MAX_AGENTS=N.
+RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+AUTO_LIMIT=$(( (RAM_GB - 10) / 2 ))
+[ "$AUTO_LIMIT" -lt 1 ] && AUTO_LIMIT=1
+[ "$AUTO_LIMIT" -gt 8 ] && AUTO_LIMIT=8
+LIMIT="${MAX_AGENTS:-$AUTO_LIMIT}"
+
+REQUESTED=$#
+N=$REQUESTED
+if [ "$N" -gt "$LIMIT" ]; then
+  echo "🧠 device: ${RAM_GB} GB RAM → safe limit ${LIMIT} agents (you asked for ${REQUESTED})."
+  echo "   Capping to ${LIMIT} to protect your RAM. (override: MAX_AGENTS=N)"
+  N=$LIMIT
+fi
+
 echo "🦋 launching $N parallel SAFARI agents (own tab each · Think on · loop on)"
-echo "   repo=$REPO   max-commands/agent=$MAX_CMDS"
+echo "   repo=$REPO   max-commands/agent=$MAX_CMDS   device=${RAM_GB}GB → limit ${LIMIT}"
 echo "   tip: run this from a separate macOS Space so the tabs stay off your way."
 echo
 
@@ -78,6 +95,7 @@ echo "→ waiting 6s for the tabs to load grok.com …"; sleep 6
 
 i=0
 for task in "$@"; do
+  [ "$i" -ge "$N" ] && break   # respect the auto-detected RAM limit
   name="safari-$((i + 1))"
   out="$HOME/grok_sessions/${name}.out"
   target="tab ${TABIDX[$i]} of window id $WID"
