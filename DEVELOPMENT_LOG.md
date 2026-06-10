@@ -1744,6 +1744,31 @@ Wiring (exhaustive switch arms all caught by compiler):
   closes the loop — stale experiment branches accumulate quickly with AI sessions.
 - Result: Scripts executable, smoke-tested (branch creation logic verified).
 
+## 2026-06-10 — read_grok_session tool: Salehman can watch Grok in real-time
+- What: Added `GrokWatchTool.readLatestSession()` — reads the newest file in
+  `~/grok_sessions/*.log`, parses turn markers, CMD lines, and outputs, and returns
+  a compact snapshot (session ID, task, turn count, elapsed, last 6 commands).
+  Wired as `read_grok_session` tool into `LocalLLM.runLocalTool`, `ollamaToolSpecs`,
+  `parseTextAsToolCall.known`, and `ToolPolicy.instructionsToolMenu`. No args needed.
+- Files: Salehman AI/Tools/GrokWatchTool.swift (new), Salehman AI/LLM/LocalLLM.swift,
+  Salehman AI/Tools/ToolPolicy.swift
+- Why: User asked for Salehman to be able to watch what Grok is doing in real-time.
+  Now you can ask "what is Grok doing?" and Salehman reads the live session log.
+- Result: BUILD SUCCEEDED.
+
+## 2026-06-10 — StockSagePortfolio injectable seam + all persistence tests green
+- What: Added `private let defaults: UserDefaults` + `init(userDefaults:)` seam to
+  `StockSagePortfolio`. Updated `save()` and `load()` to use `self.defaults` instead
+  of `UserDefaults.standard`. Enabled `stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips`
+  in `PersistenceRoundTripTests` — covers blank symbol no-op, negative shares no-op,
+  lowercase→uppercase normalisation, and round-trip from same isolated UserDefaults suite.
+- Files: Salehman AI/StockSage/StockSagePortfolio.swift, Salehman AITests/PersistenceRoundTripTests.swift
+- Why: Last disabled persistence test needed a UserDefaults isolation seam (same pattern
+  as JSONFileStore baseDirectory used by other stores). Without isolation, parallel tests
+  on the same `UserDefaults.standard` key would race.
+- Result: BUILD SUCCEEDED. All 5 PersistenceRoundTripTests pass (memoryStore ×2,
+  scratchpad ×2, stockSage ×1).
+
 ## 2026-06-10 — bridge: fix Priority 3 prose-as-command bug; ingest_sessions dry-run
 - What: Fixed parse_commands Priority 3 fallback — short unfenced prose (e.g.
   "Analyzing the terminal instructions • 10s") still ran as shell command if ≤3 lines
