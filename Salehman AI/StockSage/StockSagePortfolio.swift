@@ -23,8 +23,17 @@ final class StockSagePortfolio: ObservableObject {
     @Published private(set) var positions: [PortfolioPosition] = []
 
     private static let key = "stocksage_portfolio_v1"
+    private let defaults: UserDefaults
 
-    private init() { load() }
+    private init() {
+        self.defaults = .standard
+        load()
+    }
+
+    init(userDefaults: UserDefaults) {
+        self.defaults = userDefaults
+        load()
+    }
 
     /// Add a position. No-ops on a blank symbol or non-positive share count, so a
     /// fat-fingered form submit can't store garbage.
@@ -47,12 +56,12 @@ final class StockSagePortfolio: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(positions) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            defaults.set(data, forKey: Self.key)
         }
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.key),
+        guard let data = defaults.data(forKey: Self.key),
               let decoded = try? JSONDecoder().decode([PortfolioPosition].self, from: data) else { return }
         positions = decoded
     }

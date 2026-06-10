@@ -44,6 +44,7 @@ enum ToolPolicy {
         lines.append("• list_documents — list everything in the user's Knowledge vault (use when you don't know what's there).")
         lines.append("• search_documents — retrieve relevant passages from the user's private Knowledge vault (their added docs/notes); cite the source.")
         lines.append("• get_document — fetch one whole document from the Knowledge vault by name (use after search_documents when you need the entire doc to summarize, translate, or quote).")
+        lines.append("• read_grok_session — read the latest Grok terminal-bridge session log: what task Grok is on, current turn, elapsed time, and recent commands. Use when asked what Grok is doing.")
         if isVisionEnabled {
             lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
         }

@@ -1067,6 +1067,21 @@ enum LocalLLM {
         ],
     ]
 
+    /// `read_grok_session` — live snapshot of the latest Grok terminal-bridge session.
+    /// No parameters; reads ~/grok_sessions/*.log (newest file). On-device, read-only.
+    nonisolated(unsafe) static let readGrokSessionSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "read_grok_session",
+            "description": "Read the latest Grok terminal-bridge session log and return a snapshot: what task Grok is working on, which turn it's on, how long it's been running, and the last few commands it ran with their outputs. Use when the user asks what Grok is doing, how it's progressing, or whether it finished. No arguments needed.",
+            "parameters": [
+                "type": "object",
+                "properties": [:] as [String: Any],
+                "required": [] as [String],
+            ],
+        ],
+    ]
+
     /// `pack_repository` — Repomix/Gitingest-style "read a whole codebase at once".
     /// Handled in the async tool switch (NOT `runLocalTool`) because packing reads
     /// many files and runs off the main actor via `RepoPacker`.
@@ -1119,7 +1134,7 @@ enum LocalLLM {
         // it was never handed (the real security gate; see OllamaToolGateTests).
         let onDevice: [[String: Any]] = [
             terminalToolSpec, searchDocumentsSpec, captureNoteSpec, addTaskSpec,
-            rememberFactSpec, packRepositorySpec,
+            rememberFactSpec, packRepositorySpec, readGrokSessionSpec,
         ]
         return externalAllowed ? onDevice + [webSearchSpec, fetchURLSpec] : onDevice
     }
@@ -1173,6 +1188,8 @@ enum LocalLLM {
             guard !fact.isEmpty else { return "No fact was provided." }
             MemoryStore.shared.remember(fact)
             return "Got it — I'll remember that: \"\(fact)\""
+        case "read_grok_session":
+            return GrokWatchTool.readLatestSession()
         default:
             return nil
         }
@@ -1225,6 +1242,7 @@ enum LocalLLM {
         let known: Set<String> = [
             "run_terminal_command", "web_search", "fetch_url", "pack_repository",
             "search_documents", "capture_note", "add_task", "remember_fact",
+            "read_grok_session",
         ]
         guard let data = trimmed.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -77,7 +77,32 @@ struct PersistenceRoundTripTests {
         #expect(store2.tasks.first?.title == "Task X")
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips() {
+    @Test @MainActor func stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips() {
+        let suiteName = UUID().uuidString
+        let ud = UserDefaults(suiteName: suiteName)!
+        defer { ud.removePersistentDomain(forName: suiteName) }
+
+        let store = StockSagePortfolio(userDefaults: ud)
+
+        // blank symbol → no-op
+        store.add(symbol: "  ", shares: 1, costBasis: 10)
+        #expect(store.positions.isEmpty)
+
+        // negative shares → no-op
+        store.add(symbol: "aapl", shares: -5, costBasis: 10)
+        #expect(store.positions.isEmpty)
+
+        // valid add: lowercase symbol is normalised to uppercase
+        store.add(symbol: "aapl", shares: 10, costBasis: 150.0)
+        #expect(store.positions.count == 1)
+        #expect(store.positions[0].symbol == "AAPL")
+        #expect(store.positions[0].shares == 10)
+        #expect(store.positions[0].costBasis == 150.0)
+
+        // round-trip: second instance from the same UserDefaults suite reads back correctly
+        let store2 = StockSagePortfolio(userDefaults: ud)
+        #expect(store2.positions.count == 1)
+        #expect(store2.positions[0].symbol == "AAPL")
+        #expect(store2.positions[0].shares == 10)
     }
 }

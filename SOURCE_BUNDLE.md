@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 04:28 +03 · Swift files: 124 · Swift LOC: 23027_
+_Generated: 2026-06-10 04:52 +03 · Swift files: 125 · Swift LOC: 23219_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -4332,7 +4332,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1882 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1900 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5403,6 +5403,21 @@ enum LocalLLM {
         ],
     ]
 
+    /// `read_grok_session` — live snapshot of the latest Grok terminal-bridge session.
+    /// No parameters; reads ~/grok_sessions/*.log (newest file). On-device, read-only.
+    nonisolated(unsafe) static let readGrokSessionSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "read_grok_session",
+            "description": "Read the latest Grok terminal-bridge session log and return a snapshot: what task Grok is working on, which turn it's on, how long it's been running, and the last few commands it ran with their outputs. Use when the user asks what Grok is doing, how it's progressing, or whether it finished. No arguments needed.",
+            "parameters": [
+                "type": "object",
+                "properties": [:] as [String: Any],
+                "required": [] as [String],
+            ],
+        ],
+    ]
+
     /// `pack_repository` — Repomix/Gitingest-style "read a whole codebase at once".
     /// Handled in the async tool switch (NOT `runLocalTool`) because packing reads
     /// many files and runs off the main actor via `RepoPacker`.
@@ -5455,7 +5470,7 @@ enum LocalLLM {
         // it was never handed (the real security gate; see OllamaToolGateTests).
         let onDevice: [[String: Any]] = [
             terminalToolSpec, searchDocumentsSpec, captureNoteSpec, addTaskSpec,
-            rememberFactSpec, packRepositorySpec,
+            rememberFactSpec, packRepositorySpec, readGrokSessionSpec,
         ]
         return externalAllowed ? onDevice + [webSearchSpec, fetchURLSpec] : onDevice
     }
@@ -5509,6 +5524,8 @@ enum LocalLLM {
             guard !fact.isEmpty else { return "No fact was provided." }
             MemoryStore.shared.remember(fact)
             return "Got it — I'll remember that: \"\(fact)\""
+        case "read_grok_session":
+            return GrokWatchTool.readLatestSession()
         default:
             return nil
         }
@@ -5561,6 +5578,7 @@ enum LocalLLM {
         let known: Set<String> = [
             "run_terminal_command", "web_search", "fetch_url", "pack_repository",
             "search_documents", "capture_note", "add_task", "remember_fact",
+            "read_grok_session",
         ]
         guard let data = trimmed.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -9930,7 +9948,7 @@ final class StockSageMonitor {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSagePortfolio.swift (59 lines) =====
+===== FILE: Salehman AI/StockSage/StockSagePortfolio.swift (68 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -9957,8 +9975,17 @@ final class StockSagePortfolio: ObservableObject {
     @Published private(set) var positions: [PortfolioPosition] = []
 
     private static let key = "stocksage_portfolio_v1"
+    private let defaults: UserDefaults
 
-    private init() { load() }
+    private init() {
+        self.defaults = .standard
+        load()
+    }
+
+    init(userDefaults: UserDefaults) {
+        self.defaults = userDefaults
+        load()
+    }
 
     /// Add a position. No-ops on a blank symbol or non-positive share count, so a
     /// fat-fingered form submit can't store garbage.
@@ -9981,12 +10008,12 @@ final class StockSagePortfolio: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(positions) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            defaults.set(data, forKey: Self.key)
         }
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.key),
+        guard let data = defaults.data(forKey: Self.key),
               let decoded = try? JSONDecoder().decode([PortfolioPosition].self, from: data) else { return }
         positions = decoded
     }
@@ -10352,6 +10379,149 @@ final class CommandApprovalCenter: ObservableObject {
     // it directly. A `nonisolated static` thin alias on this `@MainActor` class
     // was misleading: the annotation suggested an isolation guarantee that the
     // compiler couldn't actually defend across future edits.
+}
+```
+
+===== FILE: Salehman AI/Tools/GrokWatchTool.swift (139 lines) =====
+```swift
+import Foundation
+
+/// Reads the latest Grok terminal-bridge session log from ~/grok_sessions/ and
+/// returns a compact summary — session ID, task, turn count, elapsed time, and
+/// the most recent CMD+output pairs — so Salehman can observe what Grok is doing.
+enum GrokWatchTool {
+
+    private nonisolated(unsafe) static let sessionDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("grok_sessions")
+
+    /// Find the newest .log file and return a readable snapshot.
+    nonisolated static func readLatestSession() -> String {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: sessionDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles
+        ).filter({ $0.pathExtension == "log" }),
+              !files.isEmpty else {
+            return "No Grok session logs found in ~/grok_sessions/ — start a session first with:\n  cd \"/Users/saleh/Desktop/Salehman AI\" && python3 tools/grok_terminal_bridge.py --auto --yolo --cwd \"$PWD\" \"<task>\""
+        }
+
+        let sorted = files.sorted {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a > b
+        }
+
+        guard let latest = sorted.first,
+              let content = try? String(contentsOf: latest, encoding: .utf8) else {
+            return "Could not read the latest Grok session log."
+        }
+
+        return parse(content, filename: latest.lastPathComponent)
+    }
+
+    private nonisolated static func parse(_ content: String, filename: String) -> String {
+        let lines = content.components(separatedBy: "\n")
+        let sessionID = (filename as NSString).deletingPathExtension
+
+        // Extract task from the "→ session XXXX  task: '...'" line
+        var task = ""
+        for line in lines.prefix(5) {
+            if let r = line.range(of: "task: '") {
+                var raw = String(line[r.upperBound...])
+                raw = raw.replacingOccurrences(of: "\\n", with: " ")
+                    .replacingOccurrences(of: "\\'", with: "'")
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "'"))
+                task = raw.count > 180 ? String(raw.prefix(180)) + "…" : raw
+                break
+            }
+        }
+
+        var turnCount = 0
+        var currentTurn = 0
+        var currentCMD = ""
+        var outputBuf: [String] = []
+        var collecting = false
+        var isDone = false
+        var elapsed = ""
+        var recentPairs: [(turn: Int, cmd: String, out: String)] = []
+
+        func flush() {
+            guard collecting, !currentCMD.isEmpty else { return }
+            let out = outputBuf.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let outShort = out.count > 120 ? String(out.prefix(120)) + "…" : out
+            recentPairs.append((currentTurn, currentCMD, outShort))
+            if recentPairs.count > 6 { recentPairs.removeFirst() }
+            outputBuf = []
+            collecting = false
+            currentCMD = ""
+        }
+
+        for line in lines {
+            // Turn header: "[HH:MM:SS|XmYYs] → ── turn N ──"
+            if line.contains("── turn") && line.contains("──") {
+                flush()
+                turnCount += 1
+                currentTurn = turnCount
+                // Extract elapsed e.g. "5m04s" from "[04:43:46|5m04s]"
+                if let pipeRange = line.range(of: "|"),
+                   let closeRange = line.range(of: "]") {
+                    let s = line[pipeRange.upperBound..<closeRange.lowerBound]
+                    if !s.isEmpty { elapsed = String(s) }
+                }
+                continue
+            }
+
+            // CMD line (no timestamp prefix — raw bridge output)
+            if line.hasPrefix("CMD: ") {
+                flush()
+                currentCMD = String(line.dropFirst(5))
+                collecting = true
+                continue
+            }
+
+            // Done signals
+            if line.contains("[[DONE]]") || line.contains("TASK_COMPLETED_SUCCESSFULLY") {
+                isDone = true
+            }
+
+            // Collect output: skip bridge log lines (start with "[" or "→" or "✓")
+            if collecting {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                guard !t.isEmpty else { continue }
+                let isBridgeLine = t.hasPrefix("[") || t.hasPrefix("→") || t.hasPrefix("✓")
+                    || t.contains("sending output back") || t.contains("── turn")
+                if !isBridgeLine { outputBuf.append(t) }
+            }
+        }
+        flush()
+
+        // Build output
+        var out = "Grok session \(sessionID)"
+        if isDone { out += " ✓ DONE" }
+        else if turnCount > 0 { out += " — turn \(turnCount), elapsed \(elapsed)" }
+        out += "\n"
+        if !task.isEmpty { out += "Task: \(task)\n" }
+        out += "Turns so far: \(turnCount)\n"
+
+        if recentPairs.isEmpty {
+            out += "\nNo commands run yet (session just started)."
+        } else {
+            out += "\nLast \(recentPairs.count) command(s):\n"
+            for p in recentPairs {
+                let cmdShort = p.cmd.count > 90 ? String(p.cmd.prefix(90)) + "…" : p.cmd
+                out += "  [\(p.turn)] \(cmdShort)\n"
+                if !p.out.isEmpty { out += "      → \(p.out)\n" }
+            }
+        }
+
+        if !isDone {
+            out += "\n(Session is still running.)"
+        }
+
+        return out
+    }
 }
 ```
 
@@ -10906,7 +11076,7 @@ enum StockSageTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/ToolPolicy.swift (292 lines) =====
+===== FILE: Salehman AI/Tools/ToolPolicy.swift (293 lines) =====
 ```swift
 import Foundation
 
@@ -10954,6 +11124,7 @@ enum ToolPolicy {
         lines.append("• list_documents — list everything in the user's Knowledge vault (use when you don't know what's there).")
         lines.append("• search_documents — retrieve relevant passages from the user's private Knowledge vault (their added docs/notes); cite the source.")
         lines.append("• get_document — fetch one whole document from the Knowledge vault by name (use after search_documents when you need the entire doc to summarize, translate, or quote).")
+        lines.append("• read_grok_session — read the latest Grok terminal-bridge session log: what task Grok is on, current turn, elapsed time, and recent commands. Use when asked what Grok is doing.")
         if isVisionEnabled {
             lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
         }
@@ -22136,7 +22307,7 @@ struct OpenRouterPreferenceTests {
 }
 ```
 
-===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (83 lines) =====
+===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (108 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -22217,8 +22388,33 @@ struct PersistenceRoundTripTests {
         #expect(store2.tasks.first?.title == "Task X")
     }
 
-    @Test(.disabled("TODO: §3 refactor (JSONFileStore injectable base dir) required — see CODEBASE_REVIEW §4 and Tab B"))
-    func stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips() {
+    @Test @MainActor func stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips() {
+        let suiteName = UUID().uuidString
+        let ud = UserDefaults(suiteName: suiteName)!
+        defer { ud.removePersistentDomain(forName: suiteName) }
+
+        let store = StockSagePortfolio(userDefaults: ud)
+
+        // blank symbol → no-op
+        store.add(symbol: "  ", shares: 1, costBasis: 10)
+        #expect(store.positions.isEmpty)
+
+        // negative shares → no-op
+        store.add(symbol: "aapl", shares: -5, costBasis: 10)
+        #expect(store.positions.isEmpty)
+
+        // valid add: lowercase symbol is normalised to uppercase
+        store.add(symbol: "aapl", shares: 10, costBasis: 150.0)
+        #expect(store.positions.count == 1)
+        #expect(store.positions[0].symbol == "AAPL")
+        #expect(store.positions[0].shares == 10)
+        #expect(store.positions[0].costBasis == 150.0)
+
+        // round-trip: second instance from the same UserDefaults suite reads back correctly
+        let store2 = StockSagePortfolio(userDefaults: ud)
+        #expect(store2.positions.count == 1)
+        #expect(store2.positions[0].symbol == "AAPL")
+        #expect(store2.positions[0].shares == 10)
     }
 }
 ```
@@ -24782,7 +24978,7 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 
-===== FILE: DEVELOPMENT_LOG.md (1756 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1781 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26528,6 +26724,31 @@ Wiring (exhaustive switch arms all caught by compiler):
   (e.g. `grok/scratchpad-store-seam-20260610-1430`). `cleanup_grok_branches.sh`
   closes the loop — stale experiment branches accumulate quickly with AI sessions.
 - Result: Scripts executable, smoke-tested (branch creation logic verified).
+
+## 2026-06-10 — read_grok_session tool: Salehman can watch Grok in real-time
+- What: Added `GrokWatchTool.readLatestSession()` — reads the newest file in
+  `~/grok_sessions/*.log`, parses turn markers, CMD lines, and outputs, and returns
+  a compact snapshot (session ID, task, turn count, elapsed, last 6 commands).
+  Wired as `read_grok_session` tool into `LocalLLM.runLocalTool`, `ollamaToolSpecs`,
+  `parseTextAsToolCall.known`, and `ToolPolicy.instructionsToolMenu`. No args needed.
+- Files: Salehman AI/Tools/GrokWatchTool.swift (new), Salehman AI/LLM/LocalLLM.swift,
+  Salehman AI/Tools/ToolPolicy.swift
+- Why: User asked for Salehman to be able to watch what Grok is doing in real-time.
+  Now you can ask "what is Grok doing?" and Salehman reads the live session log.
+- Result: BUILD SUCCEEDED.
+
+## 2026-06-10 — StockSagePortfolio injectable seam + all persistence tests green
+- What: Added `private let defaults: UserDefaults` + `init(userDefaults:)` seam to
+  `StockSagePortfolio`. Updated `save()` and `load()` to use `self.defaults` instead
+  of `UserDefaults.standard`. Enabled `stockSagePortfolioAddValidatesAndNormalizesAndRoundTrips`
+  in `PersistenceRoundTripTests` — covers blank symbol no-op, negative shares no-op,
+  lowercase→uppercase normalisation, and round-trip from same isolated UserDefaults suite.
+- Files: Salehman AI/StockSage/StockSagePortfolio.swift, Salehman AITests/PersistenceRoundTripTests.swift
+- Why: Last disabled persistence test needed a UserDefaults isolation seam (same pattern
+  as JSONFileStore baseDirectory used by other stores). Without isolation, parallel tests
+  on the same `UserDefaults.standard` key would race.
+- Result: BUILD SUCCEEDED. All 5 PersistenceRoundTripTests pass (memoryStore ×2,
+  scratchpad ×2, stockSage ×1).
 
 ## 2026-06-10 — bridge: fix Priority 3 prose-as-command bug; ingest_sessions dry-run
 - What: Fixed parse_commands Priority 3 fallback — short unfenced prose (e.g.
