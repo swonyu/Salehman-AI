@@ -186,6 +186,14 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
     }
 
+    /// **Effort.** How hard Salehman thinks before answering — one knob over the
+    /// Core-Intelligence primitives (self-critique rounds + candidate fan-out/judge).
+    /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.balanced`.
+    /// (Independent of `salehmanRefine`, which is the older DeepSeek-critique toggle.)
+    @Published var salehmanEffort: Effort {
+        didSet { UserDefaults.standard.set(salehmanEffort.rawValue, forKey: Keys.salehmanEffort) }
+    }
+
     /// Auto-continue (claude-autocontinue style): when a reply looks unfinished — it
     /// hit the tool-call round cap, ended on an unterminated code block, or the model
     /// offered to go on — the chat auto-sends "continue" up to a small cap, so the
@@ -209,6 +217,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let unrestrictedTools = "set_unrestrictedTools"
         nonisolated static let salehmanLeader    = "set_salehmanLeader"
         nonisolated static let salehmanRefine    = "set_salehmanRefine"
+        nonisolated static let salehmanEffort    = "set_salehmanEffort"
         nonisolated static let autoContinue      = "set_autoContinue"
         nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
@@ -409,6 +418,7 @@ final class AppSettings: ObservableObject {
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
         salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
+        salehmanEffort = Effort(rawValue: d.string(forKey: Keys.salehmanEffort) ?? "") ?? .ultra  // default Ultra (max effort: 3 candidates → self-critique each → judge)
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
         brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman

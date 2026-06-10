@@ -62,11 +62,44 @@ enum GeminiClient {
         // back as `[Gemini error STATUS: MSG]` so the user sees the real
         // reason (e.g. PERMISSION_DENIED, RESOURCE_EXHAUSTED, NOT_FOUND for
         // an unknown model id) instead of the generic offMessage.
-        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
-        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if status != 200 { return errorText(data: data, status: status) }
-        guard let text = extractContent(data) else { return nil }
-        return text.isEmpty ? nil : text
+        // Retry transient throttle / unavailable responses (429 RESOURCE_EXHAUSTED,
+        // 503 service unavailable) with exponential backoff before surfacing the
+        // error. `nil` (couldn't reach the server) is NOT retried here — that's the
+        // caller's brain-chain to roll past.
+        var attempt = 0
+        while true {
+            guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200 {
+                guard let text = extractContent(data) else { return nil }
+                return text.isEmpty ? nil : text
+            }
+            if isRetryableStatus(status), attempt < maxRetries {
+                let delay = backoffDelay(attempt: attempt)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                attempt += 1
+                continue
+            }
+            return errorText(data: data, status: status)
+        }
+    }
+
+    // MARK: - Retry policy (pure — unit-tested in GeminiBackoffTests)
+
+    /// Max retry attempts after the first try, for transient 429/503 responses.
+    nonisolated static let maxRetries = 3
+
+    /// True for HTTP statuses worth retrying: 429 (rate-limited / RESOURCE_EXHAUSTED)
+    /// and 503 (service temporarily unavailable). Everything else surfaces as-is.
+    nonisolated static func isRetryableStatus(_ status: Int) -> Bool {
+        status == 429 || status == 503
+    }
+
+    /// Exponential backoff: base · 2^attempt, capped. attempt 0 → 0.5s, 1 → 1s,
+    /// 2 → 2s, … capped at `cap`. Deterministic (no jitter) so it's testable.
+    nonisolated static func backoffDelay(attempt: Int, base: Double = 0.5, cap: Double = 8.0) -> Double {
+        let raw = base * pow(2.0, Double(max(0, attempt)))
+        return min(cap, raw)
     }
 
     // MARK: - Chat (streaming)

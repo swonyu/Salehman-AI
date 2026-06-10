@@ -40,6 +40,7 @@ command before approving it (or use --yolo and own the risk).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -79,6 +80,8 @@ _SEEN_CMDS:     set[str] = set()          # dedup: warn if Grok repeats a comman
 _LOG_PATH:      Path | None = None        # set by --log flag
 _SHUTDOWN       = False                   # set by Ctrl+C handler
 _VERIFY:        bool = False              # --verify: append git state to each feedback turn
+_MAX_COMMANDS   = 0                       # --max-commands: hard cap on commands run (0 = unlimited)
+_CMD_COUNT      = 0                       # commands executed so far this run
 
 
 def _elapsed() -> str:
@@ -96,6 +99,64 @@ def _log(msg: str, level: str = "info") -> None:
         plain = re.sub(r"\033\[[0-9;]*m", "", line)
         with _LOG_PATH.open("a") as fh:
             fh.write(plain + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Machine-readable trail — so Salehman (read_grok_session / ingest daemon) and a
+# multi-agent dashboard can SEE EVERYTHING without scraping prose:
+#   ~/grok_sessions/<session>.jsonl      — append-only event log (one JSON/line)
+#   ~/grok_sessions/<session>.status.json — live, overwritten heartbeat
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sessions_dir() -> Path:
+    d = Path.home() / "grok_sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _events_path() -> Path:
+    return _sessions_dir() / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.jsonl"
+
+
+def _status_path() -> Path:
+    return _sessions_dir() / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.status.json"
+
+
+def _emit_event(kind: str, **fields) -> None:
+    """Append one structured event for Salehman to ingest. Never raises."""
+    try:
+        rec = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "elapsed": _elapsed(),
+            "session": _GROK_SESSION,
+            "session_id": _SESSION_ID,
+            "label": _LABEL,
+            "lane": _COORDINATE_LANE,
+            "pid": os.getpid(),
+            "kind": kind,
+            **fields,
+        }
+        with _events_path().open("a") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # observability must never break the run
+
+
+def _write_status(state: str, **fields) -> None:
+    """Overwrite the live status heartbeat (one per running bridge). Never raises."""
+    try:
+        rec = {
+            "session": _GROK_SESSION, "session_id": _SESSION_ID, "label": _LABEL,
+            "lane": _COORDINATE_LANE, "pid": os.getpid(), "state": state,
+            "commands": _CMD_COUNT, "max_commands": _MAX_COMMANDS or None,
+            "elapsed": _elapsed(), "updated": datetime.now().isoformat(timespec="seconds"),
+            "log": str(_LOG_PATH) if _LOG_PATH else None,
+            "events": str(_events_path()),
+            **fields,
+        }
+        _status_path().write_text(json.dumps(rec, ensure_ascii=False, indent=2))
+    except Exception:
+        pass
 
 
 def _notify(title: str, body: str) -> None:
@@ -418,13 +479,35 @@ You NEVER run anything yourself — no built-in runner, no sandbox, no DeepSearc
 def _primer_for(cwd: str, task: str) -> str:
     """PRIMER + a working-directory note (commands already run in `cwd`, so Grok
     shouldn't cd or use ~ in quotes — zsh won't expand it) + the task."""
+    coord = ""
+    if _COORDINATE_LANE:
+        coord = (
+            "\nCOORDINATION — you are ONE of several agents working this repo in parallel.\n"
+            f"Your lane label is: {_COORDINATE_LANE}\n"
+            "BEFORE editing ANY file:\n"
+            "  CMD: cat COORDINATION.md\n"
+            "Then append a claim row to the 'Live Lane Board' naming the EXACT files you\n"
+            f"will touch, with lane '{_COORDINATE_LANE}'. NEVER edit a file another lane has\n"
+            "claimed (one driver per file). Stay strictly in your lane. Keep the build GREEN\n"
+            "(xcodebuild ... build) before handing a file back. When finished, set your row\n"
+            "to 'released' in COORDINATION.md. Treat a red build from another lane's WIP as\n"
+            "NOT yours — note it on the board, don't fix it.\n"
+            "GIT SAFETY (you share ONE working tree with the other agents):\n"
+            "  • Do NOT `git commit`, `git push`, `git checkout`, `git switch`, `git reset`,\n"
+            "    `git stash`, or create/delete branches. Leave your edits in the working tree;\n"
+            "    the human reviews and commits. Use `git diff <file>` to verify — never commit.\n"
+            "  • When appending to COORDINATION.md, append a single line/row; do not rewrite\n"
+            "    or reorder existing rows (other agents are editing it too).\n"
+        )
     return (PRIMER
             + f"\nNOTE: every command ALREADY runs inside: {cwd}\n"
               "So do NOT `cd` there, and never put ~ inside quotes (zsh won't expand it) —\n"
               "use absolute paths or paths relative to that directory.\n"
               "IMPORTANT: The task below may contain ```run / ```bash examples as CONTEXT.\n"
               "Do NOT copy that format. YOUR responses must always use the CMD: prefix,\n"
-              "never code fences. One CMD: line, then stop and wait.\n\n"
+              "never code fences. One CMD: line, then stop and wait.\n"
+            + coord
+            + "\n"
             + task)
 
 
@@ -435,6 +518,16 @@ def _primer_for(cwd: str, task: str) -> str:
 def gate_and_run(command: str, cwd: str, auto_approve: bool, yolo: bool) -> str:
     """Confirm as needed (NEVER refuse), run, and return a Grok-readable report.
     Nothing is blocked — dangerous commands just get a louder prompt unless --yolo."""
+    global _CMD_COUNT, _SHUTDOWN
+    # Runaway guard — cap total commands (matters most for unattended parallel YOLO).
+    if _MAX_COMMANDS and _CMD_COUNT >= _MAX_COMMANDS:
+        _SHUTDOWN = True
+        _emit_event("aborted", reason="max-commands", command=command, limit=_MAX_COMMANDS)
+        _write_status("aborted", reason="max-commands")
+        _log(f"hit --max-commands ({_MAX_COMMANDS}); stopping.", "warn")
+        return (f"$ {command}\nSTOPPED: reached the --max-commands limit ({_MAX_COMMANDS}). "
+                f"This command was NOT run. End the session now with {DONE_SENTINEL}.")
+
     catastrophic = catastrophic_match(command)          # token or None — warn louder, not a refusal
     dangerous = catastrophic is not None or looks_risky(command)
 
@@ -455,17 +548,23 @@ def gate_and_run(command: str, cwd: str, auto_approve: bool, yolo: bool) -> str:
                 answer = "n"
             if answer not in ("y", "yes"):
                 print("      ✗ skipped.")
+                _emit_event("declined", command=command, dangerous=dangerous)
                 return (f"$ {command}\nThe user DECLINED to run this command. It was NOT run. "
                         f"Acknowledge and propose a different approach.")
         else:
             print(f"\n  ▶︎ auto-running: {command}")
 
+    _CMD_COUNT += 1
     code, output, timed_out = run_command(command, cwd=cwd)
     report = f"$ {command}\n"
     if timed_out:
         report += "(timed out; process terminated)\n"
     report += f"exit code: {code}\n---\n{output}"
     print(f"      exit {code}" + (" (timed out)" if timed_out else ""))
+    _emit_event("command", n=_CMD_COUNT, command=command, exit_code=code,
+                timed_out=timed_out, dangerous=dangerous,
+                output_excerpt=(output or "")[:600])
+    _write_status("running", last_command=command, last_exit=code)
     return report
 
 
@@ -545,7 +644,10 @@ def run_manual(task: str, cwd: str, auto_approve: bool, yolo: bool) -> None:
 # author from running it) — expect to tune selectors/timing together.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_GROK_SESSION = "grok-bridge"   # one named session reused by every call (see _ab)
+_GROK_SESSION = "grok-bridge"   # agent-browser session name; override with --session-name.
+                                # Distinct names ⇒ isolated browsers ⇒ safe PARALLEL bridges.
+_LABEL = "grok-bridge"          # short human tag for prompts/logs (set from --label/--session-name)
+_COORDINATE_LANE: str | None = None  # when set (--coordinate), Grok must claim this lane in COORDINATION.md
 _GROK_URL = "https://grok.com"
 # Generic composer selector — grok.com uses a textarea or a contenteditable box.
 _COMPOSER_JS = "document.querySelector('textarea, [contenteditable=\"true\"]')"
@@ -618,11 +720,17 @@ def _ensure_logged_in(max_attempts: int = 6) -> bool:
         print("\n⚠️  grok.com looks logged-OUT (or no chat box is visible).")
         print("    A browser window should have opened — it's agent-browser's OWN Chrome,")
         print("    SEPARATE from your normal one. If you can't see it, it may be headless/stuck.")
-        ans = input("    Sign in there + open a new chat, then press Enter — or 'skip' / 'q': ").strip().lower()
-        if ans in ("q", "quit"):
-            return False
-        if ans == "skip":
-            return True
+        if sys.stdin.isatty():
+            ans = input("    Sign in there + open a new chat, then press Enter — or 'skip' / 'q': ").strip().lower()
+            if ans in ("q", "quit"):
+                return False
+            if ans == "skip":
+                return True
+        else:
+            # Detached / parallel launch — no terminal to prompt at. Poll instead
+            # of crashing on EOF: give you time to sign into the opened window.
+            _log(f"no TTY — waiting 30s for grok.com sign-in (attempt {_+1}/{max_attempts})", "warn")
+            time.sleep(30)
         _ab(["reload"], timeout=60)
         _ab(["wait", "--load", "networkidle"], timeout=60)
     print("\n🛑 Still can't detect a logged-in grok.com. The agent-browser window is probably")
@@ -1412,9 +1520,34 @@ def main() -> None:
     ap.add_argument("--log", metavar="FILE",
                     help="Append all turns + commands to this log file. "
                          "In --auto mode a default log is written to ~/grok_sessions/<session>.log.")
+    ap.add_argument("--session-name", metavar="NAME", default="grok-bridge",
+                    help="agent-browser session = isolated browser. Give each PARALLEL bridge a "
+                         "UNIQUE name (e.g. grok-1, grok-2) so they don't share one grok.com tab. "
+                         "Only isolates --mode auto (agent-browser), NOT Safari. Default: grok-bridge.")
+    ap.add_argument("--label", metavar="NAME", default=None,
+                    help="Short tag shown in prompts/logs/notifications — handy when several "
+                         "windows are open. Defaults to --session-name.")
+    ap.add_argument("--coordinate", action="store_true",
+                    help="Tell Grok to claim its lane in COORDINATION.md before editing any file "
+                         "(safe parallel runs). Auto-enabled when --session-name is non-default.")
+    ap.add_argument("--max-commands", type=int, default=0, metavar="N",
+                    help="Stop after N commands (0 = unlimited). Safety cap for unattended "
+                         "parallel --yolo runs so a loop can't run forever.")
     args = ap.parse_args()
-    global _VERIFY
+    global _VERIFY, _GROK_SESSION, _LABEL, _COORDINATE_LANE, _MAX_COMMANDS
     _VERIFY = args.verify
+    _MAX_COMMANDS = max(0, args.max_commands)
+
+    # Per-instance browser session + human label (the keys to safe parallelism).
+    _GROK_SESSION = args.session_name
+    _LABEL = args.label or args.session_name
+    # Coordinate explicitly, or implicitly whenever this is a non-default (parallel) session.
+    if args.coordinate or args.session_name != "grok-bridge":
+        _COORDINATE_LANE = _LABEL
+    # Safari can't be isolated per-instance (it drives `window 1`) — warn loudly.
+    if args.session_name != "grok-bridge" and (args.safari or args.auto):
+        print(_yellow("⚠  --session-name isolates agent-browser, NOT Safari. For parallel "
+                      "bridges use --mode auto (not --auto/--safari), or they'll fight over one window."))
 
     # --auto is a shortcut for --mode auto --safari
     if args.auto:
@@ -1430,7 +1563,9 @@ def main() -> None:
     if args.log:
         _LOG_PATH = Path(args.log).expanduser()
     elif args.mode == "auto":
-        _LOG_PATH = Path.home() / "grok_sessions" / f"{_SESSION_ID}.log"
+        # Readable per-session name AND inside ~/grok_sessions/ so Salehman's
+        # grok-session ingestion (read_grok_session / the launchd daemon) sees it.
+        _LOG_PATH = Path.home() / "grok_sessions" / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.log"
     if _LOG_PATH:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _LOG_PATH.open("a") as fh:
@@ -1474,29 +1609,47 @@ def main() -> None:
 
     approval = _red("YOLO") if args.yolo else (_yellow("auto-safe") if args.auto_approve else "confirm-dangerous")
     browser  = _cyan("Safari") if args.safari else "agent-browser"
-    print(_bold(f"🌉 grok-bridge") + f"  mode={args.mode}  browser={browser}  approval={approval}  cwd={cwd}")
-    print(_dim(f"   session={_SESSION_ID}  tasks={task_list}"))
+    print(_bold(f"🌉 grok-bridge[{_LABEL}]") + f"  mode={args.mode}  browser={browser}  approval={approval}  cwd={cwd}")
+    print(_dim(f"   session={_GROK_SESSION} ({_SESSION_ID[:6]})  coordinate={bool(_COORDINATE_LANE)}  "
+               f"max-cmds={args.max_commands or '∞'}  tasks={task_list}"))
+    _write_status(state="running", task=task_list[0] if task_list else "", cwd=cwd)
+    _emit_event("start", mode=args.mode,
+                browser=("safari" if args.safari else "agent-browser"),
+                yolo=args.yolo, tasks=task_list, cwd=cwd)
 
-    if args.mode == "autofix":
-        run_autofix(cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo)
+    final_state = "done"
+    try:
+        if args.mode == "autofix":
+            run_autofix(cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo)
 
-    elif args.mode == "auto" and args.safari:
-        for i, task in enumerate(task_list):
-            if i > 0:
-                _log(f"task {i+1}/{len(task_list)}: {task!r}")
-            # Only open a new chat on the first task (or if --no-new-chat not set)
-            run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
-                            new_chat=(not args.no_new_chat or i == 0))
-            if _SHUTDOWN:
-                break
+        elif args.mode == "auto" and args.safari:
+            for i, task in enumerate(task_list):
+                if i > 0:
+                    _log(f"task {i+1}/{len(task_list)}: {task!r}")
+                # Only open a new chat on the first task (or if --no-new-chat not set)
+                run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
+                                new_chat=(not args.no_new_chat or i == 0))
+                if _SHUTDOWN:
+                    break
 
-    elif args.mode == "auto":
-        run_auto(task_list[0] if task_list else "", cwd=cwd,
-                 auto_approve=args.auto_approve, yolo=args.yolo)
+        elif args.mode == "auto":
+            run_auto(task_list[0] if task_list else "", cwd=cwd,
+                     auto_approve=args.auto_approve, yolo=args.yolo)
 
-    else:
-        run_manual(task_list[0] if task_list else "", cwd=cwd,
-                   auto_approve=args.auto_approve, yolo=args.yolo)
+        else:
+            run_manual(task_list[0] if task_list else "", cwd=cwd,
+                       auto_approve=args.auto_approve, yolo=args.yolo)
+    except KeyboardInterrupt:
+        final_state = "interrupted"
+    except Exception as e:                       # observability: record the crash, then re-raise
+        final_state = "error"
+        _emit_event("error", error=str(e))
+        _write_status("error", error=str(e))
+        raise
+    finally:
+        if final_state != "error":
+            _emit_event("end", state=final_state, commands=_CMD_COUNT)
+            _write_status(final_state)
 
 
 if __name__ == "__main__":

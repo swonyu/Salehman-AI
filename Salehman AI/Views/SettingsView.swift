@@ -146,6 +146,7 @@ struct SettingsView: View {
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
                                "forward.end.alt.fill", $settings.autoContinue)
+                        effortRow
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
@@ -1211,6 +1212,28 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
             }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Effort — how hard Salehman thinks before answering (self-critique rounds
+    /// + candidate fan-out/judge). Higher = better answers, more model calls.
+    private var effortRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Effort").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(settings.salehmanEffort.subtitle)
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("Effort", selection: $settings.salehmanEffort) {
+                ForEach(Effort.allCases) { e in
+                    Text(e.displayName).tag(e)
+                }
+            }
+            .labelsHidden().pickerStyle(.menu).frame(width: 150)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
