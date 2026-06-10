@@ -437,3 +437,10 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Deferred:** P2 brainReady caching (needs refresh-wiring for 5 providers first), P3/P4, the MED items (Copilot nil, looksRisky, tools-agent history), the routing-ladder refactor, the 8 test suites. All still in `CODEBASE_REVIEW.md`.
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
+| safari-1 | Salehman AI/grok_parser.py | claimed | 2026-06-10 16:52 |
+| safari-10 | tools/grok_status.sh | now | adding --once flag (print one snapshot and exit vs --watch) | in-progress |
+| KnowledgeRAGTests.swift | safari-3 | in-progress | Phase 1 Core Intelligence - un-disable and implement Knowledge RAG test suite for superior questioning/result quality |
+safari-4 | Salehman AITests/KnowledgeRAGTests.swift | active | 2026-06-10 16:55 | Phase 1 Core Intelligence - implement Knowledge RAG test suite (directly testable) to drive better questioning & result quality
+safari-7 | Core/IntelligenceEngine.swift, Core/QuestionOrchestrator.swift | claimed | 2026-06-10 16:56 | Phase 1 high-value: enhance multi-step reasoning and question quality to outperform ChatGPT
+| KnowledgeRAGTests.swift | safari-9 | claimed | 2026-06-10 | Phase 1 high-value: KnowledgeRAGTests (directly-testable core for RAG/intelligence quality - outperforms ChatGPT result accuracy) |
+safari-2 | Salehman AITests/KnowledgeRAGTests.swift | in-progress | 2026-06-10 | Implementing first directly-testable test suite per §4 backlog (Knowledge RAG)

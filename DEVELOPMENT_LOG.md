@@ -1947,3 +1947,18 @@ Wiring (exhaustive switch arms all caught by compiler):
   test stubs into real coverage by adding pure seams, matching the repo's "no green tautologies" rule.
 - Result: BUILD SUCCEEDED; LiveTranscriberSegment (3 pass / 2 honestly disabled) + GeminiBackoff (4) +
   Effort (8) all green. (`AppSettings` default Effort also set to `.ultra` per owner request.)
+
+## 2026-06-10 — Parallel-session notification (desktop ↔ VS Code) — applied twice (first copy wiped)
+**Files:** `COORDINATION.md` (docs only)
+**What & why:** Owner asked the desktop Claude Code session to notify the VS Code session of parallel
+work. Direct cross-session messaging requires interactive approval (unavailable unsupervised), so the
+notification went into COORDINATION.md per protocol: a Live Lane Board claim row (desktop session,
+`tools/grok_terminal_bridge.py` + `tools/run_parallel_safari.sh`, branch `feat/effort-grok-tooling`)
+plus a dated Notes/handoffs entry. **Reversal logged:** the first application (plus its dev-log entry)
+was wiped when the working tree was restored to HEAD content (~16:35 and ~16:45 file mtimes; no reflog
+reset — likely a `git restore` by another session or a wholesale file rewrite by a safari bridge lane).
+Re-applied ~16:50 with an explicit "don't revert uncommitted coordination edits" warning. Also observed:
+Grok safari lanes (safari-1/3/5) are appending malformed loose-line claims at the END of COORDINATION.md
+instead of board rows — flagged in the Notes entry.
+**Result:** Docs-only; no build impact. Watch for a second clobber — if it recurs, the restore step in
+whatever automation is doing it needs to exclude COORDINATION.md / DEVELOPMENT_LOG.md.
