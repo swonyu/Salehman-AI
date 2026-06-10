@@ -877,6 +877,35 @@ def _safari_enable_think() -> str:
     """)
 
 
+def _safari_disable_think() -> str:
+    """Turn OFF grok.com's 'Think' mode — used when we hit the reasoning-model rate
+    limit, to drop down to the standard model (which has a far higher quota)."""
+    return _safari_eval("""
+    (function(){
+      var nodes = Array.from(document.querySelectorAll('button,[role="switch"],[role="button"],a'));
+      for (var el of nodes){
+        var t = ((el.textContent||'') + ' ' + (el.getAttribute('aria-label')||'')).toLowerCase();
+        if (t.includes('think')){
+          var on = el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-checked')==='true';
+          if(on){ el.click(); return 'think-off'; }
+          return 'think-already-off';
+        }
+      }
+      return 'think-toggle-not-found';
+    })()
+    """)
+
+
+def _safari_reload() -> None:
+    """Refresh grok.com in this agent's tab (clears a stuck/rate-limited UI state)."""
+    _safari_eval("(function(){location.reload();return 'reloading'})()")
+
+
+# The last message we injected — so a rate-limit handler can RESEND it verbatim
+# after switching mode + refreshing (set by _safari_inject_and_send on every send).
+_LAST_SENT = ""
+
+
 def _safari_page_text() -> str:
     return _safari_eval("document.body.innerText")
 
@@ -1011,6 +1040,8 @@ def _safari_inject_and_send(text: str, retries: int = 3) -> bool:  # noqa: C901
       pbcopy + System Events Cmd+A/V/Enter, then immediately re-activates
       whatever app was frontmost. User sees a brief flash, not a permanent switch.
     """
+    global _LAST_SENT
+    _LAST_SENT = text   # remember it so the rate-limit handler can resend verbatim
     import json as _j
 
     for attempt in range(retries):
@@ -1229,7 +1260,7 @@ def _git_verify(cwd: str) -> str:
 
 def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa: C901
                     new_chat: bool = True) -> None:
-    global _SHUTDOWN
+    global _SHUTDOWN, _THINK
     _SHUTDOWN = False
 
     _log(_bold(f"session {_SESSION_ID}  task: {task!r}"))
@@ -1313,14 +1344,34 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         err = _safari_detect_error()
         if err:
             _log(f"grok.com error mid-session: {err}", "warn")
-            if err in ("rate limit", "logged out"):
+            if err == "rate limit":
+                # AWARE → CHANGE MODE → REFRESH → RESEND. Hitting the limit usually
+                # means the reasoning ("Think") model's quota is spent, so drop to the
+                # standard model (much higher limit), refresh the stuck UI, and resend
+                # the exact same message. Repeated hits add a backoff so we don't hammer.
                 _rate_limit_hits = getattr(run_auto_safari, "_rate_limit_hits", 0) + 1
                 run_auto_safari._rate_limit_hits = _rate_limit_hits  # type: ignore[attr-defined]
-                # Use grok's stated reset window if shown; else escalate 30s→5min.
-                wait = (_safari_rate_limit_wait_seconds()
-                        if err == "rate limit" else min(30 * _rate_limit_hits, 300))
-                _log(f"{err} — backing off {wait}s then re-checking (hit #{_rate_limit_hits}; "
-                     f"agent stays alive, no spin) …", "warn")
+                _log(f"⚠ rate limit (#{_rate_limit_hits}) — switching mode + refreshing + resending", "warn")
+                if _THINK:
+                    _log(f"  ↳ Think OFF (standard model has a higher quota): {_safari_disable_think()}", "ok")
+                    _THINK = False
+                _safari_reload()
+                time.sleep(5)
+                if _rate_limit_hits >= 2:   # still limited after a mode switch → wait it out
+                    wait = _safari_rate_limit_wait_seconds()
+                    _log(f"  ↳ still limited; waiting {wait}s before resend", "warn")
+                    time.sleep(wait)
+                if _LAST_SENT:
+                    _log("  ↳ resending the last message", "ok")
+                    _safari_inject_and_send(_LAST_SENT)
+                else:
+                    _safari_inject_and_send(primer)   # nothing sent yet → re-prime
+                continue
+            if err == "logged out":
+                _rate_limit_hits = getattr(run_auto_safari, "_rate_limit_hits", 0) + 1
+                run_auto_safari._rate_limit_hits = _rate_limit_hits  # type: ignore[attr-defined]
+                wait = min(30 * _rate_limit_hits, 300)
+                _log(f"logged out — backing off {wait}s (agent stays alive) …", "warn")
                 time.sleep(wait)
                 continue
 
