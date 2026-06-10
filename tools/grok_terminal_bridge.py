@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -77,6 +78,7 @@ _SESSION_START  = time.time()
 _SEEN_CMDS:     set[str] = set()          # dedup: warn if Grok repeats a command
 _LOG_PATH:      Path | None = None        # set by --log flag
 _SHUTDOWN       = False                   # set by Ctrl+C handler
+_VERIFY:        bool = False              # --verify: append git state to each feedback turn
 
 
 def _elapsed() -> str:
@@ -239,11 +241,14 @@ def run_command(command: str, cwd: str, timeout: int = DEFAULT_TIMEOUT) -> tuple
 # Grok-reply parsing — commands live inside ```run … ``` fences; [[DONE]] ends it.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Match ANY fenced code block — ```run, ```bash, ```sh, ```zsh, ```shell, ```console,
-# or a bare ``` — and tolerate a MISSING closing fence (capture to end of text). This
-# survives however grok.com renders the block.
-_FENCE = re.compile(r"```[^\n`]*\n(.*?)(?:```|\Z)", re.DOTALL)
+# Match executable fenced code blocks (```run, ```bash, ```sh, ```zsh, ```shell,
+# bare ```) but NOT ```diff blocks — those are handled by _DIFF_FENCE below.
+_FENCE = re.compile(r"```(?!diff\b)[^\n`]*\n(.*?)(?:```|\Z)", re.DOTALL)
+# Match ```diff blocks separately so their content can be written to a temp file
+# and applied via git apply rather than run as a shell command.
+_DIFF_FENCE = re.compile(r"```diff\b[^\n]*\n(.*?)(?:```|\Z)", re.DOTALL | re.IGNORECASE)
 DONE_SENTINEL = "[[DONE]]"
+DONE_SENTINEL_V12 = "=== TASK_COMPLETED_SUCCESSFULLY ==="  # Protocol v1.2 alternate
 
 
 _PROSE_INDICATORS = re.compile(
@@ -254,6 +259,24 @@ _LOOKS_LIKE_CMD = re.compile(r"^[\w./\-\"'`${}()\[\]\\|<>&;: ]+$", re.MULTILINE)
 
 
 _CMD_PREFIX = re.compile(r"^CMD:\s*(.+)$", re.MULTILINE)
+
+
+def _collect_diff_cmds(reply: str, session_id: str) -> list[str]:
+    """Extract ```diff blocks, write each to a temp file, return git-apply commands.
+
+    Keeps diff content out of the shell executor — a raw unified diff is NOT a
+    valid shell command and would cause spurious errors if run via /bin/zsh -c.
+    """
+    cmds = []
+    for i, raw in enumerate(_DIFF_FENCE.findall(reply)):
+        content = raw.strip()
+        if not content:
+            continue
+        diff_path = f"/tmp/grok_diff_{session_id}_{i}.patch"
+        Path(diff_path).write_text(content + "\n", encoding="utf-8")
+        cmds.append(f"bash tools/apply_grok_diff.sh {shlex.quote(diff_path)}")
+    return cmds
+
 
 # grok.com UI noise — suggestion chips and upsell banners that bleed into page text
 _UI_NOISE = re.compile(
@@ -309,18 +332,13 @@ def parse_commands(grok_text: str) -> list[str]:
 
 
 def is_done(grok_text: str) -> bool:
-    """True only when Grok has signalled [[DONE]] and it's not an echo of our primer."""
-    if DONE_SENTINEL not in grok_text:
+    """True only when Grok signals completion ([[DONE]] or v1.2 sentinel), not an echo."""
+    sentinels = (DONE_SENTINEL, DONE_SENTINEL_V12)
+    lines = grok_text.splitlines()
+    found = any(line.strip() in sentinels for line in lines)
+    if not found:
         return False
-    # Guard: [[DONE]] must appear as a standalone line, not embedded in suggestion chips
-    # e.g. "Replace TASK_DONE with [[DONE]]" must NOT trigger this.
-    sentinel_standalone = any(
-        line.strip() == DONE_SENTINEL
-        for line in grok_text.splitlines()
-    )
-    if not sentinel_standalone:
-        return False
-    # Guard: our PRIMER contains the phrase "Do NOT output [[DONE]]" — don't false-trigger
+    # Guard: primer/UI noise contains [[DONE]] in explanatory text — don't false-trigger
     if "NOT YOUR CLOUD SANDBOX" in grok_text or "Do NOT output" in grok_text:
         return False
     # Guard: primer marker present → this is an echo, not a real done signal
@@ -957,6 +975,17 @@ def _safari_logged_in() -> bool:
     return not any(m in txt for m in _LOGGED_OUT_MARKERS)
 
 
+def _git_verify(cwd: str) -> str:
+    """Run git status + diff --stat and return a compact block to send back to Grok."""
+    _, status, _ = run_command("git status --porcelain", cwd=cwd)
+    _, diff_stat, _ = run_command("git diff --stat", cwd=cwd)
+    parts = [f"git status --porcelain:\n{status.strip()}" if status.strip()
+             else "git status: clean — no uncommitted changes"]
+    if diff_stat.strip():
+        parts.append(f"git diff --stat:\n{diff_stat.strip()}")
+    return "--- git state after last command ---\n" + "\n\n".join(parts)
+
+
 def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa: C901
                     new_chat: bool = True) -> None:
     global _SHUTDOWN
@@ -1034,11 +1063,20 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                 fh.write(f"\n--- TURN {turn} GROK REPLY ---\n{reply}\n")
 
         if is_done(reply):
+            if _VERIFY:
+                git_state = _git_verify(cwd)
+                if "clean — no uncommitted changes" in git_state:
+                    _log("⚠️  fake DONE — git shows no changes; pushing back …", "warn")
+                    pushback = (f"{git_state}\n\n⚠️ FAKE_COMPLETION_DETECTED: "
+                                f"git shows ZERO file changes. You claimed task complete "
+                                f"but made no real edits. Provide concrete edit commands now.\n{marker}")
+                    _safari_inject_and_send(pushback)
+                    continue
             _log("[[DONE]] — task complete", "ok")
             _notify("Grok Bridge ✓", f"Task done in {_elapsed()} ({turn} turns)")
             return
 
-        cmds = parse_commands(reply)
+        cmds = parse_commands(reply) + _collect_diff_cmds(reply, _SESSION_ID)
         if not cmds:
             no_cmd_streak += 1
             if no_cmd_streak >= 3:
@@ -1069,6 +1107,8 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
             break
 
         sent = "\n\n".join(reports)
+        if _VERIFY:
+            sent += "\n\n" + _git_verify(cwd)
         if _LOG_PATH:
             with _LOG_PATH.open("a") as fh:
                 fh.write(f"\n--- TURN {turn} COMMANDS ---\n{sent}\n")
@@ -1124,9 +1164,16 @@ def run_auto(task: str, cwd: str, auto_approve: bool, yolo: bool) -> None:
         preview = reply[:1200] + ("…" if len(reply) > 1200 else "")
         print("\n── Grok replied ──\n" + preview + "\n──────────────────")
 
-        cmds = parse_commands(reply)
+        cmds = parse_commands(reply) + _collect_diff_cmds(reply, _SESSION_ID)
         if not cmds:
             if is_done(reply):
+                if _VERIFY:
+                    git_state = _git_verify(cwd)
+                    if "clean — no uncommitted changes" in git_state:
+                        pushback = (f"{git_state}\n\n⚠️ FAKE_COMPLETION_DETECTED: "
+                                    f"git shows ZERO file changes. Provide real edit commands.")
+                        _grok_send(pushback)
+                        continue
                 print("\n✅ Grok signalled DONE. Bridge finished.")
                 return
             ans = input("No command found in that reply. [r]e-read / [q]uit? ").strip().lower()
@@ -1137,6 +1184,8 @@ def run_auto(task: str, cwd: str, auto_approve: bool, yolo: bool) -> None:
 
         reports = [gate_and_run(c, cwd=cwd, auto_approve=auto_approve, yolo=yolo) for c in cmds]
         sent = "\n\n".join(reports)
+        if _VERIFY:
+            sent += "\n\n" + _git_verify(cwd)
         print("→ sending command output back to grok.com …")
         _grok_send(sent)
         if is_done(reply):
@@ -1296,16 +1345,24 @@ def main() -> None:
                     help="Auto-run safe commands; still confirm dangerous ones.")
     ap.add_argument("--yolo", action="store_true",
                     help="Zero prompts — run everything instantly. Own the risk.")
+    ap.add_argument("--verify", action="store_true",
+                    help="After each command batch, append git status + diff --stat to the feedback sent to Grok.")
     ap.add_argument("--no-new-chat", action="store_true",
                     help="Don't click New Chat on start (reuse the current grok.com conversation).")
     ap.add_argument("--log", metavar="FILE",
                     help="Append all turns + commands to this log file.")
     args = ap.parse_args()
+    global _VERIFY
+    _VERIFY = args.verify
 
     # --auto is a shortcut for --mode auto --safari
     if args.auto:
         args.mode = "auto"
         args.safari = True
+
+    # --auto mode: verification defaults to True so fake completions are auto-rejected
+    if args.mode == "auto" and not args.verify:
+        _VERIFY = True
 
     # --log
     global _LOG_PATH

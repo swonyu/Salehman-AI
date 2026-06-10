@@ -1608,3 +1608,54 @@ Wiring (exhaustive switch arms all caught by compiler):
   behaviour of some Ollama models), the loop hit the `toolCalls.isEmpty`
   branch and returned the raw JSON as the final user-visible reply.
 - Result: BUILD SUCCEEDED, zero new errors.
+
+## 2026-06-10 — Add --verify flag to grok_terminal_bridge.py
+- What: Added `--verify` CLI flag to `tools/grok_terminal_bridge.py`. When
+  enabled, after every command batch both `run_auto_safari` and `run_auto`
+  append a `_git_verify(cwd)` block to the feedback message sent to Grok —
+  running `git status --porcelain` + `git diff --stat` and formatting the
+  output as `--- git state after last command ---`. Grok can no longer claim
+  `TASK_DONE` with a clean diff unless real file changes exist. Also added
+  `_VERIFY: bool = False` module-level global (consistent with `_SHUTDOWN`,
+  `_LOG_PATH` pattern in the same file) set from `args.verify` in `main()`.
+- Files: tools/grok_terminal_bridge.py
+- Why: Grok repeatedly declared success with no real changes (fake TASK_DONE).
+  Adding real git state to every feedback turn makes it impossible to fake
+  completion without the diff showing up.
+- Result: Python syntax OK, `--verify` appears in `--help`, injected into
+  both Safari-mode and native-API-mode feedback loops.
+
+## 2026-06-10 — Bridge hardening: fake-DONE guard, dual sentinels, auto-verify, apply_grok_diff.sh
+- What:
+  1. Fake-DONE guard: when `--verify` is on and Grok signals `[[DONE]]`/`TASK_COMPLETED_SUCCESSFULLY`
+     but `git status --porcelain` is clean, the bridge now REJECTS the completion and sends
+     "⚠️ FAKE_COMPLETION_DETECTED" pushback to Grok instead of returning. Implemented in both
+     `run_auto_safari` and `run_auto`.
+  2. Dual done-sentinels: `is_done()` now accepts both `[[DONE]]` (original primer) and
+     `=== TASK_COMPLETED_SUCCESSFULLY ===` (Protocol v1.2) as valid completion signals.
+  3. Auto-verify default: `--verify` now defaults to True in `--auto` / `--mode auto` mode
+     without requiring the explicit flag. Manual and autofix modes still default to off.
+  4. `tools/apply_grok_diff.sh`: new helper script Grok can call after writing a unified diff
+     to `/tmp/grok.diff`. Runs `git apply --check` + `git apply --index` + prints status.
+- Files: tools/grok_terminal_bridge.py, tools/apply_grok_diff.sh (new)
+- Why: Grok repeatedly declared TASK_DONE/TASK_COMPLETED_SUCCESSFULLY with zero real changes.
+  The fake-DONE guard + auto-verify makes it structurally impossible to accept a fake completion
+  in auto mode without git state proving real edits were made.
+- Result: Python syntax OK.
+
+## 2026-06-10 — Bridge v1.3: native diff-block support + start_grok_session.sh
+- What:
+  1. `_DIFF_FENCE` regex: separates `\`\`\`diff` blocks from executable `\`\`\`run` blocks.
+     The main `_FENCE` regex now has a `(?!diff\b)` negative lookahead so diff content
+     is never passed to `/bin/zsh -c` (which would fail with "bad command" errors).
+  2. `_collect_diff_cmds(reply, session_id)`: finds all `\`\`\`diff` blocks in a Grok reply,
+     writes each to `/tmp/grok_diff_<session>_<n>.patch`, returns
+     `bash tools/apply_grok_diff.sh <path>` commands. Wired into both `run_auto_safari`
+     and `run_auto` via `cmds = parse_commands(reply) + _collect_diff_cmds(reply, _SESSION_ID)`.
+  3. `tools/start_grok_session.sh`: creates a `grok-session-<timestamp>` branch before
+     each bridge run so Grok's changes are isolated and easy to review/revert.
+  4. Added `import shlex` for safe path quoting in `_collect_diff_cmds`.
+- Files: tools/grok_terminal_bridge.py, tools/start_grok_session.sh (new)
+- Why: Grok's Protocol v1.2/v1.3 uses `\`\`\`diff` blocks for Swift edits (safer than
+  heredoc for special-char heavy Swift code). The bridge now handles them natively.
+- Result: Python syntax OK, `--verify` + diff-block handling verified.
