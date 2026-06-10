@@ -56,7 +56,7 @@ for task in "$@"; do
   nohup python3 "$BRIDGE" \
     --auto --yolo \
     --safari-window --think --loop \
-    --label "$name" --coordinate \
+    --session-name "$name" --label "$name" --coordinate \
     --max-commands "$MAX_CMDS" \
     --cwd "$REPO" \
     "$task" > "$out" 2>&1 < /dev/null &

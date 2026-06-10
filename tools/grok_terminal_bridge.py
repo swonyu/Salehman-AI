@@ -792,18 +792,19 @@ def _grok_wait_reply(sent_text: str, settle: float = 2.0, stable_needed: int = 2
 # In parallel Safari mode each agent opens its OWN window and sets this to
 # "id <n>" so 5 agents never fight over one window. Targeting a window by id
 # works even when it's NOT frontmost — no focus-stealing between agents.
-_SAFARI_WIN = "1"
-_SAFARI_OWN_WINDOW = False   # --safari-window: open + drive this agent's OWN window
+_SAFARI_OWN_WINDOW = False   # --safari-window: open + drive this agent's OWN tab
 _THINK = False               # --think: enable grok.com's deep-reasoning "Think" mode
-
-def _safari_win_clause() -> str:
-    return f"window {_SAFARI_WIN}"   # -> "window 1" or "window id 12345"
+# AppleScript reference for THIS agent's grok tab. Single-agent default = the
+# frontmost window's current tab. In parallel mode each agent opens its OWN TAB
+# (Safari makes new documents as tabs, not windows) and targets it by index, e.g.
+# "tab 3 of window id 603" — so N agents never drive the same tab.
+_SAFARI_TARGET = "current tab of window 1"
 
 def _safari_eval(js: str, timeout: int = 30) -> str:
     """Run JS in this agent's Safari window via osascript. Returns the string result."""
     import json as _json
     wrapped = f"(function(){{try{{return String({js})}}catch(e){{return 'err:'+e.message}}}})()"
-    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in current tab of {_safari_win_clause()}'
+    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in {_SAFARI_TARGET}'
     try:
         r = subprocess.run(["osascript", "-e", osa],
                            capture_output=True, text=True, timeout=timeout)
@@ -821,34 +822,30 @@ def _safari_open_url(url: str) -> None:
 
 
 def _safari_open_own_window(url: str) -> bool:
-    """Open a NEW Safari window to `url`, capture its window id into _SAFARI_WIN,
-    and tuck it into a corner (out of the way). All later JS targets it by id, so
-    it works even when it's not frontmost. Returns True on success.
-
-    Used in parallel mode so each agent drives its own window without clashing."""
-    global _SAFARI_WIN
-    # Capture the new window's id IMMEDIATELY (no delay) so a sibling agent opening
-    # its own window can't slip in and become "front window" between create+read.
-    # Cascade the position by current window count so N agents don't stack exactly.
+    """Open a NEW Safari TAB to `url` and pin THIS agent to it by index, captured
+    at creation (e.g. "tab 3 of window id 603"). Safari opens new documents as
+    TABS in one window (not separate windows), so per-agent isolation is per-tab,
+    not per-window — that's what stops 5 agents driving the same tab. Returns True
+    on success. Targeting a specific tab works without it being frontmost."""
+    global _SAFARI_TARGET
+    # Capture window id + the new tab's index in ONE osascript (atomic), so a
+    # sibling agent's tab-open can't shift what we read between create and capture.
     osa = (
         'tell application "Safari"\n'
         f'  make new document with properties {{URL:"{url}"}}\n'
         '  set wid to id of window 1\n'
-        '  set n to (count of windows)\n'
-        '  set k to ((n - 1) * 60) mod 600\n'
-        '  try\n'
-        '    set bounds of window id wid to {100 + k, 80 + k, 760 + k, 620 + k}\n'
-        '  end try\n'
-        '  return wid\n'
+        '  set tidx to (index of current tab of window 1)\n'
+        '  return ((wid as string) & "," & (tidx as string))\n'
         'end tell'
     )
     r = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True, timeout=30)
-    wid = (r.stdout or "").strip()
-    if wid.lstrip("-").isdigit():
-        _SAFARI_WIN = f"id {wid}"
-        _log(f"opened own Safari window id {wid} (targeting it by id)", "ok")
+    out = (r.stdout or "").strip()
+    parts = out.split(",")
+    if len(parts) == 2 and parts[0].lstrip("-").isdigit() and parts[1].isdigit():
+        _SAFARI_TARGET = f"tab {parts[1]} of window id {parts[0]}"
+        _log(f"own grok tab: {_SAFARI_TARGET}", "ok")
         return True
-    _log(f"couldn't open own Safari window: {r.stderr.strip() or r.stdout.strip()}", "warn")
+    _log(f"couldn't open own Safari tab: {r.stderr.strip() or out}", "warn")
     return False
 
 
@@ -856,7 +853,7 @@ def _safari_navigate(url: str) -> None:
     """Point this agent's window at `url` (reuse the own-window instead of opening
     a new one for each task)."""
     subprocess.run(["osascript", "-e",
-                    f'tell application "Safari" to set URL of current tab of {_safari_win_clause()} to "{url}"'],
+                    f'tell application "Safari" to set URL of {_SAFARI_TARGET} to "{url}"'],
                    capture_output=True)
 
 
@@ -1218,15 +1215,15 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
     _SHUTDOWN = False
 
     _log(_bold(f"session {_SESSION_ID}  task: {task!r}"))
-    # Open/reuse the right Safari window. In parallel mode each agent drives its
-    # OWN window (by id) so 5 can run side-by-side without clashing.
+    # Open/reuse the right Safari TAB. In parallel mode each agent drives its OWN
+    # tab (by index) so N can run side-by-side without clashing on one tab.
     if _SAFARI_OWN_WINDOW:
-        if _SAFARI_WIN == "1":
-            _log("opening this agent's own Safari window …")
+        if _SAFARI_TARGET == "current tab of window 1":      # not yet claimed a tab
+            _log("opening this agent's own Safari tab …")
             if not _safari_open_own_window(_GROK_URL):
                 _safari_open_url(_GROK_URL)
         else:
-            _log(f"reusing own Safari {_safari_win_clause()} …")
+            _log(f"reusing own grok tab: {_SAFARI_TARGET} …")
             _safari_navigate(_GROK_URL)
     else:
         _log("opening grok.com in Safari …")
