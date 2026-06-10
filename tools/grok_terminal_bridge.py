@@ -788,11 +788,22 @@ def _grok_wait_reply(sent_text: str, settle: float = 2.0, stable_needed: int = 2
 #   Then: Safari → Develop menu → "Allow JavaScript from Apple Events"
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Which Safari window this agent drives. "1" = frontmost (single-agent default).
+# In parallel Safari mode each agent opens its OWN window and sets this to
+# "id <n>" so 5 agents never fight over one window. Targeting a window by id
+# works even when it's NOT frontmost — no focus-stealing between agents.
+_SAFARI_WIN = "1"
+_SAFARI_OWN_WINDOW = False   # --safari-window: open + drive this agent's OWN window
+_THINK = False               # --think: enable grok.com's deep-reasoning "Think" mode
+
+def _safari_win_clause() -> str:
+    return f"window {_SAFARI_WIN}"   # -> "window 1" or "window id 12345"
+
 def _safari_eval(js: str, timeout: int = 30) -> str:
-    """Run JS in Safari's frontmost tab via osascript. Returns the string result."""
+    """Run JS in this agent's Safari window via osascript. Returns the string result."""
     import json as _json
     wrapped = f"(function(){{try{{return String({js})}}catch(e){{return 'err:'+e.message}}}})()"
-    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in current tab of window 1'
+    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in current tab of {_safari_win_clause()}'
     try:
         r = subprocess.run(["osascript", "-e", osa],
                            capture_output=True, text=True, timeout=timeout)
@@ -807,6 +818,63 @@ def _safari_open_url(url: str) -> None:
     subprocess.run(["osascript", "-e",
                     f'tell application "Safari"\n  activate\n  open location "{url}"\nend tell'],
                    capture_output=True)
+
+
+def _safari_open_own_window(url: str) -> bool:
+    """Open a NEW Safari window to `url`, capture its window id into _SAFARI_WIN,
+    and tuck it into a corner (out of the way). All later JS targets it by id, so
+    it works even when it's not frontmost. Returns True on success.
+
+    Used in parallel mode so each agent drives its own window without clashing."""
+    global _SAFARI_WIN
+    osa = (
+        'tell application "Safari"\n'
+        f'  set newDoc to make new document with properties {{URL:"{url}"}}\n'
+        '  delay 0.6\n'
+        '  set wid to id of front window\n'
+        # park it in the bottom-right corner, small, so it stays off your way
+        '  try\n'
+        '    set bounds of window id wid to {1400, 760, 1760, 1040}\n'
+        '  end try\n'
+        '  return wid\n'
+        'end tell'
+    )
+    r = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True, timeout=30)
+    wid = (r.stdout or "").strip()
+    if wid.isdigit():
+        _SAFARI_WIN = f"id {wid}"
+        _log(f"opened own Safari window id {wid} (targeting it by id)", "ok")
+        return True
+    _log(f"couldn't open own Safari window: {r.stderr.strip() or r.stdout.strip()}", "warn")
+    return False
+
+
+def _safari_navigate(url: str) -> None:
+    """Point this agent's window at `url` (reuse the own-window instead of opening
+    a new one for each task)."""
+    subprocess.run(["osascript", "-e",
+                    f'tell application "Safari" to set URL of current tab of {_safari_win_clause()} to "{url}"'],
+                   capture_output=True)
+
+
+def _safari_enable_think() -> str:
+    """Best-effort: turn ON grok.com's 'Think' (deep-reasoning) mode by clicking
+    its toggle. grok.com's UI changes often, so this matches several label/aria
+    variants and is non-fatal if it can't find the button."""
+    return _safari_eval("""
+    (function(){
+      var nodes = Array.from(document.querySelectorAll('button,[role="switch"],[role="button"],a'));
+      for (var el of nodes){
+        var t = ((el.textContent||'') + ' ' + (el.getAttribute('aria-label')||'')).toLowerCase();
+        if (t.includes('think')){
+          var on = el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-checked')==='true';
+          if(!on){ el.click(); return 'think-on'; }
+          return 'think-already-on';
+        }
+      }
+      return 'think-toggle-not-found';
+    })()
+    """)
 
 
 def _safari_page_text() -> str:
@@ -1147,8 +1215,19 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
     _SHUTDOWN = False
 
     _log(_bold(f"session {_SESSION_ID}  task: {task!r}"))
-    _log("opening grok.com in Safari …")
-    _safari_open_url("https://grok.com")
+    # Open/reuse the right Safari window. In parallel mode each agent drives its
+    # OWN window (by id) so 5 can run side-by-side without clashing.
+    if _SAFARI_OWN_WINDOW:
+        if _SAFARI_WIN == "1":
+            _log("opening this agent's own Safari window …")
+            if not _safari_open_own_window(_GROK_URL):
+                _safari_open_url(_GROK_URL)
+        else:
+            _log(f"reusing own Safari {_safari_win_clause()} …")
+            _safari_navigate(_GROK_URL)
+    else:
+        _log("opening grok.com in Safari …")
+        _safari_open_url(_GROK_URL)
     time.sleep(4)
 
     # Ensure logged in
@@ -1163,18 +1242,27 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                 return
         if _safari_logged_in():
             break
-        _log("grok.com looks logged-out. Sign in in Safari, then press Enter.", "warn")
-        try:
-            ans = input("   Press Enter when ready, or 'q' to quit: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return
-        if ans in ("q", "quit"):
-            return
+        _log("grok.com looks logged-out — sign into grok.com in Safari.", "warn")
+        if sys.stdin.isatty():
+            try:
+                ans = input("   Press Enter when ready, or 'q' to quit: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return
+            if ans in ("q", "quit"):
+                return
+        else:
+            # detached / parallel launch: no terminal to prompt at — poll instead
+            _log("no TTY — waiting 10s for grok.com sign-in", "warn")
+            time.sleep(10)
         time.sleep(2)
     else:
         _log("Could not detect a logged-in session after 6 attempts.", "err")
         _notify("Grok Bridge", "❌ Login check failed")
         return
+
+    # Deep-thinking ("Think" reasoning mode) — best-effort toggle, non-fatal.
+    if _THINK:
+        _log(f"enabling Grok Think mode: {_safari_enable_think()}", "ok")
 
     if new_chat:
         _log("starting fresh chat …")
