@@ -1480,6 +1480,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** `swiftc -typecheck` 0 errors / 0 warnings (Swift 6, `-default-isolation MainActor`). `SOURCE_BUNDLE.md` regenerated (128 files, 23720 LOC). ⚠️ xcodebuild + test suite still cannot run in sandbox — **must run canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
 
+## 2026-06-11 · Effort wiring — doc/copy sync follow-up
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `PROJECT_CONTEXT.md`, `COORDINATION.md`, `ARCHITECTURE.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Follow-up to the review fixes above. (1) The "Salehman leads" toggle subtitle still said pinned `.salehman` is "skipped automatically" — post-wiring that's only true at Effort=Instant; rewrote the copy to say the Effort dial still self-critiques the pinned brain's draft, and that OFF = no extra passes for any brain (this was the third doc-contradiction site flagged by review finding #1; the other two were fixed in the previous commit). (2) `PROJECT_CONTEXT.md` + `COORDINATION.md` still claimed "default `.balanced`" from before the review changed the default to `.instant` — synced both. Verified via `swiftc -typecheck` on a temp tree with the OTHER session's in-flight files (`AgentPipeline`, `OllamaClient`, `CodeView`, `ContentView`, `MarkdownText` — live streaming-render work, not mine, not committed here) pinned to HEAD: 0 errors / 0 warnings. Note: the shared working tree means `SOURCE_BUNDLE.md` snapshots their WIP too (same as the previous commit) — they'll regenerate when their work lands.
+
+**Result:** Docs, Settings copy, and code now tell the same story: Leader OFF = zero extra passes everywhere; pinned `.salehman` + Leader ON = critique-only at the dialed effort; default `.instant` = no silent spend.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

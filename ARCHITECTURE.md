@@ -54,7 +54,7 @@ Salehman AI/
 │   └── KeychainStore.swift          # Secure API key storage
 │
 ├── Intelligence/
-│   ├── Effort.swift                 # Effort ladder (candidates × critique × judge) — not yet wired to the answer path
+│   ├── Effort.swift                 # Effort ladder (candidates × critique × judge) — drives SalehmanLeader.finalize
 │   └── SelfCritique.swift           # Refine loop (used by Effort)
 │
 ├── Agents/ (Multi-agent orchestration)

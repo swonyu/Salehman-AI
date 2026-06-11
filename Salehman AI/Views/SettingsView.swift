@@ -138,7 +138,7 @@ struct SettingsView: View {
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
                         toggle("Salehman leads",
-                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
+                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
                                "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",

@@ -137,7 +137,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 - **Voice:** `VoiceSession.swift` / `VoiceTurn.swift` — hands-free dictate→LocalLLM→TTS loop driving `VoiceModeView`.
 - **Media:** `LiveTranscriber.swift` (system-audio live transcription), `MediaTranscribe.swift`/`Transcriber.swift` (file transcription), `SpeechIn.swift` (mic dictation), `SpeechOut.swift` (TTS).
 - **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/Portfolio` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped). `ScreenAnalysis` is built-but-unwired (pending a chat-tool hookup decision).
-- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **setting exists in Settings but is not yet wired into the answer path**) + `SelfCritique.swift` (refine loop, used by Effort).
+- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **wired 2026-06-11 into `SalehmanLeader.finalize`**: leader pass runs at the configured effort; pinned `.salehman` drafts get critique-only refinement (`refineRounds`, gated on the Leader toggle); coding modes excluded; default `.instant` = exact pre-Effort call count, higher effort opt-in) + `SelfCritique.swift` (refine loop, used by Effort).
 - **DesignSystem:** `DesignSystem.swift` — `DS.*` tokens, motion curves (`DS.Motion.snappy/smooth/…`), `Bezel`/`Eyebrow`/`SuggestionCard`.
 
 ---

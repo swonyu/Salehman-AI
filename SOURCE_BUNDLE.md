@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 09:56 +03 · Swift files: 128 · Swift LOC: 23720_
+_Generated: 2026-06-11 10:05 +03 · Swift files: 128 · Swift LOC: 23745_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (642 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (667 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -254,6 +254,31 @@ enum AgentPipeline {
         // that must NOT inherit context — e.g. the Code-tab Review — calls
         // `ConversationStore.reset()` first instead, then this records cleanly.)
         let priorHistory = await ConversationStore.shared.transcript()
+
+        // FAST PATH — a bare greeting / chit-chat ("hi", "thanks", "how are you") gets
+        // ONE direct Salehman reply: no multi-agent team, no leader/critique finalize,
+        // no tools. Even the lightest team path is a tool-agent call PLUS a
+        // `refineOwnDraft` self-critique pass — several sequential calls on a local
+        // model, which is why a plain "hi" felt like it took forever. History is
+        // still recorded. If the engine errors, fall through to the normal pipeline.
+        if isTrivialMission(mission) {
+            let prompt = withConversationContext(mission, history: priorHistory)
+            // Hit the WARM LOCAL model directly (≈2s) for greetings — the cloud-first
+            // SalehmanEngine iterates the whole cloud chain before the local floor, so
+            // a slow/rate-limited key adds seconds of round-trips to a throwaway "hi".
+            // Cloud engine is the fallback only when Ollama is unreachable. (Also makes
+            // greetings honor Offline-Only for free.)
+            var reply = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) ?? ""
+            if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
+                reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
+            }
+            if !isErrorReply(reply) {
+                await ConversationStore.shared.add(role: "User", text: mission)
+                await ConversationStore.shared.add(role: "Salehman AI", text: reply)
+                return reply
+            }
+        }
+
         var draft = await runDraft(mission: mission, priorHistory: priorHistory)
 
         // UNIVERSAL SAFETY NET — the chat must NEVER surface a raw provider error.
@@ -17628,7 +17653,7 @@ struct SettingsView: View {
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
                         toggle("Salehman leads",
-                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
+                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
                                "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
@@ -25517,12 +25542,12 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
 ### 🧹 2026-06-11 — full code cleanup (owner-driven, single session, cross-lane authorized)
-Owner asked for a full code cleanup; no other session was active (all board claims below released). A 67-agent verified sweep + applied subset touched files in BOTH former lanes — full inventory in `DEVELOPMENT_LOG.md` (2026-06-11 entry). Highlights any future session must know: `instructionsToolMenu()` / `ImageGen` / `MacControlTools` / `StockSageTool` / the `SelfImprove` loop are GONE (FM-era dead code); `useCodeModel` setting removed; ⌘K palette binding restored; tab ⌘ map is 1=Today…7=Knowledge; `bundle_check.sh` + `grok_cleanup.py` actually work now. **Open owner decision:** wire `salehmanEffort` into the answer path or drop the Settings Effort row (deferred, see log). → **RESOLVED 2026-06-11 (later same day): WIRED** at `SalehmanLeader.finalize` (leader pass at effort; critique-only for pinned `.salehman`; default `.balanced`) — the training session's dataset teaches the model the "effort dial", confirming wiring was the intent. See DEVELOPMENT_LOG.
+Owner asked for a full code cleanup; no other session was active (all board claims below released). A 67-agent verified sweep + applied subset touched files in BOTH former lanes — full inventory in `DEVELOPMENT_LOG.md` (2026-06-11 entry). Highlights any future session must know: `instructionsToolMenu()` / `ImageGen` / `MacControlTools` / `StockSageTool` / the `SelfImprove` loop are GONE (FM-era dead code); `useCodeModel` setting removed; ⌘K palette binding restored; tab ⌘ map is 1=Today…7=Knowledge; `bundle_check.sh` + `grok_cleanup.py` actually work now. **Open owner decision:** wire `salehmanEffort` into the answer path or drop the Settings Effort row (deferred, see log). → **RESOLVED 2026-06-11 (later same day): WIRED** at `SalehmanLeader.finalize` (leader pass at effort; critique-only for pinned `.salehman`, gated on the Leader toggle; default `.instant` after adversarial review — no silent extra spend) — the training session's dataset teaches the model the "effort dial", confirming wiring was the intent. See DEVELOPMENT_LOG.
 
 ### 🧹 2026-06-11 — stale fleet claims cleared (cleanup pass)
 The 2026-06-10 `safari-1…10` fleet sessions (Grok terminal-bridge tabs) all ended; their claim rows — previously dumped here in inconsistent formats — are **released**. For the record they covered: `Salehman AI/grok_parser.py` (safari-1; file has since moved to `tools/grok_parser.py`), `tools/grok_status.sh --once` (safari-10), `Salehman AITests/KnowledgeRAGTests.swift` (safari-2/3/4/9 — multiple tabs claimed the SAME file; whatever landed is in git), and a never-landed `Core/IntelligenceEngine.swift` / `Core/QuestionOrchestrator.swift` (safari-7 — no such files exist in the tree). Nothing from these claims is in-flight; the working tree is single-session (owner-driven) as of today.
 
-===== FILE: DEVELOPMENT_LOG.md (2042 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2062 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -26984,6 +27009,26 @@ Wiring (exhaustive switch arms all caught by compiler):
 - **Docs re-synced to the real tree:** PROJECT_CONTEXT (brain list → 19 cases w/ `.salehman` default, Salehman-engine family rows, real Tools table, 7-tab ⌘ map, DeepSeek+NVIDIA provider rows, §6/§7 resolved-items), ARCHITECTURE (module map — phantom per-provider/FM files removed, Intelligence/Voice/Knowledge added; routing matrix rebuilt without `.apple`), VERIFICATION (real subsystem filter `com.salehman.ai`, real signpost names), CODEBASE_REVIEW (dated HISTORICAL banner). COORDINATION: garbled 2026-06-10 safari-fleet claim rows cleared; void Grok Tab A/B claims released.
 **Deliberately NOT done (deferred, with reasons):** wiring `salehmanEffort` (Settings Effort picker is currently display-only — **owner decision needed: wire `SalehmanEngine.respond(to:effort:)` into the answer path or remove the row**; it's 1 day old and clearly intended to be wired); `StockSageScreenAnalysis` (built-but-unwired, intentional pre-integration); `tools/finetune_export.jsonl` (owner may still need it for the x.ai job; note it contains personal session data and is on the GitHub remote); duplicate-code consolidations (GrokClient→OpenAICompatibleClient, tool-dispatch switch, mediaExts, PromptLibrary boilerplate → refactor pass, not cleanup); DS token-vocabulary trim (intentional design vocabulary); duplicate/overlapping test suites + the `OllamaRAMBenchmarkTests` brainPreference-lock gap (test-target changes need a real test run to verify).
 **Result:** ~700 lines of dead/unreachable code removed; 3 Swift files + 3 artifacts deleted; all 90 remaining app sources pass `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) with **0 errors / 0 warnings**. `SOURCE_BUNDLE.md` regenerated; `bundle_check.sh` PASS. ⚠️ **xcodebuild + the test suite could NOT be run in this session** (sandboxed environment blocks Xcode's build service); test-target changes were verified by exhaustive grep only — **run the canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
+
+## 2026-06-11 · Effort wiring — review fixes (5 adversarially-confirmed bugs)
+
+**Files:** `Salehman AI/Intelligence/Effort.swift`, `Salehman AI/LLM/SalehmanLeader.swift`, `Salehman AI/App/AppSettings.swift`, `Salehman AI/Views/SettingsView.swift`, `Salehman AITests/EffortWiringTests.swift`, `SOURCE_BUNDLE.md`
+
+**What & why:** A 4-lens adversarial review (20 agents, 10 confirmed / 6 rejected findings) of the Effort wiring diff turned up 5 real bugs. Applied all 5:
+
+1. **[HIGH] Fresh-install default brain not detected as pinned `.salehman`** — `finalize` and `isLeading` were comparing against the raw UserDefaults string; on a fresh install the key is unset (nil), so the comparison `nil == "salehman"` was false, incorrectly routing the default user to the full leader fan-out instead of the cheap refine-only path. Fixed by using `AppSettings.brainPreferenceCurrent` (the validate-or-default accessor) in both functions.
+
+2. **[MEDIUM] Leader toggle OFF didn't zero-out pinned-`.salehman` passes** — the `finalize` pinned-.salehman branch fired before `guard isLeading`, completely bypassing the toggle. Pre-change, `guard isLeading else { return draft }` was the first line, so OFF = guaranteed zero passes. Fixed by adding `guard AppSettings.salehmanLeaderEnabled else { return draft }` inside the pinned-.salehman branch.
+
+3. **[MEDIUM] Default effort `.balanced` violated CLAUDE.md "never silently call a paid cloud API" invariant** — on factory defaults (brainPreference unset → `.salehman`, effort unset → `.balanced`), every non-code reply would silently invoke 2 extra `SalehmanEngine.generate` calls (critique + rewrite via `SelfCritique.refine`), which can route to the paid DeepSeek backstop. Changed default to `.instant` (0 extra calls, exactly pre-Effort behavior). Higher quality is now opt-in.
+
+4. **[MEDIUM] Non-monotonic effort dial for the refine-only path** — `.ultra` (critiqueRounds=2) did LESS refinement than `.high` (critiqueRounds=3) in `refineOwnDraft`, because `.ultra`'s value is lower (it offloads cost to fan-out, which isn't available here). Added `refineRounds` property to `Effort` with `.ultra` capped at `.high`'s depth (both 3 rounds), and added `approxRefineCalls = refineRounds * 2`. `refineOwnDraft` now uses `refineRounds`.
+
+5. **[MEDIUM] Settings cost hint overstated/misstated for pinned-`.salehman` path** — `approxModelCalls` is the leader fan-out cost (16 for `.ultra`), not the refine-only cost (6 extra calls max). Added `effortCallsHint` computed property to `SettingsView` that branches on `brainPreference == .salehman` and shows `approxRefineCalls` vs `approxModelCalls` accordingly. `.instant` for pinned `.salehman` now correctly shows "no extra calls".
+
+Updated test names and expectations in `EffortWiringTests.swift` to match the `.instant` default.
+
+**Result:** `swiftc -typecheck` 0 errors / 0 warnings (Swift 6, `-default-isolation MainActor`). `SOURCE_BUNDLE.md` regenerated (128 files, 23720 LOC). ⚠️ xcodebuild + test suite still cannot run in sandbox — **must run canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
@@ -28522,7 +28567,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 - **Voice:** `VoiceSession.swift` / `VoiceTurn.swift` — hands-free dictate→LocalLLM→TTS loop driving `VoiceModeView`.
 - **Media:** `LiveTranscriber.swift` (system-audio live transcription), `MediaTranscribe.swift`/`Transcriber.swift` (file transcription), `SpeechIn.swift` (mic dictation), `SpeechOut.swift` (TTS).
 - **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/Portfolio` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped). `ScreenAnalysis` is built-but-unwired (pending a chat-tool hookup decision).
-- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **wired 2026-06-11 into `SalehmanLeader.finalize`**: leader pass runs at the configured effort; pinned `.salehman` drafts get critique-only refinement; coding modes excluded; default `.balanced`) + `SelfCritique.swift` (refine loop, used by Effort).
+- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **wired 2026-06-11 into `SalehmanLeader.finalize`**: leader pass runs at the configured effort; pinned `.salehman` drafts get critique-only refinement (`refineRounds`, gated on the Leader toggle); coding modes excluded; default `.instant` = exact pre-Effort call count, higher effort opt-in) + `SelfCritique.swift` (refine loop, used by Effort).
 - **DesignSystem:** `DesignSystem.swift` — `DS.*` tokens, motion curves (`DS.Motion.snappy/smooth/…`), `Bezel`/`Eyebrow`/`SuggestionCard`.
 
 ---
