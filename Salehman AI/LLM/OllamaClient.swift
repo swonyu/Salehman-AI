@@ -36,7 +36,7 @@ enum OllamaClient {
     nonisolated private static let base = "http://localhost:11434"
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
-    // (vision() and code() check it twice per request); 30s caching is fine and
+    // (vision() checks it twice per request); 30s caching is fine and
     // avoids redundant probes when the user sends many messages in a row.
     private actor Reachability {
         static let shared = Reachability()
@@ -89,19 +89,15 @@ enum OllamaClient {
     static func hasModel(_ name: String) async -> Bool { await Reachability.shared.hasModel(name) }
 
     /// Default context window. 2048 tokens is plenty for chat-style turns and
-    /// keeps Ollama's KV cache small. `Generation.full` (below) widens it for
-    /// tasks that genuinely need long context.
+    /// keeps Ollama's KV cache small.
     nonisolated static let defaultNumCtx: Int = 2048
 
     /// Per-call generation knobs. Defaults are tuned for the 7B sweet-spot
-    /// model on a laptop; bump `numCtx` for genuinely long context.
+    /// model on a laptop.
     struct Generation: Sendable {
         var keepAlive: String   = "30s"
         var numCtx: Int         = OllamaClient.defaultNumCtx
-        var numGPU: Int?        = nil          // nil = let Ollama decide
         nonisolated static let `default`    = Generation()
-        nonisolated static let tight        = Generation(keepAlive: "10s", numCtx: 1024)
-        nonisolated static let full         = Generation(keepAlive: "30s", numCtx: 8192)
     }
 
     /// Core call to /api/generate (non-streaming).
@@ -116,8 +112,7 @@ enum OllamaClient {
         // the KV cache size: a smaller context window literally allocates less
         // GPU/CPU RAM per request, so 2048 (default) is dramatically lighter
         // than the server default of 4096.
-        var options: [String: Any] = ["num_ctx": gen.numCtx]
-        if let n = gen.numGPU { options["num_gpu"] = n }
+        let options: [String: Any] = ["num_ctx": gen.numCtx]
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
                                    "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
@@ -267,17 +262,6 @@ enum OllamaClient {
         let name = AppSettings.customModelNameCurrent
         guard !name.isEmpty else { return false }
         return await hasModel(name)
-    }
-
-    /// Generate/fix code with the dedicated coding model. Returns nil if unavailable.
-    static func code(task: String) async -> String? {
-        guard await isUp(), let model = await activeCodeModel() else { return nil }
-        let system = """
-        You are an expert software engineer. Produce correct, complete, idiomatic, \
-        modern code. Handle errors and edge cases. Add brief usage notes. Never \
-        leave TODO placeholders. Use fenced code blocks with the language tag.
-        """
-        return await generate(model: model, prompt: task, system: system)
     }
 
     // MARK: - General chat fallback

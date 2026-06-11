@@ -16,8 +16,8 @@ nonisolated enum ByteConstants {
 ///
 /// Subscribes once at startup to the kernel-pushed signals that matter on
 /// macOS — `DispatchSource.makeMemoryPressureSource` and
-/// `ProcessInfo.thermalStateDidChangeNotification` — and exposes a *derived*
-/// snapshot every caller can read cheaply. No polling, no Instruments
+/// `ProcessInfo.thermalStateDidChangeNotification` — and exposes derived
+/// advisory reads every caller can use cheaply. No polling, no Instruments
 /// integration required — these are the same signals macOS itself uses to
 /// throttle background apps.
 ///
@@ -25,11 +25,11 @@ nonisolated enum ByteConstants {
 /// * The `Pressure`/`Thermal` enums use ordinal comparison (`.warning < .urgent`)
 ///   so callers can write `pressure >= .warning` and have it mean "at least
 ///   warning level". This is the natural API for thresholding.
-/// * The combine-into-`concurrencyLimit` and `shouldRefuseHeavyModel` logic
-///   is *pure*: the actor's only mutable state is the two raw signals. That
-///   makes the policy unit-testable without spinning up a dispatch source.
-/// * `worstCase(of:and:)` is exposed for the tests — given a pressure and
-///   thermal state, you can compute the recommendation deterministically.
+/// * The policy logic is *pure* static functions —
+///   `concurrencyLimit(pressure:thermal:physicalGB:)` and
+///   `shouldRefuseHeavyModel(pressure:thermal:physicalGB:)` — the actor's only
+///   mutable state is the two raw signals. That makes the policy unit-testable
+///   without spinning up a dispatch source.
 ///
 /// Why an actor: the dispatch-source event handler and the thermal-state
 /// notification fire on arbitrary queues. Funneling them through the actor's
@@ -59,34 +59,10 @@ actor MemoryManager {
         }
     }
 
-    /// Snapshot of the current advisory state. Sendable so callers across
-    /// actor boundaries can hold it briefly.
-    struct Snapshot: Sendable, Equatable {
-        let pressure: Pressure
-        let thermal: Thermal
-        let physicalGB: Int
-        let concurrencyLimit: Int
-        let refuseHeavyModel: Bool
-    }
-
-    func snapshot() -> Snapshot {
-        let limit = Self.concurrencyLimit(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-        let refuse = Self.shouldRefuseHeavyModel(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-        return Snapshot(pressure: pressure, thermal: thermal,
-                        physicalGB: physicalGB, concurrencyLimit: limit,
-                        refuseHeavyModel: refuse)
-    }
-
     /// Max concurrent agent tasks we recommend right now. Read this in any
     /// pipeline before spinning up parallel inferences.
     func concurrencyLimit() -> Int {
         Self.concurrencyLimit(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-    }
-
-    /// True iff the system is too warm or memory-stressed to load the heavy
-    /// (32B) model. Honour this before unpacking heavyweight inferences.
-    func shouldRefuseHeavyModel() -> Bool {
-        Self.shouldRefuseHeavyModel(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
     }
 
     /// Background eviction hook — call when entering low-memory states. Tells

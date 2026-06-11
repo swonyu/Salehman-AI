@@ -17,14 +17,6 @@ final class BrainStatus: ObservableObject {
 
     @Published private(set) var brain: LocalLLM.Brain = .none
     @Published private(set) var label: String = "Checking…"
-    /// `true` iff the Ollama server is reachable AND `qwen2.5vl` is pulled.
-    /// Lets the UI show a passive "vision ready" affordance without each call
-    /// site having to re-probe Ollama.
-    @Published private(set) var hasVision: Bool = false
-    /// `true` iff the user has stored an xAI Grok API key in the Keychain.
-    /// Cheap to read (Keychain lookup, no network), so we publish it for the
-    /// Settings UI's live "Ready" indicator without needing a probe round-trip.
-    @Published private(set) var hasGrokKey: Bool = false
 
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
@@ -37,29 +29,14 @@ final class BrainStatus: ObservableObject {
     }
 
     /// Re-read the brain state right now. Cheap — `OllamaClient`'s 30s cache
-    /// means at most one HTTP round-trip every half-minute. We probe the three
-    /// independent signals in parallel via `async let` so the vision probe
-    /// doesn't serialize behind the brain probe.
+    /// means at most one HTTP round-trip every half-minute. The two signals are
+    /// probed in parallel via `async let`.
     func refresh() async {
         async let nextBrain = LocalLLM.currentBrain()
         async let nextLabel = LocalLLM.currentBrainLabel()
-        async let nextVision = Self.probeVision()
-        let (b, l, v) = await (nextBrain, nextLabel, nextVision)
-        // `hasGrokKey` is a sync Keychain lookup — no need to schedule it
-        // alongside the async probes.
-        let g = GrokClient.hasKey()
+        let (b, l) = await (nextBrain, nextLabel)
         if b != brain { brain = b }
         if l != label { label = l }
-        if v != hasVision { hasVision = v }
-        if g != hasGrokKey { hasGrokKey = g }
-    }
-
-    /// Whether the local vision model is reachable. Two-step probe (server up,
-    /// then model pulled) wrapped in its own function because the `&&` operator
-    /// can't auto-thread `await` between two async expressions.
-    nonisolated private static func probeVision() async -> Bool {
-        guard await OllamaClient.isUp() else { return false }
-        return await OllamaClient.hasModel(OllamaClient.visionModel)
     }
 
     /// Color hint for the status dot. Blue when the Ollama brain is driving,
@@ -87,12 +64,6 @@ final class BrainStatus: ObservableObject {
         case .cloudCoding:       return Color(red: 0.40, green: 0.62, blue: 1.00)  // Cloud Coding sky-blue
         case .none:              return .orange
         }
-    }
-
-    /// Foreground color for the subtitle — secondary except when nothing's
-    /// reachable, where we soften the warning instead of shouting it.
-    var labelColor: Color {
-        brain == .none ? Color.orange.opacity(0.9) : .secondary
     }
 
     /// SF Symbol identifying the active brain — lets the header show *which*

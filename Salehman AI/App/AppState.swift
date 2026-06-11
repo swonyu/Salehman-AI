@@ -16,7 +16,6 @@ final class AppState: ObservableObject {
     @Published var showSettingsRequested = false
     @Published var showLiveRequested = false
     @Published var toggleSearchRequested = false
-    @Published var focusInputRequested = false
     /// ⌘K quick-command palette (presented over the root window).
     @Published var showCommandPaletteRequested = false
     /// ⌘/ keyboard-shortcuts cheat sheet.

@@ -34,15 +34,6 @@ final class StockSageStore: ObservableObject {
         symbols.first { $0.symbol.caseInsensitiveCompare(name) == .orderedSame }
     }
 
-    /// Insert or replace a symbol (matched by ticker).
-    func upsert(_ symbol: StockSageSymbol) {
-        if let i = symbols.firstIndex(where: { $0.symbol == symbol.symbol }) {
-            symbols[i] = symbol
-        } else {
-            symbols.append(symbol)
-        }
-    }
-
     /// Replace the whole set (e.g. when a live feed delivers a fresh snapshot).
     /// Marks the store as no-longer-sample.
     func replaceAll(_ newSymbols: [StockSageSymbol], isSample: Bool = false) {

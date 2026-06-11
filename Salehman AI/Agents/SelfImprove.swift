@@ -1,8 +1,10 @@
 import Foundation
 
-/// Self-improvement loop: build the Xcode project, parse compiler errors, ask
-/// the on-device model for a minimal patch per error, apply patches with a
-/// timestamped backup, rebuild. Bails out if errors stop decreasing.
+/// Building blocks for the self-improvement patcher: compiler-error parsing,
+/// minimal-patch application with timestamped backups, and project-scope safety
+/// checks. (The build → fix → rebuild loop that drove these was the FM
+/// `self_improve` tool, removed with the Apple-Intelligence tool layer on
+/// 2026-06-08; the primitives are test-covered and kept for the next driver.)
 ///
 /// Edits go straight to source files. Every modified file is copied to
 /// ~/.salehman_ai_self_improve_backups/<timestamp>/ before being touched, so a
@@ -22,8 +24,6 @@ enum SelfImprove {
     // mechanism is the `self_improve_project_root` UserDefaults override below;
     // treat this constant as a dev-only fallback, not the source of truth.
     nonisolated static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
-    static let projectFile = "Salehman AI.xcodeproj"
-    static let scheme      = "Salehman AI"
 
     nonisolated static var projectRoot: String {
         UserDefaults.standard.string(forKey: "self_improve_project_root") ?? defaultRoot
@@ -39,38 +39,6 @@ enum SelfImprove {
         let column: Int?
         let message: String
     }
-
-    struct BuildReport {
-        let success: Bool
-        let exitCode: Int32
-        let errors: [BuildError]
-        let logTail: String   // last ~80 lines of compiler output
-    }
-
-    /// Run `xcodebuild build`. Writes full output to a temp file so we get the
-    /// whole compiler log, not the 8 KB Shell.run cap. `mode` toggles between
-    /// `build` (fast) and `test` (full unit tests, much slower).
-    static func runXcodebuild(mode: Mode = .build, timeoutSec: Int = 360) -> BuildReport {
-        let logURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("salehman_self_improve_\(UUID().uuidString).log")
-        let action = mode == .test ? "test" : "build"
-        let cmd = """
-        cd \(shellQuote(projectRoot)) && \
-        xcodebuild -project \(shellQuote(projectFile)) -scheme \(shellQuote(scheme)) \
-        -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \(action) \
-        > \(shellQuote(logURL.path)) 2>&1
-        """
-        let result = Shell.run(cmd, timeout: TimeInterval(timeoutSec))
-        let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? result.output
-        try? FileManager.default.removeItem(at: logURL)
-
-        let errors = parseErrors(log)
-        let ok = result.exitCode == 0 && errors.isEmpty
-        return BuildReport(success: ok, exitCode: result.exitCode,
-                           errors: errors, logTail: tail(log, lines: 80))
-    }
-
-    enum Mode { case build, test }
 
     /// Matches the standard clang/Swift diagnostic format:
     ///   `/abs/path/File.swift:42:10: error: cannot find 'foo' in scope`
@@ -93,132 +61,6 @@ enum SelfImprove {
             if seen.insert(err).inserted { ordered.append(err) }
         }
         return ordered
-    }
-
-    // MARK: - Fix loop
-
-    /// Build → fix top N errors → rebuild, up to `maxIterations` rounds.
-    /// Stops early on success, on no-progress, or if the model can't propose
-    /// useful patches. Returns a Markdown report.
-    static func selfImprove(mode: Mode = .build, maxIterations: Int = 3) async -> String {
-        var report = "**Self-improve** on `\(projectRoot)`\n"
-        report += "Mode: `\(mode == .test ? "build + test" : "build")` · Max iterations: \(maxIterations)\n\n"
-
-        // Sanity-check the project actually exists where we expect.
-        let projectURL = projectRootURL.appendingPathComponent(projectFile)
-        guard FileManager.default.fileExists(atPath: projectURL.path) else {
-            return report + "❌ Couldn't find \(projectFile) at \(projectRoot). " +
-                   "Set `self_improve_project_root` in UserDefaults to the correct path."
-        }
-
-        var prevErrCount = Int.max
-        var lastReport: BuildReport?
-
-        for iter in 1...maxIterations {
-            let build = runXcodebuild(mode: mode)
-            lastReport = build
-            report += "## Iteration \(iter)\n"
-            if build.success {
-                report += "✅ Build succeeded with no errors.\n"
-                if mode == .test {
-                    report += "All tests passed.\n"
-                }
-                return report
-            }
-            report += "Build failed (exit \(build.exitCode)) · \(build.errors.count) error(s).\n"
-
-            if build.errors.isEmpty {
-                report += "No structured errors parsed — likely a linker/codesign issue. Last log:\n```\n\(build.logTail)\n```\n"
-                break
-            }
-
-            // No-progress check: if we couldn't reduce the error count from the
-            // previous iteration, stop instead of burning more LLM calls.
-            if iter > 1 && build.errors.count >= prevErrCount {
-                report += "↪ Errors didn't decrease (\(prevErrCount) → \(build.errors.count)). Stopping.\n"
-                break
-            }
-            prevErrCount = build.errors.count
-
-            // Fix up to 5 errors per iteration to keep prompts bounded.
-            let toFix = Array(build.errors.prefix(5))
-            for err in toFix {
-                let outcome = await tryFix(error: err)
-                let fname = URL(fileURLWithPath: err.file).lastPathComponent
-                report += "- `\(fname):\(err.line)` — \(err.message)\n  → \(outcome.label)\n"
-            }
-            report += "\n"
-        }
-
-        // Final summary
-        report += "## Result\n"
-        if let lastReport, lastReport.success {
-            report += "✅ Green build.\n"
-        } else if let lastReport {
-            report += "⚠️ Still failing with \(lastReport.errors.count) error(s).\n"
-            report += "Recent compiler output:\n```\n\(lastReport.logTail)\n```\n"
-            report += "\nBackups of every edited file are in `~/.salehman_ai_self_improve_backups/`.\n"
-        }
-        return report
-    }
-
-    // MARK: - Per-error fix
-
-    enum FixOutcome {
-        case patched, noFix, parseFailed, refused
-
-        var label: String {
-            switch self {
-            case .patched:     return "patched"
-            case .noFix:       return "model declined"
-            case .parseFailed: return "couldn't parse patch"
-            case .refused:     return "refused (path outside project)"
-            }
-        }
-    }
-
-    /// Asks the on-device model for a minimal patch and applies it. Returns
-    /// what happened without throwing — callers care about the outcome label.
-    static func tryFix(error: BuildError) async -> FixOutcome {
-        guard isInsideProject(error.file) else { return .refused }
-        guard let raw = try? String(contentsOfFile: error.file, encoding: .utf8) else { return .parseFailed }
-
-        let lines = raw.components(separatedBy: "\n")
-        let centerIdx = max(0, min(lines.count - 1, error.line - 1))
-        let lo = max(0, centerIdx - 25)
-        let hi = min(lines.count - 1, centerIdx + 25)
-        let snippet = (lo...hi).map { i in "\(i + 1): \(lines[i])" }.joined(separator: "\n")
-
-        let prompt = """
-        A Swift file failed to compile.
-
-        Error at line \(error.line): \(error.message)
-
-        Here are lines \(lo + 1)–\(hi + 1) of \(URL(fileURLWithPath: error.file).lastPathComponent):
-        ```
-        \(snippet)
-        ```
-
-        Reply with ONLY a minimal patch in EXACTLY this format — no prose, no \
-        markdown fences, no commentary:
-
-        REPLACE_RANGE: <start>-<end>
-        WITH:
-        <new line 1>
-        <new line 2>
-        END
-
-        For a single-line edit, use the same range with start == end (e.g. \
-        `REPLACE_RANGE: 42-42`). If you cannot safely fix this error, reply \
-        with exactly: NO_FIX
-        """
-
-        let response = await LocalLLM.generate(prompt, maxTokens: 400)
-        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.hasPrefix("NO_FIX") || trimmed.hasPrefix("[no on-device model") {
-            return .noFix
-        }
-        return applyPatch(trimmed, to: error.file) ? .patched : .parseFailed
     }
 
     // MARK: - Patch application
@@ -322,20 +164,4 @@ enum SelfImprove {
         guard !FileManager.default.fileExists(atPath: dest.path) else { return }
         try? contents.write(to: dest, atomically: true, encoding: .utf8)
     }
-
-    // MARK: - Helpers
-
-    private static func tail(_ s: String, lines n: Int) -> String {
-        let parts = s.split(separator: "\n", omittingEmptySubsequences: false)
-        return parts.suffix(n).joined(separator: "\n")
-    }
-
-    /// Wraps a path/scheme in single quotes for `/bin/zsh -c`. Embedded single
-    /// quotes are turned into the standard `'\''` escape.
-    private static func shellQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }
-
-// MARK: - Foundation Models tool
-

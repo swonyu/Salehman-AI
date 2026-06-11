@@ -3,9 +3,9 @@ import Foundation
 /// Controls whether external/non-local tools are allowed.
 /// Default = .localOnly to maintain the local-first philosophy.
 ///
-/// `current` is derived from the user's Settings toggles (web access, code
-/// model) on each read, so flipping a switch and starting a new chat is enough
-/// to retire or surface tools. Set it explicitly to force a mode for testing.
+/// `current` is derived from the user's web-access Settings toggle on each
+/// read, so flipping the switch and starting a new chat is enough to retire or
+/// surface the web tools. Set it explicitly to force a mode for testing.
 enum ToolPolicy {
     case localOnly
     case allowExternalTools
@@ -21,57 +21,10 @@ enum ToolPolicy {
         return isWebAccessEnabled ? .allowExternalTools : .localOnly
     }
 
-    // MARK: - Instructions hint
-
-    /// Short, human-readable summary of the *currently enabled* tools. Inject
-    /// into the chat instructions so the model doesn't promise web access (or
-    /// any other gated tool) when the user has it turned off.
-    nonisolated static func instructionsToolMenu() -> String {
-        var lines: [String] = []
-        lines.append("• run_terminal_command — run a macOS shell command (asks the user before risky ones).")
-        lines.append("• remember_fact — save durable facts about the user.")
-        lines.append("• translate — translate text between languages.")
-        lines.append("• control_mac — move/click the mouse, type, or press keys (Accessibility permission).")
-        lines.append("• generate_image — on-device Image Playground.")
-        lines.append("• self_improve — build THIS app's Xcode project and try to auto-fix compiler errors.")
-        lines.append("• analyze_stock — educational Saudi/TASI stock analysis (heuristic, NOT financial advice).")
-        lines.append("• transcribe_media — transcribe a local audio/video file on-device.")
-        lines.append("• market_briefing — on-device briefing + strong-signal scan over tracked symbols (sample data until a live feed is connected).")
-        lines.append("• capture_note — save a free-text note to the user's Scratchpad (Notes tab).")
-        lines.append("• add_task — add a to-do to the user's Scratchpad (Tasks tab).")
-        lines.append("• complete_task — mark an open task done by matching words from its title.")
-        lines.append("• list_scratchpad — list current notes and open tasks (call this before summarizing or organizing them).")
-        lines.append("• list_documents — list everything in the user's Knowledge vault (use when you don't know what's there).")
-        lines.append("• search_documents — retrieve relevant passages from the user's private Knowledge vault (their added docs/notes); cite the source.")
-        lines.append("• get_document — fetch one whole document from the Knowledge vault by name (use after search_documents when you need the entire doc to summarize, translate, or quote).")
-        lines.append("• read_grok_session — read the latest Grok terminal-bridge session log: what task Grok is on, current turn, elapsed time, and recent commands. Use when asked what Grok is doing.")
-        if isVisionEnabled {
-            lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
-        }
-        if isExternalAllowed {
-            lines.append("• web_search — search the web (DuckDuckGo).")
-            lines.append("• fetch_url — read a specific web page.")
-        } else {
-            lines.append("• Web access is DISABLED — do NOT promise to search or fetch URLs.")
-        }
-        if isCodeModelEnabled {
-            lines.append("• write_code — delegate hard coding work to the local qwen2.5-coder model.")
-        }
-        return lines.joined(separator: "\n")
-    }
-
     // MARK: - Setting accessors (nonisolated, actor-safe)
 
     nonisolated static var isWebAccessEnabled: Bool {
         AppSettings.boolDefaultTrue(AppSettings.Keys.webAccess)
-    }
-
-    nonisolated static var isCodeModelEnabled: Bool {
-        AppSettings.boolDefaultTrue(AppSettings.Keys.codeModel)
-    }
-
-    nonisolated static var isVisionEnabled: Bool {
-        AppSettings.boolDefaultTrue(AppSettings.Keys.vision)
     }
 
     // Pre-computed predicate to avoid `==` on `ToolPolicy` from nonisolated

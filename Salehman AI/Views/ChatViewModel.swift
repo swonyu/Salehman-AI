@@ -98,7 +98,7 @@ final class ChatViewModel: ObservableObject {
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                        timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
+                                        timestamp: Date())
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
                 let turnQuestion = question, turnReply = result.output

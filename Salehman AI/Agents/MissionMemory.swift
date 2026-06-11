@@ -3,23 +3,9 @@ import Foundation
 // MARK: - Outcome
 struct Outcome {
     let successRating: Double
-    let keyLearnings: [String]
-    let conflictsResolved: [String]
-    let recommendedNextActions: [String]
-    let notes: String
-    
-    init(
-        successRating: Double = 0.0,
-        keyLearnings: [String] = [],
-        conflictsResolved: [String] = [],
-        recommendedNextActions: [String] = [],
-        notes: String = ""
-    ) {
+
+    init(successRating: Double = 0.0) {
         self.successRating = successRating
-        self.keyLearnings = keyLearnings
-        self.conflictsResolved = conflictsResolved
-        self.recommendedNextActions = recommendedNextActions
-        self.notes = notes
     }
 }
 
@@ -74,19 +60,5 @@ struct MissionMemory {
             }
         }
         return context
-    }
-    
-    func getSummary() -> String {
-        var summary = "Mission: \(missionPlan.mission)\n"
-        summary += "Agents run: \(agentOutputs.map { $0.name }.joined(separator: ", "))\n"
-        summary += "Tools used: \(toolResults.map { $0.tool }.joined(separator: ", "))\n"
-        
-        if let outcome = outcome {
-            summary += "Success Rating: \(outcome.successRating)\n"
-            if !outcome.keyLearnings.isEmpty {
-                summary += "Key Learnings: \(outcome.keyLearnings.joined(separator: " | "))\n"
-            }
-        }
-        return summary
     }
 }

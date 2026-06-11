@@ -146,12 +146,6 @@ struct OllamaDefaultModelTests {
         // they're knowingly trading RAM for context length — make them
         // update this test on purpose.
         #expect(OllamaClient.defaultNumCtx == 2048)
-    }
-
-    @Test func generationPresetsHaveExpectedShape() {
         #expect(OllamaClient.Generation.default.numCtx == 2048)
-        #expect(OllamaClient.Generation.tight.numCtx   == 1024)
-        #expect(OllamaClient.Generation.full.numCtx    == 8192)
-        #expect(OllamaClient.Generation.tight.keepAlive == "10s")
     }
 }

@@ -43,3 +43,6 @@ __pycache__/
 *.pyc
 *.profraw
 Bash tool output*
+
+# Generated training-data export (tools/export_chat_training.py output)
+tools/salehman_training.jsonl

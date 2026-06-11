@@ -20,10 +20,9 @@ while IFS= read -r -d "" swift_file; do
   fi
 done < <(find "$SWIFT_ROOT" -name "*.swift" -type f -print0 2>/dev/null || true)
 
-if [   {#stale_files[@]} -gt 0 ]; then
+if [ "${#stale_files[@]}" -gt 0 ]; then
   echo "ERROR: SOURCE_BUNDLE.md is NOT newer than the following .swift file(s):"
-  printf "  
-" "  {stale_files[@]}"
+  printf '  %s\n' "${stale_files[@]}"
   exit 1
 else
   echo "PASS: SOURCE_BUNDLE.md is newer than all .swift files under $SWIFT_ROOT/"

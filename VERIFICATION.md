@@ -16,6 +16,7 @@ those in Instruments turns "estimated gains" into measured `μs`/`ms` per brain.
 
 **Subsystem:** `com.salehman.ai` · **Category:** `Brain` · **Names:**
 - `freeAuto` — wraps `generateFreeAuto` (the parallel race; includes local backstop)
+- `freeCoding` / `cloudCoding` — wrap the coding-chain modes
 - `ensemble` — wraps `generateEnsemble` (the all-brains fan-out)
 
 (Per-brain intervals inside the race would let you see *which* brain won by how much. They aren't wired yet — would need to add a `signposter.beginInterval("freeAuto.brain")` around each `entry.run()` call site, tagged with the brain name. Bounded follow-up.)
@@ -27,7 +28,7 @@ those in Instruments turns "estimated gains" into measured `μs`/`ms` per brain.
 4. Choose the **Logging** template (signposts) or **Points of Interest**.
 5. In the target chooser pick the running **Salehman AI** process.
 6. Click ⏺ Record. In the app, send a message that exercises the path you want to measure (e.g. pin Free · Auto + send "hi").
-7. Stop after ~5 s. In the trace, set the filter to `subsystem == "SA.Salehman-AI"`.
+7. Stop after ~5 s. In the trace, set the filter to `subsystem == "com.salehman.ai"`.
 8. Inspect interval durations per name (and per brain for `freeAuto.brain`). Compare across brains, paid vs. free, race-winner vs. losers, before/after a change.
 
 **Worth measuring first:**
@@ -58,7 +59,7 @@ These need a real screen-reader pass to verify.
    - **Tab bar pill:** "Chat, tab, selected" / "Agents, tab" — announces label + selection.
    - **Brand:** announces "Salehman AI" (the sparkles logo is hidden as decorative).
    - **Market dot:** "Market, Open" or "Market, Closed".
-   - **Brain grid cell:** "Apple Intelligence, Connected, button, selected" (or "Offline").
+   - **Brain grid cell:** "Salehman, Connected, button, selected" (or "Offline") — same pattern for Ollama and each cloud brain.
    - **Message bubble:** "You said: <your text>" or "Assistant replied: <reply>" — single utterance.
    - **Composer text field:** announces the placeholder when empty.
    - **Approval modal:** "Run this command? Command to run: <command>" then buttons: "Cancel", "Run, runs the command shown above on your Mac", "Always run without asking, disables the approval prompt for all future commands".

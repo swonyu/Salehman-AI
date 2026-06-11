@@ -84,13 +84,6 @@ enum LocalLLM {
         }
     }
 
-    // `nonisolated` because actor-isolated callers (e.g. `ChatSession`) read
-    // this for error messages. The underlying availability check is itself
-    // thread-safe, so there's no shared state to guard.
-    nonisolated static var statusNote: String {
-        isAvailable ? "cloud/local brain configured" : "no brain configured"
-    }
-
     /// True when the selected brain is one that USES a cloud key when present,
     /// but none is saved — so replies silently fall back to the slow local model
     /// (`.salehman` / `.freeAuto` / `.freeCoding`) or dead-end (`.cloudCoding`).

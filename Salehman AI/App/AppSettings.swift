@@ -86,12 +86,6 @@ final class AppSettings: ObservableObject {
     @Published var rotationBrains: [BrainPreference] {
         didSet { UserDefaults.standard.set(rotationBrains.map(\.rawValue), forKey: Keys.rotationBrains) }
     }
-    /// OpenAI model id for the "Codex" (OpenAI) cloud brain. The API **key**
-    /// lives in the Keychain (`KeychainStore.Account.openAIAPIKey`), matching the
-    /// other cloud brains — never here.
-    @Published var openAIModel: String {
-        didSet { UserDefaults.standard.set(openAIModel, forKey: Keys.openAIModel) }
-    }
     /// Which xAI Grok model to call when `BrainPreference.grok` is active.
     /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
     /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
@@ -127,7 +121,6 @@ final class AppSettings: ObservableObject {
     /// Selected voice identifier; empty = automatic (by language).
     @Published var speechVoiceID: String { didSet { UserDefaults.standard.set(speechVoiceID, forKey: Keys.speechVoiceID) } }
     @Published var webAccess: Bool    { didSet { UserDefaults.standard.set(webAccess, forKey: Keys.webAccess) } }
-    @Published var useCodeModel: Bool { didSet { UserDefaults.standard.set(useCodeModel, forKey: Keys.codeModel) } }
     @Published var useVision: Bool    { didSet { UserDefaults.standard.set(useVision, forKey: Keys.vision) } }
     /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
     /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
@@ -209,7 +202,6 @@ final class AppSettings: ObservableObject {
     enum Keys {
         nonisolated static let autoSpeak = "set_autoSpeak"
         nonisolated static let webAccess = "set_webAccess"
-        nonisolated static let codeModel = "set_useCodeModel"
         nonisolated static let vision    = "set_useVision"
         nonisolated static let autonomousMode = "set_autonomousMode"
         nonisolated static let offlineOnly    = "set_offlineOnly"
@@ -410,7 +402,6 @@ final class AppSettings: ObservableObject {
         speechRate   = d.object(forKey: Keys.speechRate) == nil ? 0.5 : d.double(forKey: Keys.speechRate)
         speechVoiceID = d.string(forKey: Keys.speechVoiceID) ?? ""
         webAccess    = AppSettings.boolDefaultTrue(Keys.webAccess)
-        useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         autonomousMode = d.bool(forKey: Keys.autonomousMode)   // default off
         offlineOnly    = d.bool(forKey: Keys.offlineOnly)      // default off (opt-in)
@@ -429,8 +420,6 @@ final class AppSettings: ObservableObject {
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
-        let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
-        openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
         let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
         grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
         let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""

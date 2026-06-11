@@ -25,9 +25,9 @@ TASKS=(
   "Bug-hunt the shell tools (tools/run_parallel_safari.sh, grok_status.sh, fleet_supervisor.sh, grok_sessions_summary.py): run each with --help/safe args, APPEND quoting/edge-case/portability/exit-code bugs to tools/BUGS_bridge_sh.md. Keep finding new ones. Do NOT fix. Do NOT git commit."
   "Keep improving ARCHITECTURE.md: accurate data-flow for Effort, SelfCritique, brain-routing, the vLLM/Salehman integration, the Grok bridge. Read code to stay correct. Only ARCHITECTURE.md. Do NOT git commit."
   "Keep improving PROJECT_CONTEXT.md: Grok bridge tooling, Effort, vLLM serving, the 8B fine-tune, the knowledge vault. Match the real code. Only PROJECT_CONTEXT.md. Do NOT git commit."
-  "Keep improving tools/README.md: document every script in tools/ (purpose, usage, every flag, examples). Read each script to stay accurate. Only tools/README.md. Do NOT git commit."
+  "Create tools/README.md if missing, then keep improving it: document every script in tools/ (purpose, usage, every flag, examples). Read each script to stay accurate. Only tools/README.md. Do NOT git commit."
   "Keep improving salehman-training/README.md: the full fine-tune pipeline (mac vs runpod, 00-05 steps, dataset, persona, serving) + troubleshooting. Only that file. Do NOT git commit."
-  "Improve the Python in 'Salehman AI/grok_parser.py' and tools/*.py: docstrings, type hints, --help text, small safety fixes. Verify with python3 -m py_compile. ONE file per turn, your choice. Do NOT git commit."
+  "Improve the Python in tools/*.py (incl. grok_parser.py): docstrings, type hints, --help text, small safety fixes. Verify with python3 -m py_compile. ONE file per turn, your choice. Do NOT git commit."
 )
 
 spawn() {

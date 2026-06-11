@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-10 13:27 +03 · Swift files: 130 · Swift LOC: 23861_
+_Generated: 2026-06-11 07:35 +03 · Swift files: 127 · Swift LOC: 23291_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (632 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (631 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -433,8 +433,7 @@ enum AgentPipeline {
         // and the per-agent handlers are looked up from AgentRegistry.
         let plan = MissionPlan(mission: mission,
                                successCriteria: ["Directly answers the user", "Factually correct", "Clear and complete"],
-                               keyRisks: ["Hallucination", "Stale info without web access", "Over-coding a non-code request"],
-                               recommendedAgents: specs.map { $0.name })
+                               keyRisks: ["Hallucination", "Stale info without web access", "Over-coding a non-code request"])
         var memory = MissionMemory(missionPlan: plan)
         AgentRegistry.registerDefaultsOnce()
 
@@ -541,7 +540,7 @@ enum AgentPipeline {
 
         // Record the outcome so MissionMemory/Outcome aren't dead — Orchestrator reads it.
         let rating: Double = (LocalLLM.isAvailable && !finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ? 1.0 : 0.0
-        memory.recordOutcome(Outcome(successRating: rating, notes: memory.getSummary()))
+        memory.recordOutcome(Outcome(successRating: rating))
         lastOutcome = memory.outcome
 
         // (Conversation recording moved to `run()` so ALL modes — not just this
@@ -726,7 +725,7 @@ enum AgentPipeline {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentRegistry.swift (96 lines) =====
+===== FILE: Salehman AI/Agents/AgentRegistry.swift (92 lines) =====
 ```swift
 import Foundation
 
@@ -765,10 +764,6 @@ struct AgentRegistry {
     }
 
     nonisolated static func handler(for name: String) -> AgentHandler? { handlers[name] }
-
-    nonisolated static func isRegistered(_ name: String) -> Bool { handlers[name] != nil }
-
-    nonisolated static func registeredAgents() -> [String] { handlers.keys.sorted() }
 
     /// Register a handler for every agent in the team. Each handler captures its
     /// spec and picks the right LocalLLM call (tools / streamed final / terse note).
@@ -826,30 +821,16 @@ struct AgentRegistry {
 }
 ```
 
-===== FILE: Salehman AI/Agents/MissionMemory.swift (92 lines) =====
+===== FILE: Salehman AI/Agents/MissionMemory.swift (64 lines) =====
 ```swift
 import Foundation
 
 // MARK: - Outcome
 struct Outcome {
     let successRating: Double
-    let keyLearnings: [String]
-    let conflictsResolved: [String]
-    let recommendedNextActions: [String]
-    let notes: String
-    
-    init(
-        successRating: Double = 0.0,
-        keyLearnings: [String] = [],
-        conflictsResolved: [String] = [],
-        recommendedNextActions: [String] = [],
-        notes: String = ""
-    ) {
+
+    init(successRating: Double = 0.0) {
         self.successRating = successRating
-        self.keyLearnings = keyLearnings
-        self.conflictsResolved = conflictsResolved
-        self.recommendedNextActions = recommendedNextActions
-        self.notes = notes
     }
 }
 
@@ -905,24 +886,10 @@ struct MissionMemory {
         }
         return context
     }
-    
-    func getSummary() -> String {
-        var summary = "Mission: \(missionPlan.mission)\n"
-        summary += "Agents run: \(agentOutputs.map { $0.name }.joined(separator: ", "))\n"
-        summary += "Tools used: \(toolResults.map { $0.tool }.joined(separator: ", "))\n"
-        
-        if let outcome = outcome {
-            summary += "Success Rating: \(outcome.successRating)\n"
-            if !outcome.keyLearnings.isEmpty {
-                summary += "Key Learnings: \(outcome.keyLearnings.joined(separator: " | "))\n"
-            }
-        }
-        return summary
-    }
 }
 ```
 
-===== FILE: Salehman AI/Agents/MissionPlan.swift (23 lines) =====
+===== FILE: Salehman AI/Agents/MissionPlan.swift (16 lines) =====
 ```swift
 import Foundation
 
@@ -931,25 +898,18 @@ struct MissionPlan {
     let mission: String
     let successCriteria: [String]
     let keyRisks: [String]
-    let recommendedAgents: [String]
-    let thinkingMode: String
 
     init(mission: String,
          successCriteria: [String] = [],
-         keyRisks: [String] = [],
-         recommendedAgents: [String] = [],
-         thinkingMode: String = "deep") {
-        
+         keyRisks: [String] = []) {
         self.mission = mission
         self.successCriteria = successCriteria
         self.keyRisks = keyRisks
-        self.recommendedAgents = recommendedAgents
-        self.thinkingMode = thinkingMode
     }
 }
 ```
 
-===== FILE: Salehman AI/Agents/Orchestrator.swift (30 lines) =====
+===== FILE: Salehman AI/Agents/Orchestrator.swift (25 lines) =====
 ```swift
 import Foundation
 
@@ -962,11 +922,6 @@ import Foundation
 ///   2. Result Synthesis Lead — turns that working draft into a clear, friendly
 ///      final answer without losing any facts or results.
 enum Orchestrator {
-
-    static func run(mission: String) async {
-        let result = await runAndReturnResult(mission: mission)
-        print(result.output)
-    }
 
     static func runAndReturnResult(mission: String) async -> (output: String, successRating: Double) {
         let answer = await AgentPipeline.run(mission: mission)
@@ -983,13 +938,15 @@ enum Orchestrator {
 }
 ```
 
-===== FILE: Salehman AI/Agents/SelfImprove.swift (341 lines) =====
+===== FILE: Salehman AI/Agents/SelfImprove.swift (167 lines) =====
 ```swift
 import Foundation
 
-/// Self-improvement loop: build the Xcode project, parse compiler errors, ask
-/// the on-device model for a minimal patch per error, apply patches with a
-/// timestamped backup, rebuild. Bails out if errors stop decreasing.
+/// Building blocks for the self-improvement patcher: compiler-error parsing,
+/// minimal-patch application with timestamped backups, and project-scope safety
+/// checks. (The build → fix → rebuild loop that drove these was the FM
+/// `self_improve` tool, removed with the Apple-Intelligence tool layer on
+/// 2026-06-08; the primitives are test-covered and kept for the next driver.)
 ///
 /// Edits go straight to source files. Every modified file is copied to
 /// ~/.salehman_ai_self_improve_backups/<timestamp>/ before being touched, so a
@@ -1009,8 +966,6 @@ enum SelfImprove {
     // mechanism is the `self_improve_project_root` UserDefaults override below;
     // treat this constant as a dev-only fallback, not the source of truth.
     nonisolated static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
-    static let projectFile = "Salehman AI.xcodeproj"
-    static let scheme      = "Salehman AI"
 
     nonisolated static var projectRoot: String {
         UserDefaults.standard.string(forKey: "self_improve_project_root") ?? defaultRoot
@@ -1026,38 +981,6 @@ enum SelfImprove {
         let column: Int?
         let message: String
     }
-
-    struct BuildReport {
-        let success: Bool
-        let exitCode: Int32
-        let errors: [BuildError]
-        let logTail: String   // last ~80 lines of compiler output
-    }
-
-    /// Run `xcodebuild build`. Writes full output to a temp file so we get the
-    /// whole compiler log, not the 8 KB Shell.run cap. `mode` toggles between
-    /// `build` (fast) and `test` (full unit tests, much slower).
-    static func runXcodebuild(mode: Mode = .build, timeoutSec: Int = 360) -> BuildReport {
-        let logURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("salehman_self_improve_\(UUID().uuidString).log")
-        let action = mode == .test ? "test" : "build"
-        let cmd = """
-        cd \(shellQuote(projectRoot)) && \
-        xcodebuild -project \(shellQuote(projectFile)) -scheme \(shellQuote(scheme)) \
-        -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO \(action) \
-        > \(shellQuote(logURL.path)) 2>&1
-        """
-        let result = Shell.run(cmd, timeout: TimeInterval(timeoutSec))
-        let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? result.output
-        try? FileManager.default.removeItem(at: logURL)
-
-        let errors = parseErrors(log)
-        let ok = result.exitCode == 0 && errors.isEmpty
-        return BuildReport(success: ok, exitCode: result.exitCode,
-                           errors: errors, logTail: tail(log, lines: 80))
-    }
-
-    enum Mode { case build, test }
 
     /// Matches the standard clang/Swift diagnostic format:
     ///   `/abs/path/File.swift:42:10: error: cannot find 'foo' in scope`
@@ -1080,132 +1003,6 @@ enum SelfImprove {
             if seen.insert(err).inserted { ordered.append(err) }
         }
         return ordered
-    }
-
-    // MARK: - Fix loop
-
-    /// Build → fix top N errors → rebuild, up to `maxIterations` rounds.
-    /// Stops early on success, on no-progress, or if the model can't propose
-    /// useful patches. Returns a Markdown report.
-    static func selfImprove(mode: Mode = .build, maxIterations: Int = 3) async -> String {
-        var report = "**Self-improve** on `\(projectRoot)`\n"
-        report += "Mode: `\(mode == .test ? "build + test" : "build")` · Max iterations: \(maxIterations)\n\n"
-
-        // Sanity-check the project actually exists where we expect.
-        let projectURL = projectRootURL.appendingPathComponent(projectFile)
-        guard FileManager.default.fileExists(atPath: projectURL.path) else {
-            return report + "❌ Couldn't find \(projectFile) at \(projectRoot). " +
-                   "Set `self_improve_project_root` in UserDefaults to the correct path."
-        }
-
-        var prevErrCount = Int.max
-        var lastReport: BuildReport?
-
-        for iter in 1...maxIterations {
-            let build = runXcodebuild(mode: mode)
-            lastReport = build
-            report += "## Iteration \(iter)\n"
-            if build.success {
-                report += "✅ Build succeeded with no errors.\n"
-                if mode == .test {
-                    report += "All tests passed.\n"
-                }
-                return report
-            }
-            report += "Build failed (exit \(build.exitCode)) · \(build.errors.count) error(s).\n"
-
-            if build.errors.isEmpty {
-                report += "No structured errors parsed — likely a linker/codesign issue. Last log:\n```\n\(build.logTail)\n```\n"
-                break
-            }
-
-            // No-progress check: if we couldn't reduce the error count from the
-            // previous iteration, stop instead of burning more LLM calls.
-            if iter > 1 && build.errors.count >= prevErrCount {
-                report += "↪ Errors didn't decrease (\(prevErrCount) → \(build.errors.count)). Stopping.\n"
-                break
-            }
-            prevErrCount = build.errors.count
-
-            // Fix up to 5 errors per iteration to keep prompts bounded.
-            let toFix = Array(build.errors.prefix(5))
-            for err in toFix {
-                let outcome = await tryFix(error: err)
-                let fname = URL(fileURLWithPath: err.file).lastPathComponent
-                report += "- `\(fname):\(err.line)` — \(err.message)\n  → \(outcome.label)\n"
-            }
-            report += "\n"
-        }
-
-        // Final summary
-        report += "## Result\n"
-        if let lastReport, lastReport.success {
-            report += "✅ Green build.\n"
-        } else if let lastReport {
-            report += "⚠️ Still failing with \(lastReport.errors.count) error(s).\n"
-            report += "Recent compiler output:\n```\n\(lastReport.logTail)\n```\n"
-            report += "\nBackups of every edited file are in `~/.salehman_ai_self_improve_backups/`.\n"
-        }
-        return report
-    }
-
-    // MARK: - Per-error fix
-
-    enum FixOutcome {
-        case patched, noFix, parseFailed, refused
-
-        var label: String {
-            switch self {
-            case .patched:     return "patched"
-            case .noFix:       return "model declined"
-            case .parseFailed: return "couldn't parse patch"
-            case .refused:     return "refused (path outside project)"
-            }
-        }
-    }
-
-    /// Asks the on-device model for a minimal patch and applies it. Returns
-    /// what happened without throwing — callers care about the outcome label.
-    static func tryFix(error: BuildError) async -> FixOutcome {
-        guard isInsideProject(error.file) else { return .refused }
-        guard let raw = try? String(contentsOfFile: error.file, encoding: .utf8) else { return .parseFailed }
-
-        let lines = raw.components(separatedBy: "\n")
-        let centerIdx = max(0, min(lines.count - 1, error.line - 1))
-        let lo = max(0, centerIdx - 25)
-        let hi = min(lines.count - 1, centerIdx + 25)
-        let snippet = (lo...hi).map { i in "\(i + 1): \(lines[i])" }.joined(separator: "\n")
-
-        let prompt = """
-        A Swift file failed to compile.
-
-        Error at line \(error.line): \(error.message)
-
-        Here are lines \(lo + 1)–\(hi + 1) of \(URL(fileURLWithPath: error.file).lastPathComponent):
-        ```
-        \(snippet)
-        ```
-
-        Reply with ONLY a minimal patch in EXACTLY this format — no prose, no \
-        markdown fences, no commentary:
-
-        REPLACE_RANGE: <start>-<end>
-        WITH:
-        <new line 1>
-        <new line 2>
-        END
-
-        For a single-line edit, use the same range with start == end (e.g. \
-        `REPLACE_RANGE: 42-42`). If you cannot safely fix this error, reply \
-        with exactly: NO_FIX
-        """
-
-        let response = await LocalLLM.generate(prompt, maxTokens: 400)
-        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.hasPrefix("NO_FIX") || trimmed.hasPrefix("[no on-device model") {
-            return .noFix
-        }
-        return applyPatch(trimmed, to: error.file) ? .patched : .parseFailed
     }
 
     // MARK: - Patch application
@@ -1309,26 +1106,10 @@ enum SelfImprove {
         guard !FileManager.default.fileExists(atPath: dest.path) else { return }
         try? contents.write(to: dest, atomically: true, encoding: .utf8)
     }
-
-    // MARK: - Helpers
-
-    private static func tail(_ s: String, lines n: Int) -> String {
-        let parts = s.split(separator: "\n", omittingEmptySubsequences: false)
-        return parts.suffix(n).joined(separator: "\n")
-    }
-
-    /// Wraps a path/scheme in single quotes for `/bin/zsh -c`. Embedded single
-    /// quotes are turned into the standard `'\''` escape.
-    private static func shellQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }
-
-// MARK: - Foundation Models tool
-
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (591 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (580 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1418,12 +1199,6 @@ final class AppSettings: ObservableObject {
     @Published var rotationBrains: [BrainPreference] {
         didSet { UserDefaults.standard.set(rotationBrains.map(\.rawValue), forKey: Keys.rotationBrains) }
     }
-    /// OpenAI model id for the "Codex" (OpenAI) cloud brain. The API **key**
-    /// lives in the Keychain (`KeychainStore.Account.openAIAPIKey`), matching the
-    /// other cloud brains — never here.
-    @Published var openAIModel: String {
-        didSet { UserDefaults.standard.set(openAIModel, forKey: Keys.openAIModel) }
-    }
     /// Which xAI Grok model to call when `BrainPreference.grok` is active.
     /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
     /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
@@ -1459,7 +1234,6 @@ final class AppSettings: ObservableObject {
     /// Selected voice identifier; empty = automatic (by language).
     @Published var speechVoiceID: String { didSet { UserDefaults.standard.set(speechVoiceID, forKey: Keys.speechVoiceID) } }
     @Published var webAccess: Bool    { didSet { UserDefaults.standard.set(webAccess, forKey: Keys.webAccess) } }
-    @Published var useCodeModel: Bool { didSet { UserDefaults.standard.set(useCodeModel, forKey: Keys.codeModel) } }
     @Published var useVision: Bool    { didSet { UserDefaults.standard.set(useVision, forKey: Keys.vision) } }
     /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
     /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
@@ -1541,7 +1315,6 @@ final class AppSettings: ObservableObject {
     enum Keys {
         nonisolated static let autoSpeak = "set_autoSpeak"
         nonisolated static let webAccess = "set_webAccess"
-        nonisolated static let codeModel = "set_useCodeModel"
         nonisolated static let vision    = "set_useVision"
         nonisolated static let autonomousMode = "set_autonomousMode"
         nonisolated static let offlineOnly    = "set_offlineOnly"
@@ -1742,7 +1515,6 @@ final class AppSettings: ObservableObject {
         speechRate   = d.object(forKey: Keys.speechRate) == nil ? 0.5 : d.double(forKey: Keys.speechRate)
         speechVoiceID = d.string(forKey: Keys.speechVoiceID) ?? ""
         webAccess    = AppSettings.boolDefaultTrue(Keys.webAccess)
-        useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         autonomousMode = d.bool(forKey: Keys.autonomousMode)   // default off
         offlineOnly    = d.bool(forKey: Keys.offlineOnly)      // default off (opt-in)
@@ -1761,8 +1533,6 @@ final class AppSettings: ObservableObject {
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
-        let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
-        openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
         let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
         grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
         let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""
@@ -1923,7 +1693,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (61 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (60 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1943,7 +1713,6 @@ final class AppState: ObservableObject {
     @Published var showSettingsRequested = false
     @Published var showLiveRequested = false
     @Published var toggleSearchRequested = false
-    @Published var focusInputRequested = false
     /// ⌘K quick-command palette (presented over the root window).
     @Published var showCommandPaletteRequested = false
     /// ⌘/ keyboard-shortcuts cheat sheet.
@@ -1988,7 +1757,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/App/Salehman_AIApp.swift (100 lines) =====
+===== FILE: Salehman AI/App/Salehman_AIApp.swift (103 lines) =====
 ```swift
 //
 //  Salehman_AIApp.swift
@@ -2054,6 +1823,9 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandMenu("View") {
+                Button("Command Palette…") { app.showCommandPaletteRequested = true }
+                    .keyboardShortcut("k", modifiers: .command)
+                Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Chat") { app.selectedTab = .chat }
@@ -2092,7 +1864,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (399 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (380 lines) =====
 ```swift
 import SwiftUI
 
@@ -2139,10 +1911,6 @@ enum DS {
         static let danger        = Color.red
         static let successSoft   = Color(red: 0.45, green: 0.85, blue: 0.55)
         static let warningSoft   = Color(red: 1.0,  green: 0.72, blue: 0.35)
-
-        // Unrestricted Mode
-        static let unrestrictedRed     = Color(red: 0.98, green: 0.18, blue: 0.29)
-        static let unrestrictedRedSoft = Color(red: 0.98, green: 0.18, blue: 0.29).opacity(0.15)
 
         // SuperGrok (xAI) – elevated "Super" brain visual identity
         static let superGrok     = Color(red: 0.55, green: 0.45, blue: 0.95)
@@ -2209,17 +1977,9 @@ enum DS {
         static let bg = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-
-    // MARK: - Unrestricted Mode
-    enum Unrestricted {
-        static let badgeColor = Palette.unrestrictedRed
-        static let badgeFill  = Palette.unrestrictedRedSoft
-        static let badgeFont  = Font.system(size: 11, weight: .semibold, design: .rounded)
-    }
 }
 
 // MARK: - Components (CircleIconButton, Card, etc.)
-// ... (keep the rest of your original components exactly as they were)
 // MARK: - CircleIconButton
 struct CircleIconButton: View {
     let systemName: String
@@ -2486,13 +2246,6 @@ struct CloudKeyHintBanner: View {
     }
 }
 
-    // MARK: Glassmorphism & Materials (premium macOS depth & translucency)
-    enum Glass {
-        static let ultraThin = Material.ultraThinMaterial
-        static let thin      = Material.thinMaterial
-        static let regular   = Material.regularMaterial
-        static let thick     = Material.thickMaterial
-    }
 ```
 
 ===== FILE: Salehman AI/Intelligence/Effort.swift (163 lines) =====
@@ -3486,7 +3239,7 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainStatus.swift (149 lines) =====
+===== FILE: Salehman AI/LLM/BrainStatus.swift (120 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -3507,14 +3260,6 @@ final class BrainStatus: ObservableObject {
 
     @Published private(set) var brain: LocalLLM.Brain = .none
     @Published private(set) var label: String = "Checking…"
-    /// `true` iff the Ollama server is reachable AND `qwen2.5vl` is pulled.
-    /// Lets the UI show a passive "vision ready" affordance without each call
-    /// site having to re-probe Ollama.
-    @Published private(set) var hasVision: Bool = false
-    /// `true` iff the user has stored an xAI Grok API key in the Keychain.
-    /// Cheap to read (Keychain lookup, no network), so we publish it for the
-    /// Settings UI's live "Ready" indicator without needing a probe round-trip.
-    @Published private(set) var hasGrokKey: Bool = false
 
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
@@ -3527,29 +3272,14 @@ final class BrainStatus: ObservableObject {
     }
 
     /// Re-read the brain state right now. Cheap — `OllamaClient`'s 30s cache
-    /// means at most one HTTP round-trip every half-minute. We probe the three
-    /// independent signals in parallel via `async let` so the vision probe
-    /// doesn't serialize behind the brain probe.
+    /// means at most one HTTP round-trip every half-minute. The two signals are
+    /// probed in parallel via `async let`.
     func refresh() async {
         async let nextBrain = LocalLLM.currentBrain()
         async let nextLabel = LocalLLM.currentBrainLabel()
-        async let nextVision = Self.probeVision()
-        let (b, l, v) = await (nextBrain, nextLabel, nextVision)
-        // `hasGrokKey` is a sync Keychain lookup — no need to schedule it
-        // alongside the async probes.
-        let g = GrokClient.hasKey()
+        let (b, l) = await (nextBrain, nextLabel)
         if b != brain { brain = b }
         if l != label { label = l }
-        if v != hasVision { hasVision = v }
-        if g != hasGrokKey { hasGrokKey = g }
-    }
-
-    /// Whether the local vision model is reachable. Two-step probe (server up,
-    /// then model pulled) wrapped in its own function because the `&&` operator
-    /// can't auto-thread `await` between two async expressions.
-    nonisolated private static func probeVision() async -> Bool {
-        guard await OllamaClient.isUp() else { return false }
-        return await OllamaClient.hasModel(OllamaClient.visionModel)
     }
 
     /// Color hint for the status dot. Blue when the Ollama brain is driving,
@@ -3577,12 +3307,6 @@ final class BrainStatus: ObservableObject {
         case .cloudCoding:       return Color(red: 0.40, green: 0.62, blue: 1.00)  // Cloud Coding sky-blue
         case .none:              return .orange
         }
-    }
-
-    /// Foreground color for the subtitle — secondary except when nothing's
-    /// reachable, where we soften the warning instead of shouting it.
-    var labelColor: Color {
-        brain == .none ? Color.orange.opacity(0.9) : .secondary
     }
 
     /// SF Symbol identifying the active brain — lets the header show *which*
@@ -4662,7 +4386,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1903 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1896 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -4748,13 +4472,6 @@ enum LocalLLM {
         case .vllm:
             return "vLLM is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → vLLM (e.g. http://localhost:8000/v1) and make sure `vllm serve` is running."
         }
-    }
-
-    // `nonisolated` because actor-isolated callers (e.g. `ChatSession`) read
-    // this for error messages. The underlying availability check is itself
-    // thread-safe, so there's no shared state to guard.
-    nonisolated static var statusNote: String {
-        isAvailable ? "cloud/local brain configured" : "no brain configured"
     }
 
     /// True when the selected brain is one that USES a cloud key when present,
@@ -6810,7 +6527,7 @@ extension MLXSalehmanEngine {
 }
 ```
 
-===== FILE: Salehman AI/LLM/MemoryManager.swift (197 lines) =====
+===== FILE: Salehman AI/LLM/MemoryManager.swift (173 lines) =====
 ```swift
 import Foundation
 #if canImport(Combine)
@@ -6830,8 +6547,8 @@ nonisolated enum ByteConstants {
 ///
 /// Subscribes once at startup to the kernel-pushed signals that matter on
 /// macOS — `DispatchSource.makeMemoryPressureSource` and
-/// `ProcessInfo.thermalStateDidChangeNotification` — and exposes a *derived*
-/// snapshot every caller can read cheaply. No polling, no Instruments
+/// `ProcessInfo.thermalStateDidChangeNotification` — and exposes derived
+/// advisory reads every caller can use cheaply. No polling, no Instruments
 /// integration required — these are the same signals macOS itself uses to
 /// throttle background apps.
 ///
@@ -6839,11 +6556,11 @@ nonisolated enum ByteConstants {
 /// * The `Pressure`/`Thermal` enums use ordinal comparison (`.warning < .urgent`)
 ///   so callers can write `pressure >= .warning` and have it mean "at least
 ///   warning level". This is the natural API for thresholding.
-/// * The combine-into-`concurrencyLimit` and `shouldRefuseHeavyModel` logic
-///   is *pure*: the actor's only mutable state is the two raw signals. That
-///   makes the policy unit-testable without spinning up a dispatch source.
-/// * `worstCase(of:and:)` is exposed for the tests — given a pressure and
-///   thermal state, you can compute the recommendation deterministically.
+/// * The policy logic is *pure* static functions —
+///   `concurrencyLimit(pressure:thermal:physicalGB:)` and
+///   `shouldRefuseHeavyModel(pressure:thermal:physicalGB:)` — the actor's only
+///   mutable state is the two raw signals. That makes the policy unit-testable
+///   without spinning up a dispatch source.
 ///
 /// Why an actor: the dispatch-source event handler and the thermal-state
 /// notification fire on arbitrary queues. Funneling them through the actor's
@@ -6873,34 +6590,10 @@ actor MemoryManager {
         }
     }
 
-    /// Snapshot of the current advisory state. Sendable so callers across
-    /// actor boundaries can hold it briefly.
-    struct Snapshot: Sendable, Equatable {
-        let pressure: Pressure
-        let thermal: Thermal
-        let physicalGB: Int
-        let concurrencyLimit: Int
-        let refuseHeavyModel: Bool
-    }
-
-    func snapshot() -> Snapshot {
-        let limit = Self.concurrencyLimit(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-        let refuse = Self.shouldRefuseHeavyModel(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-        return Snapshot(pressure: pressure, thermal: thermal,
-                        physicalGB: physicalGB, concurrencyLimit: limit,
-                        refuseHeavyModel: refuse)
-    }
-
     /// Max concurrent agent tasks we recommend right now. Read this in any
     /// pipeline before spinning up parallel inferences.
     func concurrencyLimit() -> Int {
         Self.concurrencyLimit(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
-    }
-
-    /// True iff the system is too warm or memory-stressed to load the heavy
-    /// (32B) model. Honour this before unpacking heavyweight inferences.
-    func shouldRefuseHeavyModel() -> Bool {
-        Self.shouldRefuseHeavyModel(pressure: pressure, thermal: thermal, physicalGB: physicalGB)
     }
 
     /// Background eviction hook — call when entering low-memory states. Tells
@@ -7052,7 +6745,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (332 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (316 lines) =====
 ```swift
 import Foundation
 
@@ -7092,7 +6785,7 @@ enum OllamaClient {
     nonisolated private static let base = "http://localhost:11434"
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
-    // (vision() and code() check it twice per request); 30s caching is fine and
+    // (vision() checks it twice per request); 30s caching is fine and
     // avoids redundant probes when the user sends many messages in a row.
     private actor Reachability {
         static let shared = Reachability()
@@ -7145,19 +6838,15 @@ enum OllamaClient {
     static func hasModel(_ name: String) async -> Bool { await Reachability.shared.hasModel(name) }
 
     /// Default context window. 2048 tokens is plenty for chat-style turns and
-    /// keeps Ollama's KV cache small. `Generation.full` (below) widens it for
-    /// tasks that genuinely need long context.
+    /// keeps Ollama's KV cache small.
     nonisolated static let defaultNumCtx: Int = 2048
 
     /// Per-call generation knobs. Defaults are tuned for the 7B sweet-spot
-    /// model on a laptop; bump `numCtx` for genuinely long context.
+    /// model on a laptop.
     struct Generation: Sendable {
         var keepAlive: String   = "30s"
         var numCtx: Int         = OllamaClient.defaultNumCtx
-        var numGPU: Int?        = nil          // nil = let Ollama decide
         nonisolated static let `default`    = Generation()
-        nonisolated static let tight        = Generation(keepAlive: "10s", numCtx: 1024)
-        nonisolated static let full         = Generation(keepAlive: "30s", numCtx: 8192)
     }
 
     /// Core call to /api/generate (non-streaming).
@@ -7172,8 +6861,7 @@ enum OllamaClient {
         // the KV cache size: a smaller context window literally allocates less
         // GPU/CPU RAM per request, so 2048 (default) is dramatically lighter
         // than the server default of 4096.
-        var options: [String: Any] = ["num_ctx": gen.numCtx]
-        if let n = gen.numGPU { options["num_gpu"] = n }
+        let options: [String: Any] = ["num_ctx": gen.numCtx]
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
                                    "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
@@ -7323,17 +7011,6 @@ enum OllamaClient {
         let name = AppSettings.customModelNameCurrent
         guard !name.isEmpty else { return false }
         return await hasModel(name)
-    }
-
-    /// Generate/fix code with the dedicated coding model. Returns nil if unavailable.
-    static func code(task: String) async -> String? {
-        guard await isUp(), let model = await activeCodeModel() else { return nil }
-        let system = """
-        You are an expert software engineer. Produce correct, complete, idiomatic, \
-        modern code. Handle errors and edge cases. Add brief usage notes. Never \
-        leave TODO placeholders. Use fenced code blocks with the language tag.
-        """
-        return await generate(model: model, prompt: task, system: system)
     }
 
     // MARK: - General chat fallback
@@ -8259,7 +7936,7 @@ enum SalehmanLeader {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanPersona.swift (128 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanPersona.swift (122 lines) =====
 ```swift
 import Foundation
 
@@ -8381,12 +8058,6 @@ enum SalehmanPersona {
     /// in `ToolPolicy.CommandRisk`, so this does not weaken those.)
     nonisolated static var activeSystemPrompt: String {
         LocalLLM.applyUnrestricted(systemPrompt)
-    }
-
-    /// Combine the persona with the live tool menu so Salehman knows which tools
-    /// are actually wired right now. Pure + nonisolated.
-    nonisolated static func instructions(toolMenu: String) -> String {
-        activeSystemPrompt + "\n\n## Tools available right now\n" + toolMenu
     }
 }
 ```
@@ -9415,7 +9086,7 @@ private nonisolated final class LockedString: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/Attachments.swift (163 lines) =====
+===== FILE: Salehman AI/Persistence/Attachments.swift (140 lines) =====
 ```swift
 import Foundation
 import AppKit
@@ -9537,29 +9208,6 @@ enum AttachmentLoader {
         return String(out.prefix(20_000))
     }
 
-    static func ocr(_ url: URL) async -> String {
-        guard let cg = loadCGImage(url) else { return "" }
-
-        let box = ResumeBox()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
-            let request = VNRecognizeTextRequest { req, _ in
-                let text = (req.results as? [VNRecognizedTextObservation])?
-                    .compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: "\n") ?? ""
-                if box.resumeOnce() { continuation.resume(returning: text) }
-            }
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US", "ar-SA"]
-
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-            DispatchQueue.global(qos: .userInitiated).async {
-                do { try handler.perform([request]) }
-                catch { if box.resumeOnce() { continuation.resume(returning: "") } }
-            }
-        }
-    }
-
     /// Decode an image file straight to a CGImage. Uses ImageIO (thread-safe),
     /// avoiding NSImage which is not safe to touch off the main thread.
     static func loadCGImage(_ url: URL) -> CGImage? {
@@ -9582,27 +9230,20 @@ nonisolated final class ResumeBox: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/JSONFileStore.swift (49 lines) =====
+===== FILE: Salehman AI/Persistence/JSONFileStore.swift (35 lines) =====
 ```swift
 import Foundation
-
-/// Abstraction for a JSON-backed store — lets tests inject an in-memory fake
-/// instead of hitting disk, without changing any production call sites.
-protocol JSONStore<Item> {
-    associatedtype Item: Codable
-    func load(defaultValue: Item) -> Item
-    func save(_ value: Item) throws
-}
 
 /// Generic, injectable JSON file store — one place for the "encode → atomic write
 /// / decode-or-default" boilerplate the per-feature stores used to repeat:
 /// - atomic writes
-/// - injectable base directory (defaults to Application Support/SalehmanAI)
+/// - injectable base directory (defaults to Application Support/SalehmanAI;
+///   tests redirect persistence via this seam — see PersistenceRoundTripTests)
 /// - decode-or-default on a missing/corrupt file
 ///
 /// `nonisolated` so off-main, lock-guarded callers (e.g. `MemoryStore`) can use it
 /// directly — it holds only value state (a URL + FileManager) and does pure file I/O.
-nonisolated final class JSONFileStore<T: Codable>: JSONStore {
+nonisolated final class JSONFileStore<T: Codable> {
     private let fileURL: URL
     private let fileManager = FileManager.default
 
@@ -9624,13 +9265,6 @@ nonisolated final class JSONFileStore<T: Codable>: JSONStore {
     nonisolated func save(_ value: T) throws {
         let data = try JSONEncoder().encode(value)
         try data.write(to: fileURL, options: .atomic)
-    }
-
-    /// Remove the backing file if it exists.
-    func delete() throws {
-        if fileManager.fileExists(atPath: fileURL.path) {
-            try fileManager.removeItem(at: fileURL)
-        }
     }
 }
 ```
@@ -10197,7 +9831,7 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (97 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (92 lines) =====
 ```swift
 import Foundation
 import UserNotifications
@@ -10222,10 +9856,6 @@ final class StockSageMonitor {
 
     private var task: Task<Void, Never>?
     private(set) var isRunning = false
-
-    /// Symbols that have most recently fired a strong signal — a lightweight
-    /// "smart watchlist" surfaced via `smartWatchlist`.
-    private(set) var smartWatchlist: Set<String> = []
 
     enum MonitorError: LocalizedError {
         case alreadyRunning
@@ -10275,7 +9905,6 @@ final class StockSageMonitor {
             guard let signal = StockSageSignalEngine.generateSignal(for: symbol) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
-            smartWatchlist.insert(symbol.symbol)
             if notify {
                 await sendAlert(signal: signal, market: symbol.market)
             }
@@ -10532,7 +10161,7 @@ enum StockSageSignalEngine {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageStore.swift (77 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageStore.swift (68 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -10568,15 +10197,6 @@ final class StockSageStore: ObservableObject {
 
     func symbol(named name: String) -> StockSageSymbol? {
         symbols.first { $0.symbol.caseInsensitiveCompare(name) == .orderedSame }
-    }
-
-    /// Insert or replace a symbol (matched by ticker).
-    func upsert(_ symbol: StockSageSymbol) {
-        if let i = symbols.firstIndex(where: { $0.symbol == symbol.symbol }) {
-            symbols[i] = symbol
-        } else {
-            symbols.append(symbol)
-        }
     }
 
     /// Replace the whole set (e.g. when a live feed delivers a fresh snapshot).
@@ -10873,115 +10493,6 @@ enum GrokWatchTool {
         return out
     }
 }
-```
-
-===== FILE: Salehman AI/Tools/ImageGen.swift (42 lines) =====
-```swift
-import Foundation
-import ImagePlayground
-import CoreGraphics
-import ImageIO
-import UniformTypeIdentifiers
-
-/// On-device image generation via Apple's Image Playground (free, local).
-enum ImageGen {
-    static func generate(_ prompt: String) async -> URL? {
-        guard #available(macOS 26.0, *) else { return nil }
-        do {
-            let creator = try await ImageCreator()
-            let stream = creator.images(for: [.text(prompt)], style: .illustration, limit: 1)
-            for try await created in stream {
-                return savePNG(created.cgImage)
-            }
-        } catch {
-            return nil
-        }
-        return nil
-    }
-
-    private static func savePNG(_ cg: CGImage) -> URL? {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("salehman_img_\(UUID().uuidString).png")
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, cg, nil)
-        return CGImageDestinationFinalize(dest) ? url : nil
-    }
-}
-
-/// Holds the most recently generated image so the chat can display it after the
-/// agent turn completes.
-final class GeneratedMedia: @unchecked Sendable {
-    static let shared = GeneratedMedia()
-    private let lock = NSLock()
-    private var path: String?
-
-    func set(_ p: String) { lock.lock(); path = p; lock.unlock() }
-    func consume() -> String? { lock.lock(); defer { path = nil; lock.unlock() }; return path }
-}
-
-```
-
-===== FILE: Salehman AI/Tools/MacControlTools.swift (59 lines) =====
-```swift
-import Foundation
-import CoreGraphics
-import AppKit
-
-/// Mouse & keyboard control via CGEvent. Requires Accessibility permission
-/// (System Settings → Privacy & Security → Accessibility).
-///
-/// All methods are `nonisolated`: CGEvent posting is thread-safe and these are
-/// called from `ControlMacTool.call()` which runs off the main actor.
-enum MacControl {
-    nonisolated static func accessibilityGranted() -> Bool { AXIsProcessTrusted() }
-
-    nonisolated static func promptAccessibility() {
-        // `kAXTrustedCheckOptionPrompt` is imported as a mutable C global, which
-        // Swift 6 flags as shared mutable state. Its value is the stable, public
-        // key string, so use the literal directly — identical dictionary, no
-        // reference to the non-concurrency-safe global.
-        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(opts)
-    }
-
-    nonisolated static func click(x: CGFloat, y: CGFloat, double: Bool = false) {
-        let pos = CGPoint(x: x, y: y)
-        move(to: pos)
-        let src = CGEventSource(stateID: .combinedSessionState)
-        for i in 0..<(double ? 2 : 1) {
-            let down = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: pos, mouseButton: .left)
-            let up = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: pos, mouseButton: .left)
-            if double { down?.setIntegerValueField(.mouseEventClickState, value: Int64(i + 1)); up?.setIntegerValueField(.mouseEventClickState, value: Int64(i + 1)) }
-            down?.post(tap: .cghidEventTap)
-            up?.post(tap: .cghidEventTap)
-        }
-    }
-
-    nonisolated static func move(to pos: CGPoint) {
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pos, mouseButton: .left)?
-            .post(tap: .cghidEventTap)
-    }
-
-    nonisolated static func type(_ text: String) {
-        let src = CGEventSource(stateID: .combinedSessionState)
-        for scalar in text.unicodeScalars {
-            var ch = UniChar(scalar.value > 0xFFFF ? 0x20 : UInt16(scalar.value))
-            let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
-            down?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &ch)
-            down?.post(tap: .cghidEventTap)
-            let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false)
-            up?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &ch)
-            up?.post(tap: .cghidEventTap)
-        }
-    }
-
-    nonisolated static func keyPress(_ keyCode: CGKeyCode) {
-        let src = CGEventSource(stateID: .combinedSessionState)
-        CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)?.post(tap: .cghidEventTap)
-        CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)?.post(tap: .cghidEventTap)
-    }
-}
-
 ```
 
 ===== FILE: Salehman AI/Tools/RepoPacker.swift (178 lines) =====
@@ -11326,116 +10837,30 @@ private nonisolated final class AtomicBool: @unchecked Sendable {
 
 ```
 
-===== FILE: Salehman AI/Tools/StockSageMini.swift (66 lines) =====
+===== FILE: Salehman AI/Tools/StockSageMini.swift (10 lines) =====
 ```swift
 import Foundation
 
-/// Self-contained, pure-Swift Saudi/TASI deep-reasoning analyzer.
+/// Canonical Saudi/TASI educational disclaimer, rendered by MarketsView's footer.
 enum StockSageMini {
     static let disclaimer = """
     This is for informational/educational purposes only — not financial advice. \
     Saudi/GCC markets carry oil, regulatory, and liquidity risk. Past performance \
     is not indicative of future results. Consult a licensed advisor.
     """
-
-    private static func seed(_ ticker: String) -> Int {
-        abs(ticker.uppercased().unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) })
-    }
-
-    static func saudiMacroNote() -> String {
-        "Saudi/GCC macro: oil price and Vision 2030 execution are the dominant drivers; "
-        + "sector rotation currently favors financials, materials, and Vision-linked industrials."
-    }
-
-    static func visionImpactScore(ticker: String) -> Double {
-        let known: [String: Double] = ["2222.SR": 8.6, "1120.SR": 7.4, "1150.SR": 6.8]
-        if let s = known[ticker.uppercased()] { return s }
-        return Double(seed(ticker) % 60) / 10.0 + 3.0
-    }
-
-    static func deepReasoningReport(ticker: String, observations: String) -> String {
-        let s = seed(ticker)
-        let kelly    = Double(s % 25) / 100.0 + 0.05
-        let var95    = Double(s % 30) / 10.0 + 1.5
-        let oilStress = -(Double(s % 15) + 12)
-        let upside   = (s % 12) + 12
-        let downside = -((s % 10) + 15)
-        let vision   = visionImpactScore(ticker: ticker)
-        let verdict  = vision >= 7.5 ? "ACCUMULATE on dips" : (vision >= 5 ? "HOLD" : "WATCH / underweight")
-        let conf     = min(85, 55 + Int(vision * 3))
-
-        return """
-        Deep Reasoning Report — \(ticker)
-        (Salehman pure-Swift analyzer — heuristic, educational)
-
-        1. OBSERVE
-        \(observations)
-
-        2. CONTEXT
-        \(saudiMacroNote())
-
-        3. ANALYZE
-        Vision 2030 impact score: \(String(format: "%.1f", vision))/10. Oil sensitivity and \
-        dividend support weighed for a Saudi/TASI name.
-
-        4. SCENARIOS
-        Bull:  Strong Vision 2030 execution + stable oil → \(ticker) +\(upside)% over 12m.
-        Base:  TASI sideways, dividend support → modest +6–10%.
-        Bear:  Oil shock + rates +200bps → \(ticker) \(downside)%.
-
-        5. RISK
-        Kelly fraction \(String(format: "%.2f", kelly)); VaR(95) ≈ \(String(format: "%.1f", var95))% daily; \
-        oil-30 stress ≈ \(String(format: "%.0f", oilStress))%.
-
-        6. SYNTHESIS
-        Verdict: \(verdict). Signal strength \(conf)%.
-
-        ⚠️ \(disclaimer)
-        """
-    }
 }
 ```
 
-===== FILE: Salehman AI/Tools/StockSageTool.swift (26 lines) =====
-```swift
-import Foundation
-
-/// The "stock analysis" tool Salehman agents can call.
-enum StockSageTool {
-
-    static func detectTicker(in mission: String) -> String {
-        let m = mission.lowercased()
-        if m.contains("aramco") || m.contains("2222") { return "2222.SR" }
-        if m.contains("rajhi")  || m.contains("1120") { return "1120.SR" }
-        if m.contains("alinma") || m.contains("1150") { return "1150.SR" }
-        if let range = mission.range(of: #"\d{4}\.SR"#, options: [.regularExpression, .caseInsensitive]) {
-            return mission[range].uppercased()
-        }
-        return "2222.SR"
-    }
-
-    static func deepAnalysis(ticker: String) -> String {
-        let macroNote = StockSageMini.saudiMacroNote()
-        let visionScore = StockSageMini.visionImpactScore(ticker: ticker)
-        let observations = """
-        Saudi macro snapshot: \(macroNote)
-        Vision 2030 impact score for \(ticker): \(String(format: "%.2f", visionScore)) / 10.
-        """
-        return StockSageMini.deepReasoningReport(ticker: ticker, observations: observations)
-    }
-}
-```
-
-===== FILE: Salehman AI/Tools/ToolPolicy.swift (293 lines) =====
+===== FILE: Salehman AI/Tools/ToolPolicy.swift (246 lines) =====
 ```swift
 import Foundation
 
 /// Controls whether external/non-local tools are allowed.
 /// Default = .localOnly to maintain the local-first philosophy.
 ///
-/// `current` is derived from the user's Settings toggles (web access, code
-/// model) on each read, so flipping a switch and starting a new chat is enough
-/// to retire or surface tools. Set it explicitly to force a mode for testing.
+/// `current` is derived from the user's web-access Settings toggle on each
+/// read, so flipping the switch and starting a new chat is enough to retire or
+/// surface the web tools. Set it explicitly to force a mode for testing.
 enum ToolPolicy {
     case localOnly
     case allowExternalTools
@@ -11451,57 +10876,10 @@ enum ToolPolicy {
         return isWebAccessEnabled ? .allowExternalTools : .localOnly
     }
 
-    // MARK: - Instructions hint
-
-    /// Short, human-readable summary of the *currently enabled* tools. Inject
-    /// into the chat instructions so the model doesn't promise web access (or
-    /// any other gated tool) when the user has it turned off.
-    nonisolated static func instructionsToolMenu() -> String {
-        var lines: [String] = []
-        lines.append("• run_terminal_command — run a macOS shell command (asks the user before risky ones).")
-        lines.append("• remember_fact — save durable facts about the user.")
-        lines.append("• translate — translate text between languages.")
-        lines.append("• control_mac — move/click the mouse, type, or press keys (Accessibility permission).")
-        lines.append("• generate_image — on-device Image Playground.")
-        lines.append("• self_improve — build THIS app's Xcode project and try to auto-fix compiler errors.")
-        lines.append("• analyze_stock — educational Saudi/TASI stock analysis (heuristic, NOT financial advice).")
-        lines.append("• transcribe_media — transcribe a local audio/video file on-device.")
-        lines.append("• market_briefing — on-device briefing + strong-signal scan over tracked symbols (sample data until a live feed is connected).")
-        lines.append("• capture_note — save a free-text note to the user's Scratchpad (Notes tab).")
-        lines.append("• add_task — add a to-do to the user's Scratchpad (Tasks tab).")
-        lines.append("• complete_task — mark an open task done by matching words from its title.")
-        lines.append("• list_scratchpad — list current notes and open tasks (call this before summarizing or organizing them).")
-        lines.append("• list_documents — list everything in the user's Knowledge vault (use when you don't know what's there).")
-        lines.append("• search_documents — retrieve relevant passages from the user's private Knowledge vault (their added docs/notes); cite the source.")
-        lines.append("• get_document — fetch one whole document from the Knowledge vault by name (use after search_documents when you need the entire doc to summarize, translate, or quote).")
-        lines.append("• read_grok_session — read the latest Grok terminal-bridge session log: what task Grok is on, current turn, elapsed time, and recent commands. Use when asked what Grok is doing.")
-        if isVisionEnabled {
-            lines.append("• analyze_image — describe a local image (scene, text, barcodes) on-device.")
-        }
-        if isExternalAllowed {
-            lines.append("• web_search — search the web (DuckDuckGo).")
-            lines.append("• fetch_url — read a specific web page.")
-        } else {
-            lines.append("• Web access is DISABLED — do NOT promise to search or fetch URLs.")
-        }
-        if isCodeModelEnabled {
-            lines.append("• write_code — delegate hard coding work to the local qwen2.5-coder model.")
-        }
-        return lines.joined(separator: "\n")
-    }
-
     // MARK: - Setting accessors (nonisolated, actor-safe)
 
     nonisolated static var isWebAccessEnabled: Bool {
         AppSettings.boolDefaultTrue(AppSettings.Keys.webAccess)
-    }
-
-    nonisolated static var isCodeModelEnabled: Bool {
-        AppSettings.boolDefaultTrue(AppSettings.Keys.codeModel)
-    }
-
-    nonisolated static var isVisionEnabled: Bool {
-        AppSettings.boolDefaultTrue(AppSettings.Keys.vision)
     }
 
     // Pre-computed predicate to avoid `==` on `ToolPolicy` from nonisolated
@@ -12659,7 +12037,7 @@ final class ChatViewModel: ObservableObject {
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                        timestamp: Date(), imagePath: GeneratedMedia.shared.consume())
+                                        timestamp: Date())
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
                 let turnQuestion = question, turnReply = result.output
@@ -12894,7 +12272,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (942 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1009 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13212,10 +12590,21 @@ struct CodeView: View {
             .padding(10)
 
             if let root = ws.projectRoot {
-                Text(root.lastPathComponent)
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                    .lineLimit(1).truncationMode(.middle)
-                    .padding(.horizontal, 10).padding(.bottom, 6)
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+                    Text(root.lastPathComponent)
+                        .font(.system(size: 11.5, weight: .bold)).foregroundStyle(.white)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    if !ws.files.isEmpty {
+                        Text("\(ws.files.count)")
+                            .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 10).padding(.bottom, 6)
             }
 
             Divider().overlay(DS.Palette.hairline)
@@ -13378,15 +12767,49 @@ struct CodeView: View {
         .background(Color.black.opacity(0.12))
     }
 
+    /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
+    private let welcomeExamples: [(icon: String, text: String)] = [
+        ("sparkles", "Review this project"),
+        ("ladybug", "Find & fix a bug"),
+        ("doc.text.magnifyingglass", "Explain a file"),
+    ]
+
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 14) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(DS.Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(DS.Palette.accent.opacity(0.12), in: Circle())
+                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 14)
             Text("Code with Salehman")
-                .font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
-            Text("Open a project folder, then ask me to build, fix, or explain code. I can run terminal commands and edit files (you approve each one), and you'll see the diffs here.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+            Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
+                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(welcomeExamples, id: \.text) { ex in
+                    Button { input = ex.text } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: ex.icon).font(.system(size: 10.5))
+                                .foregroundStyle(DS.Palette.accent)
+                            Text(ex.text).font(.system(size: 11.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.white.opacity(0.88))
+                }
+            }
+            .padding(.top, 6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 46)
     }
 
     private var agentSteps: some View {
@@ -13418,12 +12841,21 @@ struct CodeView: View {
         }
     }
 
+    /// Sender avatar — Salehman gets an accent-tinted disc matching the welcome icon.
+    @ViewBuilder
+    private func senderAvatar(isUser: Bool) -> some View {
+        ZStack {
+            if !isUser { Circle().fill(DS.Palette.accent.opacity(0.13)).frame(width: 26, height: 26) }
+            Image(systemName: isUser ? "person.crop.circle.fill" : "sparkles")
+                .font(.system(size: isUser ? 17 : 13, weight: isUser ? .regular : .semibold))
+                .foregroundStyle(isUser ? Color.white.opacity(0.55) : DS.Palette.accent)
+        }
+        .frame(width: 26, height: 26)
+    }
+
     private func codeBubble(_ msg: ChatMessage) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: msg.isUser ? "person.crop.circle.fill" : "sparkles")
-                .font(.system(size: 14))
-                .foregroundStyle(msg.isUser ? Color.white.opacity(0.6) : DS.Palette.accent)
-                .frame(width: 20)
+            senderAvatar(isUser: msg.isUser)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(msg.isUser ? "You" : "Salehman")
@@ -13447,7 +12879,7 @@ struct CodeView: View {
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles").font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 20)
+            senderAvatar(isUser: false)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Salehman").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 if progress.streamingAnswer.isEmpty {
@@ -13489,8 +12921,6 @@ struct CodeView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(1...5)
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                     .onSubmit(send)
 
                 Button {
@@ -13507,6 +12937,15 @@ struct CodeView: View {
                 .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
+            // One cohesive input pill (Claude-style) instead of loose controls.
+            // Border warms to the accent while you're typing.
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                input.trimmingCharacters(in: .whitespaces).isEmpty
+                    ? Color.white.opacity(0.09) : DS.Palette.accent.opacity(0.45),
+                lineWidth: 1))
+            .animation(.easeOut(duration: 0.18), value: input.isEmpty)
         }
         .padding(10)
         .background(.ultraThinMaterial)
@@ -13564,9 +13003,15 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline)
 
             if ws.selectedFile == nil {
-                Text("Select a file to view it, or run a task to see diffs.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 9) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(.secondary.opacity(0.55))
+                    Text("Select a file to view it,\nor run a task to see diffs.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if rightPane == .diff {
                 diffView
             } else {
@@ -13840,7 +13285,7 @@ struct CodeView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (120 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (121 lines) =====
 ```swift
 import SwiftUI
 
@@ -13870,6 +13315,7 @@ struct CommandPalette: View {
                 app.selectedTab = .chat; app.newChatRequested = true },
             .init(title: "Go to Today", subtitle: "Your home dashboard at a glance", icon: "sun.max.fill") { app.selectedTab = .today },
             .init(title: "Go to Chat", subtitle: "", icon: "bubble.left.and.bubble.right.fill") { app.selectedTab = .chat },
+            .init(title: "Go to Code", subtitle: "Agentic coding workspace", icon: "chevron.left.forwardslash.chevron.right") { app.selectedTab = .code },
             .init(title: "Go to Agents", subtitle: "Your specialist agent team", icon: "person.3.fill") { app.selectedTab = .agents },
             .init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets },
             .init(title: "Go to Notes", subtitle: "Your notes & tasks scratchpad", icon: "checklist") { app.selectedTab = .scratchpad },
@@ -17677,7 +17123,7 @@ struct ScratchpadView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1899 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1898 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -18024,7 +17470,6 @@ struct SettingsView: View {
 
                     section("Capabilities", nil) {
                         toggle("Web access", "Search & read the web", "globe", $settings.webAccess)
-                        toggle("Local coding model", "Use the local qwen2.5-coder model for code", "chevron.left.forwardslash.chevron.right", $settings.useCodeModel)
                         toggle("Image vision", "Understand images with qwen2.5vl", "eye", $settings.useVision)
                         toggle("Autonomous Mode",
                                "Agents can chain tasks, self-correct, and continue working with minimal input",
@@ -19580,7 +19025,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (72 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (73 lines) =====
 ```swift
 import SwiftUI
 
@@ -19602,10 +19047,11 @@ struct ShortcutsView: View {
         .init(title: "Navigation", items: [
             .init(keys: "⌘1", label: "Today"),
             .init(keys: "⌘2", label: "Chat"),
-            .init(keys: "⌘3", label: "Agents"),
-            .init(keys: "⌘4", label: "Markets"),
-            .init(keys: "⌘5", label: "Notes"),
-            .init(keys: "⌘6", label: "Knowledge"),
+            .init(keys: "⌘3", label: "Code"),
+            .init(keys: "⌘4", label: "Agents"),
+            .init(keys: "⌘5", label: "Markets"),
+            .init(keys: "⌘6", label: "Notes"),
+            .init(keys: "⌘7", label: "Knowledge"),
         ]),
         .init(title: "Conversation", items: [
             .init(keys: "⌘N", label: "New chat"),
@@ -22028,7 +21474,7 @@ import Foundation
 // and calling start()/toggle() would fire real Screen-Recording + Speech (TCC)
 // permission prompts and leave the shared singleton mid-capture. So those cases
 // are honestly `.disabled` until a seam exists (matching BrainRoutingDispatch /
-// PersistenceRoundTrip / SettingsBrainReady), rather than shipped as green
+// SettingsBrainReady), rather than shipped as green
 // tautologies like `#expect(!isRunning || isRunning)` (see the 2026-06-06 review).
 // One safe, falsifiable contract is kept active.
 
@@ -22249,7 +21695,7 @@ struct LooksRiskyDelegationTests {
 }
 ```
 
-===== FILE: Salehman AITests/MemoryManagerTests.swift (157 lines) =====
+===== FILE: Salehman AITests/MemoryManagerTests.swift (151 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -22399,13 +21845,7 @@ struct OllamaDefaultModelTests {
         // they're knowingly trading RAM for context length — make them
         // update this test on purpose.
         #expect(OllamaClient.defaultNumCtx == 2048)
-    }
-
-    @Test func generationPresetsHaveExpectedShape() {
         #expect(OllamaClient.Generation.default.numCtx == 2048)
-        #expect(OllamaClient.Generation.tight.numCtx   == 1024)
-        #expect(OllamaClient.Generation.full.numCtx    == 8192)
-        #expect(OllamaClient.Generation.tight.keepAlive == "10s")
     }
 }
 ```
@@ -22869,7 +22309,7 @@ struct OpenRouterPreferenceTests {
 }
 ```
 
-===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (108 lines) =====
+===== FILE: Salehman AITests/PersistenceRoundTripTests.swift (107 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -22877,12 +22317,11 @@ import Foundation
 
 // MARK: - Persistence round-trips (MemoryStore, ScratchpadStore, StockSagePortfolio, ...)
 //
-// These require the injectable JSONFileStore + base-dir seam from §3 refactor (R4).
-// The stores hard-code their Application Support path and are singletons with
-// private fileURL, so no way to point them at a temp dir for hermetic tests.
-// All cases here are disabled until the refactor provides a testable constructor
-// or base-dir override. Then the round-trip + dedup + snapshot cases become
-// straightforward.
+// Hermetic round-trips via the injected seams that landed with the R4 refactor:
+// `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`,
+// `StockSagePortfolio(userDefaults:)`. Each test redirects persistence to a
+// throwaway temp dir / UserDefaults suite, so nothing touches the user's real
+// Application Support data. All cases are ACTIVE.
 
 struct PersistenceRoundTripTests {
 
@@ -24094,7 +23533,7 @@ enum ToolPolicyTestLock {
 }
 ```
 
-===== FILE: Salehman AITests/ToolPolicyTests.swift (97 lines) =====
+===== FILE: Salehman AITests/ToolPolicyTests.swift (76 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -24106,9 +23545,9 @@ import Foundation
 // (web_search, fetch_url) on top of the always-on local core. It's the gate
 // that keeps a local-first session from silently reaching the network, so it
 // must behave exactly. These tests pin: (1) the `override` pin wins; (2) with
-// no override, the policy follows the user's web-access setting; (3) the
-// instructions menu only advertises web tools when they're actually enabled
-// (otherwise the model promises a capability it doesn't have).
+// no override, the policy follows the user's web-access setting. (The
+// model-facing "web tools never offered when off" property is pinned against
+// the live tool list in OllamaToolGateTests via `ollamaToolNames`.)
 //
 // The suite is `.serialized`: it mutates the process-globals `ToolPolicy.override`
 // and the `webAccess` UserDefaults key, and Swift Testing runs tests in parallel —
@@ -24116,7 +23555,7 @@ import Foundation
 // globals, so cross-suite parallelism stays safe. We avoid `==` on the
 // `ToolPolicy` enum itself (its Equatable conformance is main-actor-isolated under
 // `-default-isolation=MainActor`) and assert through the `nonisolated` surface
-// (`isExternalAllowed`, `instructionsToolMenu()`).
+// (`isExternalAllowed`).
 
 @Suite(.serialized)
 struct ToolPolicyTests {
@@ -24171,27 +23610,6 @@ struct ToolPolicyTests {
         }
     }
 
-    @Test func menuHidesWebToolsWhenLocalOnly() {
-        withCleanPolicy {
-            ToolPolicy.override = .localOnly
-            let menu = ToolPolicy.instructionsToolMenu()
-            #expect(menu.contains("Web access is DISABLED"))
-            #expect(!menu.contains("web_search"))
-            #expect(!menu.contains("fetch_url"))
-            // The always-on local core is still advertised.
-            #expect(menu.contains("run_terminal_command"))
-        }
-    }
-
-    @Test func menuAdvertisesWebToolsWhenExternalAllowed() {
-        withCleanPolicy {
-            ToolPolicy.override = .allowExternalTools
-            let menu = ToolPolicy.instructionsToolMenu()
-            #expect(menu.contains("web_search"))
-            #expect(menu.contains("fetch_url"))
-            #expect(!menu.contains("Web access is DISABLED"))
-        }
-    }
 }
 ```
 
@@ -24392,7 +23810,7 @@ struct WebToolsOfflineGateTests {
 }
 ```
 
-===== FILE: ARCHITECTURE.md (433 lines) =====
+===== FILE: ARCHITECTURE.md (457 lines) =====
 <!-- Auto-generated 2026-06-05 by the full-codebase-review workflow (Chat B). Grounded in the real source; refine as the app evolves. -->
 
 # Salehman AI: Architecture Documentation
@@ -24403,7 +23821,7 @@ struct WebToolsOfflineGateTests {
 
 **Core Architecture**: Swift 6 with strict concurrency (actors, MainActor isolation), SwiftUI, Foundation frameworks (Speech, Vision, PDFKit, ProcessInfo). Minimum deployment: macOS 15.0 (Sequoia).
 
-**Key Innovation**: The app routes user messages through multiple "brains" (Apple Intelligence, Ollama local, or cloud APIs) with an intelligent fallback hierarchy. For complex tasks, it spawns a 15-agent team that runs in phases, with memory-aware concurrency caps to avoid freezing low-end hardware.
+**Key Innovation**: The app routes user messages through multiple "brains" (the Salehman cloud-first chain — the default, local Ollama/MLX, local OpenAI-compatible servers, or cloud APIs) with an intelligent fallback hierarchy. (Apple Intelligence was removed 2026-06-08.) For complex tasks, it spawns a 15-agent team that runs in phases, with memory-aware concurrency caps to avoid freezing low-end hardware.
 
 ---
 
@@ -24417,59 +23835,75 @@ Salehman AI/
 │   └── AppSettings.swift             # Preferences singleton (UserDefaults)
 │
 ├── Views/
-│   ├── RootView.swift                # Tab container (Chat / Agents / Markets)
-│   ├── ContentView.swift             # Chat UI (1108 lines; core UX)
+│   ├── RootView.swift                # Tab container (Today/Chat/Code/Agents/Markets/Notes/Knowledge)
+│   ├── ContentView.swift             # Chat UI (presentation; pipeline in ChatViewModel)
+│   ├── ChatViewModel.swift           # Conversation + send/stop/regenerate pipeline
 │   ├── AgentsView.swift              # Autonomous mode + agent progress
-│   ├── SettingsView.swift            # Brain picker, API keys, preferences
+│   ├── SettingsView.swift            # Brain grid, API keys, preferences
 │   ├── MarketsView.swift             # Stock monitoring
+│   ├── CodeView.swift                # Agentic coding workspace (⌘3)
 │   ├── LiveTranscriptionView.swift   # Real-time meeting transcription
 │   └── ...other views
 │
 ├── LLM/ (Brain layer)
-│   ├── LocalLLM.swift               # Brain routing logic (896 lines)
+│   ├── LocalLLM.swift               # Brain routing + the model tool loop
 │   ├── BrainStatus.swift            # Live brain availability monitor
 │   ├── OpenAICompatibleClient.swift # Generic HTTP client for cloud brains
-│   ├── CloudBrains.swift            # Provider configs (Groq, Mistral, etc.)
+│   ├── CloudBrains.swift            # Provider configs (Groq, Mistral, Cerebras, OpenRouter, DeepSeek, NVIDIA)
 │   ├── GrokClient.swift             # xAI Grok
 │   ├── GeminiClient.swift           # Google Gemini
-│   ├── GroqClient.swift             # Groq
-│   ├── MistralClient.swift          # Mistral
-│   ├── CerebrasClient.swift         # Cerebras
 │   ├── AnthropicClient.swift        # Anthropic Claude
 │   ├── OpenAIClient.swift           # OpenAI / Codex
 │   ├── CopilotClient.swift          # GitHub Copilot
 │   ├── OllamaClient.swift           # Local Ollama server
+│   ├── SalehmanEngine.swift         # .salehman default brain (cloud-first chain)
+│   ├── SalehmanLeader.swift         # Salehman-voice finalizer for pipeline output
+│   ├── SalehmanPersona.swift        # Persona / system prompt
+│   ├── MLXSalehmanEngine.swift      # Local MLX (Apple-Silicon) inference
+│   ├── UnslothStudio.swift          # Local OpenAI-compat server brain
+│   ├── VLLM.swift                   # Local vLLM server brain
+│   ├── BrainAdapter.swift           # Adapter protocol (+ Ollama/Anthropic adapters)
 │   ├── MemoryManager.swift          # RAM/thermal awareness (actor)
 │   └── KeychainStore.swift          # Secure API key storage
 │
+├── Intelligence/
+│   ├── Effort.swift                 # Effort ladder (candidates × critique × judge) — not yet wired to the answer path
+│   └── SelfCritique.swift           # Refine loop (used by Effort)
+│
 ├── Agents/ (Multi-agent orchestration)
-│   ├── AgentPipeline.swift          # Main coordination (300+ lines)
+│   ├── AgentPipeline.swift          # Main coordination
 │   ├── AgentDefinitions.swift       # The 15-agent team spec
 │   ├── AgentRegistry.swift          # Handler lookup & lifecycle
 │   ├── MissionMemory.swift          # Accumulates outputs + results
 │   ├── MissionPlan.swift            # Problem statement
 │   ├── Orchestrator.swift           # Autonomous mode
-│   └── SelfImprove.swift            # Self-patching builds
+│   └── SelfImprove.swift            # Self-patching primitives (parse/patch/backup)
 │
 ├── Tools/ (Callable by agents, gated by policy)
-│   ├── ToolPolicy.swift             # What tools are enabled (security)
+│   ├── ToolPolicy.swift             # External-tools gate + command-risk vocabulary
 │   ├── CommandApprovalCenter.swift  # User approval gate for shell
 │   ├── ShellTool.swift              # Terminal command execution
-│   ├── MacControlTools.swift        # Mouse/keyboard via Accessibility
 │   ├── WebTools.swift               # DuckDuckGo search + URL fetch
 │   ├── VisionAnalyzer.swift         # On-device image understanding
-│   ├── AnalyzeImageTool.swift       # Wrapper for agents
-│   ├── TranscribeMediaTool.swift    # Audio/video → text
-│   ├── StockSageTool.swift          # Market data (sample)
-│   ├── StockAnalysisTool.swift      # Offline TASI/Saudi analysis
-│   ├── ImageGen.swift               # On-device Image Playground
-│   ├── CodeTool.swift               # Delegate to Ollama qwen-coder
-│   └── ...others
+│   ├── RepoPacker.swift             # pack_repository whole-codebase digest
+│   ├── GrokWatchTool.swift          # read_grok_session bridge-log snapshot
+│   └── StockSageMini.swift          # Canonical TASI disclaimer text
+│
+├── Knowledge/
+│   ├── KnowledgeStore.swift         # Private document vault (chunk + embedding search)
+│   └── ExternalToolsKnowledge.swift # Curated external-tools knowledge
 │
 ├── Persistence/
 │   ├── Attachments.swift            # File/image/PDF/audio attachment handling
 │   ├── MemoryStore.swift            # Long-term facts (embeddings-based)
+│   ├── ScratchpadStore.swift        # Notes + tasks
+│   ├── JSONFileStore.swift          # Generic atomic JSON store (injectable base dir)
+│   ├── TrainingExporter.swift       # Chat → fine-tune dataset export
 │   └── PromptLibrary.swift          # Saved prompt templates
+│
+├── Voice/
+│   ├── VoiceSession.swift           # Hands-free dictate→answer→speak loop
+│   └── VoiceTurn.swift
 │
 ├── Media/
 │   ├── Transcriber.swift            # Audio/video transcription (on-device)
@@ -24483,8 +23917,9 @@ Salehman AI/
 │   ├── StockSageStore.swift
 │   ├── StockSageBriefingService.swift
 │   ├── StockSageSignalEngine.swift
-│   ├── StockSageScreenAnalysis.swift
-│   └── ...others
+│   ├── StockSageScreenAnalysis.swift # Built but not yet wired to a chat tool
+│   ├── StockSagePortfolio.swift
+│   └── StockSageMonitor.swift
 │
 └── DesignSystem/
     └── DesignSystem.swift           # Unified theme (colors, motion)
@@ -24617,20 +24052,27 @@ Salehman AI/
 
 | Preference | Primary | Fallback | Scope | Cost |
 |------------|---------|----------|-------|------|
-| `.auto` | Apple Intelligence | Ollama qwen-coder | Local only | $0 |
-| `.apple` | Apple Intelligence | Ollama qwen-coder | Local only | $0 |
-| `.ollama` | Ollama qwen-coder | Apple Intelligence | Local only | $0 |
-| `.freeAuto` | Free clouds (race) | Ollama → Apple Intl | Hybrid | $0 |
+| `.salehman` **(default)** | Cloud-first chain (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) | Local floor (MLX, Ollama) | Hybrid | $0 unless paid backstop reached |
+| `.auto` | Local tier (Ollama/MLX) | None | Local only | $0 |
+| `.ollama` | Ollama qwen-coder | None | Local only | $0 |
+| `.freeAuto` | Free clouds (race) | Local tier (sequential) | Hybrid | $0 |
+| `.freeCoding` | Free coding-strong clouds | Local tier | Hybrid | $0 |
+| `.cloudCoding` | Coding-strong clouds (incl. paid) | None | Cloud only | Mixed |
+| `.unslothStudio` | Local OpenAI-compat server (Unsloth Studio) | None | Local only | $0 |
+| `.vllm` | Local vLLM server | None | Local only | $0 |
 | `.claudeHaiku` | Claude Haiku (API key required) | None | Cloud only | Pay-per-token |
 | `.grok` | xAI Grok (API key required) | None | Cloud only | Pay-per-token |
 | `.gemini` | Google Gemini (free tier available) | None | Cloud only | Free/$$ |
 | `.groq` | Groq (free tier available) | None | Cloud only | Free/$$ |
 | `.mistral` | Mistral (free tier available) | None | Cloud only | Free/$$ |
 | `.cerebras` | Cerebras (free tier available) | None | Cloud only | Free/$$ |
+| `.deepSeek` | DeepSeek (API key, very cheap) | None | Cloud only | Pay-per-token |
 | `.codex` | OpenAI GPT (API key required) | None | Cloud only | Pay-per-token |
 | `.copilot` | GitHub Copilot (subscription) | None | Cloud only | Subscription |
 | `.openRouter` | OpenRouter aggregator (free models available) | None | Cloud only | Free/$$ |
 | `.ensemble` | All configured brains (parallel) | None | Hybrid | Highest cost (all APIs hit) |
+
+*(Exact resolution lives in `LocalLLM.currentBrain()`; `.apple` / Apple Intelligence was removed 2026-06-08.)*
 
 ---
 
@@ -24880,12 +24322,14 @@ source, UserDefaults, or logs. If the owner pastes a key in chat, treat it as
 exposed and tell them to rotate it. `.auto` mode is local-first; never make it
 silently call a paid cloud API.
 
-===== FILE: CODEBASE_REVIEW.md (317 lines) =====
+===== FILE: CODEBASE_REVIEW.md (319 lines) =====
 # 🔬 Codebase Review — Salehman AI
 
 > Generated 2026-06-06 from a multi-agent review (11 subsystems · 47 agents · adversarially verified). **Read-only analysis** — no source was modified. Covers: performance, security/correctness, implementation review, architecture explanation, a refactor plan, and a test plan. Confirmed = survived an independent skeptic verifier (≥0.6 confidence).
 
 **Status note:** the working tree was red at review time (the other session's in-progress Unsloth Studio). Fixes below are **proposed, not applied**; they'll be applied once the tree is green and per the lane rules in `COORDINATION.md`. Several findings extend the 2026-06-06 privacy/a11y audit logged in `DEVELOPMENT_LOG.md`.
+
+> **HISTORICAL (2026-06-06 snapshot — do not implement from this document without re-checking).** The Apple-Intelligence / FoundationModels tool layer described in §2 C2 and §5 (`SelfImproveTool`, `RememberFactTool`, scratchpad/knowledge FM tools, `StockSageBriefingTool`, `LanguageModelSession`) was **removed on 2026-06-08**; tools now run solely through `LocalLLM`'s Ollama/OpenAI-compatible tool loop. The 2026-06-11 cleanup also removed several items this review references (FM-era tool files, the unreachable `SelfImprove` loop, `instructionsToolMenu`). Treat this file as a point-in-time review record.
 
 ---
 
@@ -25199,7 +24643,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (439 lines) =====
+===== FILE: COORDINATION.md (441 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25253,8 +24697,8 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 
 **🛑 Heads-up for Grok Tab A:** while verifying, the test target fails to compile because `ShellSecurityTests.swift` (your new untracked file) calls `CommandApprovalCenter.looksRisky(...)` from `#expect`'s nonisolated autoclosure, but `looksRisky` is `@MainActor`-isolated under `-default-isolation=MainActor`. The pure-substring-check version of `looksRisky` would be safe as `nonisolated static` — that's likely the right one-line fix in `CommandApprovalCenter.swift`. Not touching it; it's your lane. (My selective commit avoids pushing this red state to `main`.)
-| **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); cross-lane compile fix claim: `Knowledge/KnowledgeStore.swift` (duplicate mmr redeclaration at ~223 — removed the later one to unblock test build; first impl at 135 is the called one) | 2026-06-06 | 5 suites enabled and passing; full AITests was red due to redecl in KnowledgeStore (unrelated to our edits but blocking verification) — claimed + removed duplicate mmr to get green. | no |
-| **Grok Tab B (refactor)** | LLM/LocalLLM.swift + cloud clients (GrokClient, OpenAICompatibleClient, GeminiClient, AnthropicClient, CopilotClient, CloudBrains.swift); Persistence/** (MemoryStore, ScratchpadStore, PromptLibrary + new JSONFileStore.swift) + Knowledge/KnowledgeStore.swift; Tools/{ToolPolicy.swift, WebTools.swift, ShellTool.swift, CommandApprovalCenter.swift}; AppSettings.swift (append-only if needed); minor: BrainStatus.swift, SettingsView.swift (brainReady delegation), AgentPipeline.swift (short-circuits) | 2026-06-06 | Tab B §3 refactors per approved plan + GROK_TAB_B_REFACTOR.md + CODEBASE_REVIEW §3 (R2 gates first for quick centralization win + unblock, then R4 JSONFileStore+Embeddings, then R1 BrainAdapter registry). **HAZARD: overlaps Chat B Claude lane heavily** — only editing after explicit handoff/pause confirmed in this board + re-read of targets. Starting R2 (ToolPolicy.webToolsDisabledReason + CommandRisk). Behavior-preserving; will enable Tab A's 3 blocked suites (BrainRouting, Persistence, SettingsBrainReady) via seams. | no |
+| **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); cross-lane compile fix claim: `Knowledge/KnowledgeStore.swift` (duplicate mmr redeclaration at ~223 — removed the later one to unblock test build; first impl at 135 is the called one) | 2026-06-06 | 5 suites enabled and passing; full AITests was red due to redecl in KnowledgeStore (unrelated to our edits but blocking verification) — claimed + removed duplicate mmr to get green. | **released** (session ended 2026-06-06; claims void — cleared in 2026-06-11 cleanup) |
+| **Grok Tab B (refactor)** | LLM/LocalLLM.swift + cloud clients (GrokClient, OpenAICompatibleClient, GeminiClient, AnthropicClient, CopilotClient, CloudBrains.swift); Persistence/** (MemoryStore, ScratchpadStore, PromptLibrary + new JSONFileStore.swift) + Knowledge/KnowledgeStore.swift; Tools/{ToolPolicy.swift, WebTools.swift, ShellTool.swift, CommandApprovalCenter.swift}; AppSettings.swift (append-only if needed); minor: BrainStatus.swift, SettingsView.swift (brainReady delegation), AgentPipeline.swift (short-circuits) | 2026-06-06 | Tab B §3 refactors per approved plan + GROK_TAB_B_REFACTOR.md + CODEBASE_REVIEW §3 (R2 gates first for quick centralization win + unblock, then R4 JSONFileStore+Embeddings, then R1 BrainAdapter registry). **HAZARD: overlaps Chat B Claude lane heavily** — only editing after explicit handoff/pause confirmed in this board + re-read of targets. Starting R2 (ToolPolicy.webToolsDisabledReason + CommandRisk). Behavior-preserving; will enable Tab A's 3 blocked suites (BrainRouting, Persistence, SettingsBrainReady) via seams. | **released** (session ended 2026-06-06; claims void — cleared in 2026-06-11 cleanup) |
 
 **Claiming discipline (from golden rules + GROK_TAB_*.md):**
 - Add your row (or append to your session's row) at the moment you decide to touch a file.
@@ -25639,8 +25083,10 @@ Owner is deciding who applies what. I have NOT edited any of these yet (avoiding
 - **Deferred:** P2 brainReady caching (needs refresh-wiring for 5 providers first), P3/P4, the MED items (Copilot nil, looksRisky, tools-agent history), the routing-ladder refactor, the 8 test suites. All still in `CODEBASE_REVIEW.md`.
 - **Note:** both `Views/ShortcutsFooter.swift` (yours?) and `Views/BottomShortcutBar.swift` (mine) exist — possible duplicate bottom-bar; reconcile when convenient (green for now).
 - Committing the whole working tree (both sessions' work) to a branch + pushing per owner request.
+### 🧹 2026-06-11 — stale fleet claims cleared (cleanup pass)
+The 2026-06-10 `safari-1…10` fleet sessions (Grok terminal-bridge tabs) all ended; their claim rows — previously dumped here in inconsistent formats — are **released**. For the record they covered: `Salehman AI/grok_parser.py` (safari-1; file has since moved to `tools/grok_parser.py`), `tools/grok_status.sh --once` (safari-10), `Salehman AITests/KnowledgeRAGTests.swift` (safari-2/3/4/9 — multiple tabs claimed the SAME file; whatever landed is in git), and a never-landed `Core/IntelligenceEngine.swift` / `Core/QuestionOrchestrator.swift` (safari-7 — no such files exist in the tree). Nothing from these claims is in-flight; the working tree is single-session (owner-driven) as of today.
 
-===== FILE: DEVELOPMENT_LOG.md (1949 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2000 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27087,6 +26533,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 - `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
 **Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
 
+## 2026-06-11 · Check in fleet bug-hunt reports for the Grok bridge tooling
+**Files:** `tools/BUGS_bridge_py.md`, `tools/BUGS_bridge_sh.md` (new)
+**What & why:** The 2026-06-10 parallel fleet run (fleet-1 / fleet-2 lanes) produced two bug-hunt reports against the bridge tooling: `BUGS_bridge_py.md` lists suspected races/throttling gaps in `grok_terminal_bridge.py` (Safari auto-drive partial-page race, no rate-limit guard in the build-rebuild loop, `_grok_send` flood risk), and `BUGS_bridge_sh.md` lists shell-script issues in `run_parallel_safari.sh` / `run_parallel_grok.sh` (uninitialized loop var, TABIDX off-by-one risk, no `--help`, quoting/portability problems) plus `grok_sessions_summary.py` lacking a shebang/CLI. They were left untracked in the working tree; committing them so the findings aren't lost. None of the listed bugs are fixed yet — these are the backlog for the next bridge-hardening pass.
+**Result:** Reports tracked in git. No code changed; build unaffected.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -27590,6 +27041,52 @@ Wiring (exhaustive switch arms all caught by compiler):
   test stubs into real coverage by adding pure seams, matching the repo's "no green tautologies" rule.
 - Result: BUILD SUCCEEDED; LiveTranscriberSegment (3 pass / 2 honestly disabled) + GeminiBackoff (4) +
   Effort (8) all green. (`AppSettings` default Effort also set to `.ultra` per owner request.)
+
+## 2026-06-10 — Parallel-session notification (desktop ↔ VS Code) — applied twice (first copy wiped)
+**Files:** `COORDINATION.md` (docs only)
+**What & why:** Owner asked the desktop Claude Code session to notify the VS Code session of parallel
+work. Direct cross-session messaging requires interactive approval (unavailable unsupervised), so the
+notification went into COORDINATION.md per protocol: a Live Lane Board claim row (desktop session,
+`tools/grok_terminal_bridge.py` + `tools/run_parallel_safari.sh`, branch `feat/effort-grok-tooling`)
+plus a dated Notes/handoffs entry. **Reversal logged:** the first application (plus its dev-log entry)
+was wiped when the working tree was restored to HEAD content (~16:35 and ~16:45 file mtimes; no reflog
+reset — likely a `git restore` by another session or a wholesale file rewrite by a safari bridge lane).
+Re-applied ~16:50 with an explicit "don't revert uncommitted coordination edits" warning. Also observed:
+Grok safari lanes (safari-1/3/5) are appending malformed loose-line claims at the END of COORDINATION.md
+instead of board rows — flagged in the Notes entry.
+**Result:** Docs-only; no build impact. Watch for a second clobber — if it recurs, the restore step in
+whatever automation is doing it needs to exclude COORDINATION.md / DEVELOPMENT_LOG.md.
+
+## 2026-06-10 — Parallel Safari Grok fleet (race-free) + rate-limit backoff + chat-trained Salehman
+**Files:** `tools/grok_terminal_bridge.py`, `tools/run_parallel_safari.sh`, `tools/PARALLEL_GROK_GUIDE.md`
+(new), `salehman-training/{mac,runpod}/01_prepare_data.py`, `salehman-training/dataset_combined.jsonl`
+(gitignored), `salehman-training/build_chat_dataset.py`.
+**What & why:** Owner wanted N Grok web agents working the repo in parallel, non-stop, off-screen.
+- **Race-free parallel Safari.** First tried per-agent own-window (`--safari-window`) — all agents grabbed
+  the SAME window id (Safari opens `make new document` as a TAB, not a window). Switched to per-TAB
+  targeting — still collided (all got `tab 3`): each agent opened+captured its own tab and they raced.
+  **Fix that worked:** the launcher pre-creates N tabs SEQUENTIALLY in one window (no race) and hands each
+  agent its exact tab via a new `--safari-target "tab K of window id W"` flag. Verified 5 and 7 agents on
+  distinct tabs.
+- **RAM auto-limit:** launcher reads `hw.memsize` and caps agents (16 GB → 3; override `MAX_AGENTS`).
+  Added after 10 grok.com tabs pinned a 16 GB Mac (each tab ~1 GB).
+- **Rate-limit handling:** the existing backoff never fired because `_safari_detect_error` matched only
+  "rate limit"/"too many requests" while grok actually says "N minutes before limit is gone / once it
+  resets." Added those markers + `_safari_rate_limit_wait_seconds()` (reads grok's stated reset, naps ≤15min
+  re-probing). Agents now WAIT instead of spinning at 0 cmds burning RAM. **Cause of the cap:** running
+  fleets with `--think` (reasoning model = tightest quota) exhausted even SuperGrok Heavy's hourly bucket.
+  Made `--think` a default with `THINK=0` opt-out.
+- **Unbuffered logs** (`python3 -u`) so `~/grok_sessions/*.out` stream live (were block-buffered → looked empty).
+- **Chat-trained Salehman:** `build_chat_dataset.py` extracted 289 scrubbed Saleh↔Claude pairs (0 secret
+  leaks, verified) → `dataset_combined.jsonl` (578 w/ persona style). Repointed both training kits'
+  `01_prepare_data.py` from `dataset_saleh_style.jsonl` → `dataset_combined.jsonl` (DATASET= override,
+  style fallback), and inject a `SALEHMAN_SYSTEM` persona system-turn into every example (520/520 verified)
+  so the fine-tune learns identity + voice, not just Q→A.
+**Result:** bridge `py_compile` clean, launcher `bash -n` clean; commits on `feat/effort-grok-tooling`.
+Grok-agent net output was low-value (2 usable tools `grok_cleanup.py`/`bundle_check.sh`, one gutted-file
+regression reverted, one hallucinated wrong-path file) — unsupervised Grok needs `git diff` review before
+keeping anything. Training upload to RunPod is owner-run (data-egress guard correctly blocks auto-upload of
+personal chat data).
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
@@ -28407,7 +27904,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: PROJECT_CONTEXT.md (278 lines) =====
+===== FILE: PROJECT_CONTEXT.md (292 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -28434,12 +27931,15 @@ I'll scaffold the iOS target.
 ## 1. What this app is
 
 **Salehman AI** is a native **macOS SwiftUI** desktop app: a multi-brain AI chat
-assistant. It can answer from several "brains" — Apple Intelligence (on-device),
-a local **Ollama** model (`qwen2.5-coder:7b`), or cloud providers (Claude, xAI
-Grok, Google Gemini, Groq, Mistral, Cerebras, OpenAI/Codex, GitHub Copilot,
-OpenRouter). It has a multi-agent pipeline, on-device tools (shell, mouse/keyboard
-control, vision, transcription, web), live audio transcription, a StockSage
-market-analysis subsystem, and persistent chat + long-term memory.
+assistant. It can answer from several "brains" — the **Salehman** chain (default:
+cloud-first NVIDIA-hosted DeepSeek → free frontier tiers → paid backstop, with a
+local MLX/Ollama floor), a local **Ollama** model (`qwen2.5-coder:7b`), local
+OpenAI-compatible servers (**Unsloth Studio**, **vLLM**), or cloud providers
+(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, DeepSeek, NVIDIA NIM,
+OpenAI/Codex, GitHub Copilot, OpenRouter). (Apple Intelligence was removed
+2026-06-08.) It has a multi-agent pipeline, on-device tools (shell, vision,
+transcription, web), live audio transcription, a StockSage market-analysis
+subsystem, and persistent chat + long-term memory.
 
 - **Language / runtime:** Swift 6 **language mode** (`SWIFT_VERSION = 6.0`, enforced as of 2026-06-09 — data races are compile errors, not warnings), `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target and, mirrored, the test targets. Off-main work is explicitly `nonisolated`/`nonisolated(unsafe)`.
   Pure utility statics are marked `nonisolated`.
@@ -28477,18 +27977,22 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `LLM/` — the brain layer (Chat B's lane)
 | File | Purpose |
 |---|---|
-| `LocalLLM.swift` | **The brain router** (896 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel) and `generateFreeAuto` (free parallel-race + local backstop). Apple Intelligence (Foundation Models) path lives here. |
+| `LocalLLM.swift` | **The brain router** (~1500 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
-| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/OpenAI/OpenRouter are thin configs of this. |
-| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient` (endpoint + model lists + Keychain account). |
+| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
+| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
+| `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain**: cloud-first provider chain + persona/system-prompt; `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
+| `MLXSalehmanEngine.swift` | Local MLX (Apple-Silicon) inference path for the fine-tuned Salehman weights. |
+| `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio `:8888`/`:8000`; `vllm serve` `:8000/v1`) as pinnable brains. |
+| `BrainAdapter.swift` / `OllamaBrainAdapter.swift` / `AnthropicBrainAdapter.swift` | `BrainAdapter` protocol + adapters — start of the data-driven brain registry (CODEBASE_REVIEW §3 R1). |
 | `GrokClient.swift` | xAI Grok (`api.x.ai`) — OpenAI-ish chat + SSE. |
 | `GeminiClient.swift` | Google Gemini (non-OpenAI shape: contents array, `?key=` param). |
 | `AnthropicClient.swift` | Claude Haiku via Anthropic Messages API. |
 | `OpenAIClient.swift` | The "Codex" brain → OpenAI chat completions. |
 | `CopilotClient.swift` | GitHub Copilot (OAuth device-flow, no API key). |
 | `KeychainStore.swift` | `SecItem*` Keychain wrapper. `Account` enum = one slot per provider. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. |
-| `MemoryManager.swift` | Actor: subscribes to memory-pressure + thermal notifications; `concurrencyLimit()` + `shouldRefuseHeavyModel()`; auto-evicts Ollama under pressure. |
-| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`). |
+| `MemoryManager.swift` | Actor: subscribes to memory-pressure + thermal notifications; instance `concurrencyLimit()` + pure static policy funcs (`concurrencyLimit(pressure:thermal:physicalGB:)`, `shouldRefuseHeavyModel(...)`); auto-evicts Ollama under pressure. |
+| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`/`symbol`). |
 
 ### `Agents/` — multi-agent pipeline (Chat A's lane)
 | File | Purpose |
@@ -28498,34 +28002,35 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `AgentRegistry.swift` | Per-agent execution input (Sendable) + handler registry. |
 | `Orchestrator.swift` | Top-level orchestration; reads run outcome for rating. |
 | `MissionMemory.swift` / `MissionPlan.swift` | Outcome memory + lightweight plan structs. |
-| `SelfImprove.swift` | Build→parse compiler errors→ask local model for a patch→apply with backup→rebuild. **Project-escape guarded** (`isInsideProject`, symlink-resolving). |
+| `SelfImprove.swift` | Self-patching **primitives**: compiler-error parsing (`parseErrors`), patch application with timestamped backups (`applyPatch`/`backup`), **project-escape guarded** (`isInsideProject`, symlink-resolving). The build→fix→rebuild loop that drove them went with the FM tool layer (2026-06-08); primitives are test-covered and kept. |
 
 ### `Tools/` — what the assistant can DO (security-sensitive)
 | File | Purpose |
 |---|---|
-| `ToolPolicy.swift` | **Gate:** whether external/non-local tools are allowed; the active tool set + instructions menu. |
+| `ToolPolicy.swift` | **Gate:** whether external/non-local tools are allowed (`isExternalAllowed`, `webToolsDisabledReason`) + the `CommandRisk` blocked/risky command vocabulary. |
 | `CommandApprovalCenter.swift` | Bridges background tool exec → UI approval; `confirmationEnabled` toggle. |
 | `ShellTool.swift` | Runs shell commands on the Mac (gated by approval). |
-| `MacControlTools.swift` | Mouse/keyboard control via CGEvent (needs Accessibility permission). |
 | `WebTools.swift` | DuckDuckGo search + page fetch. **SSRF-guarded** (`ssrfRejectionReason` blocks non-http(s) + private/loopback/link-local hosts). |
-| `VisionAnalyzer.swift` / `AnalyzeImageTool.swift` | On-device image understanding (Apple Vision). |
-| `TranscribeMediaTool.swift` | On-device audio/video → text. |
-| `CodeTool.swift` | Delegate coding to a local qwen2.5-coder model. |
-| `ImageGen.swift` | On-device image generation (Image Playground). |
-| `StockAnalysisTool.swift` / `StockSageMini.swift` / `StockSageTool.swift` | Saudi/TASI stock analysis tools. |
+| `VisionAnalyzer.swift` | On-device image understanding (Apple Vision: scene/text/barcodes). |
+| `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
+| `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
+| `StockSageMini.swift` | Canonical Saudi/TASI educational disclaimer (rendered by MarketsView). |
+
+*(The actual model-callable tools are defined inline in `LocalLLM`'s tool loop — see §5. The FM-era per-tool files — AnalyzeImageTool, TranscribeMediaTool, CodeTool, StockAnalysisTool, ImageGen, MacControlTools — were removed with the Apple-Intelligence layer / 2026-06-11 cleanup.)*
 
 ### `Views/` — UI (ContentView + SettingsView = Chat B's lane)
 | File | Purpose |
 |---|---|
 | `ContentView.swift` | The chat UI: message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. Presentation/input/focus/search only — the conversation + send pipeline live in `ChatViewModel`. |
 | `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
-| `SettingsView.swift` | Settings panel (1170 lines): Apple-Intelligence toggle, **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, performance/voice/privacy/status sections. |
-| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**6 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
+| `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. |
+| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |
-| `AgentsView.swift` | **Agents tab (⌘3)**: live agent status + Autonomous Mode loop. |
-| `MarketsView.swift` / `MarketsStub.swift` | **Markets tab (⌘4)** shell + placeholder store (Chat A). |
-| `ScratchpadView.swift` | **Notes tab (⌘5)** — notes + tasks UI over `ScratchpadStore`; same data the `capture_note`/`add_task`/… tools write. |
-| `KnowledgeView.swift` | **Knowledge tab (⌘6)** — private document Q&A: add files (button/drag-drop) or paste text, grounded answers w/ sources over `KnowledgeStore`; on-device-only generation; chat reaches it via `search_documents`. |
+| `CodeView.swift` / `CodeSyntaxView.swift` / `FileTree.swift` | **Code tab (⌘3)** — agentic coding workspace (file tree + syntax-highlighted editor). |
+| `AgentsView.swift` | **Agents tab (⌘4)**: live agent status + Autonomous Mode loop. |
+| `MarketsView.swift` / `MarketsStub.swift` | **Markets tab (⌘5)** shell + placeholder store (Chat A). |
+| `ScratchpadView.swift` | **Notes tab (⌘6)** — notes + tasks UI over `ScratchpadStore`; same data the `capture_note`/`add_task`/… tools write. |
+| `KnowledgeView.swift` | **Knowledge tab (⌘7)** — private document Q&A: add files (button/drag-drop) or paste text, grounded answers w/ sources over `KnowledgeStore`; on-device-only generation; chat reaches it via `search_documents`. |
 | `BottomShortcutBar.swift` | Always-visible footer of clickable shortcut hints (⌘K · ⌘N · ⌘J · ⌘/ · ⌘,); flips the same `AppState` flags as the menu bar. |
 | `VoiceModeView.swift` | **Hands-free Voice (⌘J)** — full-screen dictate→answer→speak loop (`Voice/VoiceSession`); "Save to Notes" writes the transcript to `ScratchpadStore`. |
 | `OnboardingView.swift` / `CommandPalette.swift` (⌘K) / `ShortcutsView.swift` (⌘/) | First-run welcome; searchable command palette; keyboard-shortcuts cheat sheet. |
@@ -28535,10 +28040,11 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 
 ### `Persistence/`, `Media/`, `StockSage/`, `Knowledge/`, `Voice/`, `DesignSystem/`
 - **Persistence:** `Attachments.swift` (attached items + screen capture), `MemoryStore.swift` (long-term user facts), `PromptLibrary.swift` (reusable prompts), `ScratchpadStore.swift` (notes + tasks; `@MainActor ObservableObject`, JSON in App Support).
-- **Knowledge:** `KnowledgeStore.swift` (`@unchecked Sendable` doc vault — chunk + keyword-primary/`NLEmbedding`-boosted search, JSON-persisted) + `SearchDocumentsTool.swift` (the `search_documents` FM tool).
+- **Knowledge:** `KnowledgeStore.swift` (`@unchecked Sendable` doc vault — chunk + keyword-primary/`NLEmbedding`-boosted search, JSON-persisted; the `search_documents` tool is implemented inline in `LocalLLM.runLocalTool`) + `ExternalToolsKnowledge.swift`.
 - **Voice:** `VoiceSession.swift` / `VoiceTurn.swift` — hands-free dictate→LocalLLM→TTS loop driving `VoiceModeView`.
 - **Media:** `LiveTranscriber.swift` (system-audio live transcription), `MediaTranscribe.swift`/`Transcriber.swift` (file transcription), `SpeechIn.swift` (mic dictation), `SpeechOut.swift` (TTS).
-- **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/BriefingTool` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped).
+- **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/Portfolio` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped). `ScreenAnalysis` is built-but-unwired (pending a chat-tool hookup decision).
+- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **setting exists in Settings but is not yet wired into the answer path**) + `SelfCritique.swift` (refine loop, used by Effort).
 - **DesignSystem:** `DesignSystem.swift` — `DS.*` tokens, motion curves (`DS.Motion.snappy/smooth/…`), `Bezel`/`Eyebrow`/`SuggestionCard`.
 
 ---
@@ -28546,10 +28052,12 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ## 3. The brain system (the heart of the app)
 
 Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned: `.auto`,
-  `.freeAuto`, `.apple`, `.ollama`, `.claudeHaiku`, `.grok`, `.gemini`, `.groq`,
-  `.mistral`, `.cerebras`, `.codex`, `.copilot`, `.openRouter`, `.ensemble`.
-  Persisted under `Keys.brainPreference`.
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
+  `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
+  `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
+  `.openRouter`, `.deepSeek`, `.ensemble`, **`.salehman` (the default)**,
+  `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
   live availability), used for the header label/dot.
 
@@ -28561,7 +28069,7 @@ Two enums drive everything:
   then the single-brain `*Allowed` gates (`claudeAllowed`, `grokAllowed`, …).
 - ⚠️ **`generate` is NOT on-device** — it routes to the pinned (possibly paid cloud)
   brain. Features that PROMISE privacy must use **`generateOnDevice(_:maxTokens:) -> String?`**
-  (local tier only: Apple Intelligence → Ollama; `nil` if neither). The Knowledge
+  (local tier only; `nil` if no local brain is reachable). The Knowledge
   vault uses it (added 2026-06-05 after an audit caught the leak — see DEVELOPMENT_LOG).
 - `AgentPipeline.run` short-circuits ensemble/freeAuto BEFORE spawning the agent
   team (those modes ask the raw prompt, not a 15-agent pipeline).
@@ -28573,8 +28081,8 @@ Two enums drive everything:
 - **Free · Auto (`.freeAuto`)** — `generateFreeAuto`: races the *configured free*
   cloud brains (Groq/Cerebras/Gemini/Mistral/OpenRouter) in parallel, returns the
   **first usable** answer (a 429/error/empty reply loses the race via
-  `isUsableFreeAnswer`); if all free cloud brains fail it falls back to LOCAL
-  (Apple → Ollama) **sequentially** (never concurrent — preserves the RAM
+  `isUsableFreeAnswer`); if all free cloud brains fail it falls back to the LOCAL
+  tier **sequentially** (never concurrent — preserves the RAM
   guardrail). Effectively never blocked. Never uses paid brains.
 
 ---
@@ -28592,6 +28100,8 @@ Two enums drive everything:
 | OpenAI / Codex | `OpenAIClient` | `api.openai.com/v1` | `openai-api-key` | **paid** (needs billing); `gpt-4o-mini` |
 | GitHub Copilot | `CopilotClient` | Copilot API | `copilot-github-token` | OAuth device-flow (subscription) |
 | OpenRouter | `OpenRouterClient` | `openrouter.ai/api/v1` | `openrouter-api-key` | **free `:free` models**; default `openai/gpt-oss-120b:free` |
+| DeepSeek | `DeepSeekClient` | `api.deepseek.com/v1` | `deepseek-api-key` | pay-as-you-go (very cheap); `deepseek-chat` / `deepseek-reasoner` |
+| NVIDIA NIM | `NvidiaClient` | `integrate.api.nvidia.com/v1` | `nvidia-api-key` | **free tier** — hosts real DeepSeek V4; default `deepseek-ai/deepseek-v4-flash` |
 
 ⚠️ **Cloud model IDs rotate.** Defaults are best-effort; verify against each
 provider's `GET /v1/models`. The app's `*ModelCurrent` accessors fall back to the
@@ -28637,7 +28147,8 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 **Grok Tab A (2026-06-06) added 8 new suites per CODEBASE_REVIEW.md §4 (start of coverage for highest-blast-radius logic):**
 - Direct (enabled, green): `KnowledgeRAGTests` (chunk/keyword/cosine/search), `ShellSecurityTests` (isBlocked + run harness + looksRisky limits), `WebToolsOfflineGateTests` (FM tool gates + decodeDDG/stripHTML), `SelfImprovePatchTests` (applyPatch/parseErrors/isInside/backup — locks the double-patch-original fix).
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
-- Refactor-dependent (disabled with header, per COORDINATION): `BrainRoutingDispatchTests`, `PersistenceRoundTripTests`, `SettingsBrainReadyTests` — wait for Tab B (BrainAdapter registry + JSONFileStore + brainReady extract).
+- `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
+- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests`, `SettingsBrainReadyTests` — wait for the BrainAdapter registry + brainReady extract.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
@@ -28648,10 +28159,10 @@ Tests run **in parallel** — never have two tests mutate the same global (`User
 **Fixed & shipped:** WebTools SSRF guard; SelfImprove symlink escape; ensemble
 "Not working" false-negative; stale Groq/Cerebras/OpenRouter model IDs.
 
-**Open / flagged for the other session (Agents lane):**
-- `AnalyzeImageTool` / `TranscribeMediaTool` follow symlinks (arbitrary file read).
-- `AgentPipeline.lastOutcome` is `nonisolated(unsafe)` → data race with `Orchestrator`.
-- `AgentRegistry` first-run registration race (`nonisolated(unsafe)` + unguarded once-init).
+**Since resolved (verified 2026-06-11):**
+- `AnalyzeImageTool` / `TranscribeMediaTool` symlink follow — moot: both files were removed with the FM tool layer.
+- `AgentPipeline.lastOutcome` data race — now `NSLock`-guarded (`_lastOutcome` + `lastOutcomeLock`).
+- `AgentRegistry` first-run registration race — now a thread-safe `registerToken` static-let once-init.
 
 **Recommendations (not yet applied):**
 - `CommandApprovalCenter.alwaysAllow()` disables the shell gate in one click with
@@ -28687,7 +28198,7 @@ _Keep this file current. Last refreshed: 2026-06-05._
 The Effort control in Salehman AI/Intelligence/Effort.swift provides runtime-adjustable reasoning depth, token budget, and computational effort for the intelligence layer. It enables the orchestrator (and agents) to scale effort per-task — low for quick factual answers, high for complex multi-step reasoning or self-critique. This is a core Phase 1 deliverable for quality-over-quantity intelligence.
 
 
-===== FILE: VERIFICATION.md (90 lines) =====
+===== FILE: VERIFICATION.md (91 lines) =====
 # 🔬 VERIFICATION — turning estimates into measured evidence
 
 The session-time code reviews include numbers (perf "high-impact" gains, WCAG
@@ -28706,6 +28217,7 @@ those in Instruments turns "estimated gains" into measured `μs`/`ms` per brain.
 
 **Subsystem:** `com.salehman.ai` · **Category:** `Brain` · **Names:**
 - `freeAuto` — wraps `generateFreeAuto` (the parallel race; includes local backstop)
+- `freeCoding` / `cloudCoding` — wrap the coding-chain modes
 - `ensemble` — wraps `generateEnsemble` (the all-brains fan-out)
 
 (Per-brain intervals inside the race would let you see *which* brain won by how much. They aren't wired yet — would need to add a `signposter.beginInterval("freeAuto.brain")` around each `entry.run()` call site, tagged with the brain name. Bounded follow-up.)
@@ -28717,7 +28229,7 @@ those in Instruments turns "estimated gains" into measured `μs`/`ms` per brain.
 4. Choose the **Logging** template (signposts) or **Points of Interest**.
 5. In the target chooser pick the running **Salehman AI** process.
 6. Click ⏺ Record. In the app, send a message that exercises the path you want to measure (e.g. pin Free · Auto + send "hi").
-7. Stop after ~5 s. In the trace, set the filter to `subsystem == "SA.Salehman-AI"`.
+7. Stop after ~5 s. In the trace, set the filter to `subsystem == "com.salehman.ai"`.
 8. Inspect interval durations per name (and per brain for `freeAuto.brain`). Compare across brains, paid vs. free, race-winner vs. losers, before/after a change.
 
 **Worth measuring first:**
@@ -28748,7 +28260,7 @@ These need a real screen-reader pass to verify.
    - **Tab bar pill:** "Chat, tab, selected" / "Agents, tab" — announces label + selection.
    - **Brand:** announces "Salehman AI" (the sparkles logo is hidden as decorative).
    - **Market dot:** "Market, Open" or "Market, Closed".
-   - **Brain grid cell:** "Apple Intelligence, Connected, button, selected" (or "Offline").
+   - **Brain grid cell:** "Salehman, Connected, button, selected" (or "Offline") — same pattern for Ollama and each cloud brain.
    - **Message bubble:** "You said: <your text>" or "Assistant replied: <reply>" — single utterance.
    - **Composer text field:** announces the placeholder when empty.
    - **Approval modal:** "Run this command? Command to run: <command>" then buttons: "Cancel", "Run, runs the command shown above on your Mac", "Always run without asking, disables the approval prompt for all future commands".

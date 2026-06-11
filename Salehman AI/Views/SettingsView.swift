@@ -343,7 +343,6 @@ struct SettingsView: View {
 
                     section("Capabilities", nil) {
                         toggle("Web access", "Search & read the web", "globe", $settings.webAccess)
-                        toggle("Local coding model", "Use the local qwen2.5-coder model for code", "chevron.left.forwardslash.chevron.right", $settings.useCodeModel)
                         toggle("Image vision", "Understand images with qwen2.5vl", "eye", $settings.useVision)
                         toggle("Autonomous Mode",
                                "Agents can chain tasks, self-correct, and continue working with minimal input",

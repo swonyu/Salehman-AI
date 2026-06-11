@@ -21,6 +21,6 @@ def cleanup(days: int = 7) -> None:
     print(f"Removed {len(removed)} file(s) older than {days} days from ~/grok_sessions:")
     for name in removed:
         print(f"  - {name}")
-if name == "main":
+if __name__ == "__main__":
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 7
     cleanup(days)

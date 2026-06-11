@@ -10,7 +10,7 @@ import Foundation
 // and calling start()/toggle() would fire real Screen-Recording + Speech (TCC)
 // permission prompts and leave the shared singleton mid-capture. So those cases
 // are honestly `.disabled` until a seam exists (matching BrainRoutingDispatch /
-// PersistenceRoundTrip / SettingsBrainReady), rather than shipped as green
+// SettingsBrainReady), rather than shipped as green
 // tautologies like `#expect(!isRunning || isRunning)` (see the 2026-06-06 review).
 // One safe, falsifiable contract is kept active.
 

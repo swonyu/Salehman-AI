@@ -339,8 +339,7 @@ enum AgentPipeline {
         // and the per-agent handlers are looked up from AgentRegistry.
         let plan = MissionPlan(mission: mission,
                                successCriteria: ["Directly answers the user", "Factually correct", "Clear and complete"],
-                               keyRisks: ["Hallucination", "Stale info without web access", "Over-coding a non-code request"],
-                               recommendedAgents: specs.map { $0.name })
+                               keyRisks: ["Hallucination", "Stale info without web access", "Over-coding a non-code request"])
         var memory = MissionMemory(missionPlan: plan)
         AgentRegistry.registerDefaultsOnce()
 
@@ -447,7 +446,7 @@ enum AgentPipeline {
 
         // Record the outcome so MissionMemory/Outcome aren't dead — Orchestrator reads it.
         let rating: Double = (LocalLLM.isAvailable && !finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ? 1.0 : 0.0
-        memory.recordOutcome(Outcome(successRating: rating, notes: memory.getSummary()))
+        memory.recordOutcome(Outcome(successRating: rating))
         lastOutcome = memory.outcome
 
         // (Conversation recording moved to `run()` so ALL modes — not just this

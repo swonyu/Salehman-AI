@@ -62,6 +62,9 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandMenu("View") {
+                Button("Command Palette…") { app.showCommandPaletteRequested = true }
+                    .keyboardShortcut("k", modifiers: .command)
+                Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Chat") { app.selectedTab = .chat }
