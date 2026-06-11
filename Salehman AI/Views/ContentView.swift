@@ -20,6 +20,8 @@ struct ContentView: View {
     /// carry the owner's history, hiding it otherwise).
     var qaForceEmptyState = false
     @State private var mission: String = ""
+    /// Hover highlight in the `/`-command menu (id of the hovered row).
+    @State private var hoveredChatSlash: String? = nil
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
@@ -584,13 +586,62 @@ struct ContentView: View {
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
-    /// landing surfaces always agree about the time of day.
-    private var greetingLine: String {
-        switch Calendar.current.component(.hour, from: Date()) {
+    /// landing surfaces always agree about the time of day. Pure on `hour` so
+    /// tests can pin every bucket boundary without faking the clock.
+    nonisolated static func greeting(hour: Int) -> String {
+        switch hour {
         case 5..<12:  return "Good morning, Saleh"
         case 12..<17: return "Good afternoon, Saleh"
         case 17..<22: return "Good evening, Saleh"
         default:      return "Working late, Saleh?"
+        }
+    }
+    private var greetingLine: String {
+        Self.greeting(hour: Calendar.current.component(.hour, from: Date()))
+    }
+
+    // MARK: Slash commands (type `/` in the composer — Code-tab parity)
+    private static let chatSlashCommands: [ChatSlashCommand] = [
+        .init(id: "summarize", icon: "list.bullet.rectangle",
+              blurb: "Summarize this conversation",
+              kind: .template("Summarize our conversation so far — key points, decisions, and open questions.")),
+        .init(id: "continue", icon: "arrow.forward",
+              blurb: "Ask it to keep going",
+              kind: .template("Continue.")),
+        .init(id: "clear", icon: "square.and.pencil",
+              blurb: "Start a new chat",
+              kind: .action("clear")),
+        .init(id: "copy", icon: "doc.on.clipboard",
+              blurb: "Copy conversation as Markdown",
+              kind: .action("copy")),
+        .init(id: "export", icon: "square.and.arrow.down",
+              blurb: "Save conversation as Markdown…",
+              kind: .action("export")),
+        .init(id: "find", icon: "magnifyingglass",
+              blurb: "Find in conversation",
+              kind: .action("find")),
+        .init(id: "voice", icon: "waveform.badge.mic",
+              blurb: "Open live voice mode",
+              kind: .action("voice")),
+    ]
+    private var chatSlashMatches: [ChatSlashCommand] {
+        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands)
+    }
+    private func applyChatSlash(_ cmd: ChatSlashCommand) {
+        switch cmd.kind {
+        case .template(let t):
+            mission = t
+            inputFocused = true
+        case .action(let a):
+            mission = ""
+            switch a {
+            case "clear":  newChat()
+            case "copy":   ChatExporter.copyToPasteboard(vm.messages)
+            case "export": ChatExporter.savePanel(vm.messages)
+            case "find":   withAnimation(DS.Motion.snappy) { searching = true }
+            case "voice":  showLive = true
+            default: break
+            }
         }
     }
 
@@ -604,19 +655,61 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
+            // Slash-command menu — floats above the composer while typing `/…`
+            // (Code-tab parity, same matcher rules; pinned by
+            // ChatComposerLogicTests). `↵` picks the top row.
+            if !chatSlashMatches.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(chatSlashMatches) { cmd in
+                        Button { applyChatSlash(cmd) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: cmd.icon).font(.system(size: 12))
+                                    .foregroundStyle(DS.Palette.accent).frame(width: 16)
+                                Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
+                                Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                if cmd.id == chatSlashMatches.first?.id {
+                                    Text("↵").font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                            }
+                            .padding(.horizontal, 11).padding(.vertical, 7)
+                            .background(hoveredChatSlash == cmd.id ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
+                    }
+                }
+                .padding(5)
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .frame(maxWidth: 520, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .accessibilityIdentifier("chat.composer.slashmenu")
+            }
+
             // ONE unified composer, Claude layout (matches the Code tab's
             // owner-approved pattern): the text field rides ON TOP, a quiet
             // controls row sits beneath — + menu (attachments AND prompts,
             // halving the old left-side chrome), then mic and send at the
             // trailing edge.
             VStack(alignment: .leading, spacing: 6) {
-                TextField(speechIn.isListening ? "Listening… speak now" : "Message Salehman AI…",
+                TextField(speechIn.isListening ? "Listening… speak now"
+                          : "Message Salehman AI…   ( / for commands )",
                           text: $mission, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...8)
                     .focused($inputFocused)
-                    .onSubmit { submit(mission) }
+                    // Enter picks the top `/`-command while the menu is open;
+                    // otherwise sends.
+                    .onSubmit {
+                        if let top = chatSlashMatches.first { applyChatSlash(top) }
+                        else { submit(mission) }
+                    }
                     // ⌘-less power recall: ↑ in an EMPTY composer pulls back
                     // your last message for editing/resending.
                     .onKeyPress(.upArrow) {
@@ -624,6 +717,14 @@ struct ContentView: View {
                               let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
                         mission = last
                         return .handled
+                    }
+                    // Esc: stop a running generation first; otherwise dismiss a
+                    // dangling slash query. Plain Esc with idle composer stays
+                    // with the system (sheets, focus).
+                    .onKeyPress(.escape) {
+                        if vm.isRunning { vm.stop(); return .handled }
+                        if !chatSlashMatches.isEmpty { mission = ""; return .handled }
+                        return .ignored
                     }
                     .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
@@ -1598,5 +1699,27 @@ struct ApprovalCard: View {
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
         }
+    }
+}
+
+/// A `/`-command for the chat composer (Code-tab parity). Internal (not
+/// private) so `ChatComposerLogicTests` can pin the matcher hermetically.
+struct ChatSlashCommand: Identifiable {
+    enum Kind { case template(String), action(String) }
+    let id: String          // trigger without the slash, e.g. "copy"
+    let icon: String
+    let blurb: String
+    let kind: Kind
+    var trigger: String { "/" + id }
+
+    /// The menu shows only while the FIRST token is being typed: a leading
+    /// `/`, no space/newline yet — so "/tests write…" or normal prose never
+    /// triggers it. Empty query (just "/") matches everything. Pure on its
+    /// inputs; the single source of truth for both the menu and ↵-pick.
+    nonisolated static func matches(for input: String,
+                                    in commands: [ChatSlashCommand]) -> [ChatSlashCommand] {
+        guard input.hasPrefix("/"), !input.contains(" "), !input.contains("\n") else { return [] }
+        let q = input.dropFirst().lowercased()
+        return commands.filter { q.isEmpty || $0.id.hasPrefix(q) }
     }
 }

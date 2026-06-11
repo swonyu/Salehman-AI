@@ -1401,3 +1401,17 @@ task (non-Sendable value can't be a shared static under default MainActor isolat
 **Verified:** seeded `code_history.json` → relaunch → screenshot shows the conversation
 restored (user bubble + assistant markdown) — pixels, not claims.
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-11 (night) — marathon slice 1: slash commands in the chat composer
+**What & why:** Owner's 3h chat marathon, slice 1. Typing `/` in the chat composer now opens
+the Code tab's command menu (same matcher rules, same visuals): `/summarize` `/continue`
+(templates) + `/clear` `/copy` `/export` `/find` `/voice` (actions wired to existing chat
+capabilities). ↵ picks the top row; Esc stops a running generation, else dismisses a dangling
+slash query. Matcher is a pure `nonisolated static` (`ChatSlashCommand.matches`) — single
+source of truth for menu + ↵-pick; `greeting(hour:)` extracted pure for the same reason. NEW
+`ChatComposerLogicTests.swift`: 6 matcher tests (prose/space/newline guards, case-insensitive
+prefix) + 9 greeting boundary cases.
+**Files:** `Views/ContentView.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`;
+bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). Tests target can't compile in my sandbox —
+build-capable session asked on the board to include AITests next run.
