@@ -1520,6 +1520,17 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
 
+## 2026-06-11 · 14B-in-app items 4–6: tool-loop warm-keep + round progress, local context diet, tests
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AI/Agents/AgentRegistry.swift`, `Salehman AITests/FourteenBReadinessTests.swift` (new), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Board items 4–6 (owner: "give yourself and other claude tasks that help salehman 14b in the app").
+- **Tool-loop budgets (item 4):** timeouts were already fine (chatTurn 300 s, compat 120 s); the real bugs: (a) `chatOllamaWithTools` hardcoded `keep_alive:"30s"`, bypassing `Generation.tuned(for:)` — the 14B was evicted 30 s after any tool-built reply and re-paid its ~9 GB load on the next message. Now uses tuned keep-alive (salehman → 5 m) with num_ctx floored at 4096 (tool transcripts are fat; tuned's 2048 would truncate them on small models). (b) Up to 8 silent 30–90 s rounds. Added `MissionProgress.noteToolRound(_:of:)` — annotates the running step's adapted title ("… · tool round 3/8"), idempotent, zero UI changes, no-op outside team missions; both tool loops emit it per round.
+- **Local context diet (item 5):** real worst case measured: 8 turns × 4,000 chars/turn = 32k chars ≈ 8k tokens — double num_ctx 4096, and Ollama evicts the OLDEST tokens on overflow (persona dies first). `AgentInput` now carries the resolved `brain`; on serial-local brains the 2-agent handlers trim history via new pure `AgentPipeline.recentTail` (6,000-char budget, most-recent turns, line-boundary cut) and context to 1,500 chars before prompt build. New shared predicate `isSerialLocalBrain` consolidates `effectiveCap` + the adaptTitles skip + the diet (one place to add a future serial brain). Cloud brains keep full history; 15-agent set untouched.
+- **Tests (item 6):** `FourteenBReadinessTests.swift` — `Generation.tuned` knobs (salehman 5m/4096 vs others 30s/2048 + default-name fallback), `recentTail` edge cases, `noteToolRound` idempotence/no-op. `.serialized`; sole test mutator of `Keys.customModel`; sole test user of `MissionProgress` (grep-verified). `effectiveCap`/`isTrivialMission` already covered by existing suites — not duplicated.
+
+**Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

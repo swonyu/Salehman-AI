@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 11:19 +03 · Swift files: 128 · Swift LOC: 23884_
+_Generated: 2026-06-11 11:39 +03 · Swift files: 129 · Swift LOC: 24092_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (673 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (717 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -148,6 +148,19 @@ final class MissionProgress: ObservableObject {
     }
     func setRunning(_ i: Int) { if steps.indices.contains(i) { steps[i].status = .running } }
     func setDone(_ i: Int)    { if steps.indices.contains(i) { steps[i].status = .done } }
+
+    /// Surface tool-loop progress on the RUNNING step's title ("… · tool round
+    /// 3/8"). On the 9 GB 14B a single tool round can take 30–90 s, so an
+    /// 8-round chain is minutes of otherwise-silent work — this reuses the
+    /// existing adapted-title channel (zero new UI) to show life. Idempotent:
+    /// re-noting replaces the previous round suffix instead of stacking. No-ops
+    /// when no team mission is running (e.g. the trivial fast-path).
+    func noteToolRound(_ round: Int, of cap: Int) {
+        guard let i = steps.firstIndex(where: { $0.status == .running }) else { return }
+        let current = steps[i].adapted ?? steps[i].name
+        let base = current.components(separatedBy: " · tool round").first ?? current
+        steps[i].adapted = "\(base) · tool round \(round)/\(cap)"
+    }
     /// `text` is the FULL cumulative answer so far. Publishing it on every token
     /// re-runs Markdown parsing over the whole string each time (O(n²) on the main
     /// thread → visible jank on long replies). Throttle the @Published write to
@@ -452,10 +465,9 @@ enum AgentPipeline {
         // non-blocking from the orchestrator's perspective, but on Ollama / MLX
         // Salehman / Unsloth Studio the model server is serial, so this extra
         // generate() ends up QUEUED ahead of the user's first real agent call
-        // and directly delays the answer. Same predicate as `effectiveCap`'s
-        // serial-brain branch so they stay in lockstep when a new serial brain
-        // is added.
-        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm)
+        // and directly delays the answer. Shares `isSerialLocalBrain` with
+        // `effectiveCap` + the context diet so a new serial brain updates all.
+        let isSerialLocal = Self.isSerialLocalBrain(brain)
         if specs.count > 1 && !isSerialLocal {
             Task.detached(priority: .utility) {
                 let map = await adaptTitles(mission: mission, names: specs.map { $0.name })
@@ -535,7 +547,7 @@ enum AgentPipeline {
                     }
                     let input = AgentInput(
                         mission: mission, history: history, context: phaseContext,
-                        onStream: stream)
+                        brain: brain, onStream: stream)
                     group.addTask {
                         await MainActor.run { MissionProgress.shared.setRunning(i) }
                         // `??` uses an autoclosure that can't contain `await`,
@@ -614,6 +626,16 @@ enum AgentPipeline {
     /// chars (likely a paste/real ask), digits or code punctuation (likely a
     /// task), or >2 words that aren't a known greeting phrase. When in doubt it
     /// returns false (full pipeline). Pure + nonisolated → unit-testable.
+    /// Single-instance local servers (Ollama qwen-coder, the user's own
+    /// `.salehman` model, and the OpenAI-compatible Unsloth-Studio / vLLM
+    /// servers) all run serially on the same shared-RAM box — N parallel
+    /// requests would queue or OOM. The ONE predicate behind `effectiveCap`,
+    /// the adaptTitles skip, and the local context diet, so a new serial brain
+    /// added here updates all three behaviors in lockstep.
+    nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+    }
+
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL
     /// execution (cap 1) regardless of the memory-based `baseCap` — fanning many
     /// simultaneous inference requests at a multi-GB-resident model can push an
@@ -621,11 +643,33 @@ enum AgentPipeline {
     /// Other brains use the memory-derived cap (floored at 1). Pure + nonisolated
     /// so the OOM-prevention guarantee is unit-testable and won't silently regress.
     nonisolated static func effectiveCap(brain: LocalLLM.Brain, baseCap: Int) -> Int {
-        // Single-instance local servers (Ollama qwen-coder, the user's own
-        // `.salehman` model, and the OpenAI-compatible `.unslothStudio`
-        // server) all run serially — N parallel requests would queue or OOM
-        // on the same shared-RAM box.
-        (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm) ? 1 : max(1, baseCap)
+        isSerialLocalBrain(brain) ? 1 : max(1, baseCap)
+    }
+
+    // MARK: - Local context diet (num_ctx 4096)
+    //
+    // The rolling transcript caps each TURN at 4,000 chars × 8 turns — worst
+    // case 32k chars ≈ 8k tokens, double a local model's num_ctx 4096. Ollama
+    // drops the OLDEST tokens on overflow, which silently evicts the system
+    // prompt/persona first. So when the brain is a serial LOCAL model, the
+    // 2-agent path trims its inputs to these budgets BEFORE the prompt is
+    // built (cloud brains keep the full history — they have the context for it).
+
+    /// Char budget for conversation history on a local 4096-ctx brain
+    /// (~1.5k tokens), leaving room for persona + tool specs + answer.
+    nonisolated static let localHistoryBudget = 6_000
+    /// Char budget for phase context on a local 4096-ctx brain.
+    nonisolated static let localContextBudget = 1_500
+
+    /// Most-recent suffix of a transcript within `maxChars`, cut at a line
+    /// boundary (turns are "Role: text" lines) so no turn is sliced mid-thought.
+    /// A single over-budget line falls back to a raw char cut — never empty.
+    nonisolated static func recentTail(_ text: String, maxChars: Int) -> String {
+        guard text.count > maxChars else { return text }
+        let tail = String(text.suffix(maxChars))
+        guard let nl = tail.firstIndex(of: "\n") else { return tail }
+        let cut = String(tail[tail.index(after: nl)...])
+        return cut.isEmpty ? tail : cut
     }
 
     nonisolated static func isTrivialMission(_ mission: String) -> Bool {
@@ -767,7 +811,7 @@ enum AgentPipeline {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentRegistry.swift (92 lines) =====
+===== FILE: Salehman AI/Agents/AgentRegistry.swift (105 lines) =====
 ```swift
 import Foundation
 
@@ -777,6 +821,7 @@ struct AgentInput: Sendable {
     let mission: String
     let history: String
     let context: String     // built from MissionMemory.buildContext(...)
+    let brain: LocalLLM.Brain   // resolved once per mission; drives the local context diet
     let onStream: @Sendable (String) -> Void   // no-op for non-final agents
 }
 
@@ -820,6 +865,18 @@ struct AgentRegistry {
     private nonisolated static let registerToken: Void = {
         for spec in AgentDefinitions.pipeline {
             register(name: spec.name) { input in
+                // Local context diet: a serial local brain runs at num_ctx 4096
+                // (~16k chars); the full 8-turn transcript can be 32k. Trim to
+                // the most-recent budget so Ollama never silently evicts the
+                // system prompt. Cloud brains keep everything — they have room.
+                let dieted = AgentPipeline.isSerialLocalBrain(input.brain)
+                let history = dieted
+                    ? AgentPipeline.recentTail(input.history, maxChars: AgentPipeline.localHistoryBudget)
+                    : input.history
+                let context = dieted
+                    ? String(input.context.prefix(AgentPipeline.localContextBudget))
+                    : input.context
+
                 if spec.usesTools {
                     // Tool-calling path: `LocalLLM.chat` deliberately takes the
                     // bare message so the model can decide to invoke tools. But
@@ -828,7 +885,7 @@ struct AgentRegistry {
                     // other folder" lose their antecedent on the one agent that
                     // actually runs terminal commands. Prepend both as a
                     // preamble; the model still sees a clear "Request:" line.
-                    let h = input.history, c = input.context
+                    let h = history, c = context
                     let m: String
                     if h.isEmpty && c.isEmpty {
                         m = input.mission
@@ -847,14 +904,14 @@ struct AgentRegistry {
                     // server-side prefix caching, folded in for the rest — instead of
                     // re-sending the whole history inline on every turn.
                     let body = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                         history: "", context: input.context)
+                                                         history: "", context: context)
                     return await LocalLLM.generateStreaming(body, maxTokens: 700,
-                                                            cachePrefix: input.history) { partial in
+                                                            cachePrefix: history) { partial in
                         input.onStream(partial)
                     }
                 }
                 let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                       history: input.history, context: input.context)
+                                                       history: history, context: context)
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
             }
         }
@@ -4463,7 +4520,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1896 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1908 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5730,12 +5787,18 @@ enum LocalLLM {
         // Terminal is always available; web tools only when external access is on
         // (and not Offline mode) — same gate as the FM web tools.
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
+        // Per-model knobs: the user's own 14B stays warm 5 min (re-paying its
+        // ~9 GB load mid-conversation is the single worst local latency hit);
+        // smaller models keep the RAM-lean 30 s eviction. num_ctx floors at
+        // 4096 regardless — tool transcripts (persona + specs + results) are
+        // fat, and `tuned`'s 2048 default would truncate them for small models.
+        let gen = OllamaClient.Generation.tuned(for: model)
         // Build the /api/chat body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the nonisolated client.
         func bodyData(includeTools: Bool) -> Data? {
             var body: [String: Any] = ["model": model, "messages": messages,
-                                       "stream": false, "keep_alive": "30s",
-                                       "options": ["num_ctx": 4096]]
+                                       "stream": false, "keep_alive": gen.keepAlive,
+                                       "options": ["num_ctx": max(gen.numCtx, 4096)]]
             if includeTools { body["tools"] = toolSpecs }
             return try? JSONSerialization.data(withJSONObject: body)
         }
@@ -5746,7 +5809,10 @@ enum LocalLLM {
         // cap-out returns real content instead of that bare message.
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // A round on the 14B can take 30–90 s — show life on the running
+            // team step ("· tool round N/8"). No-op outside team missions.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -5849,7 +5915,10 @@ enum LocalLLM {
         // 5 rounds was too low and surfaced "(Reached the tool-call limit.)".
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Same round-progress note as the Ollama loop — a local Unsloth
+            // Studio / vLLM server can be just as slow per round as Ollama.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -12435,7 +12504,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1174 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1197 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12644,6 +12713,7 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -13230,6 +13300,17 @@ struct CodeView: View {
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
+                // Which LOCAL model is actually serving (only shown when Salehman has
+                // no cloud configured, so the local floor is what answers): the owner's
+                // own fine-tune gets the accent — a fallback coder stays grey. Makes
+                // "is the real salehman14b active?" visible at a glance.
+                if let m = localServingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
@@ -13240,6 +13321,17 @@ struct CodeView: View {
         .foregroundStyle(.secondary)
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        // Refresh the serving-model suffix when the tab appears or the brain changes.
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Resolve which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers).
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            localServingModel = nil; return
+        }
+        localServingModel = await OllamaClient.activeChatModel()
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
@@ -13549,7 +13641,7 @@ struct CodeView: View {
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the only brain is the local qwen2.5-coder — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
                 To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
                 """
@@ -21235,6 +21327,126 @@ struct EnsembleRoutingTests {
 }
 ```
 
+===== FILE: Salehman AITests/FourteenBReadinessTests.swift (116 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - 14B readiness — per-model knobs, context diet, tool-round notes
+//
+// Written for the 9 GB `salehman` fine-tune landing on this Mac: the knobs that
+// keep it warm, the budgets that keep its 4096-token context from silently
+// evicting the persona, and the progress note that keeps slow tool rounds
+// visible. (`effectiveCap` / `isTrivialMission` are already pinned by
+// ToolLoopTests / AgentPipelineConcurrencyTests / TrivialMissionTests.)
+//
+// `.serialized` + save/restore: `tunedKnobs…` mutate the global UserDefaults
+// key `Keys.customModel`. This file is the SOLE test mutator of that key
+// (verified 2026-06-11) — don't write it from another suite without
+// serializing against this one.
+
+@Suite(.serialized)
+struct FourteenBReadinessTests {
+
+    /// Run `body` with the custom-model-name key saved and restored.
+    private func withSavedModelKey(_ body: () -> Void) {
+        let key = AppSettings.Keys.customModel
+        let prior = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        body()
+    }
+
+    // MARK: Generation.tuned(for:) — the user's own model stays warm
+
+    @Test func tunedKnobsKeepTheUsersOwnModelWarm() {
+        withSavedModelKey {
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let gen = OllamaClient.Generation.tuned(for: "salehman14b")
+            // 5-minute keep-alive: re-paying the ~9 GB load mid-conversation is
+            // the single worst local latency hit. 4096 ctx matches its Modelfile.
+            #expect(gen.keepAlive == "5m")
+            #expect(gen.numCtx == 4096)
+        }
+    }
+
+    @Test func tunedKnobsStayRAMLeanForOtherModels() {
+        withSavedModelKey {
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let gen = OllamaClient.Generation.tuned(for: "qwen2.5-coder:7b")
+            // Small models keep the laptop-friendly defaults — evict fast, small KV.
+            #expect(gen.keepAlive == "30s")
+            #expect(gen.numCtx == OllamaClient.defaultNumCtx)
+        }
+    }
+
+    @Test func tunedKnobsFollowTheDefaultModelName() {
+        withSavedModelKey {
+            // Key unset → customModelNameCurrent defaults to "salehman" — the
+            // name the fine-tune ships under (`ollama create salehman …`).
+            UserDefaults.standard.removeObject(forKey: AppSettings.Keys.customModel)
+            #expect(OllamaClient.Generation.tuned(for: "salehman").keepAlive == "5m")
+            #expect(OllamaClient.Generation.tuned(for: "anything-else").keepAlive == "30s")
+        }
+    }
+
+    // MARK: recentTail — local context diet keeps the most-recent turns
+
+    @Test func recentTailKeepsShortTextWhole() {
+        #expect(AgentPipeline.recentTail("User: hi\nAI: hello", maxChars: 100) == "User: hi\nAI: hello")
+        #expect(AgentPipeline.recentTail("", maxChars: 100) == "")
+    }
+
+    @Test func recentTailKeepsTheNewestTurnsAndCutsAtALineBoundary() {
+        let turns = (1...50).map { "User: message number \($0)" }.joined(separator: "\n")
+        let tail = AgentPipeline.recentTail(turns, maxChars: 200)
+        #expect(tail.count <= 200)
+        // Newest turn survives; the cut never starts mid-line.
+        #expect(tail.hasSuffix("User: message number 50"))
+        #expect(tail.hasPrefix("User: "))
+    }
+
+    @Test func recentTailNeverReturnsEmptyForAGiantSingleLine() {
+        let oneLine = String(repeating: "x", count: 10_000)
+        let tail = AgentPipeline.recentTail(oneLine, maxChars: 500)
+        #expect(tail.count == 500)   // raw char cut, not ""
+    }
+
+    // MARK: noteToolRound — slow tool rounds show life on the running step
+
+    @MainActor
+    @Test func noteToolRoundAnnotatesTheRunningStepIdempotently() {
+        let progress = MissionProgress.shared
+        defer { progress.clear() }
+        let specs = [
+            AgentSpec(name: "Reasoning Strategist", icon: "brain.head.profile",
+                      role: "test", usesTools: true, phase: 0),
+            AgentSpec(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
+                      role: "test", full: true, isFinal: true, phase: 1),
+        ]
+        progress.begin(specs)
+        progress.setRunning(0)
+
+        progress.noteToolRound(2, of: 8)
+        #expect(progress.steps[0].adapted == "Reasoning Strategist · tool round 2/8")
+
+        // Re-noting REPLACES the suffix (no "round 2/8 · tool round 3/8" stacking),
+        // and an adapted title set by adaptTitles survives as the base.
+        progress.noteToolRound(3, of: 8)
+        #expect(progress.steps[0].adapted == "Reasoning Strategist · tool round 3/8")
+
+        // The non-running step is untouched; no-run/no-steps is a safe no-op.
+        #expect(progress.steps[1].adapted == nil)
+        progress.clear()
+        progress.noteToolRound(1, of: 8)   // must not crash on empty steps
+        #expect(progress.steps.isEmpty)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/FreeAutoCooldownTests.swift (55 lines) =====
 ```swift
 import Testing
@@ -25240,7 +25452,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (569 lines) =====
+===== FILE: COORDINATION.md (618 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25811,7 +26023,56 @@ All four items, results:
    0 warnings, committed+pushed. Sandbox still blocks xcodebuild → **please run the canonical build+tests
    on your next pass** (only SettingsView changed; `EffortWiringTests` unaffected).
 
-===== FILE: DEVELOPMENT_LOG.md (2168 lines) =====
+### 📋 2026-06-11 — 14B-IN-APP work split (owner: "give yourself and other claude tasks that help salehman 14b in the app")
+**Chat A / other session — your queue (in addition to the 3 items tasked earlier):**
+4. **Tool-loop budgets for slow local brains.** The agentic loops (`ollamaReply`, freeCoding path) were
+   tuned when local = a fast 7B. On the 9 GB 14B (~6× slower): audit round caps + per-call timeouts so a
+   tool loop can't spend minutes silently; surface "still running tool round N" progress where the loop
+   already reports steps.
+5. **Agent-prompt token diet (2-agent path).** The Reasoning-Strategist + final-agent prompts were written
+   for cloud context windows; local salehman14b runs at num_ctx 4096. Trim/structure those two prompts so
+   mission + history + tools fit 4096 without truncating the tail (history is capped at 8 turns/4k chars,
+   the prompts are the fat part). Don't touch the 15-agent set — it never runs on serial local brains.
+6. **Tests I'll run for you** (you write, post here; my session builds): `Generation.tuned(for:)` knob
+   selection (salehman vs other models), trivial fast-path routing (greeting → no team), and the Review
+   pack-cap behavior below once I land it.
+**Chat B / me — doing now:**
+- **Active-model transparency:** Code-tab brain label shows WHICH local model is serving ("salehman14b" vs
+  "qwen-coder fallback") so the owner can see when the real fine-tune is answering.
+- **Review pack cap for local ctx:** when Salehman resolves to the LOCAL floor (no cloud configured), the
+  Review digest must fit num_ctx 4096 — cap the packed repo digest so Ollama doesn't silently truncate the
+  middle of the codebase.
+- r1-best adapter backed up to Mac + verified (672 tensors byte-exact); round 2 at ~70/300; GGUF toolchain
+  pre-built on the pod (TOOLCHAIN-READY).
+
+### ✅ 2026-06-11 — ITEMS 4–6 DONE (Agents lane, cleanup/Effort session) — tests ready for your build
+**Item 4 (tool-loop budgets):** audit found per-call timeouts already generous (Ollama `chatTurn` 300 s,
+compat `chatTurnWithTools` 120 s — nothing <60 s) and the 8-round cap sane; the REAL bugs were (a)
+`chatOllamaWithTools` hardcoded `keep_alive:"30s"` — your `Generation.tuned(for:)` never reached the tool
+loop, so the 14B got evicted 30 s after every tool-built reply and re-paid the ~9 GB load next message.
+Fixed: the loop now takes `tuned(for: model)` keep-alive (14B → 5 m) with `num_ctx` floored at 4096 (tool
+transcripts are fat; tuned's 2048 default would truncate them for small models). (b) Zero progress during
+up to 8 × 30–90 s rounds. Fixed: `MissionProgress.noteToolRound(_:of:)` annotates the RUNNING step's title
+("Reasoning Strategist · tool round 3/8") — reuses the adapted-title channel, ZERO UI changes, idempotent,
+no-ops outside team missions; both loops (Ollama + OpenAI-compat) emit it each round.
+**Item 5 (token diet):** measured the real worst case — history is 4k chars/TURN × 8 turns = 32k chars
+≈ 8k tokens (the "4k total" reading was per-turn), and on num_ctx overflow Ollama drops the OLDEST tokens,
+i.e. the persona/system prompt evicts first. Fix at the 2-agent path: `AgentInput` now carries the
+resolved `brain`; when `AgentPipeline.isSerialLocalBrain(brain)` (new SHARED predicate — also refactored
+into `effectiveCap` + the adaptTitles skip) the handlers trim history to `recentTail(…, 6_000 chars)`
+(most-recent turns, line-boundary cut) and context to 1,500 chars BEFORE prompt build. Cloud brains keep
+the full history. 15-agent set untouched per your note (its terse-note branch shares the conditional but
+it's inert there — never serial-local).
+**Item 6 (tests) — `Salehman AITests/FourteenBReadinessTests.swift`, please build+run:** `Generation.tuned`
+knob selection (salehman → 5m/4096, others → 30s/2048, default-name fallback), `recentTail` (short-text
+identity, newest-turns + line-boundary cut, giant-single-line never-empty), `noteToolRound` (annotates the
+running step, idempotent re-noting, safe no-op on empty). Suite is `.serialized`, sole test mutator of
+`Keys.customModel`, sole test user of `MissionProgress` (both verified by grep). `effectiveCap` +
+`isTrivialMission` were already pinned by your ToolLoopTests/AgentPipelineConcurrencyTests/
+TrivialMissionTests — not duplicated. Review pack-cap test: waiting on your landing, ping me here.
+App typecheck: 0 errors / 0 warnings. Committed+pushed; CodeView (your in-flight) untouched.
+
+===== FILE: DEVELOPMENT_LOG.md (2179 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27333,6 +27594,17 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Worked the board task the latency session left (owner: "give the other claude a similar task") to make this lane 14B-ready before the fine-tuned GGUF lands. (1) **Settings "Salehman model" status row** (`salehmanModelStatusRow` + `LocalModelProbe` tri-state + `probeLocalModel()`): under the custom-model-name field in "Salehman engine" — green installed / orange missing with a copyable `ollama create ‹name› -f Modelfile` button / gray Ollama-down; probes via the same accessors the engine routes by (`customModelNameCurrent`, `OllamaClient.isUp/hasModel`) so the row can't disagree with actual routing; re-probes on name edit + manual refresh. (2) **Concurrency audit PASS** — `effectiveCap` already forces 1 in-flight generate for `.salehman`/`.ollamaCoder`/`.unslothStudio`/`.vllm` over the per-phase batch loop, `isSerialLocal` skips the adaptTitles side-generate, Effort ladder is sequential: no change needed. (3) **Assumptions sweep CLEAN** — no qwen text-model hardcodes (only the vision `qwen2.5vl`, correct), no sub-60s local-generate timeouts, no load-re-paying retry loops. Also: the API watch caught the **round-1 boundary** (GPU idle 3 min, balance $11.48, pod still billing $1.415/hr idle) — posted to the board for the SSH side with budget math ($9.98 usable ≈ 6–8 rounds); monitor v4 (state transitions + idle-cost heartbeats) is live. Monitor v3 note for the record: urllib transport couldn't verify the sandbox proxy's TLS cert (same root cause as the gh x509 failure) — v3+ use curl transport with Python logic.
 
 **Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
+
+## 2026-06-11 · 14B-in-app items 4–6: tool-loop warm-keep + round progress, local context diet, tests
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AI/Agents/AgentRegistry.swift`, `Salehman AITests/FourteenBReadinessTests.swift` (new), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Board items 4–6 (owner: "give yourself and other claude tasks that help salehman 14b in the app").
+- **Tool-loop budgets (item 4):** timeouts were already fine (chatTurn 300 s, compat 120 s); the real bugs: (a) `chatOllamaWithTools` hardcoded `keep_alive:"30s"`, bypassing `Generation.tuned(for:)` — the 14B was evicted 30 s after any tool-built reply and re-paid its ~9 GB load on the next message. Now uses tuned keep-alive (salehman → 5 m) with num_ctx floored at 4096 (tool transcripts are fat; tuned's 2048 would truncate them on small models). (b) Up to 8 silent 30–90 s rounds. Added `MissionProgress.noteToolRound(_:of:)` — annotates the running step's adapted title ("… · tool round 3/8"), idempotent, zero UI changes, no-op outside team missions; both tool loops emit it per round.
+- **Local context diet (item 5):** real worst case measured: 8 turns × 4,000 chars/turn = 32k chars ≈ 8k tokens — double num_ctx 4096, and Ollama evicts the OLDEST tokens on overflow (persona dies first). `AgentInput` now carries the resolved `brain`; on serial-local brains the 2-agent handlers trim history via new pure `AgentPipeline.recentTail` (6,000-char budget, most-recent turns, line-boundary cut) and context to 1,500 chars before prompt build. New shared predicate `isSerialLocalBrain` consolidates `effectiveCap` + the adaptTitles skip + the diet (one place to add a future serial brain). Cloud brains keep full history; 15-agent set untouched.
+- **Tests (item 6):** `FourteenBReadinessTests.swift` — `Generation.tuned` knobs (salehman 5m/4096 vs others 30s/2048 + default-name fallback), `recentTail` edge cases, `noteToolRound` idempotence/no-op. `.serialized`; sole test mutator of `Keys.customModel`; sole test user of `MissionProgress` (grep-verified). `effectiveCap`/`isTrivialMission` already covered by existing suites — not duplicated.
+
+**Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

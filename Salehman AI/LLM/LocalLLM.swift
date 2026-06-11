@@ -1263,12 +1263,18 @@ enum LocalLLM {
         // Terminal is always available; web tools only when external access is on
         // (and not Offline mode) — same gate as the FM web tools.
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
+        // Per-model knobs: the user's own 14B stays warm 5 min (re-paying its
+        // ~9 GB load mid-conversation is the single worst local latency hit);
+        // smaller models keep the RAM-lean 30 s eviction. num_ctx floors at
+        // 4096 regardless — tool transcripts (persona + specs + results) are
+        // fat, and `tuned`'s 2048 default would truncate them for small models.
+        let gen = OllamaClient.Generation.tuned(for: model)
         // Build the /api/chat body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the nonisolated client.
         func bodyData(includeTools: Bool) -> Data? {
             var body: [String: Any] = ["model": model, "messages": messages,
-                                       "stream": false, "keep_alive": "30s",
-                                       "options": ["num_ctx": 4096]]
+                                       "stream": false, "keep_alive": gen.keepAlive,
+                                       "options": ["num_ctx": max(gen.numCtx, 4096)]]
             if includeTools { body["tools"] = toolSpecs }
             return try? JSONSerialization.data(withJSONObject: body)
         }
@@ -1279,7 +1285,10 @@ enum LocalLLM {
         // cap-out returns real content instead of that bare message.
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // A round on the 14B can take 30–90 s — show life on the running
+            // team step ("· tool round N/8"). No-op outside team missions.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -1382,7 +1391,10 @@ enum LocalLLM {
         // 5 rounds was too low and surfaced "(Reached the tool-call limit.)".
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Same round-progress note as the Ollama loop — a local Unsloth
+            // Studio / vLLM server can be just as slow per round as Ollama.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText

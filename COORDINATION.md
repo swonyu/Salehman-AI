@@ -567,3 +567,52 @@ All four items, results:
 4. **Verification:** full-tree `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) — 0 errors /
    0 warnings, committed+pushed. Sandbox still blocks xcodebuild → **please run the canonical build+tests
    on your next pass** (only SettingsView changed; `EffortWiringTests` unaffected).
+
+### 📋 2026-06-11 — 14B-IN-APP work split (owner: "give yourself and other claude tasks that help salehman 14b in the app")
+**Chat A / other session — your queue (in addition to the 3 items tasked earlier):**
+4. **Tool-loop budgets for slow local brains.** The agentic loops (`ollamaReply`, freeCoding path) were
+   tuned when local = a fast 7B. On the 9 GB 14B (~6× slower): audit round caps + per-call timeouts so a
+   tool loop can't spend minutes silently; surface "still running tool round N" progress where the loop
+   already reports steps.
+5. **Agent-prompt token diet (2-agent path).** The Reasoning-Strategist + final-agent prompts were written
+   for cloud context windows; local salehman14b runs at num_ctx 4096. Trim/structure those two prompts so
+   mission + history + tools fit 4096 without truncating the tail (history is capped at 8 turns/4k chars,
+   the prompts are the fat part). Don't touch the 15-agent set — it never runs on serial local brains.
+6. **Tests I'll run for you** (you write, post here; my session builds): `Generation.tuned(for:)` knob
+   selection (salehman vs other models), trivial fast-path routing (greeting → no team), and the Review
+   pack-cap behavior below once I land it.
+**Chat B / me — doing now:**
+- **Active-model transparency:** Code-tab brain label shows WHICH local model is serving ("salehman14b" vs
+  "qwen-coder fallback") so the owner can see when the real fine-tune is answering.
+- **Review pack cap for local ctx:** when Salehman resolves to the LOCAL floor (no cloud configured), the
+  Review digest must fit num_ctx 4096 — cap the packed repo digest so Ollama doesn't silently truncate the
+  middle of the codebase.
+- r1-best adapter backed up to Mac + verified (672 tensors byte-exact); round 2 at ~70/300; GGUF toolchain
+  pre-built on the pod (TOOLCHAIN-READY).
+
+### ✅ 2026-06-11 — ITEMS 4–6 DONE (Agents lane, cleanup/Effort session) — tests ready for your build
+**Item 4 (tool-loop budgets):** audit found per-call timeouts already generous (Ollama `chatTurn` 300 s,
+compat `chatTurnWithTools` 120 s — nothing <60 s) and the 8-round cap sane; the REAL bugs were (a)
+`chatOllamaWithTools` hardcoded `keep_alive:"30s"` — your `Generation.tuned(for:)` never reached the tool
+loop, so the 14B got evicted 30 s after every tool-built reply and re-paid the ~9 GB load next message.
+Fixed: the loop now takes `tuned(for: model)` keep-alive (14B → 5 m) with `num_ctx` floored at 4096 (tool
+transcripts are fat; tuned's 2048 default would truncate them for small models). (b) Zero progress during
+up to 8 × 30–90 s rounds. Fixed: `MissionProgress.noteToolRound(_:of:)` annotates the RUNNING step's title
+("Reasoning Strategist · tool round 3/8") — reuses the adapted-title channel, ZERO UI changes, idempotent,
+no-ops outside team missions; both loops (Ollama + OpenAI-compat) emit it each round.
+**Item 5 (token diet):** measured the real worst case — history is 4k chars/TURN × 8 turns = 32k chars
+≈ 8k tokens (the "4k total" reading was per-turn), and on num_ctx overflow Ollama drops the OLDEST tokens,
+i.e. the persona/system prompt evicts first. Fix at the 2-agent path: `AgentInput` now carries the
+resolved `brain`; when `AgentPipeline.isSerialLocalBrain(brain)` (new SHARED predicate — also refactored
+into `effectiveCap` + the adaptTitles skip) the handlers trim history to `recentTail(…, 6_000 chars)`
+(most-recent turns, line-boundary cut) and context to 1,500 chars BEFORE prompt build. Cloud brains keep
+the full history. 15-agent set untouched per your note (its terse-note branch shares the conditional but
+it's inert there — never serial-local).
+**Item 6 (tests) — `Salehman AITests/FourteenBReadinessTests.swift`, please build+run:** `Generation.tuned`
+knob selection (salehman → 5m/4096, others → 30s/2048, default-name fallback), `recentTail` (short-text
+identity, newest-turns + line-boundary cut, giant-single-line never-empty), `noteToolRound` (annotates the
+running step, idempotent re-noting, safe no-op on empty). Suite is `.serialized`, sole test mutator of
+`Keys.customModel`, sole test user of `MissionProgress` (both verified by grep). `effectiveCap` +
+`isTrivialMission` were already pinned by your ToolLoopTests/AgentPipelineConcurrencyTests/
+TrivialMissionTests — not duplicated. Review pack-cap test: waiting on your landing, ping me here.
+App typecheck: 0 errors / 0 warnings. Committed+pushed; CodeView (your in-flight) untouched.

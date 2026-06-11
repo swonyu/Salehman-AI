@@ -6,6 +6,7 @@ struct AgentInput: Sendable {
     let mission: String
     let history: String
     let context: String     // built from MissionMemory.buildContext(...)
+    let brain: LocalLLM.Brain   // resolved once per mission; drives the local context diet
     let onStream: @Sendable (String) -> Void   // no-op for non-final agents
 }
 
@@ -49,6 +50,18 @@ struct AgentRegistry {
     private nonisolated static let registerToken: Void = {
         for spec in AgentDefinitions.pipeline {
             register(name: spec.name) { input in
+                // Local context diet: a serial local brain runs at num_ctx 4096
+                // (~16k chars); the full 8-turn transcript can be 32k. Trim to
+                // the most-recent budget so Ollama never silently evicts the
+                // system prompt. Cloud brains keep everything — they have room.
+                let dieted = AgentPipeline.isSerialLocalBrain(input.brain)
+                let history = dieted
+                    ? AgentPipeline.recentTail(input.history, maxChars: AgentPipeline.localHistoryBudget)
+                    : input.history
+                let context = dieted
+                    ? String(input.context.prefix(AgentPipeline.localContextBudget))
+                    : input.context
+
                 if spec.usesTools {
                     // Tool-calling path: `LocalLLM.chat` deliberately takes the
                     // bare message so the model can decide to invoke tools. But
@@ -57,7 +70,7 @@ struct AgentRegistry {
                     // other folder" lose their antecedent on the one agent that
                     // actually runs terminal commands. Prepend both as a
                     // preamble; the model still sees a clear "Request:" line.
-                    let h = input.history, c = input.context
+                    let h = history, c = context
                     let m: String
                     if h.isEmpty && c.isEmpty {
                         m = input.mission
@@ -76,14 +89,14 @@ struct AgentRegistry {
                     // server-side prefix caching, folded in for the rest — instead of
                     // re-sending the whole history inline on every turn.
                     let body = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                         history: "", context: input.context)
+                                                         history: "", context: context)
                     return await LocalLLM.generateStreaming(body, maxTokens: 700,
-                                                            cachePrefix: input.history) { partial in
+                                                            cachePrefix: history) { partial in
                         input.onStream(partial)
                     }
                 }
                 let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                       history: input.history, context: input.context)
+                                                       history: history, context: context)
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
             }
         }
