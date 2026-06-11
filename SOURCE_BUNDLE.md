@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 18:41 +03 · Swift files: 133 · Swift LOC: 25405_
+_Generated: 2026-06-11 18:56 +03 · Swift files: 133 · Swift LOC: 25414_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15167,7 +15167,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1443 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1452 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15398,6 +15398,11 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            // Quiet chrome: the global app accent tints Menu labels even
+            // through foregroundStyle (QA renders caught the icon glowing
+            // red) — a local secondary tint keeps it calm. AppKit popups
+            // ignore SwiftUI tint, so the dropdown itself is unaffected.
+            .tint(Color.white.opacity(0.55))
             .frame(width: 30)
             .disabled(vm.messages.isEmpty)
             .help("Export this conversation")
@@ -15424,26 +15429,11 @@ struct ContentView: View {
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
 
-            if settings.unrestrictedTools {
-                // Prominent Unrestricted Mode badge (red, tappable to exit the mode)
-                Button {
-                    settings.unrestrictedTools = false
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("UNRESTRICTED")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .help("Unrestricted Mode is active — tap to disable")
-            } else {
+            // Chrome diet (QA round): the header used to ALSO show a red
+            // UNRESTRICTED capsule here — three red signals at once with the
+            // banner + left status. The banner owns the warning and the
+            // Disable action; the left status slot shows the mode.
+            if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
             }
@@ -15496,7 +15486,12 @@ struct ContentView: View {
                             // +14 leading a new burst (= 24 between speakers) —
                             // document-flow replies need more air than the old
                             // bubble stacks did.
-                            LazyVStack(spacing: 10) {
+                            //
+                            // Lazy in normal use; EAGER during QA captures —
+                            // LazyVStack never materializes rows in an
+                            // offscreen render, which left chat_live.png with
+                            // a blank transcript (QA round-2 finding).
+                            transcriptStack {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -15574,6 +15569,17 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
+    /// Transcript container: Lazy normally (long histories), eager VStack
+    /// during QA captures so offscreen renders actually show the rows.
+    @ViewBuilder
+    private func transcriptStack<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        if QAGeometry.enabled {
+            VStack(spacing: 10) { content() }
+        } else {
+            LazyVStack(spacing: 10) { content() }
+        }
+    }
+
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -15716,6 +15722,9 @@ struct ContentView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    // Same tint-leak fix as the export menu: keep the + quiet —
+                    // send is the composer's ONE strong-color element.
+                    .tint(Color.white.opacity(0.55))
                     .frame(width: 26)
                     .help("Attach files/images or insert a saved prompt")
                     .accessibilityLabel("Attach files, images, or insert a saved prompt")
@@ -26781,7 +26790,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (944 lines) =====
+===== FILE: COORDINATION.md (945 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26834,6 +26843,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
+| **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. | no — IN PROGRESS |
 
 **🛑 Heads-up for Grok Tab A:** while verifying, the test target fails to compile because `ShellSecurityTests.swift` (your new untracked file) calls `CommandApprovalCenter.looksRisky(...)` from `#expect`'s nonisolated autoclosure, but `looksRisky` is `@MainActor`-isolated under `-default-isolation=MainActor`. The pure-substring-check version of `looksRisky` would be safe as `nonisolated static` — that's likely the right one-line fix in `CommandApprovalCenter.swift`. Not touching it; it's your lane. (My selective commit avoids pushing this red state to `main`.)
 | **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); cross-lane compile fix claim: `Knowledge/KnowledgeStore.swift` (duplicate mmr redeclaration at ~223 — removed the later one to unblock test build; first impl at 135 is the called one) | 2026-06-06 | 5 suites enabled and passing; full AITests was red due to redecl in KnowledgeStore (unrelated to our edits but blocking verification) — claimed + removed duplicate mmr to get green. | **released** (session ended 2026-06-06; claims void — cleared in 2026-06-11 cleanup) |

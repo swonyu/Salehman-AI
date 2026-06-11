@@ -227,6 +227,11 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            // Quiet chrome: the global app accent tints Menu labels even
+            // through foregroundStyle (QA renders caught the icon glowing
+            // red) — a local secondary tint keeps it calm. AppKit popups
+            // ignore SwiftUI tint, so the dropdown itself is unaffected.
+            .tint(Color.white.opacity(0.55))
             .frame(width: 30)
             .disabled(vm.messages.isEmpty)
             .help("Export this conversation")
@@ -253,26 +258,11 @@ struct ContentView: View {
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
 
-            if settings.unrestrictedTools {
-                // Prominent Unrestricted Mode badge (red, tappable to exit the mode)
-                Button {
-                    settings.unrestrictedTools = false
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("UNRESTRICTED")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .help("Unrestricted Mode is active — tap to disable")
-            } else {
+            // Chrome diet (QA round): the header used to ALSO show a red
+            // UNRESTRICTED capsule here — three red signals at once with the
+            // banner + left status. The banner owns the warning and the
+            // Disable action; the left status slot shows the mode.
+            if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
             }
@@ -325,7 +315,12 @@ struct ContentView: View {
                             // +14 leading a new burst (= 24 between speakers) —
                             // document-flow replies need more air than the old
                             // bubble stacks did.
-                            LazyVStack(spacing: 10) {
+                            //
+                            // Lazy in normal use; EAGER during QA captures —
+                            // LazyVStack never materializes rows in an
+                            // offscreen render, which left chat_live.png with
+                            // a blank transcript (QA round-2 finding).
+                            transcriptStack {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -403,6 +398,17 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
+    /// Transcript container: Lazy normally (long histories), eager VStack
+    /// during QA captures so offscreen renders actually show the rows.
+    @ViewBuilder
+    private func transcriptStack<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        if QAGeometry.enabled {
+            VStack(spacing: 10) { content() }
+        } else {
+            LazyVStack(spacing: 10) { content() }
+        }
+    }
+
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -545,6 +551,9 @@ struct ContentView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    // Same tint-leak fix as the export menu: keep the + quiet —
+                    // send is the composer's ONE strong-color element.
+                    .tint(Color.white.opacity(0.55))
                     .frame(width: 26)
                     .help("Attach files/images or insert a saved prompt")
                     .accessibilityLabel("Attach files, images, or insert a saved prompt")
