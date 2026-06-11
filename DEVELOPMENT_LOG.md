@@ -1675,6 +1675,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Both tabs now match the design language with pixel-level verification. 8 marathon commits, all typecheck-verified (exit-code pattern). Loop continues on cycle findings.
 
+## 2026-06-11 · Chat ⇄ Code parity batch (owner: "same colors as code tab + heavily polish and ADD things")
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AITests/QAGeometryTests.swift` (earlier this hour), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner resolved the flagged composer-ring divergence toward the Code tab and asked for additions. (1) **Composer color/treatment parity**: white-0.05 fill, radius 14, the signature always-visible accent ring (0.38 rest → 0.60 while typing → full-strength on file drop), soft accent focus glow, identical animation timings — the two composers are now visually the same control. (2) **Brain/Effort quick-controls menu** added to the chat composer (Code-tab parity, plus the chat's real `salehmanEffort` dial and the team-size mode): switch brain/effort/toggles without opening Settings; includes the live "· salehman14b" serving badge driven by the SAME probe as the Code tab (`refreshServingModel` clone — the two badges can never disagree). (3) **File drag-and-drop onto the composer** — the Code tab had it, the chat didn't; drops route through the existing `AttachmentLoader` pipeline with the ring lighting up full-accent as the drop target. (4) **Welcome shortcut hints** (⌘N/⌘F/⌘J chips) mirroring the Code welcome's footer. (5) **↑ recall** — up-arrow in an empty composer pulls back your last message for editing/resending. Also this hour: honest eyebrow (dropped the false blanket "On-device" claim — same class as the Today-greeting inaccuracy the other session flagged), `QAGeometryTests` (6 tests pinning the calibrated layout-assertion formula), marathon-state board post; one proxy-403 push outage ridden out with a retry loop.
+
+**Result:** Typecheck EXIT=0; capture request planted for visual verification of the parity batch. The chat tab now has everything the Code composer has, plus its own Effort dial and prompts library.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

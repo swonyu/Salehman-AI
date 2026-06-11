@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:56 +03 · Swift files: 134 · Swift LOC: 25617_
+_Generated: 2026-06-11 20:03 +03 · Swift files: 134 · Swift LOC: 25735_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15257,7 +15257,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1470 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1588 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15310,6 +15310,11 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    // Composer parity with the Code tab (owner: "same colors"): drop-target
+    // state for the signature ring, and which local model serves `.salehman`
+    // when no cloud is configured (the "· salehman14b" badge).
+    @State private var isDropTargeted = false
+    @State private var servingModel: String?
 
     private struct Suggestion: Hashable {
         let icon: String
@@ -15665,6 +15670,65 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
+    /// Brain / Effort quick controls in the composer — Code-tab parity. One
+    /// menu: the Brain picker, the real Effort dial, the team-size mode, and
+    /// the big toggles, plus the live "which local model serves" badge (the
+    /// owner's fine-tune gets the accent; a fallback coder stays grey).
+    private var chatControlsMenu: some View {
+        Menu {
+            Picker("Brain", selection: $settings.brainPreference) {
+                ForEach(BrainPreference.selectableCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Effort", selection: $settings.salehmanEffort) {
+                ForEach(Effort.allCases) { Text($0.displayName).tag($0) }
+            }
+            Picker("Team", selection: $settings.responseMode) {
+                ForEach(AppSettings.ResponseMode.allCases) { Text($0.title).tag($0) }
+            }
+            Divider()
+            Toggle("Auto-continue", isOn: $settings.autoContinue)
+            Toggle("Web access", isOn: $settings.webAccess)
+            Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
+        } label: {
+            HStack(spacing: 4) {
+                // Explicit child styles — Menu-level tint quiets images but
+                // NOT label text (proven in the Code tab's QA renders).
+                Image(systemName: "slider.horizontal.3").font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                Text(settings.brainPreference.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+                if let m = servingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tint(Color.white.opacity(0.55))
+        .help("Active brain — tap to switch brain, effort & toggles")
+        .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers). Same
+    /// probe as the Code tab so the two badges can never disagree.
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            servingModel = nil; return
+        }
+        servingModel = await OllamaClient.activeChatModel()
+    }
+
     /// Transcript container: Lazy normally (long histories), eager VStack
     /// during QA captures so offscreen renders actually show the rows.
     @ViewBuilder
@@ -15744,10 +15808,31 @@ struct ContentView: View {
             }
             .frame(maxWidth: 600)
             .padding(.top, 4)
+
+            // Keyboard affordances, Code-tab style — the welcome teaches the
+            // three moves you'd actually reach for first.
+            HStack(spacing: 16) {
+                welcomeShortcutHint("⌘N", "New chat")
+                welcomeShortcutHint("⌘F", "Find")
+                welcomeShortcutHint("⌘J", "Voice")
+            }
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
         .task { localModelReady = await OllamaClient.hasCustomModel() }
+    }
+
+    /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
+    /// welcome footer so the two landing surfaces speak the same language.
+    private func welcomeShortcutHint(_ key: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+        }
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
@@ -15783,10 +15868,24 @@ struct ContentView: View {
                     .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { submit(mission) }
+                    // ⌘-less power recall: ↑ in an EMPTY composer pulls back
+                    // your last message for editing/resending.
+                    .onKeyPress(.upArrow) {
+                        guard mission.isEmpty,
+                              let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
+                        mission = last
+                        return .handled
+                    }
                     .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 8) {
+                    // Brain / Effort quick controls — Code-tab parity: switch
+                    // the brain, the Effort dial, and the big toggles without
+                    // opening Settings. Shows which LOCAL model serves when
+                    // Salehman has no cloud configured.
+                    chatControlsMenu
+
                     Menu {
                         Section("Attach") {
                             Button { Task { await attachFile() } } label: {
@@ -15883,15 +15982,34 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            // Quiet flat composer (design language). Focus = a solid accent
-            // hairline — visible on the flat canvas without glow chrome.
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
-                            lineWidth: inputFocused ? 1.5 : 1)
-            )
-            .animation(DS.Motion.smooth, value: inputFocused)
+            // CODE-TAB PARITY (owner: "same colors as code tab"): identical
+            // composer treatment — white-0.05 fill, radius 14, the signature
+            // always-visible accent ring (0.38 rest → 0.60 while typing →
+            // full on file drop), and the soft accent glow on focus.
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                isDropTargeted ? DS.Palette.accent
+                    : DS.Palette.accent.opacity(
+                        mission.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
+                lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
+            .animation(.easeOut(duration: 0.18), value: mission.isEmpty)
+            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            // Drag a file anywhere onto the composer to attach it as context —
+            // same affordance the Code tab's input has.
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
+                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                    Task { @MainActor in
+                        loadingAttachment = true
+                        attachment = await AttachmentLoader.load(url: url)
+                        loadingAttachment = false
+                    }
+                }
+                return true
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -21370,7 +21488,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
                 .font(DS.Typography.titleXL).foregroundStyle(.white)
-            Text("Welcome back to Salehman AI — everything here stays on this Mac.")
+            Text("Welcome back to Salehman AI — many brains, real tools, your own model.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -27969,7 +28087,7 @@ cycle ALL GREEN, drift report clean). New `QAGeometryTests` pins the calibrated 
 (e015224) — `selectableCases` + its pinned test kept consistent on your side, verified. The one OPEN
 owner decision stays: composer ring policy divergence (code always-accent vs chat quiet-until-focus).
 
-===== FILE: DEVELOPMENT_LOG.md (2474 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2482 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29646,6 +29764,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why (eyes-driven):** (1) New `chat_empty` capture — the first-impression welcome had never appeared in any picture (live renders always carry real history); `ContentView.qaForceEmptyState` (QA-only param) renders it. First sight showed truncated bento subtitles → copy shortened to fit + grid 560→600; the quiet + button verified in pixels. (2) **Blank-bubble regression caught by eyes**: every `MessageBubble` rendered transparent in the gallery — `onAppear` never fires in offscreen hosted renders, so the entry animation's `appeared` stayed false (the old ImageRenderer path DID fire it, masking this). QA captures now bypass the entry animation. (3) `captureAll` was clobbering `captureLiveWindows`' window_* AX entries in STRUCTURE.json — now merges. (4) **Menu-text tint lesson, proven across one build**: Menu-level `.tint` quiets image-only labels (chat's menus went grey) but NOT label text (Code tab's "Salehman AI" stayed accent) — explicit `foregroundStyle` on the label's children is what wins; follow-up applied to `controlsMenu`. (5) Verified in pixels this cycle: code hero CENTERED (containerRelativeFrame fix), controlsMenu QUIET, bento untruncated, hover pill/ApprovalCard/scroll pill all rendering, the true-pixel live window matching the design language. Baselines adopted at the verified state; post-adoption cycle ALL GREEN with the drift report telling the right story (code surfaces 11–20% = my intentional fixes, chat ≈0, settings 0.57% = live Ollama row).
 
 **Result:** Both tabs now match the design language with pixel-level verification. 8 marathon commits, all typecheck-verified (exit-code pattern). Loop continues on cycle findings.
+
+## 2026-06-11 · Chat ⇄ Code parity batch (owner: "same colors as code tab + heavily polish and ADD things")
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AITests/QAGeometryTests.swift` (earlier this hour), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner resolved the flagged composer-ring divergence toward the Code tab and asked for additions. (1) **Composer color/treatment parity**: white-0.05 fill, radius 14, the signature always-visible accent ring (0.38 rest → 0.60 while typing → full-strength on file drop), soft accent focus glow, identical animation timings — the two composers are now visually the same control. (2) **Brain/Effort quick-controls menu** added to the chat composer (Code-tab parity, plus the chat's real `salehmanEffort` dial and the team-size mode): switch brain/effort/toggles without opening Settings; includes the live "· salehman14b" serving badge driven by the SAME probe as the Code tab (`refreshServingModel` clone — the two badges can never disagree). (3) **File drag-and-drop onto the composer** — the Code tab had it, the chat didn't; drops route through the existing `AttachmentLoader` pipeline with the ring lighting up full-accent as the drop target. (4) **Welcome shortcut hints** (⌘N/⌘F/⌘J chips) mirroring the Code welcome's footer. (5) **↑ recall** — up-arrow in an empty composer pulls back your last message for editing/resending. Also this hour: honest eyebrow (dropped the false blanket "On-device" claim — same class as the Today-greeting inaccuracy the other session flagged), `QAGeometryTests` (6 tests pinning the calibrated layout-assertion formula), marathon-state board post; one proxy-403 push outage ridden out with a retry loop.
+
+**Result:** Typecheck EXIT=0; capture request planted for visual verification of the parity batch. The chat tab now has everything the Code composer has, plus its own Effort dial and prompts library.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

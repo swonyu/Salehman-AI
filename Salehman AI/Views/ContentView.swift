@@ -49,6 +49,11 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    // Composer parity with the Code tab (owner: "same colors"): drop-target
+    // state for the signature ring, and which local model serves `.salehman`
+    // when no cloud is configured (the "· salehman14b" badge).
+    @State private var isDropTargeted = false
+    @State private var servingModel: String?
 
     private struct Suggestion: Hashable {
         let icon: String
@@ -404,6 +409,65 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
+    /// Brain / Effort quick controls in the composer — Code-tab parity. One
+    /// menu: the Brain picker, the real Effort dial, the team-size mode, and
+    /// the big toggles, plus the live "which local model serves" badge (the
+    /// owner's fine-tune gets the accent; a fallback coder stays grey).
+    private var chatControlsMenu: some View {
+        Menu {
+            Picker("Brain", selection: $settings.brainPreference) {
+                ForEach(BrainPreference.selectableCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Effort", selection: $settings.salehmanEffort) {
+                ForEach(Effort.allCases) { Text($0.displayName).tag($0) }
+            }
+            Picker("Team", selection: $settings.responseMode) {
+                ForEach(AppSettings.ResponseMode.allCases) { Text($0.title).tag($0) }
+            }
+            Divider()
+            Toggle("Auto-continue", isOn: $settings.autoContinue)
+            Toggle("Web access", isOn: $settings.webAccess)
+            Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
+        } label: {
+            HStack(spacing: 4) {
+                // Explicit child styles — Menu-level tint quiets images but
+                // NOT label text (proven in the Code tab's QA renders).
+                Image(systemName: "slider.horizontal.3").font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                Text(settings.brainPreference.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+                if let m = servingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tint(Color.white.opacity(0.55))
+        .help("Active brain — tap to switch brain, effort & toggles")
+        .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers). Same
+    /// probe as the Code tab so the two badges can never disagree.
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            servingModel = nil; return
+        }
+        servingModel = await OllamaClient.activeChatModel()
+    }
+
     /// Transcript container: Lazy normally (long histories), eager VStack
     /// during QA captures so offscreen renders actually show the rows.
     @ViewBuilder
@@ -483,10 +547,31 @@ struct ContentView: View {
             }
             .frame(maxWidth: 600)
             .padding(.top, 4)
+
+            // Keyboard affordances, Code-tab style — the welcome teaches the
+            // three moves you'd actually reach for first.
+            HStack(spacing: 16) {
+                welcomeShortcutHint("⌘N", "New chat")
+                welcomeShortcutHint("⌘F", "Find")
+                welcomeShortcutHint("⌘J", "Voice")
+            }
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
         .task { localModelReady = await OllamaClient.hasCustomModel() }
+    }
+
+    /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
+    /// welcome footer so the two landing surfaces speak the same language.
+    private func welcomeShortcutHint(_ key: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+        }
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
@@ -522,10 +607,24 @@ struct ContentView: View {
                     .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { submit(mission) }
+                    // ⌘-less power recall: ↑ in an EMPTY composer pulls back
+                    // your last message for editing/resending.
+                    .onKeyPress(.upArrow) {
+                        guard mission.isEmpty,
+                              let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
+                        mission = last
+                        return .handled
+                    }
                     .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 8) {
+                    // Brain / Effort quick controls — Code-tab parity: switch
+                    // the brain, the Effort dial, and the big toggles without
+                    // opening Settings. Shows which LOCAL model serves when
+                    // Salehman has no cloud configured.
+                    chatControlsMenu
+
                     Menu {
                         Section("Attach") {
                             Button { Task { await attachFile() } } label: {
@@ -622,15 +721,34 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            // Quiet flat composer (design language). Focus = a solid accent
-            // hairline — visible on the flat canvas without glow chrome.
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
-                            lineWidth: inputFocused ? 1.5 : 1)
-            )
-            .animation(DS.Motion.smooth, value: inputFocused)
+            // CODE-TAB PARITY (owner: "same colors as code tab"): identical
+            // composer treatment — white-0.05 fill, radius 14, the signature
+            // always-visible accent ring (0.38 rest → 0.60 while typing →
+            // full on file drop), and the soft accent glow on focus.
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                isDropTargeted ? DS.Palette.accent
+                    : DS.Palette.accent.opacity(
+                        mission.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
+                lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
+            .animation(.easeOut(duration: 0.18), value: mission.isEmpty)
+            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            // Drag a file anywhere onto the composer to attach it as context —
+            // same affordance the Code tab's input has.
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
+                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                    Task { @MainActor in
+                        loadingAttachment = true
+                        attachment = await AttachmentLoader.load(url: url)
+                        loadingAttachment = false
+                    }
+                }
+                return true
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
