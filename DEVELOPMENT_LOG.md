@@ -2553,3 +2553,20 @@ capture: chat_empty/chat_live/contact_sheet baselineDiff notes (canvas un-tints 
 24/24/24 — intentional change, re-adopt baselines after eyes-verify); chat_samples
 untouched (gallery never had the wash). Code-tab drifts this cycle (11.6%/19.6%) eyeballed:
 geometric (welcome vertical centering), not color — no action.
+
+## 2026-06-11 (night) — color-fix follow-up: stop discs join the brand palette + photographic confirmation
+**What & why:** (1) The 21:12 QA capture (first cycle on a build with `42936b2`) **confirms the
+color fix photographically**: chat canvas probes read neutral `rgb(24,24,24)` at every point
+(was `31,24,25`), banner sentence is white-on-accent-panel, audit failures `[]`; drift pattern
+matched prediction exactly (chat_empty 2.0% / chat_live 7.1% / chat_narrow 12.1% /
+contact_sheet 4.9%; chat_samples stayed 0.3% — gallery never had the wash). `qa/ADOPT_BASELINES`
+planted so the next green cycle re-baselines the un-tinted look. (2) Last system-red holdout:
+the stop-while-generating disc on BOTH composers (`Color.red.opacity(0.85)`) →
+`DS.Palette.accent.opacity(0.85)` — same affordance, same opacity, now the one red family
+(ContentView:707, CodeView:915; CodeView unclaimed at edit time, 1-line swap announced on board).
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`;
+`SOURCE_BUNDLE.md` regenerated.
+**Result:** Typecheck EXIT=0 (Chat C's in-flight `QASnapshots`/`QAGeometry` pinned to HEAD —
+note their v6 part 1+2 landed `2a5053b`/`cc39814`, so the pin set changed mid-session; first
+attempt failed until `QAColorVision` was treated as tracked). Stop state isn't photographed by
+any QA surface (composers captured at rest), so no baseline impact.

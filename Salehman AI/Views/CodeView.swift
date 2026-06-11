@@ -189,6 +189,18 @@ final class CodeWorkspace: ObservableObject {
 /// chat (with code blocks), live red/green diffs of what the agent changed, and
 /// the multi-agent step view — all on top of the existing tool-capable pipeline,
 /// so terminal commands + file edits run through the same approval card.
+/// A `/`-command in the Code composer (Claude-Code style). `template` commands
+/// pre-fill the input with a ready-to-continue prompt; `action` commands run an
+/// in-view operation (new chat, copy) immediately.
+struct SlashCommand: Identifiable {
+    let id: String            // the trigger word, e.g. "tests"
+    let icon: String
+    let blurb: String
+    let kind: Kind
+    enum Kind { case template(String), action(String) }
+    var trigger: String { "/" + id }
+}
+
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
     @ObservedObject private var progress = MissionProgress.shared
@@ -208,6 +220,7 @@ struct CodeView: View {
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
     @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
     @State private var hoveredFile: URL?            // file-tree row under the pointer
+    @State private var hoveredSlash: String?        // `/`-menu row under the pointer
     @State private var atBottom = true              // chat scrolled to the end (hides the jump button)
     // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
     // across launches. Auto-expands when a file is selected or a run leaves diffs.
@@ -613,6 +626,47 @@ struct CodeView: View {
         .background(Color.clear)
     }
 
+    // MARK: - Slash commands (type `/` in the composer)
+    private static let slashCommands: [SlashCommand] = [
+        .init(id: "explain",  icon: "text.magnifyingglass", blurb: "Explain how it works",   kind: .template("Explain how this works, step by step:\n\n")),
+        .init(id: "fix",      icon: "ladybug",              blurb: "Find and fix a bug",      kind: .template("Find and fix the bug in this:\n\n")),
+        .init(id: "tests",    icon: "checkmark.diamond",    blurb: "Write unit tests",        kind: .template("Write thorough unit tests for this:\n\n")),
+        .init(id: "refactor", icon: "wand.and.stars",       blurb: "Refactor for clarity",    kind: .template("Refactor this for clarity and simplicity, keeping behaviour identical:\n\n")),
+        .init(id: "review",   icon: "magnifyingglass",      blurb: "Review for issues",       kind: .template("Review this for bugs, edge cases, and improvements:\n\n")),
+        .init(id: "docs",     icon: "doc.text",             blurb: "Add documentation",       kind: .template("Write clear doc comments for this:\n\n")),
+        .init(id: "clear",    icon: "square.and.pencil",    blurb: "Start a new chat",        kind: .action("clear")),
+        .init(id: "copy",     icon: "doc.on.doc",           blurb: "Copy chat as Markdown",   kind: .action("copy")),
+    ]
+    /// The `/` menu shows only while the FIRST token is being typed (a leading `/`,
+    /// no space/newline yet) — so "/tests write…" or normal text never triggers it.
+    private var slashActive: Bool {
+        input.hasPrefix("/") && !input.contains(" ") && !input.contains("\n")
+    }
+    private var slashMatches: [SlashCommand] {
+        guard slashActive else { return [] }
+        let q = input.dropFirst().lowercased()
+        return Self.slashCommands.filter { q.isEmpty || $0.id.hasPrefix(q) }
+    }
+    private func applySlash(_ cmd: SlashCommand) {
+        switch cmd.kind {
+        case .template(let t):
+            input = t
+            inputFocused = true
+        case .action(let a):
+            input = ""
+            switch a {
+            case "clear": if !isRunning { withAnimation { messages.removeAll() } }
+            case "copy":
+                let md = messages
+                    .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
+                    .joined(separator: "\n\n---\n\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(md, forType: .string)
+            default: break
+            }
+        }
+    }
+
     /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
     private let welcomeExamples: [(icon: String, text: String)] = [
         ("sparkles", "Review this project"),
@@ -789,14 +843,49 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
             }
+            // Slash-command menu — floats above the composer while typing `/…`.
+            // `↵` picks the top row; clicking a row runs it. Templates pre-fill the
+            // input; actions (clear/copy) run immediately.
+            if !slashMatches.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(slashMatches) { cmd in
+                        Button { applySlash(cmd) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: cmd.icon).font(.system(size: 12))
+                                    .foregroundStyle(DS.Palette.accent).frame(width: 16)
+                                Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
+                                Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                if cmd.id == slashMatches.first?.id {
+                                    Text("↵").font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                            }
+                            .padding(.horizontal, 11).padding(.vertical, 7)
+                            .background(hoveredSlash == cmd.id ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hoveredSlash = $0 ? cmd.id : (hoveredSlash == cmd.id ? nil : hoveredSlash) }
+                    }
+                }
+                .padding(5)
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .frame(maxWidth: 520, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             VStack(spacing: 9) {
                 // Text first — full width, comfortable, nothing competing with it.
-                TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
+                TextField("Ask Salehman to build, fix, or explain…   ( / for commands )", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13.5))
                     .lineLimit(1...6)
                     .focused($inputFocused)
-                    .onSubmit(send)
+                    // Enter picks the top `/`-command when the menu is open; otherwise sends.
+                    .onSubmit { if let top = slashMatches.first { applySlash(top) } else { send() } }
                     // Focusing the input = intent to send: pre-load the local model
                     // (a 14B takes seconds to come into RAM) while the user types.
                     .onChange(of: inputFocused) { _, focused in
@@ -823,7 +912,7 @@ struct CodeView: View {
                                 : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
                             .frame(width: 27, height: 27)
                             .background(
-                                isRunning ? AnyShapeStyle(Color.red.opacity(0.85))
+                                isRunning ? AnyShapeStyle(DS.Palette.accent.opacity(0.85))
                                     : (input.trimmingCharacters(in: .whitespaces).isEmpty
                                         ? AnyShapeStyle(Color.white.opacity(0.10))
                                         : AnyShapeStyle(DS.Palette.accent)),

@@ -704,7 +704,7 @@ struct ContentView: View {
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 26, height: 26)
-                                .background(Color.red.opacity(0.85), in: Circle())
+                                .background(DS.Palette.accent.opacity(0.85), in: Circle())
                                 .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
