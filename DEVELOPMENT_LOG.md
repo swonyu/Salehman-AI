@@ -1831,3 +1831,22 @@ N/A for a native desktop tool — fidelity to the app's own token system wins.
 **Verified in pixels:** welcome pills + eyebrow (code_tab crop), bezeled slash menu +
 activity tiles (code_samples crop). Build green; QA all surfaces pass.
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-12 (~01:3x) — Chat C: tabs marathon cycle 8 (Memory viewer sort)
+**What & why:** Memory sheet (`Views/MemoryView.swift`) had a search filter but no sort.
+Added a pure `MemorySort` enum (`newest`/`oldest`/`alphabetical`) with `apply(_:filter:)`
+that folds the case-insensitive substring filter in before ordering — single source of
+truth for the list, and unit-testable. Facts arrive oldest-first from `allFacts()`, so
+`newest` reverses; `alphabetical` is `localizedCaseInsensitiveCompare`. Wired a sort `Menu`
+into a new `controlsRow` (search shown when >3 facts, sort when >1), mirroring the proven
+`KnowledgeSort` enum→Menu pattern. New `MemorySortTests` (7 cases): store-order, reverse,
+case-insensitive A–Z, filter-before-sort, blank/no-match, empty input, title+icon non-empty.
+**Result:** Feature verified green — isolated `MemorySortTests` run compiled the whole app
+(MemoryView + the prior MemoryStore fix included) and passed: `** TEST SUCCEEDED **` (commit
+`60d7934`). The subsequent FULL-suite run went red, but **100% in `SettingsView.swift`
+(Chat B's lane, `activeBrain*` scope, 10×)** — landed between my two runs; 0 errors in any
+of my files. Flagged on the COORDINATION board (banner); not fixing (not my lane). This run
+also CONFIRMED the previously-pending green for the `458e4c5` MemoryStore `recall`/`cosine`
+`nonisolated` fix (CodeView red cleared by Chat B).
+**Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AITests/MemorySortTests.swift`,
+`COORDINATION.md`, `DEVELOPMENT_LOG.md`.
