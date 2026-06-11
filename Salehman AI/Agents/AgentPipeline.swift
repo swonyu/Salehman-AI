@@ -255,9 +255,32 @@ enum AgentPipeline {
     /// like "yes" / "continue" reaches the brain with no idea what came before.
     /// No-op when there's no history yet (first turn). The transcript is already
     /// length-capped by `ConversationStore`, so this can't bloat the prompt.
+    /// Char budget for folded history when the LOCAL floor serves. The 14B runs at
+    /// num_ctx 4096 (≈16k chars TOTAL for persona + history + mission + reply); an
+    /// oversized prompt is truncated server-side from the TOP — which silently eats
+    /// the persona and these very instructions. ~9k chars of history leaves room.
+    nonisolated static let localHistoryCharBudget = 9_000
+
+    /// Drop OLDEST lines (the transcript is "Role: text" lines, oldest first) until
+    /// `history` fits `budget`. Pure + nonisolated → unit-testable.
+    nonisolated static func trimmedForLocalWindow(_ history: String, budget: Int) -> String {
+        guard history.count > budget else { return history }
+        var lines = history.components(separatedBy: "\n")
+        var trimmed = history
+        while trimmed.count > budget, lines.count > 2 {
+            lines.removeFirst()
+            trimmed = lines.joined(separator: "\n")
+        }
+        return "(earlier context trimmed)\n" + trimmed
+    }
+
     nonisolated static func withConversationContext(_ mission: String, history: String) -> String {
-        let h = history.trimmingCharacters(in: .whitespacesAndNewlines)
+        var h = history.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !h.isEmpty else { return mission }
+        // Only the local floor needs the diet — cloud windows are 32k+.
+        if !SalehmanEngine.hasAnyCloud {
+            h = trimmedForLocalWindow(h, budget: localHistoryCharBudget)
+        }
         return """
         Conversation so far (most recent last) — use it to interpret the new message \
         (e.g. a short "yes" / "no" / "continue" refers to what was just discussed):

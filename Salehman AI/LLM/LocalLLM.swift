@@ -1601,7 +1601,10 @@ enum LocalLLM {
     /// Mac" summary/Q&A). Returns `nil` when no on-device model is available, so
     /// the caller can say so honestly rather than silently falling back to cloud.
     static func generateOnDevice(_ prompt: String, maxTokens: Int? = nil) async -> String? {
-        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+        // Forward the caller's token budget — dropping it let a 110-token "terse
+        // note" run unbounded on the local 14B (~15 tok/s ⇒ a minute of ramble).
+        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                               maxTokens: maxTokens) { return reply }
         // Unsloth Studio (or any local OpenAI-compat server) qualifies as
         // on-device ONLY when its endpoint is a loopback URL — see
         // `UnslothStudio.isLocalLoopback`. A user-typed public URL would NOT

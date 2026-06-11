@@ -13,9 +13,9 @@ struct BackgroundView: View {
     /// state-free → the cached texture survives all parent redraws.
     private var glows: some View {
         ZStack {
-            Circle().fill(Theme.accent.opacity(0.18)).frame(width: 480).blur(radius: 90)
+            Circle().fill(Theme.accent.opacity(0.09)).frame(width: 480).blur(radius: 90)
                 .offset(x: -220, y: -260)
-            Circle().fill(Theme.accent2.opacity(0.16)).frame(width: 420).blur(radius: 90)
+            Circle().fill(Theme.accent2.opacity(0.08)).frame(width: 420).blur(radius: 90)
                 .offset(x: 260, y: 300)
         }
         .drawingGroup()

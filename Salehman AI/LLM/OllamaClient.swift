@@ -105,8 +105,14 @@ enum OllamaClient {
         /// exchange after a pause re-pays a multi-second load, so it stays warm
         /// 5 min and gets the 4096 context its Modelfile is built for. Other
         /// (smaller) models keep the RAM-lean 30 s / 2048 defaults.
+        /// Matches the configured name OR any "salehman*" variant — the model
+        /// ships as `salehman14b` with a `salehman` alias, and a caller passing
+        /// the raw name must not silently get the small-model knobs (the alias
+        /// trap the parallel session flagged in COORDINATION).
         nonisolated static func tuned(for model: String) -> Generation {
-            model == AppSettings.customModelNameCurrent
+            let custom = AppSettings.customModelNameCurrent
+            let base = model.components(separatedBy: ":").first ?? model
+            return (model == custom || base.lowercased().hasPrefix("salehman"))
                 ? Generation(keepAlive: "5m", numCtx: 4096)
                 : .default
         }
@@ -283,12 +289,16 @@ enum OllamaClient {
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
     /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
-    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap).
+    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap),
+    /// or just `maxTokens` to cap reply length while keeping the tuned knobs —
+    /// callers with a token budget (agent notes are 110, full replies 700) MUST
+    /// cap, or a 14B at ~15 tok/s turns a "terse note" into a minute-long ramble.
     static func chat(prompt: String, system: String? = nil,
-                     gen: Generation? = nil) async -> String? {
+                     gen: Generation? = nil, maxTokens: Int? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
-        return await generate(model: model, prompt: prompt, system: system,
-                              gen: gen ?? .tuned(for: model))
+        var g = gen ?? .tuned(for: model)
+        if let cap = maxTokens { g.numPredict = cap }
+        return await generate(model: model, prompt: prompt, system: system, gen: g)
     }
 
     /// Pre-load the active chat model into RAM (no prompt → Ollama just loads the

@@ -205,6 +205,11 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
+    // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
+    // across launches. Auto-expands when a file is selected or a run leaves diffs.
+    @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
+    @AppStorage("code_treeCollapsed") private var treeCollapsed = false
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -233,18 +238,30 @@ struct CodeView: View {
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
-                fileTree
-                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                if !treeCollapsed {
+                    fileTree
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                }
 
                 VSplitView {
                     chatPane
                         .frame(minHeight: 220)
-                    inspectorPane
-                        .frame(minHeight: 160)
+                    // Collapsible: the inspector used to be pinned at minHeight 160 —
+                    // permanently eating half the tab even when empty ("I can't even
+                    // minimize it"). Collapsed = a slim reopen bar; auto-expands when
+                    // a file is selected or a run produces diffs.
+                    if inspectorCollapsed {
+                        inspectorReopenBar
+                    } else {
+                        inspectorPane
+                            .frame(minHeight: 160)
+                    }
                 }
                 .frame(minWidth: 420)
             }
-            .background(Color.black.opacity(0.18))
+            // Opaque flat surface (covers the app's glow blobs) — the Code tab
+            // reads like a clean editor, not a mood piece. Neutral GREY, no red cast.
+            .background(DS.Palette.codeSurface)
             // Inline command-approval card — the SAME gate as the Chat tab, so terminal /
             // file-edit commands the AI runs here still prompt for approval (unless
             // Unrestricted is on).
@@ -292,6 +309,10 @@ struct CodeView: View {
     // MARK: File tree (left)
 
     private var fileTree: some View {
+        treeContent.background(DS.Palette.codeSurfaceSide)
+    }
+
+    private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button(action: ws.openFolder) {
@@ -316,6 +337,12 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                        Image(systemName: "sidebar.left").font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Hide the file tree")
+                    .accessibilityLabel("Hide the file tree")
                         .help("Rescan project files")
                         .accessibilityLabel("Rescan project files")
                 }
@@ -370,6 +397,7 @@ struct CodeView: View {
                                 FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
                                     ws.select(url)
                                     rightPane = ws.changedFiles.contains(url) ? .diff : .file
+                                    inspectorCollapsed = false
                                 }
                             }
                         }
@@ -430,6 +458,7 @@ struct CodeView: View {
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
+            inspectorCollapsed = false   // user asked to see a file — bring the pane back
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon.symbol)
@@ -463,8 +492,14 @@ struct CodeView: View {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
                 HStack(spacing: 12) {
-                    Text("\(messages.count) message\(messages.count == 1 ? "" : "s")")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    if treeCollapsed {
+                        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+                            Image(systemName: "sidebar.left").font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Show the file tree")
+                        .accessibilityLabel("Show the file tree")
+                    }
                     Spacer()
                     Button {
                         let md = messages
@@ -495,7 +530,7 @@ struct CodeView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
                         }
@@ -507,7 +542,11 @@ struct CodeView: View {
                             streamingView.id("stream")
                         }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
+                    // Centered reading column (Claude-style): long lines are hard to
+                    // read edge-to-edge on a wide window — cap and center.
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -521,7 +560,7 @@ struct CodeView: View {
 
             inputBar
         }
-        .background(Color.black.opacity(0.12))
+        .background(Color.clear)
     }
 
     /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
@@ -627,47 +666,13 @@ struct CodeView: View {
         }
     }
 
-    /// Sender avatar — Salehman gets an accent-tinted disc matching the welcome icon.
-    @ViewBuilder
-    private func senderAvatar(isUser: Bool) -> some View {
-        ZStack {
-            if !isUser { Circle().fill(DS.Palette.accent.opacity(0.13)).frame(width: 26, height: 26) }
-            Image(systemName: isUser ? "person.crop.circle.fill" : "sparkles")
-                .font(.system(size: isUser ? 17 : 13, weight: isUser ? .regular : .semibold))
-                .foregroundStyle(isUser ? Color.white.opacity(0.55) : DS.Palette.accent)
-        }
-        .frame(width: 26, height: 26)
-    }
-
     private func codeBubble(_ msg: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: msg.isUser)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(msg.isUser ? "You" : "Salehman")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-                    if !msg.isUser {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(msg.text, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc").font(.system(size: 10))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy this message")
-                    }
-                }
-                MarkdownText(text: msg.text)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        CodeMessageRow(msg: msg)
     }
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: false)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Salehman").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.6)
@@ -767,6 +772,8 @@ struct CodeView: View {
                 return true
             }
         }
+        .frame(maxWidth: 780)
+        .frame(maxWidth: .infinity)
         .padding(10)
         .background(.ultraThinMaterial)
     }
@@ -791,6 +798,17 @@ struct CodeView: View {
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
+                // Which LOCAL model is actually serving (only shown when Salehman has
+                // no cloud configured, so the local floor is what answers): the owner's
+                // own fine-tune gets the accent — a fallback coder stays grey. Makes
+                // "is the real salehman14b active?" visible at a glance.
+                if let m = localServingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
@@ -801,9 +819,43 @@ struct CodeView: View {
         .foregroundStyle(.secondary)
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        // Refresh the serving-model suffix when the tab appears or the brain changes.
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Resolve which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers).
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            localServingModel = nil; return
+        }
+        localServingModel = await OllamaClient.activeChatModel()
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
+
+    /// Slim bar shown while the inspector is collapsed — one click brings it back.
+    private var inspectorReopenBar: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
+                Text("Files & Diffs").font(.system(size: 10.5, weight: .medium))
+                if !ws.changedFiles.isEmpty {
+                    Text("\(ws.changedFiles.count) changed")
+                        .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .background(.ultraThinMaterial)
+        .help("Show the file viewer / diff panel")
+        .accessibilityLabel("Show the files and diffs panel")
+    }
 
     private var inspectorPane: some View {
         VStack(spacing: 0) {
@@ -845,6 +897,15 @@ struct CodeView: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = true }
+                } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Hide this panel (it comes back when a run has diffs)")
+                .accessibilityLabel("Hide the files and diffs panel")
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
@@ -865,7 +926,7 @@ struct CodeView: View {
                 fileView
             }
         }
-        .background(Color.black.opacity(0.20))
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     private var fileView: some View {
@@ -1067,7 +1128,7 @@ struct CodeView: View {
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
             await MainActor.run {
-                if !ws.changedFiles.isEmpty { rightPane = .diff }
+                if !ws.changedFiles.isEmpty { rightPane = .diff; inspectorCollapsed = false }
             }
         }
     }
@@ -1110,7 +1171,7 @@ struct CodeView: View {
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the only brain is the local qwen2.5-coder — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
                 To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
                 """
@@ -1170,5 +1231,47 @@ struct CodeView: View {
         runningTask?.cancel()
         isRunning = false
         MissionProgress.shared.finish()
+    }
+}
+
+/// One conversation row, Claude-Code style: the user's message is a quiet
+/// right-aligned block; Salehman's reply flows flush-left like a document —
+/// no avatars, no name labels, copy appears on hover. Simple and elegant.
+private struct CodeMessageRow: View {
+    let msg: ChatMessage
+    @State private var hovering = false
+
+    var body: some View {
+        if msg.isUser {
+            HStack {
+                Spacer(minLength: 60)
+                Text(msg.text)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 13).padding(.vertical, 8)
+                    .background(Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                MarkdownText(text: msg.text)
+                Spacer(minLength: 26)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(msg.text, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .help("Copy this message")
+                .accessibilityLabel("Copy this message")
+            }
+            .onHover { hovering = $0 }
+        }
     }
 }

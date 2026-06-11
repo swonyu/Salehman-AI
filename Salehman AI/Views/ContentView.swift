@@ -1169,6 +1169,10 @@ struct CachedImage: View {
 struct TypingIndicator: View {
     @State private var animating = false
     @State private var halo = false
+    // After ~5s of pre-stream silence the local model is probably loading into
+    // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
+    // auto-cancels when streaming starts (this view disappears).
+    @State private var warmHint = false
 
     var body: some View {
         HStack(spacing: 9) {
@@ -1212,12 +1216,21 @@ struct TypingIndicator: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
             )
+            if warmHint {
+                Text("Warming up the local model…")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .transition(.opacity)
+            }
         }
         .onAppear {
             animating = true
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 halo = true
             }
+        }
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }

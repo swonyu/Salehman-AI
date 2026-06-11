@@ -97,6 +97,26 @@ struct PaidBrainHidingTests {
     }
 }
 
+// MARK: - Local-window history trim (14B num_ctx 4096 protection)
+//
+// Oversized prompts are truncated SERVER-side from the top — eating the persona.
+// The trim must drop OLDEST turns first, keep the newest, and no-op under budget.
+struct LocalWindowTrimTests {
+    @Test func underBudgetIsUntouched() {
+        let h = "User: hi\nSalehman AI: hey"
+        #expect(AgentPipeline.trimmedForLocalWindow(h, budget: 1_000) == h)
+    }
+    @Test func overBudgetDropsOldestKeepsNewest() {
+        let lines = (1...50).map { "User: message number \($0) with some padding text" }
+        let h = lines.joined(separator: "\n")
+        let out = AgentPipeline.trimmedForLocalWindow(h, budget: 400)
+        #expect(out.hasPrefix("(earlier context trimmed)"))
+        #expect(out.contains("message number 50"))      // newest survives
+        #expect(!out.contains("message number 1 "))     // oldest dropped
+        #expect(out.count <= 400 + 60)                  // budget + marker slack
+    }
+}
+
 // MARK: - AgentPipeline.looksIncomplete (auto-continue trigger)
 //
 // Drives the optional claude-autocontinue loop: it must fire on clear "to be
