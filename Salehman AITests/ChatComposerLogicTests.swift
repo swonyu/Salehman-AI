@@ -134,6 +134,33 @@ struct ChatExtractForEditTests {
     }
 }
 
+struct ChatArchiveTitleTests {
+
+    private func msg(_ text: String, user: Bool) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: user, timestamp: .now)
+    }
+
+    @Test func firstUserLineBecomesTheTitle() {
+        let msgs = [msg("Fix my Wi-Fi\nplease", user: true), msg("On it.", user: false)]
+        #expect(ChatStore.archiveTitle(for: msgs) == "Fix my Wi-Fi")
+    }
+
+    @Test func assistantFirstConversationsSkipToTheUser() {
+        let msgs = [msg("Welcome!", user: false), msg("hello", user: true)]
+        #expect(ChatStore.archiveTitle(for: msgs) == "hello")
+    }
+
+    @Test func longTitlesAreClipped() {
+        let long = String(repeating: "a", count: 100)
+        #expect(ChatStore.archiveTitle(for: [msg(long, user: true)]).count == 60)
+    }
+
+    @Test func noUserMessageFallsBack() {
+        #expect(ChatStore.archiveTitle(for: [msg("hi", user: false)]) == "Conversation")
+        #expect(ChatStore.archiveTitle(for: []) == "Conversation")
+    }
+}
+
 // MARK: - Attachment.merged — the multi-attachment collapse contract
 //
 // The send pipeline stays single-attachment by design; the composer merges.

@@ -1594,3 +1594,18 @@ Edit & Resend; assistant rows: Copy, Quote in Composer, Read Aloud/Stop Speaking
 Hover affordances are invisible until discovered; right-click is the macOS-native first reach.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — marathon slice 11: CONVERSATION HISTORY (new chat archives, never erases)
+**What & why:** The app held exactly ONE conversation — ⌘N erased it forever. Now: `newChat`
+flushes the save debounce and snapshots the conversation into
+`Application Support/SalehmanAI/chats/chat_<ms>.json` (same `[ChatMessage]` coding as the live
+file). NEW `ChatHistoryView` sheet (header clock icon, or `/history`): archived conversations
+newest-activity-first (title = first user line via pure `ChatStore.archiveTitle`, date ·
+message count), per-row **Restore** (symmetric — current conversation is archived first, the
+restored file removed since it becomes live) and delete. Empty state explains the ⌘N-archives
+behavior. 4 `ChatArchiveTitleTests` pin the title derivation.
+**Files:** `Views/ContentView.swift` (ChatStore archive API + wiring + header icon + sheet +
+/history), NEW `Views/ChatHistoryView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`;
+bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). Archives are additive — existing
+chat_history.json untouched; restore is plain load.

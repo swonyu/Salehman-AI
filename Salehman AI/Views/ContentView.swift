@@ -41,6 +41,7 @@ struct ContentView: View {
     @State private var attachments: [Attachment] = []
     @State private var loadingAttachment = false
     @State private var showSettings = false
+    @State private var showHistory = false
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -138,6 +139,7 @@ struct ContentView: View {
         .animation(DS.Motion.spring, value: approval.pending?.id)
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { submit($0) }) }
+        .sheet(isPresented: $showHistory) { ChatHistoryView(onRestore: restoreArchive) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -295,6 +297,10 @@ struct ContentView: View {
             // to the market pill, so it's reachable from every tab, not just Chat.
             // ContentView still owns the `.sheet`; AppState.showSettingsRequested
             // is the bridge that opens it.)
+
+            // Conversation history (archives; new chat archives, never erases)
+            CircleIconButton(systemName: "clock.arrow.circlepath",
+                             help: "Conversation history") { showHistory = true }
 
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
@@ -668,6 +674,9 @@ struct ContentView: View {
         .init(id: "voice", icon: "waveform.badge.mic",
               blurb: "Open live voice mode",
               kind: .action("voice")),
+        .init(id: "history", icon: "clock.arrow.circlepath",
+              blurb: "Browse archived conversations",
+              kind: .action("history")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -695,8 +704,9 @@ struct ContentView: View {
             case "clear":  newChat()
             case "copy":   ChatExporter.copyToPasteboard(vm.messages)
             case "export": ChatExporter.savePanel(vm.messages)
-            case "find":   withAnimation(DS.Motion.snappy) { searching = true }
-            case "voice":  showLive = true
+            case "find":    withAnimation(DS.Motion.snappy) { searching = true }
+            case "voice":   showLive = true
+            case "history": showHistory = true
             default: break
             }
         }
@@ -1071,9 +1081,28 @@ struct ContentView: View {
 
     /// New chat: clear the conversation (vm) + the view's search UI.
     private func newChat() {
+        // Archive the conversation instead of erasing it — flush the debounce
+        // first so the disk copy matches what's on screen, then snapshot it
+        // into the history archive. Restorable from the clock icon / /history.
+        ChatStore.flushSave()
+        ChatStore.archiveCurrent()
         vm.startNewChat()
         searching = false
         searchQuery = ""
+    }
+
+    /// Replace the live conversation with an archived one. Symmetric with
+    /// `newChat`: the current conversation is archived first, and the restored
+    /// archive file is removed (it IS the live conversation now — keeping it
+    /// would duplicate on the next archive pass).
+    private func restoreArchive(_ item: ChatStore.ArchivedChat) {
+        ChatStore.flushSave()
+        ChatStore.archiveCurrent()
+        let restored = ChatStore.loadArchive(item.id)
+        guard !restored.isEmpty else { return }
+        ChatStore.deleteArchive(item.id)
+        withAnimation(DS.Motion.spring) { vm.messages = restored }
+        showHistory = false
     }
 }
 
@@ -1234,6 +1263,72 @@ enum ChatStore {
     nonisolated static func save(_ messages: [ChatMessage]) {
         guard let data = try? JSONEncoder().encode(messages) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    // MARK: Archive (conversation history)
+    // New chats ARCHIVE the old conversation instead of erasing it. Archives
+    // are sibling JSONs in `chats/` using the same [ChatMessage] coding as the
+    // live file, so restore is a plain load.
+
+    /// One archived conversation, summarized for the History sheet.
+    struct ArchivedChat: Identifiable {
+        let id: URL          // archive file
+        let title: String
+        let date: Date       // last activity (newest message timestamp)
+        let messageCount: Int
+    }
+
+    nonisolated private static var archiveDir: URL {
+        let dir = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("chats", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// First user line, trimmed to a list-row title. Pure for tests.
+    nonisolated static func archiveTitle(for messages: [ChatMessage]) -> String {
+        let firstLine = messages.first(where: { $0.isUser })?.text
+            .components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return firstLine.isEmpty ? "Conversation" : String(firstLine.prefix(60))
+    }
+
+    /// Snapshot the CURRENT (on-disk) conversation into the archive. No-op for
+    /// an empty conversation. Caller flushes the debounce first.
+    nonisolated static func archiveCurrent() {
+        let msgs = load()
+        guard !msgs.isEmpty, let data = try? JSONEncoder().encode(msgs) else { return }
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        try? data.write(to: archiveDir.appendingPathComponent("chat_\(stamp).json"),
+                        options: .atomic)
+    }
+
+    /// All archived conversations, newest activity first.
+    nonisolated static func archives() -> [ArchivedChat] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: archiveDir, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> ArchivedChat? in
+                guard let data = try? Data(contentsOf: url),
+                      let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data),
+                      !msgs.isEmpty else { return nil }
+                return ArchivedChat(id: url,
+                                    title: archiveTitle(for: msgs),
+                                    date: msgs.map(\.timestamp).max() ?? .distantPast,
+                                    messageCount: msgs.count)
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    nonisolated static func loadArchive(_ url: URL) -> [ChatMessage] {
+        guard let data = try? Data(contentsOf: url),
+              let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return [] }
+        return msgs
+    }
+
+    nonisolated static func deleteArchive(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 
     // Debounced save: coalesce rapid message-array changes (typing, streaming
