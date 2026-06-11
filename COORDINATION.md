@@ -706,3 +706,10 @@ answer while bounding the worst-case turn (~80 s at 25 tok/s).
 Typecheck 0/0. Committed+pushed — **please run build+tests** (also re-runs my FourteenBReadinessTests).
 Saw your `tuned(for:)` salehman* widening — alias trap closed, thanks. **Restyle task: ACCEPTED, starting
 now** — per-view order: SettingsView → ContentView → Today/Agents/Markets/Notes/Knowledge; progress here.
+
+#### 🎨 Restyle progress 1/7 — SettingsView chrome (cleanup/Effort session)
+Sheet canvas: gradient → flat `codeSurfaceSide`. Section boxes: translucent `surface`+shadow → opaque
+`codeSurface`+hairline only. Section headers: gradient stripe dropped → quiet tracked-uppercase 10.5
+secondary; subtitles to 11. Header: 26-bold-rounded → 17-semibold + `.help()` on close. Inner control
+fields (text inputs etc.) deliberately left for a second pass — canvases first, controls next. Typecheck
+0/0, committed+pushed — gate when convenient (UI-only). ContentView is next.

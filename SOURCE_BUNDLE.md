@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 16:34 +03 · Swift files: 129 · Swift LOC: 24277_
+_Generated: 2026-06-11 16:37 +03 · Swift files: 129 · Swift LOC: 24271_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17838,7 +17838,7 @@ struct ScratchpadView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1977 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1971 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -17976,11 +17976,10 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            // Inherit the DS canvas tokens so the Settings sheet picks up the
-            // Apple-Music warm-dark identity (was a hardcoded cold-indigo literal
-            // that bypassed the token layer — a classic design-system leak).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Claude-Code-minimal restyle (owner directive, 2026-06-11): the
+            // sheet canvas is FLAT opaque neutral grey — no gradients, no
+            // translucent stacking. codeSurfaceSide = the panel shade.
+            DS.Palette.codeSurfaceSide.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -18290,41 +18289,36 @@ struct SettingsView: View {
     }
 
     private var header: some View {
+        // Slimmer header per the design language — title at body-plus weight,
+        // not a display headline.
         HStack {
-            Text("Settings").font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Spacer()
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).accessibilityLabel("Close")
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).help("Close").accessibilityLabel("Close")
         }
     }
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, _ subtitle: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Premium section header — a 3pt brand-gradient stripe "anchors" the
-            // title without competing with it; tracked uppercase + confident
-            // white reads as Linear/Things/Apple-Music rather than greyed-out.
-            HStack(spacing: 8) {
-                Capsule()
-                    .fill(DS.Gradient.brand)
-                    .frame(width: 3, height: 14)
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.92))
-            }
+            // Minimal section header: quiet tracked uppercase, no decorative
+            // stripe — the content box carries the structure (chrome diet).
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.leading, 11)   // align under the title (past the stripe)
             }
+            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                .dsShadow(DS.Elevation.shadow1)
         }
     }
 
@@ -25637,7 +25631,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (708 lines) =====
+===== FILE: COORDINATION.md (715 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26347,7 +26341,14 @@ Typecheck 0/0. Committed+pushed — **please run build+tests** (also re-runs my 
 Saw your `tuned(for:)` salehman* widening — alias trap closed, thanks. **Restyle task: ACCEPTED, starting
 now** — per-view order: SettingsView → ContentView → Today/Agents/Markets/Notes/Knowledge; progress here.
 
-===== FILE: DEVELOPMENT_LOG.md (2195 lines) =====
+#### 🎨 Restyle progress 1/7 — SettingsView chrome (cleanup/Effort session)
+Sheet canvas: gradient → flat `codeSurfaceSide`. Section boxes: translucent `surface`+shadow → opaque
+`codeSurface`+hairline only. Section headers: gradient stripe dropped → quiet tracked-uppercase 10.5
+secondary; subtitles to 11. Header: 26-bold-rounded → 17-semibold + `.help()` on close. Inner control
+fields (text inputs etc.) deliberately left for a second pass — canvases first, controls next. Typecheck
+0/0, committed+pushed — gate when convenient (UI-only). ContentView is next.
+
+===== FILE: DEVELOPMENT_LOG.md (2203 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27896,6 +27897,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Second wave of owner-mandated 14B-in-app tasks. **Item 7:** both tool loops (`chatOllamaWithTools`, `chatOpenAICompatWithTools`) now check `Task.isCancelled` at the top of every round and before the final wrap-up generate — pressing Stop aborts between rounds and returns the best prose so far, instead of a cancelled mission holding the serial 14B slot for minutes (mid-request cancels were already safe — URLSession is cancellation-aware). **Item 8:** new shared `LocalLLM.toolTurnTokenCap = 2048`, wired as `max_tokens` into the compat tool-path bodies (vLLM/Studio otherwise generate to max_model_len) and as `num_predict` into the Ollama tool-loop body (same unbounded risk). **Item 9 (audit, no code):** all agent call sites already pass token budgets (700/110/300). **Item 10 (audit, no code):** the Settings status row (shipped a47bb49) works with the `salehman14b`+alias plan; flagged the `Generation.tuned` exact-name alias trap on the board — the other session closed it same-day (salehman* prefix match). Items 7/8 were deliberately queued until the other session's in-flight LocalLLM commit (`70d6af7`) landed — a background watcher on the file's git state gated the start (shared working tree discipline).
 
 **Result:** Typecheck 0 errors / 0 warnings; build+tests delegated via board (their last run: 306/306 green incl. FourteenBReadinessTests). Next: the owner-directive whole-app restyle (accepted on the board; per-view, my lane grant: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge).
+
+## 2026-06-11 · Whole-app restyle 1/7 — SettingsView chrome to the Code-tab design language
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** First slice of the owner-directive restyle ("make the whole app look like [the Code tab]"). SettingsView macro chrome: sheet canvas gradient → flat opaque `DS.Palette.codeSurfaceSide`; section content boxes translucent-`surface`-with-shadow → opaque `codeSurface` with hairline stroke only; section headers' brand-gradient capsule stripe dropped for quiet tracked-uppercase 10.5pt secondary (chrome diet), subtitles to the spec's 11pt; "Settings" header 26pt-bold-rounded → 17pt-semibold with `.help()` on the close button. Inner control surfaces deliberately deferred to a second pass (canvases first). Lane grant per board: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge are mine for this task; CodeView/MarkdownText/DesignSystem stay with the other session.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate delegated. Next slice: ContentView (main chat) message rows + reading column.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

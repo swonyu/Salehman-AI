@@ -134,11 +134,10 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            // Inherit the DS canvas tokens so the Settings sheet picks up the
-            // Apple-Music warm-dark identity (was a hardcoded cold-indigo literal
-            // that bypassed the token layer — a classic design-system leak).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Claude-Code-minimal restyle (owner directive, 2026-06-11): the
+            // sheet canvas is FLAT opaque neutral grey — no gradients, no
+            // translucent stacking. codeSurfaceSide = the panel shade.
+            DS.Palette.codeSurfaceSide.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -448,41 +447,36 @@ struct SettingsView: View {
     }
 
     private var header: some View {
+        // Slimmer header per the design language — title at body-plus weight,
+        // not a display headline.
         HStack {
-            Text("Settings").font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Spacer()
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).accessibilityLabel("Close")
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).help("Close").accessibilityLabel("Close")
         }
     }
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, _ subtitle: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Premium section header — a 3pt brand-gradient stripe "anchors" the
-            // title without competing with it; tracked uppercase + confident
-            // white reads as Linear/Things/Apple-Music rather than greyed-out.
-            HStack(spacing: 8) {
-                Capsule()
-                    .fill(DS.Gradient.brand)
-                    .frame(width: 3, height: 14)
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.92))
-            }
+            // Minimal section header: quiet tracked uppercase, no decorative
+            // stripe — the content box carries the structure (chrome diet).
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.leading, 11)   // align under the title (past the stripe)
             }
+            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                .dsShadow(DS.Elevation.shadow1)
         }
     }
 
