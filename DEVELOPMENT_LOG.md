@@ -1493,3 +1493,18 @@ app before launching. First fresh capture surfaced chat-B's committed gallery ev
 (5.22% drift, eyes-verified healthy: timing pill, time separator, accent stop-disc) —
 chat_samples + code_samples baselines re-adopted.
 **Files:** `Views/CodeView.swift`, `tools/qa.sh`.
+
+## 2026-06-11 (night) — marathon slice 5: multiple attachments
+**What & why:** The composer now takes SEVERAL files: per-file chips (individually removable,
+middle-truncated names, horizontal scroll when crowded), multi-select open panel
+(`AttachmentLoader.pickFiles`), multi-file drop (all providers, was first-only), Finder
+multi-copy paste (all URLs, was first-only). The send pipeline deliberately stays
+single-attachment: `Attachment.merged` collapses N files into one synthetic attachment at
+submit (every name + content, `––– name (kind) –––` separators) while a SINGLE file passes
+through untouched so the image-vision path keeps firing. 3 new `AttachmentMergeTests` pin that
+contract (empty→nil, single identity + vision fields, multi carries all names/bodies and never
+claims vision).
+**Files:** `Views/ContentView.swift`, `Persistence/Attachments.swift` (additive: merged +
+pickFiles), `Salehman AITests/ChatComposerLogicTests.swift`; bundle regenerated. (Thanks to
+whichever session added the missing `import Foundation` to the test file — caught pre-red.)
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned); no stale single-attachment refs (grep).

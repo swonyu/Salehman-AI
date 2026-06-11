@@ -30,7 +30,9 @@ struct ContentView: View {
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var brainStatus = BrainStatus.shared
-    @State private var attachment: Attachment?
+    /// Pending attachments (multi: each gets a chip; merged into one synthetic
+    /// Attachment at submit so the send pipeline stays single-attachment).
+    @State private var attachments: [Attachment] = []
     @State private var loadingAttachment = false
     @State private var showSettings = false
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
@@ -674,11 +676,20 @@ struct ContentView: View {
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
-            // Pending attachment chip
+            // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
-                attachmentChip(icon: "hourglass", title: "Reading attachment…", removable: false)
-            } else if let att = attachment {
-                attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
+                attachmentChip(icon: "hourglass", title: "Reading attachment…")
+            }
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { att in
+                            attachmentChip(icon: att.icon,
+                                           title: "\(att.name) · \(att.kind)",
+                                           onRemove: { attachments.removeAll { $0.id == att.id } })
+                        }
+                    }
+                }
             }
 
             // Slash-command menu — floats above the composer while typing `/…`
@@ -891,13 +902,15 @@ struct ContentView: View {
             // Drag a file anywhere onto the composer to attach it as context —
             // same affordance the Code tab's input has.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
-                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                    Task { @MainActor in
-                        loadingAttachment = true
-                        attachment = await AttachmentLoader.load(url: url)
-                        loadingAttachment = false
+                guard !providers.isEmpty else { return false }
+                for provider in providers {
+                    _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
+                        guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                        Task { @MainActor in
+                            loadingAttachment = true
+                            attachments.append(await AttachmentLoader.load(url: url))
+                            loadingAttachment = false
+                        }
                     }
                 }
                 return true
@@ -910,41 +923,46 @@ struct ContentView: View {
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
-    private func attachmentChip(icon: String, title: String, removable: Bool) -> some View {
+    private func attachmentChip(icon: String, title: String,
+                                onRemove: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(Theme.accent)
-            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
-            if removable {
-                Button { attachment = nil } label: {
+            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1).truncationMode(.middle)
+            if let onRemove {
+                Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Remove attachment")
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Chips size to content now (they sit in a horizontal row), but a
+        // single long filename still shouldn't span the whole composer.
+        .frame(maxWidth: 360, alignment: .leading)
     }
 
     private var canSend: Bool {
         guard !vm.isRunning, !loadingAttachment else { return false }
-        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil
+        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     // MARK: Attachment actions
     @MainActor private func attachFile() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
         loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
         loadingAttachment = false
         inputFocused = true
     }
 
     @MainActor private func attachImage() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
         loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
         loadingAttachment = false
         inputFocused = true
     }
@@ -954,10 +972,10 @@ struct ContentView: View {
     /// copy a picture, then attach it here (the "I can't paste pictures" fix).
     @MainActor private func pasteImage() async {
         let pb = NSPasteboard.general
-        // 1) A copied file URL.
-        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], let url = urls.first {
+        // 1) Copied file URLs (all of them — Finder multi-copy works).
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
             loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: url)
+            for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
             loadingAttachment = false; inputFocused = true; return
         }
         // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.
@@ -968,7 +986,7 @@ struct ContentView: View {
                 .appendingPathComponent("pasted-\(UUID().uuidString).png")
             try? png.write(to: tmp)
             loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: tmp)
+            attachments.append(await AttachmentLoader.load(url: tmp))
             loadingAttachment = false; inputFocused = true
         }
     }
@@ -976,14 +994,14 @@ struct ContentView: View {
     @MainActor private func attachLastScreenshot() async {
         loadingAttachment = true
         if let url = AttachmentLoader.lastScreenshot() {
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
             // No saved screenshot found — capture the screen right now instead.
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else {
-            attachment = Attachment(name: "No screenshot found", kind: "note",
-                                    icon: "exclamationmark.triangle",
-                                    extractedText: "Could not find a recent screenshot.")
+            attachments.append(Attachment(name: "No screenshot found", kind: "note",
+                                          icon: "exclamationmark.triangle",
+                                          extractedText: "Could not find a recent screenshot."))
         }
         loadingAttachment = false
         inputFocused = true
@@ -997,14 +1015,16 @@ struct ContentView: View {
     // MARK: New chat / stop
     // MARK: Send / chat actions — the conversation now lives in `vm` (ChatViewModel).
 
-    /// Send the composed input through `vm`, then clear the view's input + attachment.
+    /// Send the composed input through `vm`, then clear the view's input +
+    /// attachments. Several files collapse into one synthetic Attachment
+    /// (`Attachment.merged`) so the send pipeline stays single-attachment.
     private func submit(_ text: String, recordUser: Bool = true) {
         guard !loadingAttachment else { return }
-        let att = attachment
+        let att = Attachment.merged(attachments)
         inputFocused = true
         vm.send(text: text, attachment: att, recordUser: recordUser)
         mission = ""
-        attachment = nil
+        attachments.removeAll()
     }
 
     /// New chat: clear the conversation (vm) + the view's search UI.

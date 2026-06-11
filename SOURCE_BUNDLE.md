@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:48 +03 · Swift files: 136 · Swift LOC: 27149_
+_Generated: 2026-06-11 22:53 +03 · Swift files: 137 · Swift LOC: 27364_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9493,7 +9493,7 @@ private nonisolated final class LockedString: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/Attachments.swift (140 lines) =====
+===== FILE: Salehman AI/Persistence/Attachments.swift (167 lines) =====
 ```swift
 import Foundation
 import AppKit
@@ -9510,6 +9510,22 @@ struct Attachment: Identifiable {
     let extractedText: String
     var fileURL: URL? = nil       // original file (used for Claude vision on images)
     var isImage: Bool = false     // true for images/screenshots → eligible for cloud vision
+
+    /// Collapse several attachments into ONE for the send pipeline, which
+    /// deliberately stays single-attachment (vision, transcript packing, the
+    /// 📎 bubble line all read one value). A single item passes through
+    /// untouched — keeping its `fileURL`/`isImage` so the vision path still
+    /// fires; a multi-merge is text-only by design. Pure for tests.
+    nonisolated static func merged(_ list: [Attachment]) -> Attachment? {
+        guard let first = list.first else { return nil }
+        guard list.count > 1 else { return first }
+        let body = list
+            .map { "––– \($0.name) (\($0.kind)) –––\n\($0.extractedText)" }
+            .joined(separator: "\n\n")
+        return Attachment(name: list.map(\.name).joined(separator: ", "),
+                          kind: "files", icon: "doc.on.doc",
+                          extractedText: body)
+    }
 }
 
 enum AttachmentLoader {
@@ -9525,6 +9541,17 @@ enum AttachmentLoader {
         panel.canChooseFiles = true
         panel.message = "Choose a file to attach"
         return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Multi-select variant — the composer now takes several attachments.
+    @MainActor
+    static func pickFiles() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = "Choose files to attach"
+        return panel.runModal() == .OK ? panel.urls : []
     }
 
     /// Turn a file URL into an Attachment, extracting its text appropriately.
@@ -14173,7 +14200,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1937 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1976 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14214,6 +14241,34 @@ final class CodeWorkspace: ObservableObject {
     /// reopens it on launch instead of making you re-pick every time. (The app
     /// isn't sandboxed, so a plain path round-trips without a security bookmark.)
     private static let rootKey = "code_projectRoot"
+    private static let recentsKey = "code_recentProjects"
+
+    /// MRU project folders (most recent first, existing-on-disk only, max 6) —
+    /// drives the tree header's quick-switcher so changing projects is one click
+    /// instead of a re-pick through the open panel every time.
+    @Published var recentProjects: [URL] = []
+
+    private func noteRecent(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        paths = Array(paths.prefix(6))
+        UserDefaults.standard.set(paths, forKey: Self.recentsKey)
+        recentProjects = paths.filter { FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    /// Switch straight to a known folder (recents menu) — same plumbing as
+    /// `openFolder()` minus the panel.
+    func openProject(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        projectRoot = url
+        Shell.workingDirectory = url
+        UserDefaults.standard.set(url.path, forKey: Self.rootKey)
+        noteRecent(url)
+        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
+        Task { await reload() }
+    }
 
     init() {
         // Under unit tests the test host launches the app; auto-scanning a real repo
@@ -14229,6 +14284,7 @@ final class CodeWorkspace: ObservableObject {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         projectRoot = url
         Shell.workingDirectory = url
+        noteRecent(url)
         Task { await reload() }
     }
 
@@ -14261,11 +14317,7 @@ final class CodeWorkspace: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Project"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        projectRoot = url
-        Shell.workingDirectory = url          // terminal + edits now run in the project
-        UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
-        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
-        Task { await reload() }
+        openProject(at: url)
     }
 
     /// Scan the project tree OFF the main actor — file enumeration was blocking the
@@ -14673,11 +14725,25 @@ struct CodeView: View {
     private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: ws.openFolder) {
+                // Click = open panel; the chevron lists recent projects (one-click switch).
+                Menu {
+                    ForEach(ws.recentProjects.filter { $0 != ws.projectRoot }, id: \.self) { url in
+                        Button { ws.openProject(at: url) } label: {
+                            Label(url.lastPathComponent, systemImage: "clock.arrow.circlepath")
+                        }
+                        .help(url.path)
+                    }
+                    if ws.recentProjects.count > 1 { Divider() }
+                    Button { ws.openFolder() } label: {
+                        Label("Open Folder…", systemImage: "folder.badge.plus")
+                    }
+                } label: {
                     Label("Open Folder", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .semibold))
+                } primaryAction: {
+                    ws.openFolder()
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.button).buttonStyle(.plain).fixedSize()
                 .foregroundStyle(DS.Palette.accent)
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 Spacer()
@@ -16239,7 +16305,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1768 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1788 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16273,7 +16339,9 @@ struct ContentView: View {
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var brainStatus = BrainStatus.shared
-    @State private var attachment: Attachment?
+    /// Pending attachments (multi: each gets a chip; merged into one synthetic
+    /// Attachment at submit so the send pipeline stays single-attachment).
+    @State private var attachments: [Attachment] = []
     @State private var loadingAttachment = false
     @State private var showSettings = false
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
@@ -16917,11 +16985,20 @@ struct ContentView: View {
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
-            // Pending attachment chip
+            // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
-                attachmentChip(icon: "hourglass", title: "Reading attachment…", removable: false)
-            } else if let att = attachment {
-                attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
+                attachmentChip(icon: "hourglass", title: "Reading attachment…")
+            }
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { att in
+                            attachmentChip(icon: att.icon,
+                                           title: "\(att.name) · \(att.kind)",
+                                           onRemove: { attachments.removeAll { $0.id == att.id } })
+                        }
+                    }
+                }
             }
 
             // Slash-command menu — floats above the composer while typing `/…`
@@ -17134,13 +17211,15 @@ struct ContentView: View {
             // Drag a file anywhere onto the composer to attach it as context —
             // same affordance the Code tab's input has.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
-                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                    Task { @MainActor in
-                        loadingAttachment = true
-                        attachment = await AttachmentLoader.load(url: url)
-                        loadingAttachment = false
+                guard !providers.isEmpty else { return false }
+                for provider in providers {
+                    _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
+                        guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                        Task { @MainActor in
+                            loadingAttachment = true
+                            attachments.append(await AttachmentLoader.load(url: url))
+                            loadingAttachment = false
+                        }
                     }
                 }
                 return true
@@ -17153,41 +17232,46 @@ struct ContentView: View {
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
-    private func attachmentChip(icon: String, title: String, removable: Bool) -> some View {
+    private func attachmentChip(icon: String, title: String,
+                                onRemove: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(Theme.accent)
-            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
-            if removable {
-                Button { attachment = nil } label: {
+            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1).truncationMode(.middle)
+            if let onRemove {
+                Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Remove attachment")
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Chips size to content now (they sit in a horizontal row), but a
+        // single long filename still shouldn't span the whole composer.
+        .frame(maxWidth: 360, alignment: .leading)
     }
 
     private var canSend: Bool {
         guard !vm.isRunning, !loadingAttachment else { return false }
-        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil
+        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     // MARK: Attachment actions
     @MainActor private func attachFile() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
         loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
         loadingAttachment = false
         inputFocused = true
     }
 
     @MainActor private func attachImage() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
         loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
         loadingAttachment = false
         inputFocused = true
     }
@@ -17197,10 +17281,10 @@ struct ContentView: View {
     /// copy a picture, then attach it here (the "I can't paste pictures" fix).
     @MainActor private func pasteImage() async {
         let pb = NSPasteboard.general
-        // 1) A copied file URL.
-        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], let url = urls.first {
+        // 1) Copied file URLs (all of them — Finder multi-copy works).
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
             loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: url)
+            for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
             loadingAttachment = false; inputFocused = true; return
         }
         // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.
@@ -17211,7 +17295,7 @@ struct ContentView: View {
                 .appendingPathComponent("pasted-\(UUID().uuidString).png")
             try? png.write(to: tmp)
             loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: tmp)
+            attachments.append(await AttachmentLoader.load(url: tmp))
             loadingAttachment = false; inputFocused = true
         }
     }
@@ -17219,14 +17303,14 @@ struct ContentView: View {
     @MainActor private func attachLastScreenshot() async {
         loadingAttachment = true
         if let url = AttachmentLoader.lastScreenshot() {
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
             // No saved screenshot found — capture the screen right now instead.
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else {
-            attachment = Attachment(name: "No screenshot found", kind: "note",
-                                    icon: "exclamationmark.triangle",
-                                    extractedText: "Could not find a recent screenshot.")
+            attachments.append(Attachment(name: "No screenshot found", kind: "note",
+                                          icon: "exclamationmark.triangle",
+                                          extractedText: "Could not find a recent screenshot."))
         }
         loadingAttachment = false
         inputFocused = true
@@ -17240,14 +17324,16 @@ struct ContentView: View {
     // MARK: New chat / stop
     // MARK: Send / chat actions — the conversation now lives in `vm` (ChatViewModel).
 
-    /// Send the composed input through `vm`, then clear the view's input + attachment.
+    /// Send the composed input through `vm`, then clear the view's input +
+    /// attachments. Several files collapse into one synthetic Attachment
+    /// (`Attachment.merged`) so the send pipeline stays single-attachment.
     private func submit(_ text: String, recordUser: Bool = true) {
         guard !loadingAttachment else { return }
-        let att = attachment
+        let att = Attachment.merged(attachments)
         inputFocused = true
         vm.send(text: text, attachment: att, recordUser: recordUser)
         mission = ""
-        attachment = nil
+        attachments.removeAll()
     }
 
     /// New chat: clear the conversation (vm) + the view's search UI.
@@ -19327,7 +19413,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (493 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (529 lines) =====
 ```swift
 import SwiftUI
 
@@ -19805,6 +19891,42 @@ enum MarketSection: String, CaseIterable, Identifiable {
         case .portfolio: return "Portfolio"
         case .alerts:    return "Alerts"
         case .briefing:  return "Briefing"
+        }
+    }
+}
+
+/// Watchlist ordering (Chat C feature). `apply` is pure → unit-tested.
+enum MarketSort: String, CaseIterable, Identifiable {
+    case feed, change, signal, symbol
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .feed:   return "Default"
+        case .change: return "Top gainers"
+        case .signal: return "Strongest signal"
+        case .symbol: return "A–Z"
+        }
+    }
+    /// Rank for the "strongest signal" sort: strong > buy/sell > hold.
+    static func rank(_ r: StockSageRecommendation) -> Int {
+        switch r {
+        case .strongBuy, .strongSell: return 2
+        case .buy, .sell:             return 1
+        case .hold:                   return 0
+        }
+    }
+    func apply(_ syms: [StockSageSymbol]) -> [StockSageSymbol] {
+        switch self {
+        case .feed:   return syms
+        case .symbol: return syms.sorted { $0.symbol.localizedCaseInsensitiveCompare($1.symbol) == .orderedAscending }
+        case .change: return syms.sorted { ($0.latest?.changePercent ?? 0) > ($1.latest?.changePercent ?? 0) }
+        case .signal:
+            return syms.sorted { a, b in
+                let ra = StockSageSignalEngine.generateSignal(for: a).map { MarketSort.rank($0.recommendation) } ?? -1
+                let rb = StockSageSignalEngine.generateSignal(for: b).map { MarketSort.rank($0.recommendation) } ?? -1
+                if ra != rb { return ra > rb }
+                return abs(a.latest?.changePercent ?? 0) > abs(b.latest?.changePercent ?? 0)
+            }
         }
     }
 }
@@ -23266,9 +23388,10 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (128 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (166 lines) =====
 ```swift
 import Testing
+import Foundation
 @testable import Salehman_AI
 
 // MARK: - Chat composer pure logic — slash matcher + greeting buckets
@@ -23380,6 +23503,43 @@ struct ChatExtractForEditTests {
         m.isRunning = true
         #expect(m.extractForEdit(m.messages[0]) == nil)
         m.isRunning = false
+    }
+}
+
+// MARK: - Attachment.merged — the multi-attachment collapse contract
+//
+// The send pipeline stays single-attachment by design; the composer merges.
+// What MUST hold: singles pass through untouched (vision path depends on
+// fileURL/isImage), multi-merges carry every file's name + content.
+
+struct AttachmentMergeTests {
+
+    @Test func emptyListMergesToNil() {
+        #expect(Attachment.merged([]) == nil)
+    }
+
+    @Test func singlePassesThroughWithVisionFieldsIntact() {
+        let one = Attachment(name: "shot.png", kind: "image", icon: "photo",
+                             extractedText: "a screenshot",
+                             fileURL: URL(fileURLWithPath: "/tmp/shot.png"), isImage: true)
+        let merged = Attachment.merged([one])
+        #expect(merged?.id == one.id)
+        #expect(merged?.isImage == true)
+        #expect(merged?.fileURL != nil)
+    }
+
+    @Test func multiMergeCarriesEveryNameAndBody() {
+        let a = Attachment(name: "a.txt", kind: "file", icon: "doc.text", extractedText: "alpha")
+        let b = Attachment(name: "b.pdf", kind: "PDF", icon: "doc.richtext", extractedText: "bravo")
+        let merged = Attachment.merged([a, b])
+        #expect(merged?.name == "a.txt, b.pdf")
+        #expect(merged?.kind == "files")
+        #expect(merged?.extractedText.contains("alpha") == true)
+        #expect(merged?.extractedText.contains("bravo") == true)
+        #expect(merged?.extractedText.contains("a.txt") == true)
+        // Text-only by design: a merged attachment must never claim vision.
+        #expect(merged?.isImage == false)
+        #expect(merged?.fileURL == nil)
     }
 }
 
@@ -25400,6 +25560,65 @@ struct LooksRiskyDelegationTests {
         }
         #expect(results.count == 32)
         #expect(results.allSatisfy { $0 == true })
+    }
+}
+```
+
+===== FILE: Salehman AITests/MarketSortTests.swift (55 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+/// Pins `MarketSort.apply` — the watchlist ordering behind the Markets sort menu.
+/// Pure over `[StockSageSymbol]`, so the comparator can't silently drift.
+struct MarketSortTests {
+
+    /// A symbol whose latest quote yields the given percent change (prev = 100).
+    private func sym(_ s: String, _ changePct: Double) -> StockSageSymbol {
+        StockSageSymbol(symbol: s, market: "M",
+                        quotes: [StockSageQuote(price: 100 * (1 + changePct / 100), previousPrice: 100)])
+    }
+    private func tickers(_ xs: [StockSageSymbol]) -> [String] { xs.map(\.symbol) }
+
+    @Test func feedPreservesOrder() {
+        let xs = [sym("C", 1), sym("A", 2), sym("B", 3)]
+        #expect(tickers(MarketSort.feed.apply(xs)) == ["C", "A", "B"])
+    }
+
+    @Test func symbolSortsAlphabetically() {
+        let xs = [sym("ZZZ", 0), sym("aaa", 0), sym("MMM", 0)]
+        #expect(tickers(MarketSort.symbol.apply(xs)) == ["aaa", "MMM", "ZZZ"])   // case-insensitive
+    }
+
+    @Test func changeSortsTopGainersFirst() {
+        let xs = [sym("DOWN", -2), sym("UP", 7), sym("MID", 3)]
+        #expect(tickers(MarketSort.change.apply(xs)) == ["UP", "MID", "DOWN"])
+    }
+
+    @Test func signalSortsStrongestRecommendationFirst() {
+        let xs = [sym("HOLD", 1), sym("STRONG", 8), sym("BUY", 4)]   // hold / strongBuy / buy
+        #expect(tickers(MarketSort.signal.apply(xs)) == ["STRONG", "BUY", "HOLD"])
+    }
+
+    @Test func signalTieBreaksByMoveMagnitude() {
+        let xs = [sym("SMALLER", 7), sym("BIGGER", 9)]              // both strongBuy
+        #expect(tickers(MarketSort.signal.apply(xs)) == ["BIGGER", "SMALLER"])
+    }
+
+    @Test func rankOrdersStrongAboveBuyAboveHold() {
+        #expect(MarketSort.rank(.strongBuy) > MarketSort.rank(.buy))
+        #expect(MarketSort.rank(.buy) > MarketSort.rank(.hold))
+        #expect(MarketSort.rank(.strongSell) == MarketSort.rank(.strongBuy))
+    }
+
+    @Test func emptyAndSingleAreStable() {
+        #expect(MarketSort.signal.apply([]).isEmpty)
+        #expect(tickers(MarketSort.change.apply([sym("ONLY", 5)])) == ["ONLY"])
+    }
+
+    @Test func allCasesHaveTitles() {
+        for c in MarketSort.allCases { #expect(!c.title.isEmpty) }
     }
 }
 ```
@@ -29611,7 +29830,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1470 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1495 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31082,6 +31301,31 @@ refused) — the whole new edit-resend contract is pinned.
 regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). AITests run still owed by a build-capable
 session (board request standing).
+
+## 2026-06-11 (night) — marathon slice 4: slash-menu UI flows in the gate
+**What & why:** Two new `ChatTabUITests` flows wire-test what the unit tests pin in logic:
+(1) typing `/` opens the menu, narrowing to `/su` + ↵ fills the Summarize template into the
+composer; (2) Esc dismisses a dangling slash query. Same conservative XCUI idiom as the
+existing 6 flows (typeKey/typeText/staticTexts/waitForExistence only).
+**Files:** `Salehman AIUITests/ChatTabUITests.swift`; bundle regenerated.
+**Result:** UI-test target not compilable in this sandbox — flagged to the build-capable
+session with the standing AITests request (run `-only-testing:"Salehman AIUITests"` too).
+
+## 2026-06-12 — marathon C: per-file diff stats (+N −M) · qa.sh stale-binary fix
+**C:** the right panel's Changed-files rows now show git-style **+added −removed**
+counts (green/red, monospaced; zero-sides omitted). Computed in
+`CodeWorkspace.refreshAfterRun` off-main with the SAME capped LCS the diff pane uses,
+so list numbers always agree with the pane (`changeStats: [URL: DiffStat]`, cleared on
+project close). Swift-6: `DiffLine`/`lineDiff` marked `nonisolated` (pure data + pure
+function) so the detached stats pass can call them. Verified in pixels via the gallery
+("+24 −9" / "+6" / "+41 −2" rendered).
+**qa.sh:** fixed the STALE-BINARY TRAP at the root — if the app is already running,
+`open` only foregrounds the old process and QA photographs yesterday's UI (burned two
+sessions tonight, including my first stats capture). The runner now ALWAYS quits the
+app before launching. First fresh capture surfaced chat-B's committed gallery evolution
+(5.22% drift, eyes-verified healthy: timing pill, time separator, accent stop-disc) —
+chat_samples + code_samples baselines re-adopted.
+**Files:** `Views/CodeView.swift`, `tools/qa.sh`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
