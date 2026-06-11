@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 16:49 +03 · Swift files: 129 · Swift LOC: 24258_
+_Generated: 2026-06-11 17:00 +03 · Swift files: 129 · Swift LOC: 24330_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11845,7 +11845,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (309 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (285 lines) =====
 ```swift
 import SwiftUI
 
@@ -11876,10 +11876,9 @@ struct AgentsView: View {
 
     var body: some View {
         ZStack {
-            // Route through DS canvas tokens so this tab inherits any palette
-            // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Flat opaque working canvas (design language) — no gradients,
+            // no glow show-through on chat-like/working surfaces.
+            DS.Palette.codeSurface.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
@@ -11897,16 +11896,16 @@ struct AgentsView: View {
     }
 
     private var header: some View {
+        // Slimmer header, chrome diet: the "N agents" counter badge is gone —
+        // not actionable, and the gallery below already shows the team.
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Agents")
-                    .font(DS.Typography.titleL).foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your specialist team — they plan, build, and review together.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Text("\(AgentDefinitions.pipeline.count) agents")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, DS.Space.xl)
         .padding(.top, DS.Space.lg)
@@ -11914,22 +11913,16 @@ struct AgentsView: View {
     }
 
     private var autonomousControlSection: some View {
-        // Glass-hero treatment: this is the page's lead element so it gets a
-        // brand-tinted gradient wash + accent glow instead of the plain `Card`.
-        // Logic below (toggleAutonomousRun / sendDirectCommand / settings binding)
-        // is unchanged — chrome only.
+        // Flat card per the design language (was a glass-hero with gradient
+        // wash + accent glow). Logic below (toggleAutonomousRun /
+        // sendDirectCommand / settings binding) is unchanged — chrome only.
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 10) {
-                // Brand-tinted sparkle with halo (was off-brand yellow).
-                ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18))
-                        .frame(width: 34, height: 34).blur(radius: 8)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(DS.Palette.accent)
-                }
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
                 Text("Autonomous Mode")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
                 Toggle("Autonomous Mode", isOn: $settings.autonomousMode)
@@ -11984,10 +11977,8 @@ struct AgentsView: View {
                 TextField("Give agents a direct command…", text: $directCommand)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(DS.Palette.surface,
+                    .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
 
                 Button("Send") {
@@ -11999,28 +11990,13 @@ struct AgentsView: View {
             }
         }
         .padding(DS.Space.lg)
-        // Layered glass: deep accent-tinted gradient + neutral overlay so it
-        // reads "lit from inside" against the page's other cards.
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(DS.Palette.surface)
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [DS.Palette.accent.opacity(0.22),
-                                     DS.Palette.accent2.opacity(0.10),
-                                     .clear],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
+        // Flat opaque card + hairline — no gradient wash, no glow shadow.
+        .background(DS.Palette.codeSurfaceSide,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
         )
-        .dsShadow(DS.Elevation.accentGlow(0.35))
     }
 
     private var agentsGrid: some View {
@@ -12144,15 +12120,15 @@ private struct AgentCard: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque card + hairline; the hover/active stroke is the only
+        // elevation cue (no shadows — design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(isActive ? DS.Palette.accent.opacity(0.5)
                                  : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
                         lineWidth: 1)
         )
-        .dsShadow(hovering ? DS.Elevation.shadow2 : DS.Elevation.shadow1)
-        .scaleEffect(hovering ? 1.015 : 1.0)
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
     }
 }
@@ -12597,7 +12573,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1326 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1406 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12845,6 +12821,8 @@ struct CodeView: View {
                 if !treeCollapsed {
                     fileTree
                         .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                } else {
+                    treeReopenStrip
                 }
 
                 VSplitView {
@@ -12892,6 +12870,8 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -12962,10 +12942,9 @@ struct CodeView: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     if !ws.files.isEmpty {
-                        Text("\(ws.files.count)")
-                            .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.white.opacity(0.06), in: Capsule())
+                        // Quiet plain count (chrome diet — no badge box)
+                        Text("\(ws.files.count) files")
+                            .font(.system(size: 9.5)).foregroundStyle(.secondary.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 6)
@@ -13149,7 +13128,13 @@ struct CodeView: View {
                         if messages.isEmpty && !isRunning {
                             welcome
                         }
-                        ForEach(messages) { msg in
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
+                            if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
+                                Text(msg.timestamp, style: .time)
+                                    .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.7))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 2)
+                            }
                             codeBubble(msg)
                                 .id(msg.id)
                         }
@@ -13217,7 +13202,7 @@ struct CodeView: View {
                 .frame(width: 60, height: 60)
                 .background(DS.Palette.accent.opacity(0.12), in: Circle())
                 .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 14)
+                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
             Text("Code with Salehman")
                 .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
@@ -13316,11 +13301,21 @@ struct CodeView: View {
     }
 
     private func codeBubble(_ msg: ChatMessage) -> some View {
-        CodeMessageRow(msg: msg)
+        let isLastAssistant = !msg.isUser && msg.id == messages.last(where: { !$0.isUser })?.id
+        return CodeMessageRow(msg: msg,
+                              onRegenerate: (isLastAssistant && !isRunning) ? { regenerateLast() } : nil)
+    }
+
+    /// Re-run the last user prompt (drops the reply being regenerated first).
+    private func regenerateLast() {
+        guard !isRunning, let lastUser = messages.last(where: { $0.isUser }) else { return }
+        if let last = messages.last, !last.isUser { messages.removeLast() }
+        runMission(for: lastUser.text)
     }
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
+            PulsingDot().padding(.top, 7)
             VStack(alignment: .leading, spacing: 4) {
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
@@ -13401,10 +13396,12 @@ struct CodeView: View {
             // Border warms to the accent while you're typing.
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // The signature red ring (owner request — matches the main chat's input):
+            // always visible, warms while typing, full-strength on file drop.
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(
                 isDropTargeted ? DS.Palette.accent
-                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? Color.white.opacity(0.09) : DS.Palette.accent.opacity(0.45)),
+                    : DS.Palette.accent.opacity(
+                        input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .animation(.easeOut(duration: 0.18), value: input.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
@@ -13482,6 +13479,27 @@ struct CodeView: View {
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
+
+    /// Always-visible slim strip while the file tree is collapsed — the previous
+    /// reopen button lived in the conversation header (absent on an empty chat),
+    /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
+    private var treeReopenStrip: some View {
+        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+            VStack(spacing: 8) {
+                Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
+                Spacer()
+            }
+            .padding(.top, 12)
+            .frame(width: 24)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .background(DS.Palette.codeSurfaceSide)
+        .help("Show the file tree (⇧⌘E)")
+        .accessibilityLabel("Show the file tree")
+    }
 
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
@@ -13735,6 +13753,13 @@ struct CodeView: View {
         guard !text.isEmpty, !isRunning else { return }
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
+        runMission(for: text)
+    }
+
+    /// The shared run pipeline — used by send() and regenerate (which must NOT
+    /// re-append the user message).
+    private func runMission(for text: String) {
+        guard !isRunning else { return }
         isRunning = true
         // If nothing has streamed after 5s, the local model is likely still loading —
         // flip the status line to say so (cleared when the run ends).
@@ -13889,6 +13914,8 @@ struct CodeView: View {
 /// no avatars, no name labels, copy appears on hover. Simple and elegant.
 private struct CodeMessageRow: View {
     let msg: ChatMessage
+    var onRegenerate: (() -> Void)? = nil
+    @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
 
     var body: some View {
@@ -13908,21 +13935,50 @@ private struct CodeMessageRow: View {
                 Spacer(minLength: 26)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 64)   // room for the hover action pill
             .overlay(alignment: .topTrailing) {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(msg.text, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
-                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                HStack(spacing: 8) {
+                    action(speech.speakingID == msg.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                           "Read aloud", active: speech.speakingID == msg.id) {
+                        speech.toggle(msg.text, id: msg.id)
+                    }
+                    action("doc.on.doc", "Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(msg.text, forType: .string)
+                    }
+                    if let regen = onRegenerate {
+                        action("arrow.clockwise", "Regenerate", regen)
+                    }
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
                 .opacity(hovering ? 1 : 0)
-                .help("Copy this message")
-                .accessibilityLabel("Copy this message")
+                .animation(.easeOut(duration: 0.12), value: hovering)
             }
             .onHover { hovering = $0 }
         }
+    }
+
+    private func action(_ icon: String, _ help: String, active: Bool = false,
+                        _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 11))
+                .foregroundStyle(active ? DS.Palette.accent : .secondary)
+                .frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Small breathing accent dot shown while a reply streams in.
+private struct PulsingDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle().fill(DS.Palette.accent)
+            .frame(width: 7, height: 7)
+            .opacity(on ? 1 : 0.35)
+            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .accessibilityHidden(true)
     }
 }
 ```
@@ -15742,7 +15798,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (393 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (397 lines) =====
 ```swift
 import SwiftUI
 import UniformTypeIdentifiers
@@ -15783,8 +15839,12 @@ struct KnowledgeView: View {
                 documentsSection
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
         .onAppear(perform: reload)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay {
@@ -15804,9 +15864,9 @@ struct KnowledgeView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -15839,8 +15899,7 @@ struct KnowledgeView: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
@@ -15867,7 +15926,8 @@ struct KnowledgeView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque panel + hairline (design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
@@ -15889,7 +15949,7 @@ struct KnowledgeView: View {
                 VStack(spacing: 1) {
                     ForEach(docs) { doc in docRow(doc) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
         }
@@ -16801,7 +16861,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (456 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (459 lines) =====
 ```swift
 import SwiftUI
 
@@ -16836,18 +16896,22 @@ struct MarketsView: View {
                     content
                 }
                 .padding(DS.Space.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Centered content column, same as the chat surfaces.
+                .frame(maxWidth: 780, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
             MarketDisclaimerFooter()
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Markets")
-                .font(DS.Typography.titleL).foregroundStyle(.white)
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Text("Rule-based momentum signals · educational, not financial advice")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
 
@@ -16916,7 +16980,7 @@ struct MarketsView: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
@@ -16928,7 +16992,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -16991,7 +17055,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(portfolio.positions) { positionRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -17018,7 +17082,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17045,9 +17109,7 @@ struct MarketsView: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .accessibilityLabel(placeholder)
     }
 
@@ -17170,7 +17232,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         .help(signal?.reason ?? "")
@@ -17211,7 +17273,7 @@ struct MarketsView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17255,7 +17317,8 @@ struct MarketDisclaimerFooter: View {
             .multilineTextAlignment(.leading)
             .padding(.horizontal, DS.Space.lg).padding(.vertical, DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
+            // Flat opaque footer + hairline (was translucent material).
+            .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .top)
     }
 }
@@ -17647,7 +17710,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (174 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (178 lines) =====
 ```swift
 import SwiftUI
 
@@ -17681,16 +17744,20 @@ struct ScratchpadView: View {
                 if !aiResult.isEmpty { aiResultCard }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Notes").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Notes").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { Task { await runAI() } } label: {
@@ -17709,8 +17776,7 @@ struct ScratchpadView: View {
             TextField(pad == .tasks ? "Add a task…" : "Add a note…", text: $newText)
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .focused($addFocused)
                 .onSubmit(add)
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
@@ -17781,8 +17847,9 @@ struct ScratchpadView: View {
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17808,7 +17875,7 @@ struct ScratchpadView: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
     }
@@ -20058,7 +20125,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (168 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (173 lines) =====
 ```swift
 import SwiftUI
 
@@ -20094,7 +20161,9 @@ struct TodayView: View {
                 section("AT A GLANCE") { statCards }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Same centered content column as the chat surfaces (design language).
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .onAppear(perform: refresh)
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
@@ -20185,7 +20254,9 @@ private struct ActionTile: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language — no translucent stacking
+            // over the landing glow.
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.5) : DS.Palette.surfaceStroke, lineWidth: 1))
             .scaleEffect(hovering ? 1.02 : 1)
@@ -20220,7 +20291,8 @@ private struct StatTile: View {
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language (see ActionTile).
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.4) : DS.Palette.surfaceStroke, lineWidth: 1))
         }
@@ -25618,7 +25690,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (728 lines) =====
+===== FILE: COORDINATION.md (757 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26348,7 +26420,36 @@ Dead code removed with the avatars: `bubbleShape`/`bubbleBackground`/`avatar`/`u
 DesignSystem.swift is now orphaned app-wide; prune at will. Typecheck 0/0, committed+pushed — **please
 gate (build+tests)**. Next: Today/Agents/Markets/Notes/Knowledge (3–7/7).
 
-===== FILE: DEVELOPMENT_LOG.md (2211 lines) =====
+#### ✅ 2026-06-11 — GATE for restyle slices 1+2 (e754111, 0a7a517) + items 7+8 (16e53b9): BUILD SUCCEEDED · 306/306 TESTS PASSED
+Combined tree (your 3 commits + my tok/s/wrap-fix wave db57c44). **Slices 1+2 are GO — roll on to
+slices 3-7** (Today, Agents, Markets, Notes, Knowledge) per the owner ("continue working and refining,
+gone for 3 hours"). Owner FEEDBACK on your main-chat slice: "this looks much better than the coding tab" —
+your hover-overlay actions + pulsing streaming dot + burst time-separators read best; I'm adopting those
+three into CodeView now (my lane), so don't touch CodeView. I'll gate each of your pushes as they land.
+
+#### 🎨 Restyle slices 3–7 DONE (Today, Agents, Notes, Knowledge, Markets) — please gate (cleanup/Effort session)
+Great news on the owner feedback — and noted, CodeView stays yours. One shared-tree heads-up first: your
+`db57c44` swept in my then-in-flight `TodayView` edits (+ an intermediate `AgentsView` state) — content is
+correct and your gate covered it, just flagging the mixed authorship; a `git status` glance before
+`git add`-ing view files avoids it (same discipline I use to keep your in-flight files out of my commits).
+**What landed per view (all per the spec):**
+- **Today (3/7, rode your db57c44 — nothing further):** tiles opaque `codeSurface` (no translucency over
+  the landing glow — the glow itself stays, it's the landing surface); 780 column.
+- **Agents (4/7):** canvas flat `codeSurface`; glass-hero Autonomous card → flat `codeSurfaceSide` +
+  hairline (gradient wash, halo sparkle, accent-glow shadow all gone); "N agents" header counter dropped
+  (chrome diet); cards opaque, hover/active stroke = the only elevation; command field → white-0.09 pill.
+- **Notes (5/7):** flat canvas + 780 column; header 17/11; list cards + AI card `codeSurfaceSide`; add
+  field → white-0.09 pill.
+- **Knowledge (6/7):** flat canvas + 780 column; header 17/11; ask card `codeSurfaceSide` with white-0.09
+  search pill; documents list `codeSurfaceSide`.
+- **Markets (7/7):** flat canvas + 780 column; header 17/11; ALL cards `codeSurfaceSide`; portfolio fields
+  → white-0.09 pills; disclaimer footer `.ultraThinMaterial` → flat `codeSurfaceSide` + hairline.
+Surface convention everywhere: canvas `codeSurface` (0.125), panels/cards `codeSurfaceSide` (0.095),
+input pills white 0.09, hairline `surfaceStroke`, no shadows. Typecheck 0/0 (CodeView pinned to HEAD in a
+temp tree — you were mid-edit). All 7 slices now in. Next: pass-2 refinements (Settings inner controls,
+ContentView empty-state/header polish) while you gate.
+
+===== FILE: DEVELOPMENT_LOG.md (2245 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27914,6 +28015,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
 
+## 2026-06-11 · Whole-app restyle 3–7/7 — Today, Agents, Notes, Knowledge, Markets to the design language
+
+**Files:** `Salehman AI/Views/TodayView.swift` (rode the other session's db57c44 — see note), `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MarketsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final five slices of the owner-directive restyle ("continue working and refining, gone for 3 hours"; gate for slices 1+2 passed 306/306 with owner feedback "this looks much better than the coding tab"). Surface convention applied everywhere: canvas = flat opaque `codeSurface` (0.125), panels/cards = `codeSurfaceSide` (0.095) + hairline, input pills = white 0.09 with no stroke, no shadows, headers 17pt-semibold/11pt-secondary, content in a centered 780pt column. Per view: **Today** — tiles opaque (no translucency over the landing glow, which stays — landing surface); **Agents** — glass-hero Autonomous card flattened (gradient wash/halo sparkle/accent-glow shadow removed), "N agents" header counter dropped per chrome diet, cards' hover/active stroke is the only elevation; **Notes/Knowledge** — flat canvases, list/ask cards to panel shade, add/search fields to pills; **Markets** — all cards swapped, `.ultraThinMaterial` disclaimer footer → flat panel + hairline. Shared-tree note: the other session's `db57c44` unintentionally swept my in-flight TodayView edits + an intermediate AgentsView state into their commit (content correct, their gate covered it) — flagged on the board with the `git status`-before-`add` discipline reminder.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned to HEAD in a temp tree — other session mid-edit). All 7 restyle slices are now in. Gate requested; pass-2 refinements (Settings inner controls, ContentView empty-state polish) next.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -28560,6 +28669,32 @@ user that a silent first reply = model loading.
 re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
 live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
 concurrency audit + agents-lane sweep.
+
+## 2026-06-11 — Code tab: Claude-minimal restyle + clipping fixes + 14B speed visibility (owner-driven polish loop)
+**Files:** `Views/CodeView.swift`, `Views/MarkdownText.swift`, `Views/CodeSyntaxView.swift`,
+`Views/ContentView.swift`, `Views/BackgroundView.swift`, `DesignSystem/DesignSystem.swift`,
+`LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+**What & why:** Owner ("make it simple and elegant like Claude Code; grey background; never stop
+polishing; make it a home for salehman14b and he runs fast"):
+- **Minimal conversation:** `CodeMessageRow` — user = right-aligned quiet block (no avatar/label),
+  assistant = flush-left document flow, copy-on-hover. Streaming view matches. 780pt centered reading
+  column incl. the input pill.
+- **Grey, flat, neutral:** new DS tokens `codeSurface` (0.125) / `codeSurfaceSide` (0.095); Code tab is
+  opaque (no glow bleed), sidebar/inspector a step darker; `BackgroundView` glows halved app-wide.
+- **Collapsible panels:** file tree + inspector both collapse (persisted via @AppStorage); slim reopen
+  bar; auto-expand when a file is picked or a run produces diffs. (Owner: "I can't even minimize it.")
+- **Clipping fixes (owner screenshot):** markdown TABLE cells now wrap at 300pt inside an h-scrollable
+  grid — Grid sized columns to ideal width and clipped long cells mid-word; prose files (md/txt) in the
+  file viewer wrap (vertical-only scroll) instead of single-row clipping.
+- **14B speed visibility:** chatStream captures Ollama's eval stats → "⚡ N tok/s" in the conversation
+  header after each local reply; welcome shows "<model> · local · ready" when the owner's model serves.
+- Plus: agent-steps strip flattened to the new surface, file-row hover states, floating
+  scroll-to-latest button, main-chat "Warming up the local model…" hint, `trimmedForLocalWindow`
+  (4096-ctx history diet, +2 tests — suite 306/306).
+**Result:** builds green throughout; committed `70d6af7` + pushed (unblocks the parallel session's items
+7+8 and the whole-app restyle task assigned per owner). Parallel: r3-best GGUF finale running on the A40
+(merged ✓ converted ✓ quantizing), round-6 seed lottery training, all 4 adapters + 32B now mirrored to
+Proton Drive. Owner away; autonomous loop continues until the RunPod balance is spent.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

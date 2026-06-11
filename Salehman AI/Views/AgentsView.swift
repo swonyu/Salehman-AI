@@ -271,15 +271,15 @@ private struct AgentCard: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque card + hairline; the hover/active stroke is the only
+        // elevation cue (no shadows — design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(isActive ? DS.Palette.accent.opacity(0.5)
                                  : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
                         lineWidth: 1)
         )
-        .dsShadow(hovering ? DS.Elevation.shadow2 : DS.Elevation.shadow1)
-        .scaleEffect(hovering ? 1.015 : 1.0)
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
     }
 }

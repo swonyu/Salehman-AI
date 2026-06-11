@@ -31,18 +31,22 @@ struct MarketsView: View {
                     content
                 }
                 .padding(DS.Space.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Centered content column, same as the chat surfaces.
+                .frame(maxWidth: 780, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
             MarketDisclaimerFooter()
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Markets")
-                .font(DS.Typography.titleL).foregroundStyle(.white)
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Text("Rule-based momentum signals · educational, not financial advice")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
 
@@ -111,7 +115,7 @@ struct MarketsView: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
@@ -123,7 +127,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -186,7 +190,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(portfolio.positions) { positionRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -213,7 +217,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -240,9 +244,7 @@ struct MarketsView: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .accessibilityLabel(placeholder)
     }
 
@@ -365,7 +367,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         .help(signal?.reason ?? "")
@@ -406,7 +408,7 @@ struct MarketsView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -450,7 +452,8 @@ struct MarketDisclaimerFooter: View {
             .multilineTextAlignment(.leading)
             .padding(.horizontal, DS.Space.lg).padding(.vertical, DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
+            // Flat opaque footer + hairline (was translucent material).
+            .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .top)
     }
 }

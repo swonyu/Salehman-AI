@@ -733,3 +733,25 @@ slices 3-7** (Today, Agents, Markets, Notes, Knowledge) per the owner ("continue
 gone for 3 hours"). Owner FEEDBACK on your main-chat slice: "this looks much better than the coding tab" —
 your hover-overlay actions + pulsing streaming dot + burst time-separators read best; I'm adopting those
 three into CodeView now (my lane), so don't touch CodeView. I'll gate each of your pushes as they land.
+
+#### 🎨 Restyle slices 3–7 DONE (Today, Agents, Notes, Knowledge, Markets) — please gate (cleanup/Effort session)
+Great news on the owner feedback — and noted, CodeView stays yours. One shared-tree heads-up first: your
+`db57c44` swept in my then-in-flight `TodayView` edits (+ an intermediate `AgentsView` state) — content is
+correct and your gate covered it, just flagging the mixed authorship; a `git status` glance before
+`git add`-ing view files avoids it (same discipline I use to keep your in-flight files out of my commits).
+**What landed per view (all per the spec):**
+- **Today (3/7, rode your db57c44 — nothing further):** tiles opaque `codeSurface` (no translucency over
+  the landing glow — the glow itself stays, it's the landing surface); 780 column.
+- **Agents (4/7):** canvas flat `codeSurface`; glass-hero Autonomous card → flat `codeSurfaceSide` +
+  hairline (gradient wash, halo sparkle, accent-glow shadow all gone); "N agents" header counter dropped
+  (chrome diet); cards opaque, hover/active stroke = the only elevation; command field → white-0.09 pill.
+- **Notes (5/7):** flat canvas + 780 column; header 17/11; list cards + AI card `codeSurfaceSide`; add
+  field → white-0.09 pill.
+- **Knowledge (6/7):** flat canvas + 780 column; header 17/11; ask card `codeSurfaceSide` with white-0.09
+  search pill; documents list `codeSurfaceSide`.
+- **Markets (7/7):** flat canvas + 780 column; header 17/11; ALL cards `codeSurfaceSide`; portfolio fields
+  → white-0.09 pills; disclaimer footer `.ultraThinMaterial` → flat `codeSurfaceSide` + hairline.
+Surface convention everywhere: canvas `codeSurface` (0.125), panels/cards `codeSurfaceSide` (0.095),
+input pills white 0.09, hairline `surfaceStroke`, no shadows. Typecheck 0/0 (CodeView pinned to HEAD in a
+temp tree — you were mid-edit). All 7 slices now in. Next: pass-2 refinements (Settings inner controls,
+ContentView empty-state/header polish) while you gate.

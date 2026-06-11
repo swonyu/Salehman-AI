@@ -30,16 +30,20 @@ struct ScratchpadView: View {
                 if !aiResult.isEmpty { aiResultCard }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Notes").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Notes").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { Task { await runAI() } } label: {
@@ -58,8 +62,7 @@ struct ScratchpadView: View {
             TextField(pad == .tasks ? "Add a task…" : "Add a note…", text: $newText)
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .focused($addFocused)
                 .onSubmit(add)
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
@@ -130,8 +133,9 @@ struct ScratchpadView: View {
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -157,7 +161,7 @@ struct ScratchpadView: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
     }

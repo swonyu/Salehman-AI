@@ -1563,6 +1563,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
 
+## 2026-06-11 · Whole-app restyle 3–7/7 — Today, Agents, Notes, Knowledge, Markets to the design language
+
+**Files:** `Salehman AI/Views/TodayView.swift` (rode the other session's db57c44 — see note), `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MarketsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final five slices of the owner-directive restyle ("continue working and refining, gone for 3 hours"; gate for slices 1+2 passed 306/306 with owner feedback "this looks much better than the coding tab"). Surface convention applied everywhere: canvas = flat opaque `codeSurface` (0.125), panels/cards = `codeSurfaceSide` (0.095) + hairline, input pills = white 0.09 with no stroke, no shadows, headers 17pt-semibold/11pt-secondary, content in a centered 780pt column. Per view: **Today** — tiles opaque (no translucency over the landing glow, which stays — landing surface); **Agents** — glass-hero Autonomous card flattened (gradient wash/halo sparkle/accent-glow shadow removed), "N agents" header counter dropped per chrome diet, cards' hover/active stroke is the only elevation; **Notes/Knowledge** — flat canvases, list/ask cards to panel shade, add/search fields to pills; **Markets** — all cards swapped, `.ultraThinMaterial` disclaimer footer → flat panel + hairline. Shared-tree note: the other session's `db57c44` unintentionally swept my in-flight TodayView edits + an intermediate AgentsView state into their commit (content correct, their gate covered it) — flagged on the board with the `git status`-before-`add` discipline reminder.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned to HEAD in a temp tree — other session mid-edit). All 7 restyle slices are now in. Gate requested; pass-2 refinements (Settings inner controls, ContentView empty-state polish) next.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
