@@ -966,6 +966,9 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
+    /// QA only: render the hover action pill as if the pointer were on the
+    /// row, so static captures (which can't hover) can see and baseline it.
+    var qaShowActions: Bool = false
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -1055,7 +1058,7 @@ struct MessageBubble: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .offset(y: -10)
-                    .opacity(hovering ? 1 : 0)
+                    .opacity(hovering || qaShowActions ? 1 : 0)
                     .animation(DS.Motion.fade, value: hovering)
             }
         }
@@ -1094,7 +1097,7 @@ struct MessageBubble: View {
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
-            .opacity(hovering ? 1 : 0)
+            .opacity(hovering || qaShowActions ? 1 : 0)
             .animation(DS.Motion.fade, value: hovering)
         }
     }

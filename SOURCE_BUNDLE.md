@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:05 +03 · Swift files: 133 · Swift LOC: 25460_
+_Generated: 2026-06-11 19:08 +03 · Swift files: 133 · Swift LOC: 25491_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8282,7 +8282,7 @@ enum SalehmanLeader {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanPersona.swift (122 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanPersona.swift (128 lines) =====
 ```swift
 import Foundation
 
@@ -8324,6 +8324,12 @@ enum SalehmanPersona {
       lists for ≥3 items, fenced code blocks for code). Short answers stay prose.
     • Don't sign off. No "Hope that helps!" or "Let me know if…". Stop when the \
       answer is complete.
+    • CRITICAL — NO meta-narration. Output ONLY your answer to the user. NEVER \
+      write about how you should respond, NEVER restate your instructions or \
+      persona, and NEVER emit scaffolding like "How should I respond", \
+      "How should Salehman respond", "Response:", or "The task is…". The user \
+      sees your raw output verbatim — your first characters must be the answer \
+      itself, not a plan to write it.
 
     ## Language (CRITICAL)
     Reply in the SAME language as the user's latest message. English in → \
@@ -11398,7 +11404,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (395 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (417 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11489,7 +11495,7 @@ enum QASnapshots {
         QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
         structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
-        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent/hover/approval states", .init(width: 820, height: 1780), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
         QAGeometry.reset()
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
@@ -11777,6 +11783,28 @@ private struct ChatSampleGallery: View {
                     .init(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
                           status: .pending),
                 ])
+            }
+            // States a static render can't reach naturally — forced visible so
+            // they get eyes + baseline protection like everything else.
+            gallerySection("Hover state — floating action pill (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Hover actions float on a panel pill — speak, copy, regenerate — without reserving layout.",
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(120)),
+                              onRegenerate: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)   // room for the pill's -4 offset above the row
+            }
+            gallerySection("Time separator — burst boundary") {
+                TimeSeparator(date: now)
+            }
+            gallerySection("Approval card — the command gate") {
+                ApprovalCard(command: "ls -la ~/Desktop", onRun: {}, onCancel: {}, onAlways: {})
+                    .frame(height: 300)
+                    .clipped()
+            }
+            gallerySection("Scroll-to-latest — solid accent pill") {
+                ScrollToLatestButton(unreadCount: 3) {}
             }
         }
         .padding(28)
@@ -15205,7 +15233,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1452 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1455 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16175,6 +16203,9 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
+    /// QA only: render the hover action pill as if the pointer were on the
+    /// row, so static captures (which can't hover) can see and baseline it.
+    var qaShowActions: Bool = false
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -16264,7 +16295,7 @@ struct MessageBubble: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .offset(y: -10)
-                    .opacity(hovering ? 1 : 0)
+                    .opacity(hovering || qaShowActions ? 1 : 0)
                     .animation(DS.Motion.fade, value: hovering)
             }
         }
@@ -16303,7 +16334,7 @@ struct MessageBubble: View {
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
-            .opacity(hovering ? 1 : 0)
+            .opacity(hovering || qaShowActions ? 1 : 0)
             .animation(DS.Motion.fade, value: hovering)
         }
     }
@@ -27795,7 +27826,7 @@ your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergen
 not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
 (owner praised after). Back off CodeView after this push.
 
-===== FILE: DEVELOPMENT_LOG.md (2430 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2437 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -30226,6 +30257,13 @@ selectively (4 files; left the active session's `CodeView.swift` WIP untouched).
 `Salehman_AIApp` bindings — no drift). **Flagged 2 audit regressions in Chat B's lane** (not mine — see
 COORDINATION): `chat_narrow` geo (column 560pt vs ≈524 expected) + `settings` baselineDiff 0.34%.
 Curated owner-decision backlog of the bigger (aesthetic) refinements written to `POLISH_BACKLOG.md`.
+
+## 2026-06-11 (evening) — Chat C: polish pass #2 (Notes task ordering)
+**File:** `Views/ScratchpadView.swift`. Commit `ba52a98`.
+Completed tasks now sink below active ones (stable partition `orderedTasks`, presentational only — no data
+mutation; matches Reminders/Todoist). Build + AITests green; QA 14/14 (the 2 prior cross-lane failures are
+now resolved by Chat B at commit `22ba4249`). Effect isn't visible in the current `notes.png` (live store has
+only completed tasks), but is correct for the common mixed-task case.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

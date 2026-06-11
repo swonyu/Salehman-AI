@@ -87,7 +87,7 @@ enum QASnapshots {
         QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
         structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
-        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent/hover/approval states", .init(width: 820, height: 1780), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
         QAGeometry.reset()
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
@@ -375,6 +375,28 @@ private struct ChatSampleGallery: View {
                     .init(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
                           status: .pending),
                 ])
+            }
+            // States a static render can't reach naturally — forced visible so
+            // they get eyes + baseline protection like everything else.
+            gallerySection("Hover state — floating action pill (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Hover actions float on a panel pill — speak, copy, regenerate — without reserving layout.",
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(120)),
+                              onRegenerate: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)   // room for the pill's -4 offset above the row
+            }
+            gallerySection("Time separator — burst boundary") {
+                TimeSeparator(date: now)
+            }
+            gallerySection("Approval card — the command gate") {
+                ApprovalCard(command: "ls -la ~/Desktop", onRun: {}, onCancel: {}, onAlways: {})
+                    .frame(height: 300)
+                    .clipped()
+            }
+            gallerySection("Scroll-to-latest — solid accent pill") {
+                ScrollToLatestButton(unreadCount: 3) {}
             }
         }
         .padding(28)
