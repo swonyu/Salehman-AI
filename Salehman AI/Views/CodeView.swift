@@ -1248,11 +1248,11 @@ struct CodeView: View {
         if attached.isEmpty, AgentPipeline.isTrivialMission(text) {
             mission = text
         } else {
-            mission = """
-            \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
-
-            Task: \(text)\(attached)
-            """
+            // NO "You are Salehman in CODING mode…" preamble. The model already gets
+            // the Salehman system prompt + its tools as specs; repeating the persona
+            // inside the message made the fine-tune NARRATE its instructions back
+            // ("How should Salehman respond?"). Just project context + the task.
+            mission = "\(projectLine)\(text)\(attached)"
         }
         attachedFile = nil; attachedText = ""
 
