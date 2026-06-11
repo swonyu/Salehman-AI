@@ -89,7 +89,8 @@ enum QAAudit {
                 .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
 
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path)) ?? [])
-            .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png") }.sorted()
+            .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png")
+                      && !$0.hasSuffix("_deuter.png") && !$0.hasSuffix("_protan.png") }.sorted()
 
         for file in names {
             let name = String(file.dropLast(4))
@@ -155,6 +156,11 @@ enum QAAudit {
                                             ? "\(s.axTargets.count) targets, smallest \(String(format: "%.0f", s.axTargets.min() ?? 0))pt"
                                             : "\(tiny.count) target(s) <12pt — too small to click reliably"))
                 }
+                // renderTime (v6) — advisory budget; only fails on a pathological hang.
+                if s.renderMs > 0 {
+                    checks.append(.init(name: "renderTime", pass: s.renderMs < 3000,
+                                        detail: "\(s.renderMs) ms\(s.renderMs >= 3000 ? " — render too slow" : "")"))
+                }
             }
 
             // baselineDiff — informational for live surfaces; a FAILURE for
@@ -201,39 +207,118 @@ enum QAAudit {
             }
         }
 
-        writeHTMLReport(report, in: snapshotsDir)
+        writeHTMLReport(report, structure: structure, in: snapshotsDir)
     }
 
-    /// One-glance owner report: every surface with its badges, current image,
-    /// and (when present) baseline + heat-map side by side. Pure static HTML —
-    /// open qa/snapshots/report.html in any browser.
-    private static func writeHTMLReport(_ report: Report, in dir: URL) {
+    /// One-glance owner dashboard (v6): pass/fail summary, failing-check tally,
+    /// total drift, slowest render, color-blind risks, and a fail-history
+    /// sparkline — then every surface with severity-coloured checks, its render
+    /// time, and current/baseline/diff/deuteranopia images. Pure static HTML.
+    private static func writeHTMLReport(_ report: Report, structure: [String: QASurfaceStructure], in dir: URL) {
+        // CVD findings (cvd.json is written just before the audit) + run history.
+        let cvd = (try? Data(contentsOf: dir.appendingPathComponent("cvd.json")))
+            .flatMap { try? JSONDecoder().decode(QAColorVision.Report.self, from: $0) }
+        let cvdFail = Set((cvd?.surfaces ?? []).filter { !$0.pass }.map(\.surface))
+        let cvdFlagged = cvd?.flagged ?? []
+        let hist = Array(loadHistory(dir).suffix(40))
+
+        let totalChecks = report.results.reduce(0) { $0 + $1.checks.count }
+        let failChecks  = report.results.reduce(0) { $0 + $1.checks.filter { !$0.pass }.count }
+        var failByName: [String: Int] = [:]
+        for r in report.results {
+            for c in r.checks where !c.pass {
+                failByName[String(c.name.split(separator: ":").first ?? ""), default: 0] += 1
+            }
+        }
+        let totalDrift = report.results.compactMap(\.diffPercent).reduce(0, +)
+        let slow = structure.max { $0.value.renderMs < $1.value.renderMs }
+
+        let maxFail = max(1, hist.map(\.failures).max() ?? 0)
+        let sparks = hist.map { h -> String in
+            let ht = Int(Double(h.failures) / Double(maxFail) * 26) + 3
+            return "<i class=\"sp\" style=\"height:\(ht)px;background:\(h.failures == 0 ? "#4ca85f" : "#cc4a4a")\" title=\"\(h.at): \(h.failures) fail · \(String(format: "%.1f", h.totalDiffPct))% drift\"></i>"
+        }.joined()
+
+        func stat(_ big: String, _ label: String, _ cls: String = "") -> String {
+            "<div class=\"stat\"><b class=\"\(cls)\">\(big)</b><span>\(label)</span></div>"
+        }
+
         var html = """
         <!doctype html><meta charset="utf-8"><title>Salehman AI — QA report</title>
         <style>
-        body{background:#1b1b1b;color:#eee;font:14px -apple-system,sans-serif;margin:24px}
-        h1{font-size:18px} .ok{color:#5dd167} .bad{color:#ff5d5d}
-        .card{background:#252525;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin:14px 0}
-        .imgs{display:flex;gap:10px;flex-wrap:wrap} .imgs figure{margin:0}
-        .imgs img{max-width:380px;border:1px solid #444;border-radius:6px}
-        figcaption{font-size:11px;color:#999;margin-top:4px}
-        .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;background:#333;margin-right:6px}
+        body{background:#161616;color:#eee;font:13px -apple-system,system-ui,sans-serif;margin:22px;max-width:1100px}
+        h1{font-size:17px;margin:0 0 12px} a{color:#7fb0ff}
+        .ok{color:#5dd167}.bad{color:#ff6b5d}.warn{color:#f0a83c}.info{color:#8a8a8a}
+        .dash{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px}
+        .stat{background:#202020;border:1px solid #333;border-radius:10px;padding:10px 14px;min-width:92px}
+        .stat b{display:block;font-size:20px;font-weight:700}.stat span{font-size:11px;color:#999}
+        .sparks{display:flex;align-items:flex-end;gap:2px;height:30px}.sp{display:inline-block;width:5px;border-radius:1px}
+        .failsum{border-radius:8px;padding:8px 12px;margin:8px 0;font-size:12px}
+        .failsum.bad{background:#2a1d1d;border:1px solid #4a3030}.failsum.warn{background:#2a2318;border:1px solid #4a3a20}
+        .card{background:#1f1f1f;border:1px solid #333;border-radius:10px;padding:13px;margin:12px 0}
+        .card>b{font-size:14px}.rt{color:#888;font-size:11px;margin-left:6px}
+        .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;background:#2c2c2c;margin:2px 6px 2px 0}
+        .badge.bad{background:#3a2020}.badge.warn{background:#332a18}.badge.info{background:#262626;color:#888}
+        .imgs{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.imgs figure{margin:0}
+        .imgs img{max-width:300px;border:1px solid #444;border-radius:6px}
+        figcaption{font-size:11px;color:#999;margin-top:3px}small{color:#aaa}
         </style>
-        <h1>QA report — \(report.generatedAt) ·
-        <span class="\(report.failures.isEmpty ? "ok" : "bad")">\(report.failures.isEmpty ? "ALL GREEN" : "\(report.failures.count) FAILING: \(report.failures.joined(separator: ", "))")</span></h1>
+        <h1>Salehman AI — QA report · \(report.generatedAt)</h1>
+        <div class="dash">
         """
+        html += stat(report.failures.isEmpty ? "GREEN" : "\(report.failures.count) ✗",
+                     "\(report.results.count) surfaces", report.failures.isEmpty ? "ok" : "bad")
+        html += stat("\(totalChecks - failChecks)/\(totalChecks)", "checks pass")
+        html += stat(String(format: "%.1f%%", totalDrift), "total drift")
+        html += stat("\(slow?.value.renderMs ?? 0) ms", "slowest · \(slow?.key ?? "—")")
+        html += stat("\(cvdFlagged.count)", "color-blind risks", cvdFlagged.isEmpty ? "ok" : "warn")
+        html += "<div class=\"stat\"><div class=\"sparks\">\(sparks)</div><span>fail history · \(hist.count) runs</span></div>"
+        html += "</div>"
+
+        if !failByName.isEmpty {
+            html += "<div class=\"failsum bad\">Failing: " + failByName.sorted { $0.value > $1.value }
+                .map { "\($0.key) ×\($0.value)" }.joined(separator: " · ") + "</div>"
+        }
+        if !cvdFlagged.isEmpty {
+            html += "<div class=\"failsum warn\">⬣ Red/green merges on <b>\(cvdFlagged.joined(separator: ", "))</b> — color-blind users can't tell these apart by colour. Previews: <a href=\"cvd_report.html\">cvd_report.html</a></div>"
+        }
+
         for r in report.results {
-            html += "<div class=\"card\"><b>\(r.snapshot)</b><br>"
+            let rms = structure[r.snapshot]?.renderMs ?? 0
+            let cvdBadge = cvdFail.contains(r.snapshot) ? "<span class=\"badge warn\">⬣ CVD merge</span>" : ""
+            html += "<div class=\"card\"><b>\(r.snapshot)</b><span class=\"rt\">\(rms) ms</span> \(cvdBadge)<br>"
             for c in r.checks {
-                html += "<span class=\"badge \(c.pass ? "ok" : "bad")\">\(c.pass ? "✓" : "✗") \(c.name)</span> <small>\(c.detail)</small><br>"
+                html += "<span class=\"badge \(severityClass(c))\">\(c.pass ? "✓" : "✗") \(c.name)</span> <small>\(esc(c.detail))</small> "
             }
             html += "<div class=\"imgs\">"
-            html += "<figure><img src=\"\(r.snapshot).png\"><figcaption>current</figcaption></figure>"
-            html += "<figure><img src=\"../baselines/\(r.snapshot).png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>baseline</figcaption></figure>"
-            html += "<figure><img src=\"\(r.snapshot)_diff.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>diff heat-map</figcaption></figure>"
+            for (src, cap) in [("\(r.snapshot).png", "current"),
+                               ("../baselines/\(r.snapshot).png", "baseline"),
+                               ("\(r.snapshot)_diff.png", "diff heat-map"),
+                               ("\(r.snapshot)_deuter.png", "deuteranopia")] {
+                html += "<figure><img src=\"\(src)\" onerror=\"this.parentElement.style.display='none'\"><figcaption>\(cap)</figcaption></figure>"
+            }
             html += "</div></div>"
         }
         try? html.write(to: dir.appendingPathComponent("report.html"), atomically: true, encoding: .utf8)
+    }
+
+    private struct Hist: Codable { let at: String; let failures: Int; let totalDiffPct: Double }
+    private static func loadHistory(_ dir: URL) -> [Hist] {
+        let url = dir.deletingLastPathComponent().appendingPathComponent("history.jsonl")
+        guard let s = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let dec = JSONDecoder()
+        return s.split(separator: "\n").compactMap { try? dec.decode(Hist.self, from: Data($0.utf8)) }
+    }
+    /// 3-level severity for display: failing = bad, soft/advisory pass = info, else ok.
+    private static func severityClass(_ c: CheckResult) -> String {
+        if !c.pass { return "bad" }
+        let d = c.detail.lowercased()
+        return (d.contains("advisory") || d.contains("not assessable") || d.contains("no baseline")) ? "info" : "ok"
+    }
+    private static func esc(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+         .replacingOccurrences(of: "<", with: "&lt;")
+         .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     /// Promote the current snapshots to baselines (menu/trigger-file driven).

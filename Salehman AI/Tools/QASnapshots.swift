@@ -146,12 +146,13 @@ enum QASnapshots {
 
         // Self-judge the pictures: AUDIT.json (nonBlank / canvasFlat / baseline
         // diff + heat-maps). The UI-test gate asserts failures == [].
+        // Color-vision pass (Chat C, QA v6): deuteranopia/protanopia previews +
+        // red-green "merge" detection. Runs BEFORE the audit so its cvd.json is
+        // fresh when the audit folds CVD status into report.html.
+        QAColorVision.run(snapshotsDir: dir)
+
         QAAudit.run(snapshotsDir: dir,
                     baselinesDir: qaDir.appendingPathComponent("baselines"))
-
-        // Color-vision pass (Chat C, QA v6): deuteranopia/protanopia previews +
-        // red-green "merge" detection over each surface's vivid colors.
-        QAColorVision.run(snapshotsDir: dir)
     }
 
     /// ONE render path: host the view offscreen in an `NSHostingView` and cache
@@ -187,8 +188,9 @@ enum QASnapshots {
         structure[name, default: .init()].axInteractive = ax.interactive
         structure[name, default: .init()].axUnlabeled = ax.unlabeled
         structure[name, default: .init()].axTargets = ax.targets
-        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
-                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        structure[name, default: .init()].renderMs = ms
+        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height), ok: ok, ms: ms))
     }
 
     /// Recursive accessibility-tree walk. Interactive roles must carry a label,

@@ -89,4 +89,7 @@ struct QASurfaceStructure: Codable {
     /// min(width,height) in pt of each interactive element's frame — for the
     /// tap-target-size check. Empty when the AX tree is empty offscreen.
     var axTargets: [Double] = []
+    /// Wall-clock render time of this surface in ms — for the report's render
+    /// budget + slowest-surface trend.
+    var renderMs: Int = 0
 }
