@@ -2062,3 +2062,19 @@ just-committed design choreography — their baseline re-adopt, flagged).
 **Files:** `Salehman AI/LLM/BrainRouting.swift` (new), `Salehman AI/LLM/LocalLLM.swift`,
 `Salehman AI/LLM/SalehmanEngine.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift`,
 `PROJECT_CONTEXT.md`, `ARCHITECTURE.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:3x) — Chat C: high-end visual pass on AboutView (+ honest copy) [marathon, f/high-end-visual-design]
+**What & why:** Elevated the About sheet (brand moment, pairs with Onboarding) within the approved
+dark/brand DS palette — no colour/DS changes. Applied the same premium kit + the deep-research findings:
+ambient brand-glow orb behind the header (depth), top-lit gradient edge-highlight on the 52pt brand tile
+(dimension), a "WHAT IT DOES" editorial eyebrow (rhythm), **hover row-highlights** on the capability list
+(research: hover is a macOS-only premium affordance — `DS.Palette.accent.opacity(0.07)` on `.onHover`),
+and an entrance fade-rise (QA-gated under `--qa`). Only DS.* tokens already in scope. Also reconciled the
+sheet's **self-contradictory stale copy**: title "Private, on-device" + intro "Your private, on-device AI"
+contradicted its own "cloud-first" body → now "Private when you want it" / "Your AI — cloud-first with a
+local fallback" (app is cloud-first by default; same honesty fix applied app-wide).
+**Result:** `** BUILD SUCCEEDED **` (after a DB-lock retry). Verified in captured pixels
+(`qa/snapshots/about.png`): glow + eyebrow + dimensional tile + honest copy render correctly. Adopted ONLY
+the about baseline (targeted `cp`). Full capture `24/24 surfaces OK`; the `FAILURES: chat_history` flag is
+Chat B's surface (CVD/contrast), not mine. Commit `23cc98b`.
+**Files:** `Salehman AI/Views/AboutView.swift`, `DEVELOPMENT_LOG.md`.
