@@ -1215,6 +1215,15 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
+    /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),
+    /// so its call count is `approxRefineCalls`, not `approxModelCalls`.
+    private var effortCallsHint: String {
+        let e = settings.salehmanEffort
+        let n = settings.brainPreference == .salehman ? e.approxRefineCalls : e.approxModelCalls
+        let calls = n == 0 ? "no extra calls" : "~\(n) extra model call\(n == 1 ? "" : "s")"
+        return "\(e.subtitle) · \(calls)/reply"
+    }
+
     /// Effort — how hard Salehman thinks before answering (self-critique rounds
     /// + candidate fan-out/judge). Higher = better answers, more model calls.
     private var effortRow: some View {
@@ -1223,7 +1232,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Effort").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(settings.salehmanEffort.subtitle)
+                Text(effortCallsHint)
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()

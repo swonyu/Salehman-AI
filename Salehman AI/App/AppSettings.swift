@@ -33,9 +33,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// User's preferred brain. `.auto` is local-first (Ollama qwen-coder when
-    /// reachable). `.ollama` / `.salehman` force a specific brain. Defaults to
-    /// `.auto`.
+    /// User's preferred brain. Defaults to `.salehman` — the trained primary, which
+    /// cascades cloud→free→local on its own. `.auto` is local-first (Ollama
+    /// qwen-coder when reachable). The picker surfaces only those two now; see
+    /// `selectableCases`.
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
@@ -164,9 +165,10 @@ final class AppSettings: ObservableObject {
 
     /// **Salehman Leader.** When ON, every brain's answer is passed through the
     /// Salehman model for one final pass — Salehman is the "leader" that owns the
-    /// last word regardless of which brain drafted it. Default ON. Becomes a no-op
-    /// when the brain is already `.salehman`, the draft is an error/off message, or
-    /// the Salehman engine isn't reachable (then it returns the draft unchanged).
+    /// last word regardless of which brain drafted it. Default ON. OFF = zero extra
+    /// passes for ALL brains (including pinned `.salehman`). Becomes a no-op when
+    /// the draft is an error/off message or Salehman is unreachable. Pinned
+    /// `.salehman` with Leader ON: the Effort dial applies (self-critique only).
     @Published var salehmanLeader: Bool {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
@@ -181,7 +183,8 @@ final class AppSettings: ObservableObject {
 
     /// **Effort.** How hard Salehman thinks before answering — one knob over the
     /// Core-Intelligence primitives (self-critique rounds + candidate fan-out/judge).
-    /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.balanced`.
+    /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.instant`
+    /// (preserves pre-Effort behavior — no surprise extra model calls on upgrade).
     /// (Independent of `salehmanRefine`, which is the older DeepSeek-critique toggle.)
     @Published var salehmanEffort: Effort {
         didSet { UserDefaults.standard.set(salehmanEffort.rawValue, forKey: Keys.salehmanEffort) }
@@ -347,6 +350,11 @@ final class AppSettings: ObservableObject {
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
     nonisolated static var salehmanRefineEnabled: Bool { UserDefaults.standard.bool(forKey: Keys.salehmanRefine) }
+    /// Thread-safe read of the Effort dial (validate-or-default, like the
+    /// `*ModelCurrent` accessors) so the answer path reads it off the main actor.
+    nonisolated static var salehmanEffortCurrent: Effort {
+        Effort(rawValue: UserDefaults.standard.string(forKey: Keys.salehmanEffort) ?? "") ?? .instant
+    }
     /// Auto-continue switch (defaults ON) — read off-main by the chat send loop.
     nonisolated static var autoContinueEnabled: Bool { boolDefaultTrue(Keys.autoContinue) }
 
@@ -409,10 +417,18 @@ final class AppSettings: ObservableObject {
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
         salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
-        salehmanEffort = Effort(rawValue: d.string(forKey: Keys.salehmanEffort) ?? "") ?? .ultra  // default Ultra (max effort: 3 candidates → self-critique each → judge)
+        salehmanEffort = Effort(rawValue: d.string(forKey: Keys.salehmanEffort) ?? "") ?? .instant  // default Instant — preserves pre-Effort call count; opt in to quality via the dial
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
-        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
+        // The Brain menu is now pared to `selectableCases` (Salehman + Auto). Migrate a
+        // stale/hidden saved pick (e.g. an old cloud brain that's no longer in the menu)
+        // to the default so the picker is never blank — and PERSIST it, because
+        // `brainPreferenceCurrent` reads UserDefaults directly in the LLM layer and must
+        // agree with what the menu can show.
+        let savedBrain = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
+        let normalizedBrain = BrainPreference.selectableCases.contains(savedBrain) ? savedBrain : .salehman
+        if normalizedBrain != savedBrain { d.set(normalizedBrain.rawValue, forKey: Keys.brainPreference) }
+        brainPreference = normalizedBrain
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
         unslothStudioEndpoint = d.string(forKey: Keys.unslothStudioEndpoint) ?? "" // empty = not configured
@@ -489,8 +505,12 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Cases shown in the Brain picker — paid providers excluded.
-    static var selectableCases: [BrainPreference] { allCases.filter { !$0.isPaid } }
+    /// Cases shown in the Brain picker. Pared to the essentials now that Salehman is
+    /// the trained primary — it already cascades cloud→free→local internally, so the
+    /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
+    /// offline use. (Every other case still functions if set directly — e.g. by the
+    /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
+    static var selectableCases: [BrainPreference] { [.salehman, .auto] }
 
     var title: String {
         switch self {

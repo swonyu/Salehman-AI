@@ -30,6 +30,21 @@ enum Effort: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Critique rounds for the refine-only path (pinned-.salehman draft, no fan-out).
+    /// Capped at `.high` so the dial stays monotonic — `.ultra`'s fan-out/judge pass
+    /// isn't available when we're refining an existing tool-built draft.
+    nonisolated var refineRounds: Int {
+        switch self {
+        case .instant:  return 0
+        case .balanced: return 1
+        case .high:     return 3
+        case .ultra:    return 3
+        }
+    }
+
+    /// Call count for the refine-only path: critique + conditional rewrite per round.
+    nonisolated var approxRefineCalls: Int { refineRounds * 2 }
+
     /// Independent candidate drafts to generate. Only `.ultra` fans out; the
     /// best is chosen by a judge pass.
     nonisolated var candidates: Int {

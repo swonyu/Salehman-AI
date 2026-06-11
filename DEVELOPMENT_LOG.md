@@ -1460,6 +1460,26 @@ Wiring (exhaustive switch arms all caught by compiler):
 **Deliberately NOT done (deferred, with reasons):** wiring `salehmanEffort` (Settings Effort picker is currently display-only — **owner decision needed: wire `SalehmanEngine.respond(to:effort:)` into the answer path or remove the row**; it's 1 day old and clearly intended to be wired); `StockSageScreenAnalysis` (built-but-unwired, intentional pre-integration); `tools/finetune_export.jsonl` (owner may still need it for the x.ai job; note it contains personal session data and is on the GitHub remote); duplicate-code consolidations (GrokClient→OpenAICompatibleClient, tool-dispatch switch, mediaExts, PromptLibrary boilerplate → refactor pass, not cleanup); DS token-vocabulary trim (intentional design vocabulary); duplicate/overlapping test suites + the `OllamaRAMBenchmarkTests` brainPreference-lock gap (test-target changes need a real test run to verify).
 **Result:** ~700 lines of dead/unreachable code removed; 3 Swift files + 3 artifacts deleted; all 90 remaining app sources pass `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) with **0 errors / 0 warnings**. `SOURCE_BUNDLE.md` regenerated; `bundle_check.sh` PASS. ⚠️ **xcodebuild + the test suite could NOT be run in this session** (sandboxed environment blocks Xcode's build service); test-target changes were verified by exhaustive grep only — **run the canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
 
+## 2026-06-11 · Effort wiring — review fixes (5 adversarially-confirmed bugs)
+
+**Files:** `Salehman AI/Intelligence/Effort.swift`, `Salehman AI/LLM/SalehmanLeader.swift`, `Salehman AI/App/AppSettings.swift`, `Salehman AI/Views/SettingsView.swift`, `Salehman AITests/EffortWiringTests.swift`, `SOURCE_BUNDLE.md`
+
+**What & why:** A 4-lens adversarial review (20 agents, 10 confirmed / 6 rejected findings) of the Effort wiring diff turned up 5 real bugs. Applied all 5:
+
+1. **[HIGH] Fresh-install default brain not detected as pinned `.salehman`** — `finalize` and `isLeading` were comparing against the raw UserDefaults string; on a fresh install the key is unset (nil), so the comparison `nil == "salehman"` was false, incorrectly routing the default user to the full leader fan-out instead of the cheap refine-only path. Fixed by using `AppSettings.brainPreferenceCurrent` (the validate-or-default accessor) in both functions.
+
+2. **[MEDIUM] Leader toggle OFF didn't zero-out pinned-`.salehman` passes** — the `finalize` pinned-.salehman branch fired before `guard isLeading`, completely bypassing the toggle. Pre-change, `guard isLeading else { return draft }` was the first line, so OFF = guaranteed zero passes. Fixed by adding `guard AppSettings.salehmanLeaderEnabled else { return draft }` inside the pinned-.salehman branch.
+
+3. **[MEDIUM] Default effort `.balanced` violated CLAUDE.md "never silently call a paid cloud API" invariant** — on factory defaults (brainPreference unset → `.salehman`, effort unset → `.balanced`), every non-code reply would silently invoke 2 extra `SalehmanEngine.generate` calls (critique + rewrite via `SelfCritique.refine`), which can route to the paid DeepSeek backstop. Changed default to `.instant` (0 extra calls, exactly pre-Effort behavior). Higher quality is now opt-in.
+
+4. **[MEDIUM] Non-monotonic effort dial for the refine-only path** — `.ultra` (critiqueRounds=2) did LESS refinement than `.high` (critiqueRounds=3) in `refineOwnDraft`, because `.ultra`'s value is lower (it offloads cost to fan-out, which isn't available here). Added `refineRounds` property to `Effort` with `.ultra` capped at `.high`'s depth (both 3 rounds), and added `approxRefineCalls = refineRounds * 2`. `refineOwnDraft` now uses `refineRounds`.
+
+5. **[MEDIUM] Settings cost hint overstated/misstated for pinned-`.salehman` path** — `approxModelCalls` is the leader fan-out cost (16 for `.ultra`), not the refine-only cost (6 extra calls max). Added `effortCallsHint` computed property to `SettingsView` that branches on `brainPreference == .salehman` and shows `approxRefineCalls` vs `approxModelCalls` accordingly. `.instant` for pinned `.salehman` now correctly shows "no extra calls".
+
+Updated test names and expectations in `EffortWiringTests.swift` to match the `.instant` default.
+
+**Result:** `swiftc -typecheck` 0 errors / 0 warnings (Swift 6, `-default-isolation MainActor`). `SOURCE_BUNDLE.md` regenerated (128 files, 23720 LOC). ⚠️ xcodebuild + test suite still cannot run in sandbox — **must run canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -2009,3 +2029,34 @@ Grok-agent net output was low-value (2 usable tools `grok_cleanup.py`/`bundle_ch
 regression reverted, one hallucinated wrong-path file) — unsupervised Grok needs `git diff` review before
 keeping anything. Training upload to RunPod is owner-run (data-egress guard correctly blocks auto-upload of
 personal chat data).
+
+## 2026-06-11 — Code tab UI overhaul (Claude-parity) + complete 32B fine-tune (1,028 examples)
+**Files:** `Salehman AI/Views/CodeView.swift` (UI, Chat-B lane); `salehman-training/*`
+(datasets + `runpod/02_train.py`, `test_salehman.py`, generator scripts — gitignored data).
+**What & why:** Owner wanted the Code tab "as good as Claude" + Salehman trained on the full Claude
+working style, then run locally on a 4080 later. Verified UI changes by **building + launching + screen-
+capturing the app** (`screencapture` + `osascript`), iterating on real screenshots rather than blind.
+- **CodeView polish/features (all build-verified):** centered welcome with a glowing accent-circle `</>`
+  icon + tappable example chips (`Review`/`Find & fix a bug`/`Explain a file`) + `⌘O/⌘R/⌘L` shortcut hints;
+  cohesive input "pill" (one rounded container, border warms to accent while typing); message avatars in a
+  matching accent disc; inspector empty-state → centered icon+text; file-tree project header (folder icon +
+  file-count badge); empty-tree → folder icon + inline **Open Folder** button; **Review** promoted to an
+  accent pill (primary action); active-brain label in the input controls; agent-steps **progress header**
+  ("Working · N/M" + running step glows); **Copy-all** conversation (Markdown) + message count; **drag-a-file-
+  onto-input** to attach (`.onDrop`, `import UniformTypeIdentifiers`); **⌘L** focuses the input.
+- **Complete 32B fine-tune.** Dataset grown to **1,028** examples: 869 scrubbed chats+persona, 71
+  workflow/ultracode, 44 Claude-style coding (root-cause debugging etc.), 44 full-feature-set (effort dial,
+  pipeline-vs-barrier, judge panel…), 12 hand-crafted identity/domain. Trained `Qwen2.5-32B-Instruct-bnb-4bit`
+  QLoRA (r64/α128, 4-bit pre-quant so the 32B fits a small disk) on an **H100 + 140 GB network volume**
+  (after the L40S pods' ephemeral disk truncated a save and lost a run — fixed by a persistent volume +
+  verify-adapter-loads-before-trusting). `02_train.py`: added pre-quantized-model branch (skip
+  BitsAndBytesConfig when name contains `4bit`/`bnb`) + `save_strategy="steps"` checkpointing.
+- **Eval (`test_salehman.py`):** the complete model knows it's Salehman (local-first) and reproduces the
+  workflow training verbatim ("the test isn't 'is this big,' it's 'does correctness need decomposition'";
+  pipeline-vs-barrier explained correctly). Distillation landed.
+**Result:** `xcodebuild` **BUILD SUCCEEDED** throughout (one red build was the parallel Chat-A `Agents/*`
+refactor, not this lane — left for them per coordination; went green when they landed it). Adapter validated
+(896 tensors) + backed up to the Mac twice (round 1 + round 2, ~2 GB each) — double-safe vs the ephemeral-pod
+data loss. Pod terminated by owner after backup. Serving (GGUF `Q3_K_M` + speculative decoding on the 4080)
+deferred to owner, next month. Lesson re-learned: a disk-full **truncates** a safetensors save silently —
+always verify the artifact *loads* before calling training done.
