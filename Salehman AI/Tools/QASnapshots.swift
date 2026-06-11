@@ -65,19 +65,33 @@ enum QASnapshots {
     private struct Shot { let name: String; let desc: String; let w: Int; let h: Int; let ok: Bool; let ms: Int }
     private static var shots: [Shot] = []
 
+    /// Structural results (layout geometry + accessibility tree) per surface —
+    /// written to STRUCTURE.json for `QAAudit` to fold into the verdict.
+    private static var structure: [String: QASurfaceStructure] = [:]
+
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         shots.removeAll()
+        structure.removeAll()
+        QAGeometry.enabled = true
+        defer { QAGeometry.enabled = false }
 
         // ── Code tab ─────────────────────────────────────────────────────────
         snap(CodeView(),           "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
         snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (blocks, code, table, Arabic RTL, streaming, agent strip, refusal)", .init(width: 860, height: 1560), in: dir)
         // ── Main chat ────────────────────────────────────────────────────────
+        // The chat renders also feed the GEOMETRY probe: ContentView reports
+        // its reading-column + composer frames, and the audit asserts the
+        // 780pt-centered invariants at both widths.
+        QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
+        structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
         snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
+        QAGeometry.reset()
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        structure["chat_narrow", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 560)
         snap(CodeView(),           "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
         // ── Every other tab — flat-canvas restyle spot-check ────────────────
         snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
@@ -94,6 +108,11 @@ enum QASnapshots {
         // invisible-code-text class of bug, caught by eyes in round 1, is now
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
+
+        // Bridge layout + accessibility findings to the audit.
+        if let data = try? JSONEncoder().encode(structure) {
+            try? data.write(to: dir.appendingPathComponent("STRUCTURE.json"))
+        }
 
         writeManifest(in: dir)
         buildContactSheet(in: dir)
@@ -135,8 +154,40 @@ enum QASnapshots {
                 ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
             }
         }
+        // Accessibility sweep on the laid-out tree: count interactive elements
+        // and collect the UNLABELED ones (icon-only buttons that lost their
+        // .accessibilityLabel/.help — the audit fails on any).
+        let ax = axScan(host)
+        structure[name, default: .init()].axInteractive = ax.interactive
+        structure[name, default: .init()].axUnlabeled = ax.unlabeled
         shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
                           ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+    }
+
+    /// Recursive accessibility-tree walk. Interactive roles must carry a label,
+    /// title, or help text — VoiceOver users get nothing otherwise.
+    private static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String]) {
+        var interactive = 0
+        var unlabeled: [String] = []
+        let interactiveRoles: Set<NSAccessibility.Role> = [
+            .button, .popUpButton, .menuButton, .checkBox, .radioButton, .slider, .link,
+        ]
+        func walk(_ node: Any, depth: Int) {
+            guard depth < 60 else { return }
+            guard let ax = node as? any NSAccessibilityProtocol else { return }
+            if let role = ax.accessibilityRole(), interactiveRoles.contains(role) {
+                interactive += 1
+                let label = (ax.accessibilityLabel() ?? "").trimmingCharacters(in: .whitespaces)
+                let title = (ax.accessibilityTitle() ?? "").trimmingCharacters(in: .whitespaces)
+                let help = (ax.accessibilityHelp() ?? "").trimmingCharacters(in: .whitespaces)
+                if label.isEmpty && title.isEmpty && help.isEmpty {
+                    unlabeled.append(role.rawValue)
+                }
+            }
+            for child in ax.accessibilityChildren() ?? [] { walk(child, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return (interactive, unlabeled)
     }
 
     /// Markdown manifest: what each PNG shows, its size, render status + time, the

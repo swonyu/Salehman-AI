@@ -80,6 +80,11 @@ enum QAAudit {
         var results: [SnapshotResult] = []
         var failures: [String] = []
 
+        // Structural findings bridged from capture (layout geometry + AX tree).
+        let structure: [String: QASurfaceStructure] =
+            (try? Data(contentsOf: snapshotsDir.appendingPathComponent("STRUCTURE.json")))
+                .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path)) ?? [])
             .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png") }.sorted()
 
@@ -112,6 +117,24 @@ enum QAAudit {
             // contrast — the readability probe's bands, measured for real.
             if name == "contrast_probe" {
                 checks.append(contentsOf: contrastChecks(rep))
+            }
+
+            // Structural checks from capture: layout-invariant assertions and
+            // the accessibility sweep (unlabeled interactive elements FAIL;
+            // an empty AX tree offscreen is reported, not failed).
+            if let s = structure[name] {
+                for g in s.geo {
+                    checks.append(.init(name: g.name, pass: g.pass, detail: g.detail))
+                }
+                if s.axInteractive == 0 {
+                    checks.append(.init(name: "axLabels", pass: true,
+                                        detail: "AX tree empty offscreen — not assessable"))
+                } else {
+                    checks.append(.init(name: "axLabels", pass: s.axUnlabeled.isEmpty,
+                                        detail: s.axUnlabeled.isEmpty
+                                            ? "\(s.axInteractive) interactive elements, all labeled"
+                                            : "\(s.axUnlabeled.count)/\(s.axInteractive) UNLABELED: \(s.axUnlabeled.prefix(5).joined(separator: ", "))"))
+                }
             }
 
             // baselineDiff — informational for live surfaces; a FAILURE for

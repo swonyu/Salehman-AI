@@ -97,9 +97,11 @@ struct ContentView: View {
                     // Input pill aligns to the same 780pt reading column as the
                     // transcript (design language).
                     .frame(maxWidth: 780)
+                    .qaGeometry("chat.input")
                     .frame(maxWidth: .infinity)
             }
         }
+        .coordinateSpace(name: "qaRoot")
         .preferredColorScheme(.dark)
         .overlay {
             if let pending = approval.pending, !settings.unrestrictedTools {
@@ -351,6 +353,7 @@ struct ContentView: View {
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
                             .frame(maxWidth: 780)
+                            .qaGeometry("chat.column")
                             .frame(maxWidth: .infinity)
                         }
                     }

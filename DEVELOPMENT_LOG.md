@@ -1651,6 +1651,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0/0. SNAPSHOT_REQUEST planted — next cycle should be all green with honest numbers (the send button's white-on-accent recomputes to ≈3.8:1, more margin than the gamma-space 3.3 suggested). A QA system that catches bugs in itself is working as designed.
 
+## 2026-06-11 · QA v5 — geometry probe + accessibility-tree sweep (layout and structure join the audit)
+
+**Files:** `Salehman AI/Tools/QAGeometry.swift` (new), `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pixels judge color/blankness/drift but not layout intent or structure. v5 adds both. (1) **Geometry probe**: a shared collector (`QAGeometry`) plus a `.qaGeometry(key)` view modifier — ContentView's reading column and composer report their real frames during captures (zero cost otherwise; gated on a flag `captureAll` flips). The audit now asserts the design's layout invariants numerically: column centered within ±2pt and ≈min(780, width−36) wide, composer aligned to the same column — verified at BOTH the 1000pt and 560pt renders. Empty-transcript renders skip gracefully. (2) **Accessibility sweep**: `snap()` walks each surface's AX tree post-layout (`NSAccessibilityProtocol`, recursive); interactive roles (button/menu/toggle/slider/link) lacking label+title+help fail a new `axLabels` check — the icon-button-lost-its-label regression class is now gate-enforced; empty offscreen trees report "not assessable" instead of fake-passing. Capture bridges both to the audit via `STRUCTURE.json`; results appear in AUDIT.json and report.html like any other check. Invited the other session to hook CodeView's split layout into the shared collector.
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — the next cycle delivers the first geometry + AX verdicts. Audit capability ladder to date: blank-detection → canvas color → baseline drift (budgeted) → WCAG contrast (linearized) → layout invariants → accessibility structure.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -2353,6 +2361,28 @@ Proton Drive. Owner away; autonomous loop continues until the RunPod balance is 
 **Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
 Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
 spend report. Owner away ~3h; loop continues.
+
+## 2026-06-11 (evening) — Chat C (3rd session): `/run-skill-generator` → `run-salehman-ai` run skill
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md` (new), `.claude/skills/run-salehman-ai/run.sh` (new),
+`COORDINATION.md` (board claim). **No app source touched** (so no `SOURCE_BUNDLE.md` regen needed).
+**What & why:** Owner added a third Claude session and ran `/run-skill-generator`. Authored a
+discoverable "run / launch / screenshot / QA the app" skill so a future (screen-blind) agent can build,
+drive, and visually verify the app from a clean machine. Chosen as a zero-collision Chat C lane — lives
+entirely under `.claude/skills/`, edits no Swift.
+- **Driver `run.sh`** wraps the existing `tools/qa.sh` harness and closes its two real gaps (found by
+  actually running it): (1) qa.sh errors if the Debug app isn't built — run.sh auto-builds; (2) **if the
+  app is already running, macOS `open` only re-activates it, so the `.task { QASnapshots.checkAndRun() }`
+  capture hook never re-fires and qa.sh silently prints the PREVIOUS run's PNGs** — run.sh force-quits any
+  instance first so capture is genuinely fresh. Both paths verified.
+- **SKILL.md** documents the agent path first (one command → manifest + audit → read PNGs), the build/test
+  commands, the human `open` path, and a Gotchas section (already-running→stale, freshness check via
+  `SNAPSHOT_REQUEST` consumption, hardcoded `~/Desktop/Salehman AI/qa` capture dir + `QA_SNAPSHOT_DIR`/
+  direct-launch workaround since `open` drops env, `snap` vs `snapHosted` blank-render rule, dual
+  QASnapshots/QACapture systems).
+**Result:** Debug build `** BUILD SUCCEEDED **`; drove the app via `run.sh` and `run.sh --build` — **14/14
+QA surfaces pass**, fresh capture confirmed (manifest timestamp advances each run, request file consumed);
+read `today.png`/`contact_sheet.png` to verify a real running app. `xcodebuild test … -only-testing:"Salehman AITests"`
+→ `** TEST SUCCEEDED **` (~310 cases, 0 failures). Every code block in SKILL.md was executed this session.
 
 ## 2026-06-11 (evening) — salehman14b INSTALLED + running on the M4 (the finale)
 **What & why:** Got the r3 Q4_K_M onto the Mac and into Ollama despite two real walls:

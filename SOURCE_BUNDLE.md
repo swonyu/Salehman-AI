@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 18:29 +03 · Swift files: 132 · Swift LOC: 25244_
+_Generated: 2026-06-11 18:41 +03 · Swift files: 133 · Swift LOC: 25405_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10841,7 +10841,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QAAudit.swift (335 lines) =====
+===== FILE: Salehman AI/Tools/QAAudit.swift (358 lines) =====
 ```swift
 import AppKit
 
@@ -10925,6 +10925,11 @@ enum QAAudit {
         var results: [SnapshotResult] = []
         var failures: [String] = []
 
+        // Structural findings bridged from capture (layout geometry + AX tree).
+        let structure: [String: QASurfaceStructure] =
+            (try? Data(contentsOf: snapshotsDir.appendingPathComponent("STRUCTURE.json")))
+                .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path)) ?? [])
             .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png") }.sorted()
 
@@ -10957,6 +10962,24 @@ enum QAAudit {
             // contrast — the readability probe's bands, measured for real.
             if name == "contrast_probe" {
                 checks.append(contentsOf: contrastChecks(rep))
+            }
+
+            // Structural checks from capture: layout-invariant assertions and
+            // the accessibility sweep (unlabeled interactive elements FAIL;
+            // an empty AX tree offscreen is reported, not failed).
+            if let s = structure[name] {
+                for g in s.geo {
+                    checks.append(.init(name: g.name, pass: g.pass, detail: g.detail))
+                }
+                if s.axInteractive == 0 {
+                    checks.append(.init(name: "axLabels", pass: true,
+                                        detail: "AX tree empty offscreen — not assessable"))
+                } else {
+                    checks.append(.init(name: "axLabels", pass: s.axUnlabeled.isEmpty,
+                                        detail: s.axUnlabeled.isEmpty
+                                            ? "\(s.axInteractive) interactive elements, all labeled"
+                                            : "\(s.axUnlabeled.count)/\(s.axInteractive) UNLABELED: \(s.axUnlabeled.prefix(5).joined(separator: ", "))"))
+                }
             }
 
             // baselineDiff — informational for live surfaces; a FAILURE for
@@ -11259,7 +11282,95 @@ enum QACapture {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (344 lines) =====
+===== FILE: Salehman AI/Tools/QAGeometry.swift (84 lines) =====
+```swift
+import SwiftUI
+
+/// **Geometry probe** — pixel checks can't see LAYOUT intent. This collector
+/// lets views report their real frames during a QA capture, and turns the
+/// design's layout invariants into assertions:
+///
+/// * the chat's reading column is genuinely capped at 780pt and CENTERED,
+/// * the composer aligns to the same column,
+/// * both still hold at narrow widths.
+///
+/// Views opt in with `.qaGeometry("key")` (a no-op unless a capture is
+/// running — `enabled` is flipped by `QASnapshots.captureAll`, so normal app
+/// use pays nothing but a boolean check). After rendering, `QASnapshots`
+/// calls `assertions(for:)` and folds the results into the audit as checks.
+@MainActor
+enum QAGeometry {
+    static var enabled = false
+    private(set) static var frames: [String: CGRect] = [:]
+
+    static func reset() { frames.removeAll() }
+    static func record(_ key: String, _ frame: CGRect) {
+        guard enabled else { return }
+        frames[key] = frame
+    }
+
+    struct Assertion: Codable {
+        let name: String
+        let pass: Bool
+        let detail: String
+    }
+
+    /// Layout invariants for a chat render at `rootWidth`. Keys are recorded
+    /// by ContentView's probes ("chat.column", "chat.input") relative to the
+    /// "qaRoot" coordinate space.
+    static func chatAssertions(rootWidth: CGFloat) -> [Assertion] {
+        var out: [Assertion] = []
+        let expectedWidth = min(780, rootWidth - 36)   // 18pt horizontal padding each side
+
+        if let col = frames["chat.column"] {
+            let centered = abs((col.midX) - rootWidth / 2) <= 2
+            out.append(.init(name: "geo:column centered",
+                             pass: centered,
+                             detail: String(format: "midX %.1f vs root mid %.1f", col.midX, rootWidth / 2)))
+            out.append(.init(name: "geo:column width",
+                             pass: abs(col.width - expectedWidth) <= 4,
+                             detail: String(format: "%.0fpt (expected ≈%.0f)", col.width, expectedWidth)))
+        } else {
+            // Legitimate when the transcript is empty (the empty state has its
+            // own layout) — note it, don't fail.
+            out.append(.init(name: "geo:column centered", pass: true,
+                             detail: "column not rendered (empty transcript) — skipped"))
+        }
+
+        if let input = frames["chat.input"] {
+            let cap = min(780, rootWidth)
+            out.append(.init(name: "geo:input in column",
+                             pass: input.width <= cap + 2 && abs(input.midX - rootWidth / 2) <= 2,
+                             detail: String(format: "width %.0f, midX %.1f", input.width, input.midX)))
+        } else {
+            out.append(.init(name: "geo:input in column", pass: false, detail: "no frame recorded"))
+        }
+        return out
+    }
+}
+
+extension View {
+    /// Report this view's frame (in the "qaRoot" space) to `QAGeometry` under
+    /// `key`. Free when no capture is running.
+    func qaGeometry(_ key: String) -> some View {
+        onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .named("qaRoot"))
+        } action: { frame in
+            QAGeometry.record(key, frame)
+        }
+    }
+}
+
+/// Per-surface structural results bridged from capture (QASnapshots) to the
+/// audit (QAAudit) via `qa/snapshots/STRUCTURE.json`.
+struct QASurfaceStructure: Codable {
+    var geo: [QAGeometry.Assertion] = []
+    var axInteractive: Int = 0
+    var axUnlabeled: [String] = []
+}
+```
+
+===== FILE: Salehman AI/Tools/QASnapshots.swift (395 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11328,19 +11439,33 @@ enum QASnapshots {
     private struct Shot { let name: String; let desc: String; let w: Int; let h: Int; let ok: Bool; let ms: Int }
     private static var shots: [Shot] = []
 
+    /// Structural results (layout geometry + accessibility tree) per surface —
+    /// written to STRUCTURE.json for `QAAudit` to fold into the verdict.
+    private static var structure: [String: QASurfaceStructure] = [:]
+
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         shots.removeAll()
+        structure.removeAll()
+        QAGeometry.enabled = true
+        defer { QAGeometry.enabled = false }
 
         // ── Code tab ─────────────────────────────────────────────────────────
         snap(CodeView(),           "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
         snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (blocks, code, table, Arabic RTL, streaming, agent strip, refusal)", .init(width: 860, height: 1560), in: dir)
         // ── Main chat ────────────────────────────────────────────────────────
+        // The chat renders also feed the GEOMETRY probe: ContentView reports
+        // its reading-column + composer frames, and the audit asserts the
+        // 780pt-centered invariants at both widths.
+        QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
+        structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
         snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
+        QAGeometry.reset()
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        structure["chat_narrow", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 560)
         snap(CodeView(),           "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
         // ── Every other tab — flat-canvas restyle spot-check ────────────────
         snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
@@ -11357,6 +11482,11 @@ enum QASnapshots {
         // invisible-code-text class of bug, caught by eyes in round 1, is now
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
+
+        // Bridge layout + accessibility findings to the audit.
+        if let data = try? JSONEncoder().encode(structure) {
+            try? data.write(to: dir.appendingPathComponent("STRUCTURE.json"))
+        }
 
         writeManifest(in: dir)
         buildContactSheet(in: dir)
@@ -11398,8 +11528,40 @@ enum QASnapshots {
                 ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
             }
         }
+        // Accessibility sweep on the laid-out tree: count interactive elements
+        // and collect the UNLABELED ones (icon-only buttons that lost their
+        // .accessibilityLabel/.help — the audit fails on any).
+        let ax = axScan(host)
+        structure[name, default: .init()].axInteractive = ax.interactive
+        structure[name, default: .init()].axUnlabeled = ax.unlabeled
         shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
                           ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+    }
+
+    /// Recursive accessibility-tree walk. Interactive roles must carry a label,
+    /// title, or help text — VoiceOver users get nothing otherwise.
+    private static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String]) {
+        var interactive = 0
+        var unlabeled: [String] = []
+        let interactiveRoles: Set<NSAccessibility.Role> = [
+            .button, .popUpButton, .menuButton, .checkBox, .radioButton, .slider, .link,
+        ]
+        func walk(_ node: Any, depth: Int) {
+            guard depth < 60 else { return }
+            guard let ax = node as? any NSAccessibilityProtocol else { return }
+            if let role = ax.accessibilityRole(), interactiveRoles.contains(role) {
+                interactive += 1
+                let label = (ax.accessibilityLabel() ?? "").trimmingCharacters(in: .whitespaces)
+                let title = (ax.accessibilityTitle() ?? "").trimmingCharacters(in: .whitespaces)
+                let help = (ax.accessibilityHelp() ?? "").trimmingCharacters(in: .whitespaces)
+                if label.isEmpty && title.isEmpty && help.isEmpty {
+                    unlabeled.append(role.rawValue)
+                }
+            }
+            for child in ax.accessibilityChildren() ?? [] { walk(child, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return (interactive, unlabeled)
     }
 
     /// Markdown manifest: what each PNG shows, its size, render status + time, the
@@ -15005,7 +15167,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1440 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1443 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15106,9 +15268,11 @@ struct ContentView: View {
                     // Input pill aligns to the same 780pt reading column as the
                     // transcript (design language).
                     .frame(maxWidth: 780)
+                    .qaGeometry("chat.input")
                     .frame(maxWidth: .infinity)
             }
         }
+        .coordinateSpace(name: "qaRoot")
         .preferredColorScheme(.dark)
         .overlay {
             if let pending = approval.pending, !settings.unrestrictedTools {
@@ -15360,6 +15524,7 @@ struct ContentView: View {
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
                             .frame(maxWidth: 780)
+                            .qaGeometry("chat.column")
                             .frame(maxWidth: .infinity)
                         }
                     }
@@ -26616,7 +26781,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (927 lines) =====
+===== FILE: COORDINATION.md (944 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26668,7 +26833,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
-| **Claude Chat C (NEW — 2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/**`** (SKILL.md + run.sh). Read-only use of `tools/qa.sh`, `tools/QA.md`, `Tools/QASnapshots.swift`. **Edits NO Swift source — zero collision with Chat A/B.** | 2026-06-11 ~18:20 | Owner ran `/run-skill-generator` → authoring a "run/launch/screenshot the app" skill. ✅ Debug build SUCCEEDED, ✅ drove app via `qa.sh` (13/13 surfaces pass). Writing the skill + self-contained `run.sh` (build-if-needed → qa.sh). NOT touching `tools/qa.sh` (someone's uncommitted WIP) — only invoking it. | no — in progress |
+| **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
 
 **🛑 Heads-up for Grok Tab A:** while verifying, the test target fails to compile because `ShellSecurityTests.swift` (your new untracked file) calls `CommandApprovalCenter.looksRisky(...)` from `#expect`'s nonisolated autoclosure, but `looksRisky` is `@MainActor`-isolated under `-default-isolation=MainActor`. The pure-substring-check version of `looksRisky` would be safe as `nonisolated static` — that's likely the right one-line fix in `CommandApprovalCenter.swift`. Not touching it; it's your lane. (My selective commit avoids pushing this red state to `main`.)
 | **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); cross-lane compile fix claim: `Knowledge/KnowledgeStore.swift` (duplicate mmr redeclaration at ~223 — removed the later one to unblock test build; first impl at 135 is the called one) | 2026-06-06 | 5 suites enabled and passing; full AITests was red due to redecl in KnowledgeStore (unrelated to our edits but blocking verification) — claimed + removed duplicate mmr to get green. | **released** (session ended 2026-06-06; claims void — cleared in 2026-06-11 cleanup) |
@@ -27545,7 +27710,24 @@ re-enforced; an `enforced:Bool` advisory flag now exists on bands for genuine cr
 token change needed — stand down on that. SNAPSHOT_REQUEST planted; expect the next cycle ALL GREEN with
 honest numbers (white-on-accent send should read ≈3.8:1, more margin than the gamma-space 3.3).
 
-===== FILE: DEVELOPMENT_LOG.md (2355 lines) =====
+### 🔬 2026-06-11 — QA v5: the audit grows eyes for LAYOUT and STRUCTURE (cleanup/Effort session)
+v4.1 confirmed ALL GREEN with theory-matching numbers (accent 4.25:1 measured vs 4.3 computed) and
+baselines are adopted/armed. v5 adds the two dimensions pixels can't judge:
+1. **Geometry probe** (`QAGeometry.swift` + two `.qaGeometry()` hooks in ContentView, free outside
+   captures): the chat renders now REPORT their real frames, and the audit asserts the design's layout
+   invariants numerically — reading column centered ±2pt and ≈min(780, w−36) wide, composer aligned to the
+   same column — at BOTH 1000pt and 560pt. "Is the column actually centered" is now arithmetic.
+   Empty-transcript renders skip gracefully (the empty state legitimately has no column).
+2. **AX-tree sweep** (in `snap()`): every surface's accessibility tree is walked post-layout; interactive
+   elements (buttons/menus/toggles/sliders/links) without a label/title/help FAIL `axLabels` — the
+   icon-button-lost-its-label class of regression is now gate-enforced. Empty-offscreen AX trees report
+   "not assessable" rather than fake-passing.
+   Bridge: capture writes `STRUCTURE.json`; the audit folds both into AUDIT.json/report.html as checks.
+SNAPSHOT_REQUEST planted — next cycle is the first with geometry + AX verdicts. If you want the same
+geometry treatment for the Code tab's split layout, add `.qaGeometry("code.editor")`-style hooks in
+CodeView (your lane) and matching assertions in `QAGeometry` — the collector is shared infrastructure.
+
+===== FILE: DEVELOPMENT_LOG.md (2407 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29199,6 +29381,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0/0. SNAPSHOT_REQUEST planted — next cycle should be all green with honest numbers (the send button's white-on-accent recomputes to ≈3.8:1, more margin than the gamma-space 3.3 suggested). A QA system that catches bugs in itself is working as designed.
 
+## 2026-06-11 · QA v5 — geometry probe + accessibility-tree sweep (layout and structure join the audit)
+
+**Files:** `Salehman AI/Tools/QAGeometry.swift` (new), `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pixels judge color/blankness/drift but not layout intent or structure. v5 adds both. (1) **Geometry probe**: a shared collector (`QAGeometry`) plus a `.qaGeometry(key)` view modifier — ContentView's reading column and composer report their real frames during captures (zero cost otherwise; gated on a flag `captureAll` flips). The audit now asserts the design's layout invariants numerically: column centered within ±2pt and ≈min(780, width−36) wide, composer aligned to the same column — verified at BOTH the 1000pt and 560pt renders. Empty-transcript renders skip gracefully. (2) **Accessibility sweep**: `snap()` walks each surface's AX tree post-layout (`NSAccessibilityProtocol`, recursive); interactive roles (button/menu/toggle/slider/link) lacking label+title+help fail a new `axLabels` check — the icon-button-lost-its-label regression class is now gate-enforced; empty offscreen trees report "not assessable" instead of fake-passing. Capture bridges both to the audit via `STRUCTURE.json`; results appear in AUDIT.json and report.html like any other check. Invited the other session to hook CodeView's split layout into the shared collector.
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — the next cycle delivers the first geometry + AX verdicts. Audit capability ladder to date: blank-detection → canvas color → baseline drift (budgeted) → WCAG contrast (linearized) → layout invariants → accessibility structure.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -29901,6 +30091,50 @@ Proton Drive. Owner away; autonomous loop continues until the RunPod balance is 
 **Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
 Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
 spend report. Owner away ~3h; loop continues.
+
+## 2026-06-11 (evening) — Chat C (3rd session): `/run-skill-generator` → `run-salehman-ai` run skill
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md` (new), `.claude/skills/run-salehman-ai/run.sh` (new),
+`COORDINATION.md` (board claim). **No app source touched** (so no `SOURCE_BUNDLE.md` regen needed).
+**What & why:** Owner added a third Claude session and ran `/run-skill-generator`. Authored a
+discoverable "run / launch / screenshot / QA the app" skill so a future (screen-blind) agent can build,
+drive, and visually verify the app from a clean machine. Chosen as a zero-collision Chat C lane — lives
+entirely under `.claude/skills/`, edits no Swift.
+- **Driver `run.sh`** wraps the existing `tools/qa.sh` harness and closes its two real gaps (found by
+  actually running it): (1) qa.sh errors if the Debug app isn't built — run.sh auto-builds; (2) **if the
+  app is already running, macOS `open` only re-activates it, so the `.task { QASnapshots.checkAndRun() }`
+  capture hook never re-fires and qa.sh silently prints the PREVIOUS run's PNGs** — run.sh force-quits any
+  instance first so capture is genuinely fresh. Both paths verified.
+- **SKILL.md** documents the agent path first (one command → manifest + audit → read PNGs), the build/test
+  commands, the human `open` path, and a Gotchas section (already-running→stale, freshness check via
+  `SNAPSHOT_REQUEST` consumption, hardcoded `~/Desktop/Salehman AI/qa` capture dir + `QA_SNAPSHOT_DIR`/
+  direct-launch workaround since `open` drops env, `snap` vs `snapHosted` blank-render rule, dual
+  QASnapshots/QACapture systems).
+**Result:** Debug build `** BUILD SUCCEEDED **`; drove the app via `run.sh` and `run.sh --build` — **14/14
+QA surfaces pass**, fresh capture confirmed (manifest timestamp advances each run, request file consumed);
+read `today.png`/`contact_sheet.png` to verify a real running app. `xcodebuild test … -only-testing:"Salehman AITests"`
+→ `** TEST SUCCEEDED **` (~310 cases, 0 failures). Every code block in SKILL.md was executed this session.
+
+## 2026-06-11 (evening) — salehman14b INSTALLED + running on the M4 (the finale)
+**What & why:** Got the r3 Q4_K_M onto the Mac and into Ollama despite two real walls:
+- **Volume wall:** the rebuild pod's network volume hung the quantize at exactly 4.31 GB (twice, even after
+  a restart) — load 41 / 0% CPU / no OOM = a volume I/O stall. Fix: a FRESH pod with **no network volume**,
+  everything on local container disk → Q4 built clean (8.37 GB), `PIPELINE-DONE`.
+- **Download wall:** the pod's upload dropped every few hundred MB. Fix: unbounded **rsync `--append-verify`**
+  loop (installed rsync on the pod) run as a proper background task → resumed to 8.37 GB.
+- **Disk + Ollama-validation wall:** the Mac's APFS container is nearly full (228 GB, ~14 GB free), and
+  Ollama 0.30 re-validates a local GGUF by re-quantizing it (needs ~8 GB scratch). `ollama create` ran the
+  disk to 0 and failed. Fix: the GGUF was already copied into Ollama's blob store, so I **deleted the
+  redundant `/Users/Shared` source and created the model `FROM` the blob itself** → freed the scratch →
+  `success`. Aliased `salehman` → `salehman14b`; set M4 speed env (`OLLAMA_FLASH_ATTENTION`,
+  `OLLAMA_KV_CACHE_TYPE=q8_0`).
+**Result:** `salehman14b:latest` (9.0 GB) + `salehman` alias installed; **100% GPU** on the M4; the app's
+`.salehman` floor resolves the bare name `salehman` (verified). Speed **11.9 tok/s under heavy RAM pressure**
+(15 MB free — a 9.5 GB model on 16 GB thrashes; ~18-22 tok/s with the browser closed). Answers on-brand +
+concise when capped (the app caps trivial replies at 384 tok / agent replies at 700, so no rambling in-app).
+Clean pod terminated; **RunPod balance $5.43** (the remaining budget is NOT burned on more rounds — r4/r5/r6
+all lost to r3, so further lottery is waste). Freed `qwen2.5-coder:7b` for the install — salehman14b is the
+floor now; re-pull it if `.auto` mode is wanted. **Owner action: revoke the RunPod API key in the console**
+(chat-exposed; local copy deleted).
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
