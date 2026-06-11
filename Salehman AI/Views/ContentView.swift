@@ -170,7 +170,7 @@ struct ContentView: View {
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Color.red)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
@@ -179,12 +179,7 @@ struct ContentView: View {
                     // brain name stays available on hover and to VoiceOver.
                     Image(systemName: brainStatus.symbol)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(
-                            vm.isRunning
-                                ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                                               startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(brainStatus.dotColor)
-                        )
+                        .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
@@ -321,11 +316,11 @@ struct ContentView: View {
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
-                            // Tight 4pt default gap: grouped same-sender vm.messages
-                                // stay snug; first-in-group bubbles add +10 top
-                                // padding to land at the normal 14pt gap between
-                                // groups (see `isFirstInGroup`).
-                            LazyVStack(spacing: 4) {
+                            // Reading rhythm: 10pt within a same-sender burst,
+                            // +14 leading a new burst (= 24 between speakers) —
+                            // document-flow replies need more air than the old
+                            // bubble stacks did.
+                            LazyVStack(spacing: 10) {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -335,7 +330,7 @@ struct ContentView: View {
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
                                                   onRegenerate: vm.regenerate)
-                                        .padding(.top, isFirst ? 10 : 0)
+                                        .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
                                 // Bottom sentinel: 1pt invisible view that
@@ -476,106 +471,113 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
-            HStack(spacing: 10) {
-                // Attach menu (+)
+            // ONE unified pill: + menu, text, mic, send — all inside (the old
+            // row was five separate 40pt controls; this is the single "input
+            // pill" the design language asks for, and the + menu now carries
+            // both attachments and prompts, halving the left-side chrome).
+            HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    Button { Task { await attachFile() } } label: {
-                        Label("Attach file…", systemImage: "doc")
+                    Section("Attach") {
+                        Button { Task { await attachFile() } } label: {
+                            Label("Attach file…", systemImage: "doc")
+                        }
+                        Button { Task { await attachImage() } } label: {
+                            Label("Attach image", systemImage: "photo")
+                        }
+                        Button { Task { await attachLastScreenshot() } } label: {
+                            Label("Send last screenshot", systemImage: "camera.viewfinder")
+                        }
+                        Button { Task { await pasteImage() } } label: {
+                            Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                        }
                     }
-                    Button { Task { await attachImage() } } label: {
-                        Label("Attach image", systemImage: "photo")
-                    }
-                    Button { Task { await attachLastScreenshot() } } label: {
-                        Label("Send last screenshot", systemImage: "camera.viewfinder")
-                    }
-                    Button { Task { await pasteImage() } } label: {
-                        Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                    Section("Prompts") {
+                        ForEach(library.prompts) { p in
+                            Button(p.title) { insertPrompt(p.text) }
+                        }
+                        Button {
+                            newPromptTitle = ""
+                            savingPrompt = true
+                        } label: { Label("Save current as prompt…", systemImage: "plus") }
+                            .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.09), in: Circle())
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Attach a file, image, or your last screenshot")
-                .accessibilityLabel("Attach a file, image, or screenshot")
+                .frame(width: 28)
+                .help("Attach files/images or insert a saved prompt")
+                .accessibilityLabel("Attach files, images, or insert a saved prompt")
 
-                // Prompt library
-                Menu {
-                    if library.prompts.isEmpty {
-                        Text("No saved prompts yet")
-                    } else {
-                        Section("Insert a prompt") {
-                            ForEach(library.prompts) { p in
-                                Button(p.title) { insertPrompt(p.text) }
-                            }
-                        }
-                    }
-                    Divider()
-                    Button {
-                        newPromptTitle = ""
-                        savingPrompt = true
-                    } label: { Label("Save current as prompt…", systemImage: "plus") }
-                        .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } label: {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.09), in: Circle())
+                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...6)
+                    .focused($inputFocused)
+                    .onSubmit { submit(mission) }
+                    .padding(.vertical, 5)
+
+                // Mic (dictation) — quiet inline icon; red while listening.
+                Button { speechIn.toggle() } label: {
+                    Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Insert or save a reusable prompt")
-                .accessibilityLabel("Insert or save a reusable prompt")
+                .buttonStyle(.plain)
+                .help("Dictate with your voice")
+                .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
 
-                HStack(spacing: 8) {
-                    Image(systemName: "text.bubble")
-                        .foregroundStyle(inputFocused ? Theme.accent : .secondary)
-                        .animation(DS.Motion.fade, value: inputFocused)
-                    TextField("Message Salehman AI…", text: $mission, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...6)
-                        .focused($inputFocused)
-                        .onSubmit { submit(mission) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                // Quiet flat pill (design language). Focus = a solid accent
-                // hairline — visible on the flat canvas without glow chrome.
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
-                                lineWidth: inputFocused ? 1.5 : 1)
-                )
-                .animation(DS.Motion.smooth, value: inputFocused)
-
-                // Mic (dictation)
-                CircleIconButton(systemName: speechIn.isListening ? "mic.fill" : "mic",
-                                 size: 40, iconSize: 16,
-                                 tint: speechIn.isListening ? .red : .white,
-                                 ring: speechIn.isListening ? .red : nil,
-                                 help: "Dictate with your voice") { speechIn.toggle() }
-
-                // Stop while generating, otherwise Send
+                // Stop while generating, otherwise Send — the pill's one
+                // strong-color element (solid accent when sendable).
                 if vm.isRunning {
-                    CircleIconButton(systemName: "stop.fill", size: 40, iconSize: 15,
-                                     tint: .red, ring: .red,
-                                     help: "Stop generating (⌘.)") { vm.stop() }
-                        .transition(.scale.combined(with: .opacity))
+                    Button { vm.stop() } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Color.red.opacity(0.85), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop generating (⌘.)")
+                    .accessibilityLabel("Stop generating")
+                    .transition(.scale.combined(with: .opacity))
                 } else {
-                    CircleIconButton(systemName: "arrow.up", size: 40, iconSize: 16,
-                                     tint: .white, filled: canSend, disabled: !canSend,
-                                     help: "Send") { submit(mission) }
-                        .transition(.scale.combined(with: .opacity))
+                    Button { submit(mission) } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(canSend ? .white : .secondary)
+                            .frame(width: 28, height: 28)
+                            .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                                : AnyShapeStyle(Color.white.opacity(0.08)),
+                                        in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .help("Send")
+                    .accessibilityLabel("Send")
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            // Quiet flat pill (design language). Focus = a solid accent
+            // hairline — visible on the flat canvas without glow chrome.
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                            lineWidth: inputFocused ? 1.5 : 1)
+            )
+            .animation(DS.Motion.smooth, value: inputFocused)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -941,8 +943,9 @@ struct MessageBubble: View {
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
-            .blur(radius: appeared ? 0 : 6)
-            .offset(y: appeared ? 0 : 14)
+            // 8pt rise (was 14): present, not theatrical.
+            .blur(radius: appeared ? 0 : 4)
+            .offset(y: appeared ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -986,6 +989,7 @@ struct MessageBubble: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(message.text)
                         .font(.system(size: 13.5))
+                        .lineSpacing(1.5)
                         .textSelection(.enabled)
                         .foregroundStyle(.white)
                     if let path = message.imagePath {
@@ -994,9 +998,12 @@ struct MessageBubble: View {
                             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                     }
                 }
-                .padding(.horizontal, 13).padding(.vertical, 8)
+                .padding(.horizontal, 13).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09),
                             in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                // Comfortable wrap measure — long pastes shouldn't span the
+                // full 780 column just because they're the user's.
+                .frame(maxWidth: 480, alignment: .trailing)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("You said: \(message.text)")
             }
@@ -1018,11 +1025,12 @@ struct MessageBubble: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 84)   // room for the hover action cluster
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Assistant replied: \(displayedText)")
+        // Floating action pill: no layout reservation (text keeps the full
+        // measure), readable over any content thanks to its own flat panel.
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
                     speech.toggle(message.text, id: message.id)
@@ -1032,6 +1040,12 @@ struct MessageBubble: View {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }
             }
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .offset(y: -4)
             .opacity(hovering ? 1 : 0)
             .animation(DS.Motion.fade, value: hovering)
         }
@@ -1041,8 +1055,10 @@ struct MessageBubble: View {
                               _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .foregroundStyle(active ? Theme.accent : .secondary)
+                .frame(width: 22, height: 22)        // comfortable hit target
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)

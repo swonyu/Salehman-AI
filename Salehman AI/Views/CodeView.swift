@@ -244,6 +244,8 @@ struct CodeView: View {
                 if !treeCollapsed {
                     fileTree
                         .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                } else {
+                    treeReopenStrip
                 }
 
                 VSplitView {
@@ -291,6 +293,8 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -361,10 +365,9 @@ struct CodeView: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     if !ws.files.isEmpty {
-                        Text("\(ws.files.count)")
-                            .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.white.opacity(0.06), in: Capsule())
+                        // Quiet plain count (chrome diet — no badge box)
+                        Text("\(ws.files.count) files")
+                            .font(.system(size: 9.5)).foregroundStyle(.secondary.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 6)
@@ -493,49 +496,51 @@ struct CodeView: View {
 
     // MARK: Chat pane (top-right)
 
+    /// Quiet icon button for the conversation header — hover-brightens, tooltip label.
+    @ViewBuilder
+    private func headerIcon(_ icon: String, _ help: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 12))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help(help).accessibilityLabel(help)
+    }
+
     private var chatPane: some View {
         VStack(spacing: 0) {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    if treeCollapsed {
+                        headerIcon("sidebar.left", "Show the file tree") {
+                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                        }
+                    }
                     if let tps = lastTokPerSec {
                         HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill").font(.system(size: 8.5))
+                            Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
                     }
-                    if treeCollapsed {
-                        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
-                            Image(systemName: "sidebar.left").font(.system(size: 11))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary)
-                        .help("Show the file tree")
-                        .accessibilityLabel("Show the file tree")
-                    }
                     Spacer()
-                    Button {
+                    headerIcon("square.and.pencil", "New chat") {
+                        if !isRunning { withAnimation { messages.removeAll() } }
+                    }
+                    headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
                             .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
                             .joined(separator: "\n\n---\n\n")
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(md, forType: .string)
-                    } label: {
-                        Label("Copy all", systemImage: "doc.on.doc").font(.system(size: 11, weight: .medium))
                     }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Copy the whole conversation as Markdown")
-                    .accessibilityLabel("Copy the whole conversation")
-                    Button { messages.removeAll() } label: {
-                        Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Clear this conversation")
-                    .accessibilityLabel("Clear this conversation")
-                    .disabled(isRunning)
                 }
-                .padding(.horizontal, 12).padding(.top, 8)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8)
+                .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
             }
             // Agent steps — feature: plan / agent steps view.
             if isRunning && !progress.steps.isEmpty {
@@ -548,7 +553,13 @@ struct CodeView: View {
                         if messages.isEmpty && !isRunning {
                             welcome
                         }
-                        ForEach(messages) { msg in
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
+                            if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
+                                Text(msg.timestamp, style: .time)
+                                    .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.7))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 2)
+                            }
                             codeBubble(msg)
                                 .id(msg.id)
                         }
@@ -565,6 +576,7 @@ struct CodeView: View {
                     // read edge-to-edge on a wide window — cap and center.
                     .frame(maxWidth: 780)
                     .frame(maxWidth: .infinity)
+                    .animation(.easeOut(duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -616,8 +628,8 @@ struct CodeView: View {
                 .frame(width: 60, height: 60)
                 .background(DS.Palette.accent.opacity(0.12), in: Circle())
                 .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 14)
-            Text("Code with Salehman")
+                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+            Text("What are we building, Saleh?")
                 .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
@@ -679,6 +691,7 @@ struct CodeView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
                 Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer()
@@ -715,11 +728,21 @@ struct CodeView: View {
     }
 
     private func codeBubble(_ msg: ChatMessage) -> some View {
-        CodeMessageRow(msg: msg)
+        let isLastAssistant = !msg.isUser && msg.id == messages.last(where: { !$0.isUser })?.id
+        return CodeMessageRow(msg: msg,
+                              onRegenerate: (isLastAssistant && !isRunning) ? { regenerateLast() } : nil)
+    }
+
+    /// Re-run the last user prompt (drops the reply being regenerated first).
+    private func regenerateLast() {
+        guard !isRunning, let lastUser = messages.last(where: { $0.isUser }) else { return }
+        if let last = messages.last, !last.isUser { messages.removeLast() }
+        runMission(for: lastUser.text)
     }
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
+            PulsingDot().padding(.top, 7)
             VStack(alignment: .leading, spacing: 4) {
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
@@ -763,17 +786,12 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
             }
-            HStack(spacing: 8) {
-                controlsMenu
-                Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Attach a file as context")
-                    .accessibilityLabel("Attach a file as context")
-
+            VStack(spacing: 9) {
+                // Text first — full width, comfortable, nothing competing with it.
                 TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .lineLimit(1...5)
+                    .font(.system(size: 13.5))
+                    .lineLimit(1...6)
                     .focused($inputFocused)
                     .onSubmit(send)
                     // Focusing the input = intent to send: pre-load the local model
@@ -781,32 +799,52 @@ struct CodeView: View {
                     .onChange(of: inputFocused) { _, focused in
                         if focused { OllamaClient.warmupChatModel() }
                     }
-
-                Button {
-                    // Explicit body, not `action: isRunning ? stop : send`: unifying
-                    // two method references into one closure ICEs the type-checker
-                    // ("failed to produce diagnostic") under the Swift 6 language mode.
-                    if isRunning { stop() } else { send() }
-                } label: {
-                    Image(systemName: isRunning ? "stop.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isRunning ? Color.red : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : DS.Palette.accent))
+                // Controls live UNDER the text (Claude layout): brain/effort menu +
+                // attach on the left, filled send on the right.
+                HStack(spacing: 8) {
+                    controlsMenu
+                    Button { attachFile() } label: { Image(systemName: "paperclip").font(.system(size: 13)) }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Attach a file as context")
+                        .accessibilityLabel("Attach a file as context")
+                    Spacer()
+                    Button {
+                        // Explicit body, not `action: isRunning ? stop : send`: unifying
+                        // two method references into one closure ICEs the type-checker
+                        // ("failed to produce diagnostic") under the Swift 6 language mode.
+                        if isRunning { stop() } else { send() }
+                    } label: {
+                        Image(systemName: isRunning ? "stop.fill" : "arrow.up")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(isRunning ? Color.white
+                                : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .frame(width: 27, height: 27)
+                            .background(
+                                isRunning ? AnyShapeStyle(Color.red.opacity(0.85))
+                                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
+                                        ? AnyShapeStyle(Color.white.opacity(0.10))
+                                        : AnyShapeStyle(DS.Palette.accent)),
+                                in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel(isRunning ? "Stop generating" : "Send")
                 }
-                .buttonStyle(.plain)
-                .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
-            // One cohesive input pill (Claude-style) instead of loose controls.
-            // Border warms to the accent while you're typing.
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // The signature red ring (owner request — matches the main chat's input):
+            // always visible, warms while typing, full-strength on file drop.
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(
                 isDropTargeted ? DS.Palette.accent
-                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? Color.white.opacity(0.09) : DS.Palette.accent.opacity(0.45)),
+                    : DS.Palette.accent.opacity(
+                        input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
             .animation(.easeOut(duration: 0.18), value: input.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(.easeOut(duration: 0.2), value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -882,6 +920,43 @@ struct CodeView: View {
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
 
+    /// Always-visible slim strip while the file tree is collapsed — the previous
+    /// reopen button lived in the conversation header (absent on an empty chat),
+    /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
+    private var treeReopenStrip: some View {
+        VStack(spacing: 14) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+                Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Show the file tree (⇧⌘E)")
+            .accessibilityLabel("Show the file tree")
+            Button(action: ws.openFolder) {
+                Image(systemName: "folder.badge.plus").font(.system(size: 10.5))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Open a project folder")
+            .accessibilityLabel("Open a project folder")
+            if ws.projectRoot != nil {
+                Button { reviewProject() } label: {
+                    Image(systemName: "sparkles").font(.system(size: 10.5))
+                        .frame(width: 24, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent.opacity(0.8))
+                .disabled(isRunning)
+                .help("Review this project (⌘R)")
+                .accessibilityLabel("Review this project")
+            }
+            Spacer()
+        }
+        .padding(.top, 10)
+        .frame(width: 26)
+        .frame(maxHeight: .infinity)
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
@@ -900,7 +975,7 @@ struct CodeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .help("Show the file viewer / diff panel")
         .accessibilityLabel("Show the files and diffs panel")
     }
@@ -1134,6 +1209,13 @@ struct CodeView: View {
         guard !text.isEmpty, !isRunning else { return }
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
+        runMission(for: text)
+    }
+
+    /// The shared run pipeline — used by send() and regenerate (which must NOT
+    /// re-append the user message).
+    private func runMission(for text: String) {
+        guard !isRunning else { return }
         isRunning = true
         // If nothing has streamed after 5s, the local model is likely still loading —
         // flip the status line to say so (cleared when the run ends).
@@ -1288,6 +1370,8 @@ struct CodeView: View {
 /// no avatars, no name labels, copy appears on hover. Simple and elegant.
 private struct CodeMessageRow: View {
     let msg: ChatMessage
+    var onRegenerate: (() -> Void)? = nil
+    @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
 
     var body: some View {
@@ -1307,20 +1391,49 @@ private struct CodeMessageRow: View {
                 Spacer(minLength: 26)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 64)   // room for the hover action pill
             .overlay(alignment: .topTrailing) {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(msg.text, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
-                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                HStack(spacing: 8) {
+                    action(speech.speakingID == msg.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                           "Read aloud", active: speech.speakingID == msg.id) {
+                        speech.toggle(msg.text, id: msg.id)
+                    }
+                    action("doc.on.doc", "Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(msg.text, forType: .string)
+                    }
+                    if let regen = onRegenerate {
+                        action("arrow.clockwise", "Regenerate", regen)
+                    }
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
                 .opacity(hovering ? 1 : 0)
-                .help("Copy this message")
-                .accessibilityLabel("Copy this message")
+                .animation(.easeOut(duration: 0.12), value: hovering)
             }
             .onHover { hovering = $0 }
         }
+    }
+
+    private func action(_ icon: String, _ help: String, active: Bool = false,
+                        _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 11))
+                .foregroundStyle(active ? DS.Palette.accent : .secondary)
+                .frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Small breathing accent dot shown while a reply streams in.
+private struct PulsingDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle().fill(DS.Palette.accent)
+            .frame(width: 7, height: 7)
+            .opacity(on ? 1 : 0.35)
+            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .accessibilityHidden(true)
     }
 }
