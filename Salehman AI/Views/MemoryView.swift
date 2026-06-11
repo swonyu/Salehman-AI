@@ -1,8 +1,45 @@
 import SwiftUI
 import AppKit
 
+/// Ordering for the Memory viewer's fact list. Facts arrive in
+/// `MemoryStore.allFacts()` order — oldest first, newest last — so "newest"
+/// just reverses. Pure over `[String]`, with the search filter folded in so the
+/// view has a single source of truth (and the logic is unit-testable).
+enum MemorySort: String, CaseIterable, Identifiable {
+    case newest, oldest, alphabetical
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .newest:       return "Newest first"
+        case .oldest:       return "Oldest first"
+        case .alphabetical: return "A → Z"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .newest:       return "clock.arrow.circlepath"
+        case .oldest:       return "clock"
+        case .alphabetical: return "textformat.abc"
+        }
+    }
+
+    /// Apply the optional case-insensitive substring `filter`, then order.
+    /// A blank/whitespace filter matches everything.
+    func apply(_ facts: [String], filter q: String = "") -> [String] {
+        let trimmed = q.trimmingCharacters(in: .whitespaces).lowercased()
+        let base = trimmed.isEmpty ? facts : facts.filter { $0.lowercased().contains(trimmed) }
+        switch self {
+        case .oldest:       return base
+        case .newest:       return base.reversed()
+        case .alphabetical: return base.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        }
+    }
+}
+
 /// "What I know about you" — lists the durable facts Salehman AI has saved to
-/// long-term memory, with search, per-fact copy/delete, and a clear-all.
+/// long-term memory, with search, sort, per-fact copy/delete, and a clear-all.
 /// MemoryStore stays a plain (non-ObservableObject) store, so we load into local
 /// state on appear.
 struct MemoryView: View {
@@ -10,12 +47,7 @@ struct MemoryView: View {
     @State private var facts: [String] = []
     @State private var confirmClear = false
     @State private var query = ""
-
-    /// Facts filtered by the search box (case-insensitive substring).
-    private var filtered: [String] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return q.isEmpty ? facts : facts.filter { $0.lowercased().contains(q) }
-    }
+    @State private var sort: MemorySort = .newest
 
     var body: some View {
         ZStack {
@@ -29,9 +61,9 @@ struct MemoryView: View {
                 if facts.isEmpty {
                     emptyState
                 } else {
-                    if facts.count > 3 { searchField }
+                    if facts.count > 1 { controlsRow }
 
-                    let shown = filtered
+                    let shown = sort.apply(facts, filter: query)
                     if shown.isEmpty {
                         VStack(spacing: 6) {
                             Spacer()
@@ -115,6 +147,18 @@ struct MemoryView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Search (when there are enough facts to warrant it) + sort menu, on one row.
+    private var controlsRow: some View {
+        HStack(spacing: 10) {
+            if facts.count > 3 {
+                searchField.frame(maxWidth: .infinity)
+            } else {
+                Spacer(minLength: 0)
+            }
+            sortMenu
+        }
+    }
+
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -132,6 +176,31 @@ struct MemoryView: View {
         .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort", selection: $sort) {
+                ForEach(MemorySort.allCases) { s in
+                    Label(s.title, systemImage: s.icon).tag(s)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down")
+                Text(sort.title)
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Sort memories")
     }
 
     private func row(_ fact: String) -> some View {
