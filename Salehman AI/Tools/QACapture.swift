@@ -37,21 +37,41 @@ enum QACapture {
     // NSHostingView path. This file owns only what QASnapshots can't do:
     // photographing the REAL windows.)
 
-    /// Photograph every visible app window (true pixels of the running UI).
+    /// Photograph every visible app window (true pixels of the running UI),
+    /// AND run the accessibility sweep on it — onscreen windows have a real AX
+    /// tree (offscreen renders come back empty, so this is where `axLabels`
+    /// gets honest data). Results merge into STRUCTURE.json for the audit.
     /// Returns the file names written.
     @discardableResult
     static func captureLiveWindows(to dir: URL? = nil) -> [String] {
         let out = dir ?? qaDir.appendingPathComponent("snapshots")
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         var written: [String] = []
+        var axMerge: [String: QASurfaceStructure] = [:]
         for (i, window) in NSApp.windows.enumerated() where window.isVisible {
             guard let view = window.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
             view.cacheDisplay(in: view.bounds, to: rep)
             guard let png = rep.representation(using: .png, properties: [:]) else { continue }
-            let name = "window_\(i)_live.png"
-            if (try? png.write(to: out.appendingPathComponent(name))) != nil {
-                written.append(name)
+            let name = "window_\(i)_live"
+            if (try? png.write(to: out.appendingPathComponent("\(name).png"))) != nil {
+                written.append("\(name).png")
+                let ax = QASnapshots.axScan(view)
+                var s = QASurfaceStructure()
+                s.axInteractive = ax.interactive
+                s.axUnlabeled = ax.unlabeled
+                axMerge[name] = s
+            }
+        }
+        // Merge (don't clobber) the offscreen capture's STRUCTURE.json.
+        if !axMerge.isEmpty {
+            let url = out.appendingPathComponent("STRUCTURE.json")
+            var existing: [String: QASurfaceStructure] =
+                (try? Data(contentsOf: url))
+                    .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+            for (k, v) in axMerge { existing[k] = v }
+            if let data = try? JSONEncoder().encode(existing) {
+                try? data.write(to: url)
             }
         }
         return written

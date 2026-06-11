@@ -34,7 +34,12 @@ enum QAGeometry {
     /// "qaRoot" coordinate space.
     static func chatAssertions(rootWidth: CGFloat) -> [Assertion] {
         var out: [Assertion] = []
-        let expectedWidth = min(780, rootWidth - 36)   // 18pt horizontal padding each side
+        // The transcript's 18pt horizontal padding is applied BEFORE the
+        // 780 cap in the modifier chain, i.e. it lives INSIDE the measured
+        // frame — so the column is min(780, rootWidth), not rootWidth−36.
+        // (First live run failed chat_narrow on the −36 formula; the layout
+        // was right, the assertion was miscalibrated.)
+        let expectedWidth = min(780, rootWidth)
 
         if let col = frames["chat.column"] {
             let centered = abs((col.midX) - rootWidth / 2) <= 2

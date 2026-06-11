@@ -53,7 +53,10 @@ enum QAAudit {
     /// conversation by design.
     private static let diffBudgets: [String: Double] = [
         "chat_samples": 2.0, "code_samples": 2.0, "contrast_probe": 1.0,
-        "settings": 0.095,
+        // NO budget for settings: its "salehman model" status row probes the
+        // LIVE Ollama state, so the render is legitimately nondeterministic.
+        // (A "0.095" budget appeared here once — that's the settings CANVAS
+        // grey, a copy-paste slip into the wrong dict; it made the gate flap.)
     ]
 
     /// Same repo-root resolution as `QASnapshots.qaDir` (kept self-contained

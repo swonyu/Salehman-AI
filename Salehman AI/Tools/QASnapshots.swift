@@ -166,7 +166,7 @@ enum QASnapshots {
 
     /// Recursive accessibility-tree walk. Interactive roles must carry a label,
     /// title, or help text — VoiceOver users get nothing otherwise.
-    private static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String]) {
+    static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String]) {
         var interactive = 0
         var unlabeled: [String] = []
         let interactiveRoles: Set<NSAccessibility.Role> = [
