@@ -1707,6 +1707,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Disk 18GB → 29GB free. No further deletions until both chats answer on the board or the owner overrides.
 
+## 2026-06-11 · ingest_sessions.py launchd crash-loop fixed (Chat C) — session ingestion restored
+
+**Files:** `tools/ingest_sessions.py` (one line), `COORDINATION.md`, this log
+
+**What & why:** The `com.salehmanai.ingest` LaunchAgent runs the script with Apple's `/usr/bin/python3` (3.9), which evaluates PEP 604 annotations at import — `def parse_grok_log(...) -> dict | None:` (line ~206) raised `TypeError: unsupported operand type(s) for |` on EVERY WatchPaths fire (up to 1/min during active sessions; ~419KB of identical tracebacks in `~/Library/Logs/salehman_ingest.log`). Session ingestion into the Knowledge Base has been silently broken since the agent was installed. Fix: `from __future__ import annotations` after the docstring — all 3.10+ syntax in the file is annotation-only (verified by grep), so this fully defers it. Surfaced by the machine-performance audit (launchd churn), not by app testing — the failure was invisible in-app.
+
+**Result:** `py_compile` OK on 3.9; `--dry-run --incremental --grok-sessions` clean; `launchctl kickstart gui/501/com.salehmanai.ingest` → clean "Done." run, no traceback. SOURCE_BUNDLE regen not needed (`bundle_source.sh` bundles `*.swift` only; verified). No Swift source touched, so no xcodebuild (DerivedData was wiped this evening — next builder pays the one-time clean build). Related diagnoses on the board for owner/Chat B: Ollama port-11434 conflict (brew job crash-looped 13.5k×; the Ollama.app server serving the app lacks the plist's q8_0 KV-cache tuning), autocheckpoint TCC denial (has never run), keepawake `-d` keeps the display awake 24/7.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
