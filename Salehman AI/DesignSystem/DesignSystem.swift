@@ -78,6 +78,9 @@ enum DS {
         static let magnetic = Animation.interpolatingSpring(stiffness: 220, damping: 18)
         static let stagger   = Animation.timingCurve(0.34, 0.0, 0.66, 1.0, duration: 0.32)
         static let entrance  = Animation.timingCurve(0.22, 0.61, 0.36, 1.0, duration: 0.55)
+        /// The Code tab's signature curve (matches its local `lux`), promoted
+        /// to a shared token so the chat composer/welcome animate identically.
+        static let lux       = Animation.timingCurve(0.32, 0.72, 0.0, 1.0, duration: 0.40)
     }
 
     // MARK: Elevation

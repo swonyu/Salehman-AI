@@ -52,6 +52,10 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showStats = false
     @State private var statsBlurb = ""
+    /// Welcome entrance choreography (Code-tab parity): pre-revealed on QA
+    /// launches — offscreen renders never fire onAppear, so captures would
+    /// otherwise photograph an invisible welcome.
+    @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -642,6 +646,15 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // Entrance: same heavy fade-up the Code welcome performs (lux curve,
+        // 16pt rise, 0.05s settle delay). QA launches skip it via the
+        // pre-revealed state above.
+        .opacity(welcomeAppeared ? 1 : 0)
+        .offset(y: welcomeAppeared ? 0 : 16)
+        .onAppear {
+            guard !welcomeAppeared else { return }
+            withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+        }
         // The chat viewport starts 55pt lower than the Code tab's (header row
         // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
         // in chat_empty.png spans y=0–54; Code has no header), so a plain
@@ -1034,20 +1047,31 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            // CODE-TAB PARITY (owner: "same colors as code tab"): identical
-            // composer treatment — white-0.05 fill, radius 14, the signature
-            // always-visible accent ring (0.38 rest → 0.60 while typing →
-            // full on file drop), and the soft accent glow on focus.
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+            // CODE-TAB PARITY (owner: "same colors as code tab"): the Code
+            // composer's DOUBLE-BEZEL, mirrored exactly — inner core (white
+            // 0.045, r14 continuous, top-lit gradient hairline) seated in an
+            // outer tray (white 0.03, r18 = 14+4 concentric) that carries the
+            // signature accent ring (0.38 rest → 0.60 typing → full on drop)
+            // and the focus glow. Motion: DS.Motion.lux (Code's curve).
+            .background(Color.white.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .padding(4)
+            .background(Color.white.opacity(0.03),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
                 isDropTargeted ? DS.Palette.accent
                     : DS.Palette.accent.opacity(
                         mission.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(.easeOut(duration: 0.18), value: mission.isEmpty)
-            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
-            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            .animation(DS.Motion.lux, value: mission.isEmpty)
+            .animation(DS.Motion.lux, value: isDropTargeted)
+            .animation(DS.Motion.lux, value: inputFocused)
             // While a file hovers, say what will happen — the full-accent ring
             // alone doesn't explain itself.
             .overlay {
@@ -1967,7 +1991,7 @@ private struct BrainStatusDot: View {
                 .frame(width: 7, height: 7)
                 .shadow(color: active.opacity(0.6), radius: 3)
         }
-        .animation(.easeInOut(duration: 0.25), value: isRunning)
+        .animation(DS.Motion.fade, value: isRunning)
         // Only run the repeating pulse WHILE generating. `pulse` is used solely under
         // `isRunning`, so when idle (the common case) we cancel it — otherwise this
         // always-visible header dot redraws every frame forever (idle CPU/GPU + battery
