@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 10:05 +03 · Swift files: 128 · Swift LOC: 23745_
+_Generated: 2026-06-11 10:09 +03 · Swift files: 128 · Swift LOC: 23745_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25101,7 +25101,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (444 lines) =====
+===== FILE: COORDINATION.md (452 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25547,7 +25547,15 @@ Owner asked for a full code cleanup; no other session was active (all board clai
 ### 🧹 2026-06-11 — stale fleet claims cleared (cleanup pass)
 The 2026-06-10 `safari-1…10` fleet sessions (Grok terminal-bridge tabs) all ended; their claim rows — previously dumped here in inconsistent formats — are **released**. For the record they covered: `Salehman AI/grok_parser.py` (safari-1; file has since moved to `tools/grok_parser.py`), `tools/grok_status.sh --once` (safari-10), `Salehman AITests/KnowledgeRAGTests.swift` (safari-2/3/4/9 — multiple tabs claimed the SAME file; whatever landed is in git), and a never-landed `Core/IntelligenceEngine.swift` / `Core/QuestionOrchestrator.swift` (safari-7 — no such files exist in the tree). Nothing from these claims is in-flight; the working tree is single-session (owner-driven) as of today.
 
-===== FILE: DEVELOPMENT_LOG.md (2062 lines) =====
+### 📣 2026-06-11 — FOR THE LATENCY/FAST-PATH SESSION: Effort defaults changed under you (cleanup session, committed `783e0dd`+`f48a8f0`)
+You're building the trivial-greeting fast path partly because "even the lightest path is a tool-agent call PLUS a `refineOwnDraft` self-critique pass" (your AgentPipeline comment). Heads-up: **that critique cost is now opt-in, not default.** A 4-lens adversarial review of the Effort wiring confirmed 5 bugs; the fixes (pushed to `feat/effort-grok-tooling`, PR #1) change behavior you may be measuring:
+1. **Default effort is `.instant` now** (was `.balanced`) — at `.instant`, `refineOwnDraft` is a **zero-call no-op** (guard on `refineRounds > 0`). A plain "hi" through finalize costs nothing extra at factory defaults. Your fast path is still a real win (it skips the team/tool layer), but re-time any "finalize makes hi slow" numbers.
+2. **"Salehman leads" OFF now kills ALL extra passes**, including pinned-`.salehman` critique — the toggle is a true kill switch again.
+3. `finalize`/`isLeading` use `AppSettings.brainPreferenceCurrent` (not the raw UserDefaults string), so a fresh install (key unset) correctly routes to the pinned-`.salehman` branch.
+4. New `Effort.refineRounds`/`approxRefineCalls` (monotonic dial for the refine-only path; `.ultra` caps at 3 rounds) — use these if your fast path ever reports costs.
+5. I also touched **`Views/SettingsView.swift`** (leader-toggle subtitle + `effortRow`/`effortCallsHint`) — you have uncommitted Views work (`CodeView`, `ContentView`, `MarkdownText`), so pull/diff before editing SettingsView to avoid clobbering. Your five in-flight files (`AgentPipeline`, `OllamaClient`, + the three Views) were deliberately **left uncommitted** by me; note `SOURCE_BUNDLE.md` at my commits snapshots their WIP state — regenerate it when your work lands.
+
+===== FILE: DEVELOPMENT_LOG.md (2078 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27029,6 +27037,22 @@ Wiring (exhaustive switch arms all caught by compiler):
 Updated test names and expectations in `EffortWiringTests.swift` to match the `.instant` default.
 
 **Result:** `swiftc -typecheck` 0 errors / 0 warnings (Swift 6, `-default-isolation MainActor`). `SOURCE_BUNDLE.md` regenerated (128 files, 23720 LOC). ⚠️ xcodebuild + test suite still cannot run in sandbox — **must run canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
+
+## 2026-06-11 · Effort wiring — doc/copy sync follow-up
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `PROJECT_CONTEXT.md`, `COORDINATION.md`, `ARCHITECTURE.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Follow-up to the review fixes above. (1) The "Salehman leads" toggle subtitle still said pinned `.salehman` is "skipped automatically" — post-wiring that's only true at Effort=Instant; rewrote the copy to say the Effort dial still self-critiques the pinned brain's draft, and that OFF = no extra passes for any brain (this was the third doc-contradiction site flagged by review finding #1; the other two were fixed in the previous commit). (2) `PROJECT_CONTEXT.md` + `COORDINATION.md` still claimed "default `.balanced`" from before the review changed the default to `.instant` — synced both. Verified via `swiftc -typecheck` on a temp tree with the OTHER session's in-flight files (`AgentPipeline`, `OllamaClient`, `CodeView`, `ContentView`, `MarkdownText` — live streaming-render work, not mine, not committed here) pinned to HEAD: 0 errors / 0 warnings. Note: the shared working tree means `SOURCE_BUNDLE.md` snapshots their WIP too (same as the previous commit) — they'll regenerate when their work lands.
+
+**Result:** Docs, Settings copy, and code now tell the same story: Leader OFF = zero extra passes everywhere; pinned `.salehman` + Leader ON = critique-only at the dialed effort; default `.instant` = no silent spend.
+
+## 2026-06-11 · Cross-session heads-up posted (Effort defaults changed under the latency session)
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked to notify the other live session (the latency/fast-path one — its transcript shows it's building a trivial-greeting fast path in `AgentPipeline` partly to dodge `refineOwnDraft`'s critique cost). It isn't a CCD session, so `send_message` can't reach it; posted a dated note on the COORDINATION.md board (the canonical channel) instead. Key content: default effort is now `.instant` (refineOwnDraft = zero-call no-op at defaults — re-time any "finalize makes hi slow" measurements), Leader OFF is a true kill switch again, `brainPreferenceCurrent` replaces raw-string compares, new `refineRounds`/`approxRefineCalls`, and a merge-awareness warning that I touched `SettingsView.swift` while they hold uncommitted Views work.
+
+**Result:** Board note committed; bundle regenerated. Their in-flight files remain untouched/uncommitted.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

@@ -1488,6 +1488,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Docs, Settings copy, and code now tell the same story: Leader OFF = zero extra passes everywhere; pinned `.salehman` + Leader ON = critique-only at the dialed effort; default `.instant` = no silent spend.
 
+## 2026-06-11 · Cross-session heads-up posted (Effort defaults changed under the latency session)
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked to notify the other live session (the latency/fast-path one — its transcript shows it's building a trivial-greeting fast path in `AgentPipeline` partly to dodge `refineOwnDraft`'s critique cost). It isn't a CCD session, so `send_message` can't reach it; posted a dated note on the COORDINATION.md board (the canonical channel) instead. Key content: default effort is now `.instant` (refineOwnDraft = zero-call no-op at defaults — re-time any "finalize makes hi slow" measurements), Leader OFF is a true kill switch again, `brainPreferenceCurrent` replaces raw-string compares, new `refineRounds`/`approxRefineCalls`, and a merge-awareness warning that I touched `SettingsView.swift` while they hold uncommitted Views work.
+
+**Result:** Board note committed; bundle regenerated. Their in-flight files remain untouched/uncommitted.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
