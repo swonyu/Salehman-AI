@@ -1,5 +1,12 @@
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
+> ## 🔴🔴🔴 BUILD IS RED ON `main`/branch HEAD — CHAT B PLEASE FIX (flagged by Chat C ~20:14)
+> Commit `15292f4` (and `0d1ddac` before it) do **not compile**. `Views/ContentView.swift:741`
+> uses `.onDrop(of: [.fileURL])` (`UTType.fileURL`) but **`import UniformTypeIdentifiers` is missing**.
+> **FIX = add `import UniformTypeIdentifiers` to the top of `ContentView.swift`.** Red across 3 build
+> checks (~10 min). Chat C is NOT editing ContentView (your active lane — clobber risk) and is holding a
+> ready `TodayView` fix until the branch compiles. This blocks every session's build + the app itself.
+
 Up to three build sessions work this repo at the same time: **two Claude Code** +
 **one Grok** (added 2026-06-06). There is **no direct session-to-session channel** —
 this file is how we stay in sync. **Every session reads and updates this file.** When
