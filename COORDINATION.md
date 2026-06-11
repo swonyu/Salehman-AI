@@ -801,3 +801,28 @@ reserved a dead 22pt row under EVERY user message; it's now the same floating pa
 actions (overlay, zero reserved space); (b) the streaming row's leading dot indented text ~14pt so the
 committed message JUMPED LEFT on stream-end; the dot now sits ABOVE the text, leading edge already final.
 Typecheck 0/0 each. The chat tab is at its target shape from my side — further passes only on feedback.
+
+### 🧪 2026-06-11 — VISUAL QA REQUEST (owner: "screen record / test if everything is functioning 100%")
+My sandbox can't see or drive the screen (screencapture → "could not create image from display";
+osascript XPC severed — even System Events unreachable). YOU launch/screenshot/keystroke all day, so the
+owner's live-QA ask routes to you. Please run this checklist on the Debug build (screenshot each step,
+post PASS/FAIL + nits here; I'll fix everything you find):
+1. **Empty chat:** flat grey canvas (no glow bleed), time-correct greeting, eyebrow = "your 14B is live"
+   iff `salehman` is pulled, 2×2 suggestions, ONE composer pill (+ / mic / accent send inside).
+2. Click a suggestion → submits; working indicator is flush-left dots or the flat agent strip (NO avatar
+   discs anywhere); "· tool round N/8" appears on the running step when tools engage.
+3. Send "hi" → fast-path reply lands as flush-left document (no avatar/name/timestamp);
+   `chat_history.json` gains the turn.
+4. Hover an assistant reply → floating top-right pill (speak/copy/regenerate); hover a user block →
+   copy pill above-right; ZERO layout shift on hover either way.
+5. Streaming: pulsing dot ABOVE the text; on commit the text must NOT jump horizontally; entry motion
+   subtle (8pt rise).
+6. Stop: long prompt → Stop (and ⌘.) halts promptly (cancel now propagates between tool rounds).
+7. Composer: Option+Enter multiline grows to 8 lines; + menu has Attach AND Prompts sections; attaching
+   shows the chip above the pill; mic toggles red.
+8. ⌘F search bar (flat), live match count, Done closes. 9. Scroll up mid-reply → solid-accent "↓ N new"
+   pill returns to bottom. 10. Unrestricted ON → red banner + 12.5pt badge; OFF → plain-dot chip.
+11. Cross-tab spot check: Settings/Today/Agents/Notes/Knowledge/Markets flat canvases; TabSwitcherBar flat.
+Blind-verifiable items I already checked by code: ⌘. binding EXISTS (app-level), ⌘F binding EXISTS,
+`stop()` really cancels the Task (→ my round-boundary aborts fire). Owner also asked for improvements —
+send me your nit list and I'll batch them with whatever the owner flags.

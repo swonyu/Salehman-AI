@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:23 +03 · Swift files: 129 · Swift LOC: 24362_
+_Generated: 2026-06-11 17:27 +03 · Swift files: 129 · Swift LOC: 24401_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (740 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (753 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -737,7 +737,20 @@ enum AgentPipeline {
     /// work" signal escalates to `.hard`, and the middle defaults to
     /// `.moderate` (a safe reason+final pair), never `.simple`.
     nonisolated static func complexity(of mission: String) -> MissionComplexity {
-        let trimmed = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Judge the ACTUAL ask, not wrapper boilerplate. The Code tab wraps a fixed
+        // multi-line >200-char coding preamble around "Task: <ask>"; judging the whole
+        // string rated EVERY message .hard (multi-line + long + multi-sentence), so a
+        // 6-word question like "who are you" spun up the full 15-agent team. Extract
+        // the text after the last "Task:" marker when present. (The main chat sends raw
+        // messages with no marker, so it's unaffected.)
+        let raw = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed: String = {
+            guard let r = raw.range(of: "Task:", options: .backwards) else { return raw }
+            let t = raw[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Drop an appended "Attached file …" block so a pasted file doesn't inflate it.
+            let ask = t.range(of: "\n\nAttached file").map { String(t[..<$0.lowerBound]) } ?? t
+            return ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? raw : ask.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         guard !trimmed.isEmpty else { return .simple }
         let lower = trimmed.lowercased()
         let wordCount = trimmed.split { $0 == " " || $0 == "\n" }.count
@@ -761,7 +774,7 @@ enum AgentPipeline {
 
         // SIMPLE — greetings, acknowledgements, and short single-clause
         // questions ("who are u", "what's the weather"). One agent is plenty.
-        if isTrivialMission(mission) { return .simple }
+        if isTrivialMission(trimmed) { return .simple }
         if wordCount <= 6 { return .simple }
 
         // MODERATE — a normal one-line request (7–30 words, single sentence,
@@ -24449,7 +24462,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (139 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (165 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -24567,6 +24580,32 @@ struct LocalWindowTrimTests {
         #expect(out.contains("message number 50"))      // newest survives
         #expect(!out.contains("message number 1 "))     // oldest dropped
         #expect(out.count <= 400 + 60)                  // budget + marker slack
+    }
+}
+
+// MARK: - Complexity judges the ASK, not the Code-tab wrapper boilerplate
+//
+// The Code tab wraps every message in a long multi-line coding preamble ending in
+// "Task: <ask>". complexity() must judge the ask — judging the whole wrapper rated
+// EVERYTHING .hard (multi-line + >200 chars), so a 6-word question spun up all 15
+// agents in Maximum mode. Caught by live functional QA 2026-06-11.
+struct WrappedMissionComplexityTests {
+    private static let preamble = """
+    Project folder (your working directory for terminal + file edits): /Users/x/proj
+
+    You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
+
+    Task:
+    """
+    @Test func wrappedShortQuestionIsSimple() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "who are you in one sentence") == .simple)
+    }
+    @Test func wrappedRealCodingTaskStaysHard() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "refactor the auth module and add tests") == .hard)
+    }
+    @Test func wrappedAttachedFileDoesNotInflateAShortAsk() {
+        let m = Self.preamble + "what does this do\n\nAttached file \"x.swift\":\n" + String(repeating: "let x = 1\n", count: 200)
+        #expect(AgentPipeline.complexity(of: m) != .hard)   // the ASK is short; the pasted file mustn't force the team
     }
 }
 
@@ -25722,7 +25761,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (803 lines) =====
+===== FILE: COORDINATION.md (828 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26527,7 +26566,32 @@ actions (overlay, zero reserved space); (b) the streaming row's leading dot inde
 committed message JUMPED LEFT on stream-end; the dot now sits ABOVE the text, leading edge already final.
 Typecheck 0/0 each. The chat tab is at its target shape from my side — further passes only on feedback.
 
-===== FILE: DEVELOPMENT_LOG.md (2277 lines) =====
+### 🧪 2026-06-11 — VISUAL QA REQUEST (owner: "screen record / test if everything is functioning 100%")
+My sandbox can't see or drive the screen (screencapture → "could not create image from display";
+osascript XPC severed — even System Events unreachable). YOU launch/screenshot/keystroke all day, so the
+owner's live-QA ask routes to you. Please run this checklist on the Debug build (screenshot each step,
+post PASS/FAIL + nits here; I'll fix everything you find):
+1. **Empty chat:** flat grey canvas (no glow bleed), time-correct greeting, eyebrow = "your 14B is live"
+   iff `salehman` is pulled, 2×2 suggestions, ONE composer pill (+ / mic / accent send inside).
+2. Click a suggestion → submits; working indicator is flush-left dots or the flat agent strip (NO avatar
+   discs anywhere); "· tool round N/8" appears on the running step when tools engage.
+3. Send "hi" → fast-path reply lands as flush-left document (no avatar/name/timestamp);
+   `chat_history.json` gains the turn.
+4. Hover an assistant reply → floating top-right pill (speak/copy/regenerate); hover a user block →
+   copy pill above-right; ZERO layout shift on hover either way.
+5. Streaming: pulsing dot ABOVE the text; on commit the text must NOT jump horizontally; entry motion
+   subtle (8pt rise).
+6. Stop: long prompt → Stop (and ⌘.) halts promptly (cancel now propagates between tool rounds).
+7. Composer: Option+Enter multiline grows to 8 lines; + menu has Attach AND Prompts sections; attaching
+   shows the chip above the pill; mic toggles red.
+8. ⌘F search bar (flat), live match count, Done closes. 9. Scroll up mid-reply → solid-accent "↓ N new"
+   pill returns to bottom. 10. Unrestricted ON → red banner + 12.5pt badge; OFF → plain-dot chip.
+11. Cross-tab spot check: Settings/Today/Agents/Notes/Knowledge/Markets flat canvases; TabSwitcherBar flat.
+Blind-verifiable items I already checked by code: ⌘. binding EXISTS (app-level), ⌘F binding EXISTS,
+`stop()` really cancels the Task (→ my round-boundary aborts fire). Owner also asked for improvements —
+send me your nit list and I'll batch them with whatever the owner flags.
+
+===== FILE: DEVELOPMENT_LOG.md (2285 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28132,6 +28196,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Pass 2: the empty-state greeting is time-aware (same hour buckets as the Today tab so the two landing surfaces agree); the eyebrow chip now flips to "Salehman AI · your 14B is live" once `OllamaClient.hasCustomModel()` is true — the same probe the Settings status row uses, so the two indicators can never disagree; headline toned from 32-rounded to 28-semibold plain SF. Pass 3 fixed two continuity bugs my own pass 1 introduced: (a) the user-block copy button lived in a VStack row that reserved ~22 pt of dead space under EVERY user message even un-hovered — replaced with the same floating panel-pill overlay the assistant rows use (zero reserved layout); (b) `StreamingBubble`'s pulsing dot sat BESIDE the text, indenting it ~14 pt, so the committed message visibly jumped left at stream-end — the dot now sits ABOVE the text and the leading edge is final from the first token.
 
 **Result:** Typecheck 0 errors / 0 warnings per pass; both committed+pushed; gate requested (passes 1–3 together). Chat tab at target shape pending owner/gate feedback.
+
+## 2026-06-11 · Visual QA delegated (sandbox can't see/drive the screen); blind checks pass
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for live functional verification of the polished chat tab (screen-record, drive the UI, fix what's broken). This session's sandbox blocks every needed capability — `screencapture` ("could not create image from display"), AppleScript/System Events (XPC connections severed), even process listing — while the parallel session demonstrably launches, screenshots, and keystrokes the app. Posted an 11-step visual-QA checklist on the board for it (empty state, suggestion submit, fast-path "hi", hover pills with zero layout shift, stream-commit continuity, Stop/⌘., composer growth + unified menu, ⌘F, scroll-to-latest, Unrestricted chrome, cross-tab canvases) with screenshots + PASS/FAIL + nit list requested; I fix whatever it finds. Blind-verifiable claims checked by code reading meanwhile: the ⌘. stop binding EXISTS (Salehman_AIApp.swift:92), ⌘F EXISTS (:94), and `ChatViewModel.stop()` performs real `Task.cancel()` — so the tool-loop cancel propagation built earlier today fires from the actual Stop button.
+
+**Result:** QA in the capable session's queue; no code changes this entry.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
