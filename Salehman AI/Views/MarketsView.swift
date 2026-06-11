@@ -140,7 +140,7 @@ struct MarketsView: View {
             Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 8)
             Text(s.recommendation.rawValue)
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(s.recommendation))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(recColor(s.recommendation), in: Capsule())
         }
@@ -353,7 +353,7 @@ struct MarketsView: View {
             if let signal {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(signal.recommendation.rawValue)
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(signal.recommendation))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(recColor(signal.recommendation), in: Capsule())
                     // "Strength %" only makes sense for an actual buy/sell signal —
@@ -380,6 +380,17 @@ struct MarketsView: View {
         case .strongBuy, .buy:   return DS.Palette.successSoft
         case .hold:              return DS.Palette.warningSoft
         case .sell, .strongSell: return DS.Palette.danger
+        }
+    }
+
+    /// Badge text colour for legibility. The buy/hold badges sit on LIGHT pastel
+    /// backgrounds (successSoft/warningSoft), where white text is only ~1.9:1 (the
+    /// QA textContrast scan flagged exactly this) — use a dark ink there; white
+    /// still reads on the darker red sell badge.
+    private func recTextColor(_ r: StockSageRecommendation) -> Color {
+        switch r {
+        case .sell, .strongSell: return .white
+        default:                 return Color(white: 0.12)
         }
     }
 

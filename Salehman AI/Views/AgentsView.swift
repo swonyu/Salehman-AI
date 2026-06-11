@@ -129,8 +129,11 @@ struct AgentsView: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 9)
                     .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
+                    .accessibilityLabel("Direct command to agents")
 
                 Button("Send") {
                     Task { await sendDirectCommand() }
