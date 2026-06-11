@@ -50,6 +50,8 @@ struct ContentView: View {
     private var loadingAttachment: Bool { attachmentLoads > 0 }
     @State private var showSettings = false
     @State private var showHistory = false
+    @State private var showStats = false
+    @State private var statsBlurb = ""
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -148,6 +150,9 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { submit($0) }) }
         .sheet(isPresented: $showHistory) { ChatHistoryView(onRestore: restoreArchive) }
+        .alert("Conversation stats", isPresented: $showStats) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(statsBlurb) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -706,6 +711,9 @@ struct ContentView: View {
         .init(id: "history", icon: "clock.arrow.circlepath",
               blurb: "Browse archived conversations",
               kind: .action("history")),
+        .init(id: "stats", icon: "chart.bar",
+              blurb: "Conversation statistics",
+              kind: .action("stats")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -736,6 +744,9 @@ struct ContentView: View {
             case "find":    withAnimation(DS.Motion.snappy) { searching = true }
             case "voice":   showLive = true
             case "history": showHistory = true
+            case "stats":
+                statsBlurb = ChatStats.summarize(vm.messages).blurb
+                showStats = true
             default: break
             }
         }
@@ -1469,6 +1480,58 @@ enum ChatExporter {
         if panel.runModal() == .OK, let url = panel.url {
             try? markdown(messages).data(using: .utf8)?.write(to: url, options: .atomic)
         }
+    }
+}
+
+// MARK: - Conversation stats
+/// Whole-conversation roll-up behind the `/stats` command — the per-reply
+/// hover pill answers "how fast was THIS reply"; this answers "what has this
+/// conversation been". Pure + nonisolated so tests pin the math and format.
+struct ChatStats: Equatable {
+    let messages: Int
+    let yours: Int
+    let replies: Int
+    let words: Int
+    let avgReplySeconds: Double?     // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+
+    nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
+        let yours = msgs.filter(\.isUser).count
+        let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let durations = msgs.compactMap(\.duration)
+        let stamps = msgs.map(\.timestamp)
+        var span: TimeInterval? = nil
+        if msgs.count > 1, let a = stamps.min(), let b = stamps.max() {
+            span = b.timeIntervalSince(a)
+        }
+        return ChatStats(
+            messages: msgs.count, yours: yours, replies: msgs.count - yours,
+            words: words,
+            avgReplySeconds: durations.isEmpty ? nil
+                : durations.reduce(0, +) / Double(durations.count),
+            spanSeconds: span)
+    }
+
+    /// "45s", "5m", "1h 20m", "2d 3h" — calendar-free span humanizer.
+    nonisolated static func human(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        if s < 60 { return "\(s)s" }
+        let m = s / 60
+        if m < 60 { return "\(m)m" }
+        let h = m / 60
+        if h < 24 { return m % 60 == 0 ? "\(h)h" : "\(h)h \(m % 60)m" }
+        let d = h / 24
+        return h % 24 == 0 ? "\(d)d" : "\(d)d \(h % 24)h"
+    }
+
+    /// Two-line summary for the `/stats` alert. `%.1f` via `String(format:)`
+    /// is locale-independent, so tests can pin the exact string.
+    nonisolated var blurb: String {
+        let head = "\(messages) messages — \(yours) yours, \(replies) replies"
+        var tail = "\(words) words"
+        if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
+        if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
+        return head + "\n" + tail
     }
 }
 
