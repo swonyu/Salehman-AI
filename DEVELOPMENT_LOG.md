@@ -2711,3 +2711,23 @@ silent minutes; (5) welcome footer teaches `/` next to ⌘O/⌘R/⌘L.
 **Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift` (startedAt on
 begin/finish/clear).
 **Result:** Build green, QA all surfaces pass.
+
+## 2026-06-11 (night) — Chat C: QA v6.1 — real-surface textContrast scan + drift refinement + AITests fix
+**Files:** `Tools/QAAudit.swift`, `Salehman AITests/QAGeometryTests.swift`, `SOURCE_BUNDLE.md`.
+Commits `ac15006`, `99f258d`, `e45fe01`.
+**What & why:** owner "add and refine more" (at the ultracode/x-high bar, inline, no workflows).
+- **textContrast** (advisory): scans every REAL surface for low-contrast text the synthetic ContrastProbe
+  (fixed token strips) can't see — grids the image, finds text-like cells (thin ink minority over a uniform
+  bg), measures the WCAG ratio. Heuristic → never gates. **Calibrated by measurement:** clean surfaces
+  3.1–3.8:1; flags `markets`/`markets_narrow` at **1.9:1** — adversarially verified by eye as REAL (white text
+  on the light-green buy + amber hold badges is genuinely low-contrast; compounds the CVD red/green finding).
+  Excludes `contact_sheet` (montage) + `contrast_probe` (synthetic).
+- **det. drift**: dashboard "total drift" now excludes inherently-live surfaces (chat_live, *_live) → 58.5%→0.4%.
+- **🔴 AITests fix + honest correction:** discovered `Salehman AITests` was RED (test-target compile fail:
+  `QAGeometryTests.swift` `#expect(results.allSatisfy(\.pass))` — the key-path inside the macro expanded to code
+  the type-checker flags as throwing). Fixed: `\.pass` → `{ $0.pass }`. **I'd missed this earlier by reading
+  background-task `$?` (which was a trailing `grep`'s exit) instead of the `** TEST SUCCEEDED **` marker** — so
+  the suite was red for part of v6 while I believed it green. Now verified by marker: **322 passing.**
+**Result:** build `** BUILD SUCCEEDED **`; `** TEST SUCCEEDED **` (322); audit 24 surfaces FAILURES [];
+**capture launch→AUDIT measured 19s** (CVD 3s + audit/textContrast ~12s) — no UI-gate timeout risk.
+SOURCE_BUNDLE regenerated. **QA v6.1 done; lane released to Chat B.**
