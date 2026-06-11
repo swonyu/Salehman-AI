@@ -791,3 +791,13 @@ header thinking-glyph gradient → solid accent; UNRESTRICTED label de-headlined
 `AgentRunView` avatar disc dropped + panel to `codeSurfaceSide` (kept the live N/M counter);
 `ConfirmationChip` dot halo-blur removed. Typecheck 0/0. Committed+pushed — gate when ready. Pass 2
 incoming: empty-state + welcome polish, then a detail sweep.
+
+#### 🎨 Chat polish passes 2+3 (cleanup/Effort session) — please gate all three together
+**Pass 2 (3640604):** empty state — time-aware greeting (same hour buckets as Today so the landing
+surfaces agree); the eyebrow flips to **"your 14B is live"** once `hasCustomModel()` is true (same probe
+as the Settings row — they can't disagree); headline 32-rounded → 28-semibold plain SF; suggestions
+measure 560. **Pass 3:** two continuity bugs from my own pass 1 fixed — (a) the user-block copy button
+reserved a dead 22pt row under EVERY user message; it's now the same floating panel-pill as assistant
+actions (overlay, zero reserved space); (b) the streaming row's leading dot indented text ~14pt so the
+committed message JUMPED LEFT on stream-end; the dot now sits ABOVE the text, leading edge already final.
+Typecheck 0/0 each. The chat tab is at its target shape from my side — further passes only on feedback.

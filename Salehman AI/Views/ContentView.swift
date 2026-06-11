@@ -1007,33 +1007,41 @@ struct MessageBubble: View {
     }
 
     private var userRow: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            HStack {
-                Spacer(minLength: 60)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(message.text)
-                        .font(.system(size: 13.5))
-                        .lineSpacing(1.5)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.white)
-                    if let path = message.imagePath {
-                        CachedImage(path: path)
-                            .frame(maxWidth: 360, maxHeight: 360)
-                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                    }
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message.text)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+                if let path = message.imagePath {
+                    CachedImage(path: path)
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                 }
-                .padding(.horizontal, 13).padding(.vertical, 9)
-                .background(Color.white.opacity(0.09),
-                            in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                // Comfortable wrap measure — long pastes shouldn't span the
-                // full 780 column just because they're the user's.
-                .frame(maxWidth: 480, alignment: .trailing)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("You said: \(message.text)")
             }
-            actionButton("doc.on.doc", "Copy") { copyText() }
-                .opacity(hovering ? 1 : 0)
-                .animation(DS.Motion.fade, value: hovering)
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(Color.white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Comfortable wrap measure — long pastes shouldn't span the
+            // full 780 column just because they're the user's.
+            .frame(maxWidth: 480, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("You said: \(message.text)")
+            // Same floating-pill pattern as assistant rows — no reserved
+            // layout row beneath the block.
+            .overlay(alignment: .topTrailing) {
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(DS.Palette.codeSurfaceSide,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .offset(y: -10)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(DS.Motion.fade, value: hovering)
+            }
         }
     }
 
@@ -1312,15 +1320,15 @@ struct StreamingBubble: View {
     }
     var body: some View {
         // Flush-left document flow, matching MessageBubble's assistant row so
-        // stream-end doesn't visibly snap styles. A small pulsing dot (not an
-        // avatar disc) is the "alive" affordance; `.pulse` respects
-        // accessibilityReduceMotion automatically.
-        HStack(alignment: .top, spacing: 8) {
+        // stream-end doesn't visibly snap styles. The pulsing dot sits ABOVE
+        // the text (not beside it) so the text's leading edge is already at
+        // the final x-position — no horizontal jump when the stream commits.
+        // `.pulse` respects accessibilityReduceMotion automatically.
+        VStack(alignment: .leading, spacing: 7) {
             Image(systemName: "circle.fill")
                 .font(.system(size: 6))
                 .foregroundStyle(Theme.accent)
                 .symbolEffect(.pulse.byLayer, options: .repeating)
-                .padding(.top, 6)
                 .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
@@ -1337,7 +1345,6 @@ struct StreamingBubble: View {
             }
             .foregroundStyle(Color.white.opacity(0.92))
             .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
-            Spacer(minLength: 26)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -1595,6 +1595,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
 
+## 2026-06-11 · Chat-tab heavy polish passes 2+3 — live-14B welcome + two self-introduced continuity bugs fixed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pass 2: the empty-state greeting is time-aware (same hour buckets as the Today tab so the two landing surfaces agree); the eyebrow chip now flips to "Salehman AI · your 14B is live" once `OllamaClient.hasCustomModel()` is true — the same probe the Settings status row uses, so the two indicators can never disagree; headline toned from 32-rounded to 28-semibold plain SF. Pass 3 fixed two continuity bugs my own pass 1 introduced: (a) the user-block copy button lived in a VStack row that reserved ~22 pt of dead space under EVERY user message even un-hovered — replaced with the same floating panel-pill overlay the assistant rows use (zero reserved layout); (b) `StreamingBubble`'s pulsing dot sat BESIDE the text, indenting it ~14 pt, so the committed message visibly jumped left at stream-end — the dot now sits ABOVE the text and the leading edge is final from the first token.
+
+**Result:** Typecheck 0 errors / 0 warnings per pass; both committed+pushed; gate requested (passes 1–3 together). Chat tab at target shape pending owner/gate feedback.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

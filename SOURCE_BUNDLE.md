@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:21 +03 · Swift files: 129 · Swift LOC: 24355_
+_Generated: 2026-06-11 17:23 +03 · Swift files: 129 · Swift LOC: 24362_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14141,7 +14141,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1429 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1436 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15152,33 +15152,41 @@ struct MessageBubble: View {
     }
 
     private var userRow: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            HStack {
-                Spacer(minLength: 60)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(message.text)
-                        .font(.system(size: 13.5))
-                        .lineSpacing(1.5)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.white)
-                    if let path = message.imagePath {
-                        CachedImage(path: path)
-                            .frame(maxWidth: 360, maxHeight: 360)
-                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                    }
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message.text)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+                if let path = message.imagePath {
+                    CachedImage(path: path)
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                 }
-                .padding(.horizontal, 13).padding(.vertical, 9)
-                .background(Color.white.opacity(0.09),
-                            in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                // Comfortable wrap measure — long pastes shouldn't span the
-                // full 780 column just because they're the user's.
-                .frame(maxWidth: 480, alignment: .trailing)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("You said: \(message.text)")
             }
-            actionButton("doc.on.doc", "Copy") { copyText() }
-                .opacity(hovering ? 1 : 0)
-                .animation(DS.Motion.fade, value: hovering)
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(Color.white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Comfortable wrap measure — long pastes shouldn't span the
+            // full 780 column just because they're the user's.
+            .frame(maxWidth: 480, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("You said: \(message.text)")
+            // Same floating-pill pattern as assistant rows — no reserved
+            // layout row beneath the block.
+            .overlay(alignment: .topTrailing) {
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(DS.Palette.codeSurfaceSide,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .offset(y: -10)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(DS.Motion.fade, value: hovering)
+            }
         }
     }
 
@@ -15457,15 +15465,15 @@ struct StreamingBubble: View {
     }
     var body: some View {
         // Flush-left document flow, matching MessageBubble's assistant row so
-        // stream-end doesn't visibly snap styles. A small pulsing dot (not an
-        // avatar disc) is the "alive" affordance; `.pulse` respects
-        // accessibilityReduceMotion automatically.
-        HStack(alignment: .top, spacing: 8) {
+        // stream-end doesn't visibly snap styles. The pulsing dot sits ABOVE
+        // the text (not beside it) so the text's leading edge is already at
+        // the final x-position — no horizontal jump when the stream commits.
+        // `.pulse` respects accessibilityReduceMotion automatically.
+        VStack(alignment: .leading, spacing: 7) {
             Image(systemName: "circle.fill")
                 .font(.system(size: 6))
                 .foregroundStyle(Theme.accent)
                 .symbolEffect(.pulse.byLayer, options: .repeating)
-                .padding(.top, 6)
                 .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
@@ -15482,7 +15490,6 @@ struct StreamingBubble: View {
             }
             .foregroundStyle(Color.white.opacity(0.92))
             .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
-            Spacer(minLength: 26)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -25715,7 +25722,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (793 lines) =====
+===== FILE: COORDINATION.md (803 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26510,7 +26517,17 @@ header thinking-glyph gradient → solid accent; UNRESTRICTED label de-headlined
 `ConfirmationChip` dot halo-blur removed. Typecheck 0/0. Committed+pushed — gate when ready. Pass 2
 incoming: empty-state + welcome polish, then a detail sweep.
 
-===== FILE: DEVELOPMENT_LOG.md (2269 lines) =====
+#### 🎨 Chat polish passes 2+3 (cleanup/Effort session) — please gate all three together
+**Pass 2 (3640604):** empty state — time-aware greeting (same hour buckets as Today so the landing
+surfaces agree); the eyebrow flips to **"your 14B is live"** once `hasCustomModel()` is true (same probe
+as the Settings row — they can't disagree); headline 32-rounded → 28-semibold plain SF; suggestions
+measure 560. **Pass 3:** two continuity bugs from my own pass 1 fixed — (a) the user-block copy button
+reserved a dead 22pt row under EVERY user message; it's now the same floating panel-pill as assistant
+actions (overlay, zero reserved space); (b) the streaming row's leading dot indented text ~14pt so the
+committed message JUMPED LEFT on stream-end; the dot now sits ABOVE the text, leading edge already final.
+Typecheck 0/0 each. The chat tab is at its target shape from my side — further passes only on feedback.
+
+===== FILE: DEVELOPMENT_LOG.md (2277 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28107,6 +28124,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Owner directive ("POLISH THE CHAT TAB HEAVILY", away 3 h). (1) **Composer rebuilt to the Claude text-over-controls layout** the other session just shipped in CodeView (cross-tab consistency): one flat rounded container — TextField on top (grows 1…8 lines), controls row beneath with a single + menu that now carries BOTH attachments and saved prompts (replacing two separate 40 pt circles), a quiet inline mic, and a 26 pt solid-accent send (red stop while generating). (2) **Assistant hover actions float** on their own small panel pill instead of reserving 84 pt of trailing layout — replies get the full reading measure back, and the pill stays readable over any text. (3) **Reading rhythm**: 10 pt within a same-sender burst / 24 pt between speakers (was 4/14); user blocks cap at a 480 pt wrap measure; entry motion calmed (8 pt rise, blur 4, was 14/6). (4) Chrome diet leftovers: header thinking-glyph gradient → solid accent; UNRESTRICTED label 15-rounded → 12.5; `AgentRunView` lost its avatar disc and moved to the `codeSurfaceSide` panel (live N/M counter kept — it's progress, not chrome); `ConfirmationChip` dot lost its blur halo.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
+
+## 2026-06-11 · Chat-tab heavy polish passes 2+3 — live-14B welcome + two self-introduced continuity bugs fixed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pass 2: the empty-state greeting is time-aware (same hour buckets as the Today tab so the two landing surfaces agree); the eyebrow chip now flips to "Salehman AI · your 14B is live" once `OllamaClient.hasCustomModel()` is true — the same probe the Settings status row uses, so the two indicators can never disagree; headline toned from 32-rounded to 28-semibold plain SF. Pass 3 fixed two continuity bugs my own pass 1 introduced: (a) the user-block copy button lived in a VStack row that reserved ~22 pt of dead space under EVERY user message even un-hovered — replaced with the same floating panel-pill overlay the assistant rows use (zero reserved layout); (b) `StreamingBubble`'s pulsing dot sat BESIDE the text, indenting it ~14 pt, so the committed message visibly jumped left at stream-end — the dot now sits ABOVE the text and the leading edge is final from the first token.
+
+**Result:** Typecheck 0 errors / 0 warnings per pass; both committed+pushed; gate requested (passes 1–3 together). Chat tab at target shape pending owner/gate feedback.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
