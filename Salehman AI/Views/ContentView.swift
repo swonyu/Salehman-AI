@@ -385,7 +385,8 @@ struct ContentView: View {
                                                       mission = mission.isEmpty ? q + "\n\n"
                                                                                 : mission + "\n" + q + "\n"
                                                       inputFocused = true
-                                                  })
+                                                  },
+                                                  onTogglePin: { vm.togglePin($0) })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -432,6 +433,12 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                // Pinned-message jump chips ride ABOVE the transcript as an
+                // inset (not inside the scroll) so they're always reachable;
+                // zero chrome when nothing is pinned.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                }
             }
         }
     }
@@ -659,6 +666,47 @@ struct ContentView: View {
                 .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: Pinned messages
+    private var pinnedMessages: [ChatMessage] { vm.messages.filter { $0.pinned == true } }
+
+    /// First line of a pinned message, trimmed to chip width. Pure for tests.
+    nonisolated static func pinPreview(_ text: String, max: Int = 40) -> String {
+        let first = text.components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return first.count <= max ? first
+            : String(first.prefix(max)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Horizontal chip rail: click a chip to jump to (and center) its message.
+    /// A chip whose message is search-filtered out scrolls nowhere — harmless.
+    private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(DS.Palette.accent)
+                    .accessibilityHidden(true)
+                ForEach(pinnedMessages) { m in
+                    Button {
+                        withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
+                    } label: {
+                        Text(Self.pinPreview(m.text))
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(m.text)
+                    .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 6)
+        }
+        .frame(maxWidth: 780)
+        .accessibilityIdentifier("chat.pinnedstrip")
     }
 
     /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
@@ -1282,6 +1330,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// so history persisted before this field decodes unchanged). Surfaced in
     /// the hover pill — zero chrome at rest.
     var duration: Double? = nil
+    /// Pinned by the user (context menu). Optional, not Bool-with-default:
+    /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
+    /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
+    var pinned: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -1544,6 +1596,8 @@ struct MessageBubble: View {
     var onEdit: ((ChatMessage) -> Void)? = nil
     /// Quote an assistant reply into the composer (`> `-prefixed). nil hides it.
     var onQuote: ((String) -> Void)? = nil
+    /// Pin/unpin this message (context menu, either side). nil hides it.
+    var onTogglePin: ((ChatMessage) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -1609,6 +1663,12 @@ struct MessageBubble: View {
         // reach for the context menu before discovering hover affordances.
         .contextMenu {
             Button { copyText() } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if onTogglePin != nil {
+                Button { onTogglePin?(message) } label: {
+                    Label(message.pinned == true ? "Unpin" : "Pin",
+                          systemImage: message.pinned == true ? "pin.slash" : "pin")
+                }
+            }
             if message.isUser {
                 if onEdit != nil {
                     Button { onEdit?(message) } label: {

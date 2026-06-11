@@ -112,3 +112,50 @@ struct ChatStatsTests {
         #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words")
     }
 }
+
+// MARK: - Pinned messages
+
+struct ChatPinTests {
+
+    private func msg(_ text: String, user: Bool = true, pinned: Bool? = nil) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: user,
+                    timestamp: Date(timeIntervalSince1970: 0), pinned: pinned)
+    }
+
+    /// Pre-pin history must decode unchanged — this is WHY the field is
+    /// `Bool?` and not a defaulted `Bool` (synthesized Codable would throw
+    /// keyNotFound on every archived conversation).
+    @Test func legacyJSONWithoutPinnedKeyDecodes() throws {
+        let legacy = #"[{"id":"00000000-0000-0000-0000-000000000001","text":"hi","isUser":true,"timestamp":0}]"#
+        let msgs = try JSONDecoder().decode([ChatMessage].self, from: Data(legacy.utf8))
+        #expect(msgs.count == 1 && msgs[0].pinned == nil)
+    }
+
+    @Test func pinnedRoundTripsThroughCoding() throws {
+        let original = [msg("keep this", pinned: true), msg("normal")]
+        let decoded = try JSONDecoder().decode([ChatMessage].self,
+                                               from: JSONEncoder().encode(original))
+        #expect(decoded[0].pinned == true)
+        #expect(decoded[1].pinned == nil)
+    }
+
+    @Test func togglingPinFlipsThenClearsToAbsent() {
+        let a = msg("a"), b = msg("b")
+        let once = ChatViewModel.togglingPin(in: [a, b], id: b.id)
+        #expect(once[1].pinned == true && once[0].pinned == nil)
+        let twice = ChatViewModel.togglingPin(in: once, id: b.id)
+        #expect(twice[1].pinned == nil)   // back to ABSENT, not false
+    }
+
+    @Test func togglingPinUnknownIdIsNoOp() {
+        let list = [msg("a")]
+        #expect(ChatViewModel.togglingPin(in: list, id: UUID()) == list)
+    }
+
+    @Test func pinPreviewTrimsToFirstLineAndWidth() {
+        #expect(ContentView.pinPreview("short line") == "short line")
+        #expect(ContentView.pinPreview("first\nsecond") == "first")
+        let p = ContentView.pinPreview(String(repeating: "word ", count: 20))
+        #expect(p.hasSuffix("…") && p.count <= 41)
+    }
+}

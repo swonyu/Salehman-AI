@@ -30,6 +30,23 @@ final class ChatViewModel: ObservableObject {
         MissionProgress.shared.finish()
     }
 
+    /// Pure core of `togglePin` — nil/false → true → nil (absent, so old
+    /// archives stay byte-identical when nothing is pinned). Unknown id = no-op.
+    /// `nonisolated static` so tests pin the semantics without building a VM.
+    nonisolated static func togglingPin(in messages: [ChatMessage], id: UUID) -> [ChatMessage] {
+        var out = messages
+        if let i = out.firstIndex(where: { $0.id == id }) {
+            out[i].pinned = (out[i].pinned == true) ? nil : true
+        }
+        return out
+    }
+
+    /// Pin/unpin a message (either side). Persisted with the conversation —
+    /// the save path already rides on `messages` changes.
+    func togglePin(_ message: ChatMessage) {
+        messages = Self.togglingPin(in: messages, id: message.id)
+    }
+
     /// Re-answer: drop this assistant reply (and anything after it) and re-run the
     /// user message that preceded it, without duplicating the user bubble.
     func regenerate(_ message: ChatMessage) {
