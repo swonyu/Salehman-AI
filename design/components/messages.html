@@ -1,0 +1,25 @@
+<!-- @dsCard group="Components" name="Message rows" width="720" -->
+<!doctype html><html><head><meta charset="utf-8"><style>
+  :root{--accent:#FA2E4A;--accent2:#FF548C;--surface:#202020;--side:#181818;
+        --hair:rgba(255,255,255,.12);--ok:#73D98C;--warn:#FFB859;
+        --lux:cubic-bezier(.32,.72,0,1)}
+  *{margin:0;box-sizing:border-box;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif}
+  body{background:var(--side);color:#fff;padding:48px;min-height:100vh}
+  .bezel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+         border-radius:18px;padding:4px}
+  .core{background:rgba(255,255,255,.045);border-radius:14px;
+        border-top:1px solid rgba(255,255,255,.13);padding:16px}
+  .eyebrow{display:inline-block;border-radius:999px;padding:3px 10px;font-size:10px;
+           letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.55);
+           border:1px solid var(--hair);margin-bottom:18px}
+  h1{font-size:21px;font-weight:700;margin-bottom:6px}
+  .sub{font-size:12px;color:rgba(255,255,255,.5);margin-bottom:28px}
+</style></head>
+<body><span class="eyebrow">Salehman AI · Components</span>
+<h1>Message rows</h1><div class="sub">From the shipped app — exact DS tokens, not approximations.</div>
+
+<div style="display:flex;justify-content:flex-end;margin-bottom:18px">
+ <div style="background:rgba(255,255,255,.09);border-radius:13px;padding:8px 13px;font-size:13.5px;max-width:70%">fix the off-by-one in the paginator</div>
+</div>
+<div style="font-size:14px;line-height:1.5;max-width:85%">Found it in <code style="font-family:ui-monospace,monospace;font-size:12.5px;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 5px">Paginator.swift</code> — the loop used <code style="font-family:ui-monospace,monospace;font-size:12.5px;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 5px">&lt;=</code> but pages are 0-indexed. Built + ran the tests — all green.</div>
+<div class="sub" style="margin-top:16px">User: right-aligned soft block, no avatar. Assistant: flush-left document flow — no bubble.</div></body></html>

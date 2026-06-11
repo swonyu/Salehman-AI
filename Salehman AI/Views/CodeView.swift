@@ -460,6 +460,13 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    /// Design-language motion: one sprung curve for every Code-tab transition
+    /// (cubic-bezier(0.32, 0.72, 0, 1) — heavy start, soft landing). Replaces the
+    /// scattered `easeOut` micro-durations so all motion shares one physical feel.
+    static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
+    /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
+    /// onAppear, so the capture would otherwise photograph an invisible welcome).
+    @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
     // the message history with a subtle wash on the current match.
     @State private var convoSearching = false
@@ -582,11 +589,11 @@ struct CodeView: View {
         // and pop the right panel open so the file/diff is actually visible.
         .onChange(of: ws.selectedFile) { _, sel in
             revealInTree(sel)
-            if sel != nil { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+            if sel != nil { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
         }
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
-            if !files.isEmpty { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+            if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -597,12 +604,12 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                Button("") { withAnimation(CodeView.lux) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
+                Button("") { withAnimation(CodeView.lux) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button("") {
-                    withAnimation(.easeOut(duration: 0.12)) { convoSearching = true }
+                    withAnimation(CodeView.lux) { convoSearching = true }
                     convoSearchFocused = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
@@ -669,7 +676,7 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
-                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                    Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -844,7 +851,7 @@ struct CodeView: View {
                 HStack(spacing: 10) {
                     if treeCollapsed {
                         headerIcon("sidebar.left", "Show the file tree") {
-                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                            withAnimation(CodeView.lux) { treeCollapsed = false }
                         }
                     }
                     if let tps = lastTokPerSec {
@@ -884,6 +891,16 @@ struct CodeView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
+                                // Heavy fade-up entrance (one-shot). Pre-revealed on
+                                // QA launches: onAppear never fires in offscreen
+                                // hosted renders, so captures would photograph an
+                                // invisible welcome without the --qa short-circuit.
+                                .opacity(welcomeAppeared ? 1 : 0)
+                                .offset(y: welcomeAppeared ? 0 : 16)
+                                .onAppear {
+                                    guard !welcomeAppeared else { return }
+                                    withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
+                                }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
                             if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
@@ -1010,7 +1027,7 @@ struct CodeView: View {
     }
 
     private func closeConvoSearch() {
-        withAnimation(.easeOut(duration: 0.12)) { convoSearching = false }
+        withAnimation(CodeView.lux) { convoSearching = false }
         convoQuery = ""; convoMatchIndex = 0
         inputFocused = true
     }
@@ -1066,6 +1083,12 @@ struct CodeView: View {
 
     private var welcome: some View {
         VStack(spacing: 14) {
+            // Eyebrow tag (design-language): microscopic tracked caps above the hero.
+            Text("PAIR PROGRAMMER")
+                .font(.system(size: 9, weight: .semibold)).tracking(2.2)
+                .foregroundStyle(.secondary.opacity(0.85))
+                .padding(.horizontal, 10).padding(.vertical, 3.5)
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -1314,18 +1337,29 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // DOUBLE-BEZEL composer (design-language pass): an inner core with its
+            // own surface + machined top-bevel highlight, seated in an outer tray.
+            // Concentric radii (18 outer − 4 padding = 14 inner) read as hardware.
+            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .padding(4)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             // The signature red ring (owner request — matches the main chat's input):
-            // always visible, warms while typing, full-strength on file drop.
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+            // always visible, warms while typing, full-strength on file drop. Now on
+            // the OUTER shell so the bezel sits inside it.
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
                 isDropTargeted ? DS.Palette.accent
                     : DS.Palette.accent.opacity(
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(.easeOut(duration: 0.18), value: input.isEmpty)
-            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
-            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            .animation(Self.lux, value: input.isEmpty)
+            .animation(Self.lux, value: isDropTargeted)
+            .animation(Self.lux, value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -1419,7 +1453,7 @@ struct CodeView: View {
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+            Button { withAnimation(CodeView.lux) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
@@ -1485,7 +1519,7 @@ struct CodeView: View {
                     }
                 }
                 Spacer()
-                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true } } label: {
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
@@ -1524,7 +1558,7 @@ struct CodeView: View {
                 Spacer()
                 // The run-level safety net: one click reverts EVERY AI edit from
                 // this run (your own edits in other files are untouched).
-                Button { withAnimation(.easeOut(duration: 0.18)) { ws.restoreAllChanged() } } label: {
+                Button { withAnimation(CodeView.lux) { ws.restoreAllChanged() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
                         Text("Restore all").font(.system(size: 9.5, weight: .semibold))
@@ -1545,7 +1579,7 @@ struct CodeView: View {
                         ChangedFileRow(label: relativePath(url),
                                        isSelected: ws.selectedFile == url,
                                        stat: ws.changeStats[url],
-                                       onRestore: { withAnimation(.easeOut(duration: 0.18)) { _ = ws.restoreFromSnapshot(url) } }) {
+                                       onRestore: { withAnimation(CodeView.lux) { _ = ws.restoreFromSnapshot(url) } }) {
                             ws.select(url)
                             rightPane = .diff
                         }
@@ -1611,14 +1645,14 @@ struct CodeView: View {
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
     private var rightReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+            Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
-                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10.5))
                         .frame(width: 24, height: 22).contentShape(Rectangle())
                         .overlay(alignment: .topTrailing) {
@@ -1638,7 +1672,7 @@ struct CodeView: View {
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+            withAnimation(CodeView.lux) { inspectorCollapsed = false }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
@@ -1699,7 +1733,7 @@ struct CodeView: View {
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true }
+                    withAnimation(CodeView.lux) { rightPanelCollapsed = true }
                 } label: {
                     Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())

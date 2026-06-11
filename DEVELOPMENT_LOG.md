@@ -1762,3 +1762,25 @@ the `** TEST SUCCEEDED **` marker. Additive only — no source/lane touched. Com
 **Verified:** build green; `RestoreSnapshotTests` (3 temp-dir round-trips: modified→
 snapshot restored, created→deleted, missing→throws) — TEST SUCCEEDED.
 **Files:** `Views/CodeView.swift`, `Salehman AITests/RestoreSnapshotTests.swift`.
+
+## 2026-06-12 — marathon I: high-end design pass (owner: /high-end-visual-design ×3)
+**What (the loaded design language translated to native SwiftUI, restrained for a
+desktop tool):**
+- **Double-bezel composer** — inner core (own surface + machined top-bevel gradient
+  hairline, radius 14) seated in an outer tray (radius 18, concentric 18−4=14); the
+  signature red ring moved to the OUTER shell. Owner-loved ring behavior unchanged
+  (38%→60% while typing, full on drop, focus glow).
+- **One motion language** — 16 scattered `withAnimation(.easeOut(0.12–0.18))` sites
+  unified onto `CodeView.lux` = timingCurve(0.32, 0.72, 0, 1, 0.4s): heavy start, soft
+  landing, one physical feel across panels/menus/hovers.
+- **Welcome**: "PAIR PROGRAMMER" eyebrow tag (9pt caps, 2.2 tracking, hairline capsule)
+  + one-shot heavy fade-up entrance. Entrance is pre-revealed under `--qa` (offscreen
+  renders never fire onAppear — captures would otherwise photograph an invisible
+  welcome).
+- **`design/` bundle** — 8 self-contained HTML cards documenting the system from the
+  REAL tokens (#FA2E4A accent, #202020/#181818 surfaces, 12% hairlines): palette, type
+  scale, bezel composer, slash menu, activity, changed-files, pills, message rows.
+  (@dsCard-marked for claude.ai design-sync; the push itself was declined — local only.)
+**Verified:** build green; QA all surfaces pass; eyebrow + bezel composer confirmed in
+capture pixels.
+**Files:** `Views/CodeView.swift`, `design/**`.
