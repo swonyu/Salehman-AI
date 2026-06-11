@@ -1683,6 +1683,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck EXIT=0; capture request planted for visual verification of the parity batch. The chat tab now has everything the Code composer has, plus its own Effort dial and prompts library.
 
+## 2026-06-11 · Marathon hour 3 — reply timing, controls-menu test, and a red-build incident (mine)
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AI/Tools/QASnapshots.swift`, `Salehman AIUITests/ChatTabUITests.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md` — commits 15292f4, 0126520, 5d4d240
+
+**What & why:** (1) **Reply timing**: `ChatMessage.duration` (optional — pre-existing persisted history decodes unchanged), stamped per turn in `ChatViewModel`, surfaced as "4.2s"/"1m 12s" in the hover pill with a tooltip — metadata on demand, zero chrome at rest; the gallery's hover row carries a sample for picture coverage. (2) `testChatControlsMenuHasBrainAndEffort` + `chat.composer.controls` identifier — the new quick-controls menu is gate-protected. (3) **Red-build incident, mine**: the drag-and-drop addition used `UTType.fileURL` without `import UniformTypeIdentifiers`; my `swiftc -typecheck` harness resolved it while the real `xcodebuild` failed — Chat C flagged it across three checks and escalated to a top-of-board banner before I saw it (~10 minutes red). One-line import fix pushed, banner cleared with apologies. **Process lesson recorded: the typecheck harness does NOT verify import coverage — only the real gate does; treat board build-flags as interrupts, check the banner area before each commit.** Also attempted self-launching the app for captures (`open` via launchd) — blocked like AppleScript (`procNotFound`), so capture cycles remain dependent on the runner sessions; pinged the board for a run since the parity request has waited ~1h.
+
+**Result:** All green at HEAD after the import fix; parity batch awaiting its photograph + baseline adoption.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
