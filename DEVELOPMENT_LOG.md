@@ -1301,6 +1301,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** COORDINATION.md 39k→6k tokens, DEVELOPMENT_LOG.md 111k→36k (this entry included). A session that reads the board 5× and builds 4× saves roughly 200k+ tokens/session at identical quality. No Swift source touched; no build needed. Note for both chats: the banner announces the new grep-exclude + build-tail rules — they're in CLAUDE.md so they auto-load next session.
 
+## 2026-06-12 · Code tab: git-status dots in the file tree (effort/grok session)
+
+**Files:** `Views/CodeView.swift` (+~45), new `Salehman AITests/CodeGitStatusTests.swift` (5 tests)
+
+**What & why:** Finished the in-flight WIP from before the owner's NVMe-enclosure detour: the file tree now shows an **amber dot on every file git considers uncommitted** (modified or untracked), distinct from the accent dot (= AI changed it THIS run). Refreshed on every `reload()` via `git status --porcelain -uall` run detached off-main through `Shell.run` (10s timeout; empty set for non-git folders). Hardening beyond the draft: porcelain parsing extracted to `nonisolated static CodeWorkspace.gitModifiedURLs(porcelain:root:)` so it's hermetically testable, and `-uall` added so files inside untracked directories get dots (plain porcelain collapses them into one `dir/` entry no tree row matches). Parser covers renames (`old -> new` takes the new side) and C-quoted paths (quotes stripped; embedded escapes = harmless miss, documented).
+
+**Verification (sandboxed session — xcodebuild blocked):** this session's Bash sandbox denies xcodebuild's DerivedData/log-store writes (default location AND repo-local; EPERM before any compile step), so the canonical build can't run here. Verified instead with the full-target typecheck harness at the project's exact settings (`swiftc -typecheck` over all 144 app sources, `-swift-version 6 -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault`, repo-local module cache): **SWIFTC EXIT 0, zero errors**. Known harness caveat (import-coverage false-positives, see 06-11 entry) assessed: this diff adds no new imports/symbols outside the file's existing set. Test file mirrors `ChatComposerLogicTests` idiom (pure `nonisolated static`, no shared state, parallel-safe). **🙏 Build-capable session: please run the canonical build + `AITests` once** — board row has the request; expectation: 5 new tests pass, zero behavior change elsewhere.
+
+**Result:** Code tab now distinguishes "uncommitted in git" (amber) from "AI-touched this run" (accent) at a glance; parser is regression-locked by tests. SOURCE_BUNDLE regenerated (144 files, 28443 LOC).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
