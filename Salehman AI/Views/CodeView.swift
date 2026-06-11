@@ -670,7 +670,10 @@ struct CodeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 46)
+        // Fill the scroll viewport and center — the hero used to ride high
+        // over a large void (QA renders). containerRelativeFrame sizes the
+        // empty state to the visible area, like the main chat's welcome.
+        .containerRelativeFrame(.vertical, alignment: .center)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -861,7 +864,9 @@ struct CodeView: View {
         .frame(maxWidth: 780)
         .frame(maxWidth: .infinity)
         .padding(10)
-        .background(.ultraThinMaterial)
+        // Flat — the last translucent bar in the app (design language; every
+        // other surface went opaque in the restyle).
+        .background(DS.Palette.codeSurface)
     }
 
     /// Quick controls (brain / effort / toggles) — the Code-tab equivalent of the
@@ -903,6 +908,11 @@ struct CodeView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundStyle(.secondary)
+        // Tint-leak fix (QA renders): the global app accent paints Menu labels
+        // straight through foregroundStyle — quiet local tint instead. The
+        // deliberate `· salehman14b` accent child keeps its EXPLICIT style;
+        // AppKit popups ignore SwiftUI tint, so the menu items are unaffected.
+        .tint(Color.white.opacity(0.55))
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
         // Refresh the serving-model suffix when the tab appears or the brain changes.

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 18:56 +03 · Swift files: 133 · Swift LOC: 25414_
+_Generated: 2026-06-11 19:00 +03 · Swift files: 133 · Swift LOC: 25426_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13529,7 +13529,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1509 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1519 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14203,7 +14203,10 @@ struct CodeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 46)
+        // Fill the scroll viewport and center — the hero used to ride high
+        // over a large void (QA renders). containerRelativeFrame sizes the
+        // empty state to the visible area, like the main chat's welcome.
+        .containerRelativeFrame(.vertical, alignment: .center)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -14394,7 +14397,9 @@ struct CodeView: View {
         .frame(maxWidth: 780)
         .frame(maxWidth: .infinity)
         .padding(10)
-        .background(.ultraThinMaterial)
+        // Flat — the last translucent bar in the app (design language; every
+        // other surface went opaque in the restyle).
+        .background(DS.Palette.codeSurface)
     }
 
     /// Quick controls (brain / effort / toggles) — the Code-tab equivalent of the
@@ -14436,6 +14441,11 @@ struct CodeView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundStyle(.secondary)
+        // Tint-leak fix (QA renders): the global app accent paints Menu labels
+        // straight through foregroundStyle — quiet local tint instead. The
+        // deliberate `· salehman14b` accent child keeps its EXPLICIT style;
+        // AppKit popups ignore SwiftUI tint, so the menu items are unaffected.
+        .tint(Color.white.opacity(0.55))
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
         // Refresh the serving-model suffix when the tab appears or the brain changes.
@@ -16876,7 +16886,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (397 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (398 lines) =====
 ```swift
 import SwiftUI
 import UniformTypeIdentifiers
@@ -16944,7 +16954,7 @@ struct KnowledgeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -16978,6 +16988,7 @@ struct KnowledgeView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
@@ -18463,7 +18474,7 @@ struct MemoryView: View {
                             .font(.callout.weight(.semibold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(DS.Palette.danger)
                 }
             }
             .padding(DS.Space.xl)
@@ -18786,7 +18797,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (178 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (179 lines) =====
 ```swift
 import SwiftUI
 
@@ -18853,6 +18864,7 @@ struct ScratchpadView: View {
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .padding(.horizontal, 10).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .focused($addFocused)
                 .onSubmit(add)
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
@@ -21319,7 +21331,7 @@ private struct ActionTile: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
                         .fill(DS.Palette.accent.opacity(0.16)).frame(width: 40, height: 40)
                     Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 }
@@ -21355,7 +21367,7 @@ private struct StatTile: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary.opacity(hovering ? 0.9 : 0.35))
@@ -26790,7 +26802,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (945 lines) =====
+===== FILE: COORDINATION.md (955 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -27736,6 +27748,16 @@ baselines are adopted/armed. v5 adds the two dimensions pixels can't judge:
 SNAPSHOT_REQUEST planted — next cycle is the first with geometry + AX verdicts. If you want the same
 geometry treatment for the Code tab's split layout, add `.qaGeometry("code.editor")`-style hooks in
 CodeView (your lane) and matching assertions in `QAGeometry` — the collector is shared infrastructure.
+
+### 🎨 2026-06-11 eve — CLAIM: CodeView surgical slice (cleanup/Effort session, owner: "polish chat AND code, 4h")
+Owner directed both tabs. Your tree is clean → taking a 3-edit slice NOW (will push within minutes):
+(1) `controlsMenu` Menu tint-leak fix (same class as my chat menus — label renders accent through
+foregroundStyle; your deliberate `· salehman14b` accent child KEEPS its explicit style), (2) input bar
+`.ultraThinMaterial` → flat `codeSurface` (last translucent bar in the app), (3) welcome hero
+`.containerRelativeFrame(.vertical, .center)` — it rides high over a void in the renders. NOT touching:
+your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergence for the OWNER to pick,
+not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
+(owner praised after). Back off CodeView after this push.
 
 ===== FILE: DEVELOPMENT_LOG.md (2407 lines) =====
 # 📓 Development Log — Salehman AI
