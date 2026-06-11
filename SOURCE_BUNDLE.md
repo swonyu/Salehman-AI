@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 01:41 +03 · Swift files: 148 · Swift LOC: 29589_
+_Generated: 2026-06-12 01:55 +03 · Swift files: 148 · Swift LOC: 29710_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2084,7 +2084,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (392 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (404 lines) =====
 ```swift
 import SwiftUI
 
@@ -2292,6 +2292,18 @@ struct SecondaryButtonStyle: ButtonStyle {
             .background(Color.white.opacity(c.isPressed ? 0.14 : 0.08),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .scaleEffect(c.isPressed ? 0.98 : 1)
+            .animation(DS.Motion.press, value: c.isPressed)
+    }
+}
+
+/// Bare press physics for controls that carry their OWN chrome (capsule pills,
+/// chips, icon buttons): 0.97 settle while pressed, press-curve release — the
+/// `.plain` style with a body. No fill/font opinions, so existing chrome is
+/// untouched. APPEND-ONLY addition (Chat B, 2026-06-12).
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
             .animation(DS.Motion.press, value: c.isPressed)
     }
 }
@@ -13892,7 +13904,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (131 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (144 lines) =====
 ```swift
 import SwiftUI
 
@@ -13911,6 +13923,10 @@ struct ChatHistoryView: View {
     @State private var archives: [ChatStore.ArchivedChat] = []
     @State private var hoveredRow: URL? = nil
     @State private var query = ""
+    /// Staggered row reveal on open (capped at 8 steps so deep lists don't
+    /// crawl). Pre-revealed on QA launches — offscreen renders never fire
+    /// onAppear, so the chat_history capture would photograph empty rows.
+    @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -13976,8 +13992,14 @@ struct ChatHistoryView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(shown) { item in
+                            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
                                 row(item)
+                                    // Staggered mask reveal — each row fades up
+                                    // 40ms after the one above (lux curve).
+                                    .opacity(revealed ? 1 : 0)
+                                    .offset(y: revealed ? 0 : 12)
+                                    .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                               value: revealed)
                                 Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
                             }
                         }
@@ -13988,7 +14010,10 @@ struct ChatHistoryView: View {
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
         .preferredColorScheme(.dark)
-        .onAppear { archives = ChatStore.archives() }
+        .onAppear {
+            archives = ChatStore.archives()
+            revealed = true   // first frame renders hidden, then rows cascade in
+        }
     }
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
@@ -14003,7 +14028,7 @@ struct ChatHistoryView: View {
             }
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
                 .help("Replace the current conversation with this one (the current one is archived first)")
@@ -14406,7 +14431,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2305 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2332 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15115,7 +15140,7 @@ struct CodeView: View {
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                             .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
                     }
-                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(isRunning)
@@ -15306,6 +15331,8 @@ struct CodeView: View {
                         Text("ctx \(min(contextPct, 100))%")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                             .help(contextPct >= 100
                                   ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
                                   : "How much of the local model's history window this conversation uses.")
@@ -15315,6 +15342,8 @@ struct CodeView: View {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
+                        .padding(.horizontal, 7).padding(.vertical, 2.5)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
                     }
@@ -15468,6 +15497,11 @@ struct CodeView: View {
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(DS.Palette.codeSurfaceSide)
+        // Top-bevel hairline: the find strip is a fixed tool surface, not chat.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [.white.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
+        }
         .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
         .onChange(of: convoQuery) { _, _ in
             convoMatchIndex = 0
@@ -15956,7 +15990,8 @@ struct CodeView: View {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
                     .foregroundStyle(DS.Palette.accent)
-                Text("Activity").font(.system(size: 12, weight: .semibold))
+                Text("ACTIVITY").font(.system(size: 10, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(.secondary)
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -16013,7 +16048,7 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             HStack(spacing: 6) {
                 Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
-                Text("Changed files").font(.system(size: 10.5, weight: .semibold))
+                Text("CHANGED FILES").font(.system(size: 10, weight: .semibold)).tracking(1.4)
                     .foregroundStyle(.secondary)
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
@@ -16111,7 +16146,7 @@ struct CodeView: View {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
                 Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
@@ -16208,10 +16243,20 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline)
 
             if ws.selectedFile == nil {
-                VStack(spacing: 9) {
+                VStack(spacing: 11) {
+                    Text("FILES & DIFFS")
+                        .font(.system(size: 8.5, weight: .semibold)).tracking(2.0)
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 24, weight: .light))
+                        .font(.system(size: 23, weight: .light))
                         .foregroundStyle(.secondary.opacity(0.55))
+                        .frame(width: 52, height: 52)
+                        .background(Color.white.opacity(0.03), in: Circle())
+                        .overlay(Circle().stroke(LinearGradient(
+                            colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -16558,6 +16603,13 @@ struct CodeMessageRow: View {
                     .padding(.horizontal, 13).padding(.vertical, 8)
                     .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    // Machined tile: the same top-bevel hairline as the composer
+                    // core, so user turns read as physical objects in the flow.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    )
             }
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -16840,7 +16892,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2238 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2263 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16900,6 +16952,7 @@ struct ContentView: View {
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -17447,10 +17500,16 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(Color.white.opacity(
+                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
+                    // Magnetic hover (GPU-safe: transform + hairline only).
+                    .scaleEffect(hoveredSuggestion == s.title ? 1.04 : 1)
+                    .animation(DS.Motion.lux, value: hoveredSuggestion)
+                    .onHover { hoveredSuggestion = $0 ? s.title
+                               : (hoveredSuggestion == s.title ? nil : hoveredSuggestion) }
                 }
             }
             .padding(.top, 6)
@@ -17527,6 +17586,71 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Composer controls-row pieces (extracted for type-checker budget)
+    /// Draft-length readout — invisible until the draft is genuinely long
+    /// (zero chrome at rest), accent past the soft budget.
+    @ViewBuilder private var composerCountBadge: some View {
+        if let count = Self.composerCount(mission) {
+            Text(count.label)
+                .font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .help(count.warn ? "Very long message — consider splitting it or attaching a file"
+                                 : "Draft length")
+                .accessibilityIdentifier("chat.composer.count")
+        }
+    }
+
+    /// Mic (dictation) — quiet inline icon; red while listening.
+    private var micButton: some View {
+        Button { speechIn.toggle() } label: {
+            Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .help("Dictate with your voice")
+        .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+        .accessibilityIdentifier("chat.composer.mic")
+    }
+
+    /// Stop while generating, otherwise Send — the composer's one strong-color
+    /// element (solid accent when sendable).
+    @ViewBuilder private var sendOrStopButton: some View {
+        if vm.isRunning {
+            Button { vm.stop() } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(DS.Palette.accent.opacity(0.85), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .help("Stop generating (⌘.)")
+            .accessibilityLabel("Stop generating")
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            Button { submit(mission) } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(canSend ? .white : .secondary)
+                    .frame(width: 26, height: 26)
+                    .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                        : AnyShapeStyle(Color.white.opacity(0.08)),
+                                in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .disabled(!canSend)
+            .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
+            .accessibilityLabel("Send")
+            .accessibilityIdentifier("chat.composer.send")
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
+
     // MARK: Pinned messages
     private var pinnedMessages: [ChatMessage] { vm.messages.filter { $0.pinned == true } }
 
@@ -17568,7 +17692,7 @@ struct ContentView: View {
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Color.white.opacity(0.06), in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .help(m.text)
                     .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
                 }
@@ -17828,64 +17952,13 @@ struct ContentView: View {
 
                     Spacer(minLength: 0)
 
-                    // Draft-length readout — invisible until the draft is
-                    // genuinely long (zero chrome at rest), accent past the
-                    // soft budget where local-model context gets tight.
-                    if let count = Self.composerCount(mission) {
-                        Text(count.label)
-                            .font(.system(size: 10.5).monospacedDigit())
-                            .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
-                            .help(count.warn ? "Very long message — consider splitting it or attaching a file"
-                                             : "Draft length")
-                            .accessibilityIdentifier("chat.composer.count")
-                    }
-
-                    // Mic (dictation) — quiet inline icon; red while listening.
-                    Button { speechIn.toggle() } label: {
-                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
-                            .frame(width: 26, height: 26)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Dictate with your voice")
-                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
-                    .accessibilityIdentifier("chat.composer.mic")
-
-                    // Stop while generating, otherwise Send — the composer's
-                    // one strong-color element (solid accent when sendable).
-                    if vm.isRunning {
-                        Button { vm.stop() } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 26, height: 26)
-                                .background(DS.Palette.accent.opacity(0.85), in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Stop generating (⌘.)")
-                        .accessibilityLabel("Stop generating")
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        Button { submit(mission) } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(canSend ? .white : .secondary)
-                                .frame(width: 26, height: 26)
-                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
-                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
-                                            in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!canSend)
-                        .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
-                        .accessibilityLabel("Send")
-                        .accessibilityIdentifier("chat.composer.send")
-                        .transition(.scale.combined(with: .opacity))
-                    }
+                    // Count badge, mic, and send/stop are EXTRACTED subviews —
+                    // Chat D measured the real build tripping the Swift 6
+                    // type-checker timeout on this row's single expression
+                    // (bare swiftc doesn't reproduce it — known harness gap).
+                    composerCountBadge
+                    micButton
+                    sendOrStopButton
                 }
             }
             .padding(.horizontal, 12)
@@ -18433,6 +18506,10 @@ enum ChatExporter {
         let safe = raw.components(separatedBy: banned).joined()
             .trimmingCharacters(in: .whitespaces)
         let df = DateFormatter()
+        // Fixed-format dates need the POSIX locale: a bare DateFormatter
+        // follows the DEVICE locale+calendar, so on a Hijri-calendar Mac
+        // (this machine) "yyyy-MM-dd" rendered 1447-era dates in filenames.
+        df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd"
         let date = messages.map(\.timestamp).max() ?? Date()
         return "\(safe.isEmpty ? "Conversation" : safe) — \(df.string(from: date)).md"
@@ -21235,7 +21312,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (122 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (166 lines) =====
 ```swift
 import SwiftUI
 
@@ -21246,25 +21323,30 @@ import SwiftUI
 struct OnboardingView: View {
     let onDone: () -> Void
     @State private var page = 0
+    @State private var ctaHover = false
+    // Entrance choreography. Starts settled under `--qa` so offscreen snapshots
+    // capture the final frame, not a mid-animation pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private struct Page: Identifiable {
         let id = UUID()
         let icon: String
+        let eyebrow: String
         let title: String
         let body: String
     }
 
     private let pages: [Page] = [
-        .init(icon: "sparkles",
+        .init(icon: "sparkles", eyebrow: "WELCOME",
               title: "Meet Salehman",
               body: "Your personal AI — sharp, fast, and entirely yours. Let's get you set up in a few seconds."),
-        .init(icon: "lock.shield.fill",
+        .init(icon: "lock.shield.fill", eyebrow: "PRIVACY",
               title: "Private by design",
               body: "Salehman runs cloud-first on free big models, with a local fallback. Turn on Offline Mode to keep everything on this Mac."),
-        .init(icon: "brain.head.profile",
+        .init(icon: "brain.head.profile", eyebrow: "YOUR BRAINS",
               title: "Choose your brain — or many",
               body: "Pin one model, or check several and Salehman rotates through them, one per message. Free local brains, your own custom model, or the cloud — your call."),
-        .init(icon: "wrench.and.screwdriver.fill",
+        .init(icon: "wrench.and.screwdriver.fill", eyebrow: "CAPABILITIES",
               title: "It can actually do things",
               body: "With your approval, Salehman runs terminal commands, searches the web, transcribes audio, and works as a team of agents on bigger tasks."),
     ]
@@ -21276,6 +21358,21 @@ struct OnboardingView: View {
             DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
+            // Ambient brand glow — soft, blurred depth behind the hero tile so the
+            // flat canvas reads as lit, not painted. Two orbs = layered atmosphere.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.18))
+                .frame(width: 340, height: 340)
+                .blur(radius: 100)
+                .offset(y: -130)
+                .allowsHitTesting(false)
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.07))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 150, y: 180)
+                .allowsHitTesting(false)
+
             VStack(spacing: 0) {
                 Spacer()
 
@@ -21285,13 +21382,30 @@ struct OnboardingView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 88, height: 88)
                         .dsShadow(DS.Elevation.accentGlow(0.5))
+                        // Top-lit edge highlight → the tile gains dimension instead
+                        // of reading as a flat swatch.
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
+                                                       startPoint: .top, endPoint: .bottom),
+                                        lineWidth: 1)
+                        )
                     Image(systemName: pages[page].icon)
                         .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(.white)
                         .id("icon\(page)")
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 26)
+
+                // Editorial eyebrow — gives each page a sense of place + rhythm.
+                Text(pages[page].eyebrow)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .tracking(2.5)
+                    .foregroundStyle(DS.Palette.accent)
+                    .padding(.bottom, 10)
+                    .id("eyebrow\(page)")
+                    .transition(.opacity)
 
                 Text(pages[page].title)
                     .font(.system(size: 27, weight: .bold, design: .rounded))
@@ -21340,10 +21454,13 @@ struct OnboardingView: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 26).padding(.vertical, 11)
                             .background(DS.Gradient.brand, in: Capsule())
-                            .dsShadow(DS.Elevation.accentGlow(0.4))
+                            .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
+                            .scaleEffect(ctaHover ? 1.035 : 1)
+                            .brightness(ctaHover ? 0.06 : 0)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
+                    .onHover { hovering in withAnimation(DS.Motion.smooth) { ctaHover = hovering } }
                 }
 
                 Button("Skip") { onDone() }
@@ -21353,8 +21470,12 @@ struct OnboardingView: View {
                     .padding(.top, 14)
             }
             .padding(44)
+            // Whole card drifts up + fades in on first frame.
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 16)
         }
         .frame(width: 540, height: 600)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Welcome to Salehman, step \(page + 1) of \(pages.count)")
     }
@@ -31056,7 +31177,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (119 lines) =====
+===== FILE: COORDINATION.md (120 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31128,7 +31249,8 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Claude Chat C — TABS POLISH (2026-06-11 night)** | **OWNER-DIRECTED ("polish and refine all tabs except code and chat", ultracode/xhigh, no workflows):** `Views/MarketsView.swift` (Chat A lane — owner-authorized), `Views/AgentsView.swift` (Chat B lane — owner-authorized), `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/MemoryView.swift`, `Views/Onboarding/About/ShortcutsView.swift`. **Read-only DS.** **NOT touching** `TodayView.swift` (it's dirty = your uncommitted off-main-refresh WIP — leaving it alone), Code*, Chat/ContentView, Settings. | 2026-06-11 ~22:25 | Verified-by-measurement polish: each surface read+screenshot, fix, rebuild+recapture+audit-green, commit. **Headline:** fixing the QA-flagged Markets badge contrast (white-on-light-green/amber ≈1.9:1 → dark text) + Agents field hairline. Chat A/B: ping here if you need Markets/Agents back. | no — IN PROGRESS |
 | **effort/grok session — code-tab git dots (2026-06-12 ~00:45)** | `Views/CodeView.swift`, NEW `Salehman AITests/CodeGitStatusTests.swift` | 00:45–01:15 | ✅ DONE — amber "uncommitted in git" dots in the Code-tab tree (distinct from accent = AI-changed-this-run); parser extracted `nonisolated static` + 5 hermetic tests; `-uall` for untracked-dir contents. **Verified: full-target swiftc typecheck EXIT 0** at project settings (Swift 6, MainActor default, approachable concurrency). **🙏 BUILD REQUEST: my sandbox denies xcodebuild's DerivedData writes entirely (EPERM pre-compile, default + repo-local paths both) — please run canonical build + `AITests` when convenient; expect 5 new `CodeGitStatusTests` green, no behavior change elsewhere.** Dev-logged 06-12; SOURCE_BUNDLE regenerated. | **released** |
 | **effort/grok session — CHAT MARATHON 2 (2026-06-12 01:20–02:0x, stretch 1)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, `Views/ChatHistoryView.swift`, NEW `Salehman AITests/ChatTranscriptLogicTests.swift` | 01:20 | ✅ **Stretch 1 DONE — 8 slices, 30 new tests:** ①`07380e5` exporter v2 (title rule/date range/attachment filenames/stats footer) ②`e511ef0` /stats conversation summary ③`2e3d661` pinned messages (context-menu + jump-chip rail; `Bool?` keeps old archives decoding, test-pinned) ④`1600677` composer word counter ⑤⑥`2531fc0` self-review fixes (pluralizer, single-msg range; killed dbl-click-quote — fights word-selection) + History-sheet title filter ⑦⑧`f168cf3` smart export filenames + cadence rules regression-locked. Every slice: full-target swiftc typecheck EXIT 0 (xcodebuild sandbox-blocked for this session). **🙏 BUILD REQUEST stands: one canonical build + `AITests` run** (expect 30 green in ChatTranscriptLogicTests + 5 in CodeGitStatusTests). Dev-logged 06-12; SOURCE_BUNDLE regenerated. Marathon resumes on next owner prompt. | **released** |
-| **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. | no — IN PROGRESS |
+| **Chat B (this session, owner-confirmed) — chat design parity (2026-06-12 ~02:1x)** | `Views/ContentView.swift`, `DesignSystem/DesignSystem.swift` (**APPEND-ONLY: new `DS.Motion.lux` token** — re-read before your next DS edit) | 02:1x | ✅ DONE `ac2732b` — owner invoked /high-end-visual-design: chat composer now wears the Code tab's DOUBLE-BEZEL (concentric 14+4, top-lit hairline, accent ring on outer tray), stock easeOut/easeInOut → `DS.Motion.lux`/`fade`, welcome gets the Code-style 16pt fade-up entrance (QA pre-reveal guarded). Typecheck EXIT 0. **`qa/SNAPSHOT_REQUEST` planted — whoever runs the next capture: chat_empty/chat_live baselineDiff is INTENTIONAL (bezel+hairline); please re-adopt after eyes-verify, or I will when pictures land.** | **released** |
+| **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -32114,7 +32236,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1852 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1915 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -33442,6 +33564,14 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Slices 7–8 (`f168cf3`), stretch 1 closeout:** (7) **Smart export filenames** — `ChatExporter.exportFilename` (conversation title + last-activity date, path/fs-hostile characters scrubbed, "Conversation" fallback) replaces the fixed "Salehman AI Conversation.md"; +3 tests. (8) **Transcript cadence regression-locked** — `needsSeparator`/`isFirstInGroup` extracted to `nonisolated static` and tested (30-min separator, day change, sender flip, 5-min grouping; dates calendar-built so day boundaries hold in any timezone); +2 tests. **FINAL STRETCH TALLY: 8 slices, 30 new tests in `ChatTranscriptLogicTests`, every slice typecheck-EXIT-0 at project settings.** Still owed by a build-capable session: one `AITests` run (30 tests here + the 5 in `CodeGitStatusTests` from the git-dots feature).
 
+## 2026-06-12 · Chat tab high-end design parity (Chat B marathon session, owner: "/high-end-visual-design")
+
+**Files:** `Views/ContentView.swift`, `DesignSystem/DesignSystem.swift` (APPEND-ONLY: `DS.Motion.lux`)
+
+**What & why:** Owner invoked the high-end-visual-design skill and confirmed this session is Chat B. The Code tab already carries the skill's patterns (double-bezel composer, lux curve, entrance choreography); the chat tab was a design generation behind. Brought to parity by mirroring the in-repo, owner-approved implementations (not blind invention): (1) **Composer double-bezel** — inner core white-0.045 r14 continuous + top-lit gradient hairline (0.13→0.02), seated in an outer tray white-0.03 r18 (concentric 14+4) carrying the signature accent ring + focus glow; replaces the old single-bezel flat fill. (2) **`DS.Motion.lux`** promoted from CodeView's local token (same 0.32/0.72/0/1 @ 0.40s curve) — appended to DS.Motion; the composer's three stock `easeOut` sites + the `isRunning` `easeInOut` now use lux/fade tokens (the skill bans stock curves). (3) **Welcome entrance** — same heavy fade-up the Code welcome performs (16pt rise, lux + 0.05s), with the QA pre-reveal guard (`--qa` argument) so offscreen captures don't photograph an invisible welcome. Ambient repeat-forever pulses intentionally kept (periodic, not transitions).
+
+**Verification:** full-target swiftc typecheck EXIT 0. Visual: `qa/SNAPSHOT_REQUEST` planted — next QA-armed launch captures the new composer/welcome; **expect intentional baselineDiff on `chat_empty`/`chat_live`** (bezel + hairline) → re-adopt baselines after eyes-verify.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -33967,6 +34097,61 @@ also CONFIRMED the previously-pending green for the `458e4c5` MemoryStore `recal
 `nonisolated` fix (CodeView red cleared by Chat B).
 **Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AITests/MemorySortTests.swift`,
 `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:00) — Chat D slice 1: Settings brainReady perf seam + 5th blocked suite enabled + Hijri filename fix
+**Who:** Chat D (new session tonight — owner: "work on salehman with 3 other sessions", ultracode/xhigh inline, full-auto).
+**What & why:**
+- **CODEBASE_REVIEW HIGH perf fix:** `SettingsView.brainReady` fired live Keychain
+  `hasKey()` syscalls per visible grid cell on EVERY body recompute (each keystroke +
+  each 5s poll tick ≈ 25+ `SecItemCopyMatching`; `.salehman` alone walked the 10-key
+  `SalehmanEngine.hasAnyCloud` chain) while the cached `@State` *KeySaved flags sat
+  unused. Extracted the rules to NEW `Views/SettingsBrainReadiness.swift` —
+  `BrainReadiness` (pure per-`BrainPreference` reachability over plain Bools) — and
+  `brainReady` is now a thin caller fed ONLY by cached flags: **0 Keychain syscalls
+  per recompute**. Behavior preserved exactly (rule-for-rule copy of the old switch).
+- Same file gains `ActiveBrainProbe` (the overlapping testActiveBrain-runs counter as
+  a value type), `BrainPing.verdict` (ping-reply classification), and
+  `AnthropicKeyPresentation` (no-leak key subtitle) — SettingsView rewired to all
+  three (3 @State vars → 1 probe; logic unchanged).
+- **`SettingsBrainReadyTests` ENABLED** (4th of the 5 blocked §4 suites): the 5
+  disabled stubs replaced by 7 real tests pinning `.auto` local-only (cloud keys must
+  never light it), `.freeAuto` never-spends, `.salehman` cloud-first + named-model
+  local floor, ensemble/coding pool membership, probe overlap rules (superseded run
+  never publishes; spinner clears at zero in-flight), ping verdict, and subtitle
+  no-leak assertions. (Stub names referenced the pre-cloud-first model — renamed to
+  today's semantics.)
+- **Cross-lane one-liner (claimed on board): `ContentView.swift` `exportFilename`** —
+  first real run of Chat A's exporter tests caught a genuine cross-locale bug: a bare
+  `DateFormatter` follows the DEVICE calendar, and this Mac runs Hijri (xcresult path
+  literally `…1447.12.26…`), so export filenames rendered Hijri-era dates and
+  `usesTitleAndLastActivityDate` failed. Fix: `df.locale = en_US_POSIX` (Apple's
+  fixed-format rule).
+- Docs: PROJECT_CONTEXT (SettingsView row + new seam row + §4 suite status).
+**Process note (own fault, logged per house rules):** my sequential edits opened a
+~minutes-long red window (`activeBrain*` decls replaced before usages) that Chat C's
+typecheck caught and flagged as Chat B's. Resolved + apologized on the board; lesson:
+order multi-site renames usages-first, decls-last.
+**Verified (by measurement):** app `** BUILD SUCCEEDED **` (canonical command); QA
+capture run — `settings` surface passes all checks (baselineDiff 0.33%, in budget,
+render 402ms; grid dots pixel-identical through the cached-flag path); AITests run:
+**454 passed, my 7 SettingsBrainReadyTests all green**; sole failure was the
+pre-existing Hijri filename bug above → fixed, full-suite re-run pending behind
+another session's build-DB lock (will confirm the `** TEST SUCCEEDED **` marker
+before releasing the lane).
+**Files:** `Salehman AI/Views/SettingsBrainReadiness.swift` (new),
+`Salehman AI/Views/SettingsView.swift`, `Salehman AI/Views/ContentView.swift`
+(one-liner, claimed), `Salehman AITests/SettingsBrainReadyTests.swift`,
+`PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 — marathon K: design pass 3 — the quiet surfaces
+**What (variance: rails/headers/chips this round, not heroes):** user message tiles get
+the composer-core top-bevel hairline (machined objects in the flow); the find-in-
+conversation strip gets a leading top bevel; tok/s + ctx header chips seated in hairline
+capsules; ACTIVITY / CHANGED FILES section headers unified onto the tracked-caps
+eyebrow idiom (10pt, 1.4 tracking).
+**Verified:** build green; gallery drift 8.83% eyes-verified = the intended user-tile
+bevel; baseline adopted; all other surfaces pass.
+**Files:** `Views/CodeView.swift`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -36310,7 +36495,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (293 lines) =====
+===== FILE: PROJECT_CONTEXT.md (295 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -36430,7 +36615,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 |---|---|
 | `ContentView.swift` | The chat UI: document-flow message list (hover action pills — copy/speak/regenerate/**quote**/per-reply timing on assistant rows, **edit-and-resend**+copy on user rows), Claude-style composer with **Code-tab parity colors** (signature accent ring), **slash commands** (`/summarize /continue /clear /copy /export /find /voice` + every saved prompt as `/slugged-title`), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge), **multi-file attachments** (chips per file, multi-select/drop/paste; merged to one synthetic attachment at submit so the pipeline stays single-attachment), **draft persistence** across relaunches, ↑-recall, Esc stops/dismisses, welcome that mirrors `CodeView.welcome` 1:1 (flat disc hero, 3 capsule pills, status line, full-tab optical centering). Presentation/input/focus/search only — conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
 | `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
-| `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. |
+| `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. Brain-grid readiness reads ONLY cached `@State` key flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
+| `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12): `BrainReadiness` (per-`BrainPreference` reachability rules over cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict), `AnthropicKeyPresentation` (no-leak key subtitle). No UI imports; pinned by `SettingsBrainReadyTests`. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |
 | `CodeView.swift` / `CodeSyntaxView.swift` / `FileTree.swift` | **Code tab (⌘3)** — agentic coding workspace (file tree + syntax-highlighted editor). |
@@ -36555,7 +36741,8 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 - Direct (enabled, green): `KnowledgeRAGTests` (chunk/keyword/cosine/search), `ShellSecurityTests` (isBlocked + run harness + looksRisky limits), `WebToolsOfflineGateTests` (FM tool gates + decodeDDG/stripHTML), `SelfImprovePatchTests` (applyPatch/parseErrors/isInside/backup — locks the double-patch-original fix).
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
 - `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
-- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests`, `SettingsBrainReadyTests` — wait for the BrainAdapter registry + brainReady extract.
+- `SettingsBrainReadyTests` — now ACTIVE (2026-06-12, Chat D): the brainReady extract landed as `Views/SettingsBrainReadiness.swift`; 7 tests pin the readiness rules (`.auto` local-only, `.freeAuto` never-spends, `.salehman` cloud-first), the active-brain probe overlap rules, the ping verdict, and the no-leak key subtitle.
+- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests` — waits for the BrainAdapter registry.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
