@@ -1723,3 +1723,18 @@ dot (= files the AI touched THIS run). `CodeWorkspace.gitModified` refreshes on 
 unquoted) — extraction + `CodeGitStatusTests` landed mid-flight from the guardian
 session working the same file; sealed together. Build + tests green.
 **Files:** `Views/CodeView.swift`, `Salehman AITests/CodeGitStatusTests.swift`.
+
+## 2026-06-12 (01:05) — Chat C: tabs marathon cycle 7 (MemoryStore heavy tests)
+**What:** Heavy coverage for the Memory tab's store, previously only touched by
+`PersistenceRoundTripTests`. New `MemoryStoreFactsTests` (16 cases): pins the pure
+`MemoryStore.extractFacts(from:)` auto-memory extractor — one assertion per pattern
+family (name / role-ending-in-known-profession / workplace / location / preference /
+dislike / tool), plus case-insensitivity + trailing-punctuation trim, and the
+conservative rejections (plain prose, too-short input, noise values like "that"). Also
+pins the `remember` contract via a throwaway temp-dir `init(baseDirectory:)`:
+case-insensitive dedup, whitespace trim + blank-ignore, delete/clear, and the
+`recall` keyword-fallback match. Pure-logic + seam-based — no model calls, no shared
+global state (unique temp dir per test).
+**Result:** New suite green in isolation (16/16) AND full `Salehman AITests` green by
+the `** TEST SUCCEEDED **` marker. Additive only — no source/lane touched. Commit `3d7e8a1`.
+**Files:** `Salehman AITests/MemoryStoreFactsTests.swift` (new).
