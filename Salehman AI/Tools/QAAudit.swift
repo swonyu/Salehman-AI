@@ -197,7 +197,9 @@ enum QAAudit {
         // Trend trail: one JSONL line per audit run (timestamp, fail count,
         // total diff) — cheap history for "when did this start drifting?".
         let totalDiff = results.compactMap(\.diffPercent).reduce(0, +)
-        let histLine = "{\"at\":\"\(report.generatedAt)\",\"failures\":\(failures.count),\"surfaces\":\(results.count),\"totalDiffPct\":\(String(format: "%.2f", totalDiff))}\n"
+        let cvdRisks = (try? Data(contentsOf: snapshotsDir.appendingPathComponent("cvd.json")))
+            .flatMap { try? JSONDecoder().decode(QAColorVision.Report.self, from: $0) }?.flagged.count ?? 0
+        let histLine = "{\"at\":\"\(report.generatedAt)\",\"failures\":\(failures.count),\"surfaces\":\(results.count),\"totalDiffPct\":\(String(format: "%.2f", totalDiff)),\"cvdRisks\":\(cvdRisks)}\n"
         if let d = histLine.data(using: .utf8) {
             let url = snapshotsDir.deletingLastPathComponent().appendingPathComponent("history.jsonl")
             if let handle = try? FileHandle(forWritingTo: url) {
