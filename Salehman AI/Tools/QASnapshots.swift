@@ -110,6 +110,17 @@ enum QASnapshots {
         // invisible-code-text class of bug, caught by eyes in round 1, is now
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
+        // ── QA v6 (Chat C): previously-uncaptured sheets ─────────────────────
+        snap(OnboardingView(onDone: {}),  "onboarding",      "Onboarding — first-run welcome (page 1)", .init(width: 540, height: 600), in: dir)
+        snap(AboutView(onClose: {}),      "about",           "About sheet — identity + capabilities", .init(width: 460, height: 560), in: dir)
+        snap(ShortcutsView(onClose: {}),  "shortcuts",       "Keyboard-shortcuts cheat sheet (⌘/)", .init(width: 380, height: 470), in: dir)
+        snap(CommandPalette(onClose: {}), "command_palette", "Command palette (⌘K)", .init(width: 560, height: 520), in: dir)
+        // VoiceModeView is intentionally NOT captured: its .onAppear runs
+        // session.start() (the mic) — an offscreen QA render must not trigger it.
+        // ── Responsive: narrow widths catch layout breaks on the flexible tabs ──
+        snap(TodayView(),     "today_narrow",     "Today @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(MarketsView(),   "markets_narrow",   "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(KnowledgeView(), "knowledge_narrow", "Knowledge @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
 
         // Bridge layout + accessibility findings to the audit. MERGE, don't
         // overwrite: `captureLiveWindows` contributes window_* entries (the
