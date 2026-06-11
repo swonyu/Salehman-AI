@@ -1414,6 +1414,18 @@ struct MessageBubble: View {
             MarkdownText(text: displayedText)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
+            // Failure rows get an INLINE retry — hover-regenerate exists but
+            // isn't discoverable when the user is staring at an error.
+            if message.text == LocalLLM.offMessage, onRegenerate != nil {
+                Button { onRegenerate?(message) } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DS.Palette.accent)
+                .help("Re-run your last message")
+                .padding(.top, 2)
+            }
             if let path = message.imagePath {
                 CachedImage(path: path)
                     .frame(maxWidth: 360, maxHeight: 360)

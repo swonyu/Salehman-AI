@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:57 +03 · Swift files: 138 · Swift LOC: 27553_
+_Generated: 2026-06-11 23:01 +03 · Swift files: 138 · Swift LOC: 27592_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11949,7 +11949,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (468 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (475 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12381,6 +12381,13 @@ private struct ChatSampleGallery: View {
                               onQuote: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
+            }
+            gallerySection("Failure row — inline retry under the unavailable message") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: LocalLLM.offMessage,
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(140)),
+                              onRegenerate: { _ in })
             }
             gallerySection("User row hover — edit & resend + copy (QA-forced)") {
                 MessageBubble(message: ChatMessage(id: UUID(),
@@ -14201,7 +14208,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2044 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2064 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14674,9 +14681,24 @@ struct CodeView: View {
             guard !historyLoaded else { return }
             historyLoaded = true
             Task.detached(priority: .utility) {
-                let saved = JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: [])
+                var saved = JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: [])
+                // Replies recorded BEFORE stripNarration existed still carry the
+                // fine-tune's leaked scaffold ("Thoughts on this response?", fake
+                // footnotes…). Sanitize assistant turns on load so old garbage
+                // doesn't keep resurfacing (the next save persists the clean text).
+                saved = saved.map { m in
+                    guard !m.isUser else { return m }
+                    let clean = AgentPipeline.stripNarration(m.text)
+                    guard clean != m.text else { return m }
+                    var fixed = m
+                    fixed = ChatMessage(id: m.id, text: clean, isUser: false,
+                                        timestamp: m.timestamp, imagePath: m.imagePath,
+                                        duration: m.duration)
+                    return fixed
+                }
                 if !saved.isEmpty {
-                    await MainActor.run { if messages.isEmpty { messages = saved } }
+                    let restored = saved
+                    await MainActor.run { if messages.isEmpty { messages = restored } }
                 }
             }
         }
@@ -14715,6 +14737,11 @@ struct CodeView: View {
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                 Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("") {
+                    withAnimation(.easeOut(duration: 0.12)) { convoSearching = true }
+                    convoSearchFocused = true
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -16374,7 +16401,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1821 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1833 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17792,6 +17819,18 @@ struct MessageBubble: View {
             MarkdownText(text: displayedText)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
+            // Failure rows get an INLINE retry — hover-regenerate exists but
+            // isn't discoverable when the user is staring at an error.
+            if message.text == LocalLLM.offMessage, onRegenerate != nil {
+                Button { onRegenerate?(message) } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DS.Palette.accent)
+                .help("Re-run your last message")
+                .padding(.top, 2)
+            }
             if let path = message.imagePath {
                 CachedImage(path: path)
                     .frame(maxWidth: 360, maxHeight: 360)
@@ -29038,7 +29077,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 |-------------|-----------------------------|-------|----------------------------|-----------|
 | Codex CLI | Build unblock: moved untracked non-app artifacts out of synchronized `Salehman AI/` app source root; docs touched `COORDINATION.md`, `DEVELOPMENT_LOG.md` | 2026-06-08 | Duplicate Xcode build inputs fixed; build + `Salehman AITests` green. | **released** |
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
-| **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Slices: (1) slash commands in chat composer (Code parity), (2) edit-and-resend on user rows, (3) search match count + Esc-to-stop, (4) hermetic logic tests. Per slice: typecheck pinned → commit → capture → audit text → adopt at end. Will flag here per slice; build-capable session: please include AITests in your next run. | no — IN PROGRESS |
+| **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Shipped so far: ✅1 slash commands `38c38a8` ✅2 edit-and-resend `a32c411` ✅3 quote-reply + Esc `5cdc39a` ✅4 slash UI tests `eb5e00d` ✅5 multi-attachments `edfa32e` (merge-at-submit — pipeline untouched) ✅6 prompt-slash + draft persistence `490891f` + gallery quote sample `85ffa4b`. 18 new unit tests in `ChatComposerLogicTests` (thanks for the `import Foundation` catch, whoever built it) + 2 UI flows. PROJECT_CONTEXT chat rows refreshed. ADOPT_BASELINES+SNAPSHOT_REQUEST pending for the post-slice state. **Build-capable session: please run AITests + Salehman AIUITests when convenient.** | no — IN PROGRESS |
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
@@ -30023,7 +30062,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1536 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1557 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31560,6 +31599,27 @@ path minus the panel). MRU updates on open/restore (`noteRecent`), persists in
 cycle rendered CodeView, `~/Library/Preferences/SA.Salehman-AI.plist` holds
 `code_recentProjects: ["/Users/saleh/Desktop/Salehman AI"]` (init→noteRecent ran).
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-11 (night) — marathon slice 6: saved prompts join the / menu + drafts survive relaunch
+**What & why:** (1) Every `PromptLibrary` prompt is now a slash command — `/fix-my-code` inserts
+its body (titles slugged via pure `ChatSlashCommand.slug`: lowercase, spaces→dashes, symbols
+dropped; builtins win id collisions, duplicate slugs keep the first, unsluggable titles
+skipped). Saved prompts were menu-only before; now they're keyboard-reachable. (2) Composer
+drafts persist (`chat.composerDraft` per keystroke, restored on appear when empty) — quitting
+mid-thought no longer eats the draft; sending clears it naturally. 4 slug tests added.
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`; bundle
+regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). No test touches the draft key (parallel-
+UserDefaults rule respected).
+
+## 2026-06-11 (night) — marathon slice 7: knowledge-base sync (PROJECT_CONTEXT + board)
+**What & why:** CLAUDE.md requires PROJECT_CONTEXT.md stays correct after structural change —
+the chat tab gained 6 slices tonight. `ContentView`/`ChatViewModel` rows rewritten (slash
+commands + prompt slugs, edit-resend, quote, multi-attachments, draft persistence, Code-1:1
+welcome). Board marathon row updated with all slice SHAs. Checked streaming-markdown as a
+candidate: already implemented with a `liveMarkdownLimit` cap — no work needed.
+**Files:** `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+**Result:** Docs match the app again.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -34021,8 +34081,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `Views/` — UI (ContentView + SettingsView = Chat B's lane)
 | File | Purpose |
 |---|---|
-| `ContentView.swift` | The chat UI: document-flow message list (hover action pills + per-reply timing), Claude-style composer with **Code-tab parity colors** (signature accent ring), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge, same probe as the Code tab), **file drag-and-drop**, ↑-recalls-last-message, time-aware welcome (honest eyebrow, suggestion bento, ⌘N/⌘F/⌘J hints), `ChatStore` (persistence), approval card. Presentation/input/focus/search only — the conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
-| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
+| `ContentView.swift` | The chat UI: document-flow message list (hover action pills — copy/speak/regenerate/**quote**/per-reply timing on assistant rows, **edit-and-resend**+copy on user rows), Claude-style composer with **Code-tab parity colors** (signature accent ring), **slash commands** (`/summarize /continue /clear /copy /export /find /voice` + every saved prompt as `/slugged-title`), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge), **multi-file attachments** (chips per file, multi-select/drop/paste; merged to one synthetic attachment at submit so the pipeline stays single-attachment), **draft persistence** across relaunches, ↑-recall, Esc stops/dismisses, welcome that mirrors `CodeView.welcome` 1:1 (flat disc hero, 3 capsule pills, status line, full-tab optical centering). Presentation/input/focus/search only — conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
+| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
 | `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |

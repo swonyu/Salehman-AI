@@ -1555,3 +1555,12 @@ welcome). Board marathon row updated with all slice SHAs. Checked streaming-mark
 candidate: already implemented with a `liveMarkdownLimit` cap — no work needed.
 **Files:** `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
 **Result:** Docs match the app again.
+
+## 2026-06-11 (night) — marathon slice 8: inline Retry on failure rows
+**What & why:** When both brains are unreachable the reply row shows the unavailable message —
+and the only recovery was the hover-only regenerate icon. Failure rows (`text ==
+LocalLLM.offMessage`) now carry an inline accent **Retry** button under the message (calls the
+same `regenerate`). Gallery gains a failure-row section so the state is photographed +
+baselined.
+**Files:** `Views/ContentView.swift`, `Tools/QASnapshots.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).

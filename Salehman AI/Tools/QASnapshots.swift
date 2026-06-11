@@ -429,6 +429,13 @@ private struct ChatSampleGallery: View {
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
             }
+            gallerySection("Failure row — inline retry under the unavailable message") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: LocalLLM.offMessage,
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(140)),
+                              onRegenerate: { _ in })
+            }
             gallerySection("User row hover — edit & resend + copy (QA-forced)") {
                 MessageBubble(message: ChatMessage(id: UUID(),
                                                    text: "Edit this message and resend it — the turn re-opens in the composer.",
