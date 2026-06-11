@@ -2678,3 +2678,25 @@ just this one.)
 **Files:** `CLAUDE.md`, `DEVELOPMENT_LOG.md`.
 **Result:** Directive active immediately in this session; future sessions inherit it at
 launch.
+
+## 2026-06-11 (late night) — Code tab: right Activity panel + slash commands + centered composer; qa.sh stale-read fix
+**What & why (owner: "heavily polish the code tab and add more features"):**
+- **Closable right panel** (owner asked for a Background-tasks-style sidebar): Activity
+  (live agent steps as cards) on top + the Files & Diffs inspector at the bottom, in a
+  VSplitView. Closes to a slim edge strip (with a changed-files badge); auto-reopens when
+  a file is selected or a run produces diffs. Replaces the old bottom-pinned inspector.
+- **Slash commands**: type `/` in the composer → menu of /explain /fix /tests /refactor
+  /review /docs /clear /copy. Enter picks the top match; templates pre-fill, actions run.
+  Extracted as `SlashMenuView` and photographed in the QA gallery (deterministic).
+- **Centered composer**: the input stretched full-width while messages capped at 780 —
+  looked off-centre on wide windows (owner flagged). Now the same centered 780 column.
+- **tools/qa.sh race fix**: the runner printed AUDIT.json as soon as INDEX.md refreshed,
+  but the audit writes AFTER the capture — so it reported the PREVIOUS run's verdicts.
+  Chased a phantom "31.06% diff" through baselines/containers/symlinks before spotting
+  the all-white heat map (0 changed pixels) — the contradiction that exposed the stale
+  read. Runner now waits for AUDIT.json to refresh too.
+**Files:** `Views/CodeView.swift` (rightPanel/activitySection/rightReopenStrip,
+SlashCommand/SlashMenuView, composer cap, gallery section), `tools/qa.sh`.
+**Result:** Build green; QA **all surfaces pass** (code_samples Δ0.00% with the slash
+menu in the baseline, code_tab Δ0.00% with the new panel). Close→strip→reopen verified
+in pixels. Note for QA owner: the "structure" QAAudit refactor was NOT at fault.

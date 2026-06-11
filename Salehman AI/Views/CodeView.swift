@@ -201,6 +201,45 @@ struct SlashCommand: Identifiable {
     var trigger: String { "/" + id }
 }
 
+/// The `/`-command dropdown rendered above the Code composer. Extracted as its own
+/// view so the QA gallery can photograph it deterministically (the inline version
+/// only exists while `input` starts with "/").
+struct SlashMenuView: View {
+    let matches: [SlashCommand]
+    @Binding var hovered: String?
+    var onPick: (SlashCommand) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(matches) { cmd in
+                Button { onPick(cmd) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: cmd.icon).font(.system(size: 12))
+                            .foregroundStyle(DS.Palette.accent).frame(width: 16)
+                        Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
+                        Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if cmd.id == matches.first?.id {
+                            Text("↵").font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(hovered == cmd.id ? Color.white.opacity(0.06) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
+            }
+        }
+        .padding(5)
+        .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+    }
+}
+
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
     @ObservedObject private var progress = MissionProgress.shared
@@ -640,7 +679,8 @@ struct CodeView: View {
     }
 
     // MARK: - Slash commands (type `/` in the composer)
-    private static let slashCommands: [SlashCommand] = [
+    // (internal, not private: the QA gallery photographs the menu with this list)
+    static let slashCommands: [SlashCommand] = [
         .init(id: "explain",  icon: "text.magnifyingglass", blurb: "Explain how it works",   kind: .template("Explain how this works, step by step:\n\n")),
         .init(id: "fix",      icon: "ladybug",              blurb: "Find and fix a bug",      kind: .template("Find and fix the bug in this:\n\n")),
         .init(id: "tests",    icon: "checkmark.diamond",    blurb: "Write unit tests",        kind: .template("Write thorough unit tests for this:\n\n")),
@@ -856,39 +896,13 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
             }
-            // Slash-command menu — floats above the composer while typing `/…`.
+            // Slash-command menu — appears above the composer while typing `/…`.
             // `↵` picks the top row; clicking a row runs it. Templates pre-fill the
             // input; actions (clear/copy) run immediately.
             if !slashMatches.isEmpty {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(slashMatches) { cmd in
-                        Button { applySlash(cmd) } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: cmd.icon).font(.system(size: 12))
-                                    .foregroundStyle(DS.Palette.accent).frame(width: 16)
-                                Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
-                                Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
-                                Spacer(minLength: 8)
-                                if cmd.id == slashMatches.first?.id {
-                                    Text("↵").font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.secondary.opacity(0.7))
-                                }
-                            }
-                            .padding(.horizontal, 11).padding(.vertical, 7)
-                            .background(hoveredSlash == cmd.id ? Color.white.opacity(0.06) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hoveredSlash = $0 ? cmd.id : (hoveredSlash == cmd.id ? nil : hoveredSlash) }
-                    }
-                }
-                .padding(5)
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-                .frame(maxWidth: 520, alignment: .leading)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                SlashMenuView(matches: slashMatches, hovered: $hoveredSlash, onPick: applySlash)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             VStack(spacing: 9) {
                 // Text first — full width, comfortable, nothing competing with it.
@@ -1722,6 +1736,12 @@ struct CodeSampleGallery: View {
             }
             sec("Refusal — honest, no hedging") {
                 CodeMessageRow(msg: .init(id: UUID(), text: "No — I can't promise bug-free code; that wouldn't be honest for anything non-trivial. What I *will* do: run the tests, read the diff, and tell you exactly what I verified.", isUser: false, timestamp: now))
+            }
+            sec("Slash-command menu — type / in the composer (↵ picks the top row)") {
+                SlashMenuView(matches: CodeView.slashCommands,
+                              hovered: .constant("fix"),
+                              onPick: { _ in })
+                    .frame(maxWidth: 520, alignment: .leading)
             }
         }
         .padding(26)

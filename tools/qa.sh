@@ -23,10 +23,20 @@ touch "$QA/SNAPSHOT_REQUEST"
 echo "→ launching app to fulfill the snapshot request…"
 open "$APP"
 
+audit_before=$(stat -f %m "$SNAPS/AUDIT.json" 2>/dev/null || echo 0)
 echo -n "→ waiting for fresh capture"
 for _ in $(seq 1 45); do
   now=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
   [ "$now" != "$before" ] && { echo " ✓"; break; }
+  echo -n "."; sleep 1
+done
+# INDEX.md lands before the audit finishes — wait for AUDIT.json to refresh too,
+# otherwise the summary below prints the PREVIOUS run's verdicts (a real footgun:
+# it kept reporting a stale 31% diff after the baseline was already adopted).
+echo -n "→ waiting for the audit"
+for _ in $(seq 1 30); do
+  now=$(stat -f %m "$SNAPS/AUDIT.json" 2>/dev/null || echo 0)
+  [ "$now" != "$audit_before" ] && { echo " ✓"; break; }
   echo -n "."; sleep 1
 done
 
