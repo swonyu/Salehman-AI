@@ -36,20 +36,24 @@ enum QASnapshots {
             .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
     }
 
-    /// Launch hook: consume `qa/SNAPSHOT_REQUEST` if present, then capture.
-    /// Small delay lets the singleton stores finish their first load so the
-    /// live views render real content instead of empty flashes.
+    /// Launch hook: capture if `qa/SNAPSHOT_REQUEST` is present. The request
+    /// file is consumed AFTER a successful capture — a launch that quits
+    /// mid-render (e.g. a quick UI-test run) leaves the request in place so
+    /// the NEXT launch retries instead of silently eating it. Small delay
+    /// lets the singleton stores finish their first load.
     static func checkAndRun() {
         let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
-        try? FileManager.default.removeItem(at: request)
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 800_000_000)
             captureAll()
+            try? FileManager.default.removeItem(at: request)
         }
     }
 
-    /// Render every main surface + the deterministic chat gallery.
+    /// Render every main surface + the deterministic chat gallery, then write
+    /// a `CAPTURE_DONE.txt` marker (timestamp + file list) so a remote session
+    /// can verify completion without listing PNGs.
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -63,6 +67,13 @@ enum QASnapshots {
         snap(MarketsView(),        "markets",       CGSize(width: 1000, height: 740), in: dir)
         snap(MemoryView(),         "memory",        CGSize(width: 1000, height: 700), in: dir)
         snap(SettingsView(),       "settings",      CGSize(width: 560,  height: 640), in: dir)
+
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?
+            .filter { $0.hasSuffix(".png") }.sorted() ?? []
+        let marker = "captured \(written.count) snapshots at \(Date())\n"
+            + written.joined(separator: "\n") + "\n"
+        try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"),
+                          atomically: true, encoding: .utf8)
     }
 
     private static func snap<V: View>(_ view: V, _ name: String, _ size: CGSize, in dir: URL) {

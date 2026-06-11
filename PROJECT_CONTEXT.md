@@ -108,6 +108,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
 | `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
 | `StockSageMini.swift` | Canonical Saudi/TASI educational disclaimer (rendered by MarketsView). |
+| `QASnapshots.swift` | Self-snapshot QA harness: renders every main surface to `qa/snapshots/*.png` via `ImageRenderer` (no Screen Recording permission needed). Triggers: `qa/SNAPSHOT_REQUEST` file at launch, or View ▸ "Capture QA Snapshots". Lets a screen-blind AI session see the UI; paired with `Salehman AIUITests/ChatTabUITests.swift` (composer/search/menu flow tests + a test that captures snapshots during gate runs). |
 
 *(The actual model-callable tools are defined inline in `LocalLLM`'s tool loop — see §5. The FM-era per-tool files — AnalyzeImageTool, TranscribeMediaTool, CodeTool, StockAnalysisTool, ImageGen, MacControlTools — were removed with the Apple-Intelligence layer / 2026-06-11 cleanup.)*
 

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:38 +03 · Swift files: 130 · Swift LOC: 24568_
+_Generated: 2026-06-11 17:42 +03 · Swift files: 130 · Swift LOC: 24579_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10833,7 +10833,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (156 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (167 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -10873,20 +10873,24 @@ enum QASnapshots {
             .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
     }
 
-    /// Launch hook: consume `qa/SNAPSHOT_REQUEST` if present, then capture.
-    /// Small delay lets the singleton stores finish their first load so the
-    /// live views render real content instead of empty flashes.
+    /// Launch hook: capture if `qa/SNAPSHOT_REQUEST` is present. The request
+    /// file is consumed AFTER a successful capture — a launch that quits
+    /// mid-render (e.g. a quick UI-test run) leaves the request in place so
+    /// the NEXT launch retries instead of silently eating it. Small delay
+    /// lets the singleton stores finish their first load.
     static func checkAndRun() {
         let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
-        try? FileManager.default.removeItem(at: request)
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 800_000_000)
             captureAll()
+            try? FileManager.default.removeItem(at: request)
         }
     }
 
-    /// Render every main surface + the deterministic chat gallery.
+    /// Render every main surface + the deterministic chat gallery, then write
+    /// a `CAPTURE_DONE.txt` marker (timestamp + file list) so a remote session
+    /// can verify completion without listing PNGs.
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -10900,6 +10904,13 @@ enum QASnapshots {
         snap(MarketsView(),        "markets",       CGSize(width: 1000, height: 740), in: dir)
         snap(MemoryView(),         "memory",        CGSize(width: 1000, height: 700), in: dir)
         snap(SettingsView(),       "settings",      CGSize(width: 560,  height: 640), in: dir)
+
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?
+            .filter { $0.hasSuffix(".png") }.sorted() ?? []
+        let marker = "captured \(written.count) snapshots at \(Date())\n"
+            + written.joined(separator: "\n") + "\n"
+        try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"),
+                          atomically: true, encoding: .utf8)
     }
 
     private static func snap<V: View>(_ view: V, _ name: String, _ size: CGSize, in dir: URL) {
@@ -29892,7 +29903,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: PROJECT_CONTEXT.md (292 lines) =====
+===== FILE: PROJECT_CONTEXT.md (293 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -30003,6 +30014,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
 | `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
 | `StockSageMini.swift` | Canonical Saudi/TASI educational disclaimer (rendered by MarketsView). |
+| `QASnapshots.swift` | Self-snapshot QA harness: renders every main surface to `qa/snapshots/*.png` via `ImageRenderer` (no Screen Recording permission needed). Triggers: `qa/SNAPSHOT_REQUEST` file at launch, or View ▸ "Capture QA Snapshots". Lets a screen-blind AI session see the UI; paired with `Salehman AIUITests/ChatTabUITests.swift` (composer/search/menu flow tests + a test that captures snapshots during gate runs). |
 
 *(The actual model-callable tools are defined inline in `LocalLLM`'s tool loop — see §5. The FM-era per-tool files — AnalyzeImageTool, TranscribeMediaTool, CodeTool, StockAnalysisTool, ImageGen, MacControlTools — were removed with the Apple-Intelligence layer / 2026-06-11 cleanup.)*
 
