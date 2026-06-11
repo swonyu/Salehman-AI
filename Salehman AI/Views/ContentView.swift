@@ -1379,6 +1379,33 @@ struct MessageBubble: View {
         Group {
             if message.isUser { userRow } else { assistantRow }
         }
+        // Right-click mirrors the hover pill — the native path for users who
+        // reach for the context menu before discovering hover affordances.
+        .contextMenu {
+            Button { copyText() } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if message.isUser {
+                if onEdit != nil {
+                    Button { onEdit?(message) } label: {
+                        Label("Edit & Resend", systemImage: "pencil")
+                    }
+                }
+            } else {
+                if onQuote != nil {
+                    Button { onQuote?(displayedText) } label: {
+                        Label("Quote in Composer", systemImage: "text.quote")
+                    }
+                }
+                Button { speech.toggle(message.text, id: message.id) } label: {
+                    Label(speech.speakingID == message.id ? "Stop Speaking" : "Read Aloud",
+                          systemImage: "speaker.wave.2")
+                }
+                if onRegenerate != nil {
+                    Button { onRegenerate?(message) } label: {
+                        Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+        }
         .onHover { hovering = $0 }
     }
 

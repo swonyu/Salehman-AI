@@ -1587,3 +1587,10 @@ assistant turns cleaned, user turns untouched, IDs preserved — pinned by a uni
 (suite green), and the live `code_history.json` was cleaned once directly (0 leak
 occurrences after).
 **Files:** `Views/CodeView.swift`, `Salehman AITests/ToolLoopTests.swift`.
+
+## 2026-06-11 (night) — marathon slice 10: right-click context menus on message rows
+**What & why:** Every hover-pill action is now also a native context menu — user rows: Copy,
+Edit & Resend; assistant rows: Copy, Quote in Composer, Read Aloud/Stop Speaking, Regenerate.
+Hover affordances are invisible until discovered; right-click is the macOS-native first reach.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:03 +03 · Swift files: 139 · Swift LOC: 27702_
+_Generated: 2026-06-11 23:04 +03 · Swift files: 139 · Swift LOC: 27729_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -16402,7 +16402,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1852 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1879 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17784,6 +17784,33 @@ struct MessageBubble: View {
     private var bubbleRow: some View {
         Group {
             if message.isUser { userRow } else { assistantRow }
+        }
+        // Right-click mirrors the hover pill — the native path for users who
+        // reach for the context menu before discovering hover affordances.
+        .contextMenu {
+            Button { copyText() } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if message.isUser {
+                if onEdit != nil {
+                    Button { onEdit?(message) } label: {
+                        Label("Edit & Resend", systemImage: "pencil")
+                    }
+                }
+            } else {
+                if onQuote != nil {
+                    Button { onQuote?(displayedText) } label: {
+                        Label("Quote in Composer", systemImage: "text.quote")
+                    }
+                }
+                Button { speech.toggle(message.text, id: message.id) } label: {
+                    Label(speech.speakingID == message.id ? "Stop Speaking" : "Read Aloud",
+                          systemImage: "speaker.wave.2")
+                }
+                if onRegenerate != nil {
+                    Button { onRegenerate?(message) } label: {
+                        Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
         }
         .onHover { hovering = $0 }
     }
@@ -30176,7 +30203,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1566 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1589 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31743,6 +31770,29 @@ same `regenerate`). Gallery gains a failure-row section so the state is photogra
 baselined.
 **Files:** `Views/ContentView.swift`, `Tools/QASnapshots.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — marathon slice 9: slash-menu keyboard navigation
+**What & why:** ↑/↓ now move a visible selection through the `/`-menu and ↵ picks the selected
+row (was: ↵ always took the top). Selection + hover share the same highlight; the ↵ glyph
+follows the selection; typing resets it to the top (piggybacked on the draft-persist
+`onChange`). No conflict with ↑-recall: the menu only opens on a non-empty composer, recall
+only fires on an empty one. Selection is clamped against current matches at use-time so a
+narrowing query can never index out of bounds.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-12 — marathon E: find-in-conversation (⌥⌘F) + history leak-sanitizer
+**E:** Code tab gets conversation search — ⌥⌘F opens a strip above the messages
+(⌘F stays find-in-FILE): live "n/total" count, ↑/↓ + Enter jump with wrap-around,
+Esc/✕ closes back to the composer, and the current match row carries a subtle accent
+wash. Verified in pixels: queried the live conversation, bar shows "1/2", match washed.
+**Sanitizer:** replies persisted BEFORE stripNarration existed still carried the leaked
+scaffold (seen live: "Thoughts on this response?" + fake GitHub footnotes fossilized in
+history). History now passes through `CodeView.sanitizedHistory` on every load —
+assistant turns cleaned, user turns untouched, IDs preserved — pinned by a unit test
+(suite green), and the live `code_history.json` was cleaned once directly (0 leak
+occurrences after).
+**Files:** `Views/CodeView.swift`, `Salehman AITests/ToolLoopTests.swift`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
