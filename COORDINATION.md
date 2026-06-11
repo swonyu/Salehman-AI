@@ -861,3 +861,16 @@ Built on your `QASnapshots` harness — additive, kept your `CAPTURE_DONE.txt` m
 - **`contact_sheet.png`**: montage of all surfaces (thumbnail+label, 4-col) — one-glance overview.
 - **Responsive variants**: `chat_narrow` (560pt) + `code_narrow` (640pt) catch layout breaks.
 All 13 surfaces ✅ at commit time; build green. The harness is now the primary QA loop for BOTH lanes.
+
+### 🔭 2026-06-11 — QA runner + manual + galleries; AUDIT flagged a real miss (memory)
+- **`tools/qa.sh`** — one-command loop: requests a capture, launches the Debug app to fulfill it, waits
+  for `INDEX.md`, prints the manifest + a parsed `AUDIT.json` pass/fail summary. `--adopt` re-baselines.
+- **`tools/QA.md`** — operating manual for the whole system (capture/audit/runner, the two render paths,
+  what each check means, how to read the output).
+- **Galleries enriched** (`CodeSampleGallery` in CodeView.swift, routed through `snapHosted` so code
+  blocks + SF Symbols actually render): user block, assistant doc, syntax code, **markdown table**
+  (verifies the table-wrap fix), **Arabic/RTL**, streaming, agent strip, long-paste wrap, refusal.
+  `chat_samples` also routed through `snapHosted`.
+- **🔴 Your AUDIT caught a real one:** `qa.sh` run shows **`memory` FAILS canvasFlat** — corners sample
+  `0.000` (black) vs the design-grey `0.125`. `MemoryView` (your restyle lane) is missing the flat
+  `DS.Palette.codeSurface` background — last straggler from the 7-slice restyle. Everything else passes.

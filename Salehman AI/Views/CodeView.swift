@@ -1478,6 +1478,20 @@ struct CodeSampleGallery: View {
                           status: .running, adapted: "Reasoning Strategist · tool round 2/8")
                 ])
             }
+            sec("Markdown table — cells wrap, no mid-word clip (table-wrap fix)") {
+                CodeMessageRow(msg: .init(id: UUID(), text: """
+                | round | recipe | eval loss |
+                |---|---|---|
+                | r3 | r128 + app-missions | **1.3033** — shipped |
+                | r5 | + round-5 data | 1.3446 |
+                """, isUser: false, timestamp: now))
+            }
+            sec("Long user paste — right-block wrap / max-width measure") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "here's a long requirement i'm pasting to sanity-check that the right-aligned user block caps its width, wraps cleanly, and keeps its padding + corner radius instead of running edge to edge across a wide window", isUser: true, timestamp: now))
+            }
+            sec("Refusal — honest, no hedging") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "No — I can't promise bug-free code; that wouldn't be honest for anything non-trivial. What I *will* do: run the tests, read the diff, and tell you exactly what I verified.", isUser: false, timestamp: now))
+            }
         }
         .padding(26)
         .frame(maxWidth: .infinity, alignment: .leading)

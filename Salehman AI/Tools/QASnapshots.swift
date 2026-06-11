@@ -42,6 +42,13 @@ enum QASnapshots {
     /// the NEXT launch retries instead of silently eating it. Small delay
     /// lets the singleton stores finish their first load.
     static func checkAndRun() {
+        // Baseline adoption trigger (QAAudit): promote the CURRENT snapshots
+        // to qa/baselines so future captures diff against them.
+        let adopt = qaDir.appendingPathComponent("ADOPT_BASELINES")
+        if FileManager.default.fileExists(atPath: adopt.path) {
+            QAAudit.adoptBaselinesDefault()
+            try? FileManager.default.removeItem(at: adopt)
+        }
         let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
         Task { @MainActor in
@@ -63,17 +70,15 @@ enum QASnapshots {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         shots.removeAll()
 
-        // ── Code tab (this session's lane) ──────────────────────────────────
-        // CodeView uses HSplitView/VSplitView (AppKit-backed) which ImageRenderer
-        // can't draw — so it goes through the NSHostingView path instead.
-        snapHosted(CodeView(),     "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
-        snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (user block, assistant doc + code, Arabic RTL, streaming, agent strip)", .init(width: 860, height: 1120), in: dir)
-        // ── Main chat (other session's lane) ────────────────────────────────
+        // ── Code tab ─────────────────────────────────────────────────────────
+        snap(CodeView(),           "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
+        snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (blocks, code, table, Arabic RTL, streaming, agent strip, refusal)", .init(width: 860, height: 1560), in: dir)
+        // ── Main chat ────────────────────────────────────────────────────────
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
         snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
-        snapHosted(CodeView(),     "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
+        snap(CodeView(),           "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
         // ── Every other tab — flat-canvas restyle spot-check ────────────────
         snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
         snap(AgentsView(),         "agents",       "Agents tab", .init(width: 1000, height: 740), in: dir)
@@ -90,33 +95,22 @@ enum QASnapshots {
         let marker = "captured \(shots.filter(\.ok).count)/\(shots.count) snapshots at \(Date())\n"
             + names.joined(separator: "\n") + "\n"
         try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"), atomically: true, encoding: .utf8)
+
+        // Self-judge the pictures: AUDIT.json (nonBlank / canvasFlat / baseline
+        // diff + heat-maps). The UI-test gate asserts failures == [].
+        QAAudit.run(snapshotsDir: dir,
+                    baselinesDir: qaDir.appendingPathComponent("baselines"))
     }
 
+    /// ONE render path: host the view offscreen in an `NSHostingView` and cache
+    /// its layer to a bitmap. Round-1 evidence (see qa history): plain
+    /// `ImageRenderer` silently produced blank/placeholder PNGs for everything
+    /// wrapping AppKit or lazy/scroll containers — Settings was a flat panel,
+    /// Today pure white, the live transcript empty, TextField/Menu drew yellow
+    /// "unsupported" boxes. Hosting gives every view a real AppKit context, so
+    /// scroll views populate and controls draw. Slightly heavier per shot;
+    /// correctness wins.
     private static func snap<V: View>(_ view: V, _ name: String, _ desc: String, _ size: CGSize, in dir: URL) {
-        let start = Date()
-        let renderer = ImageRenderer(
-            content: view
-                .frame(width: size.width, height: size.height)
-                .preferredColorScheme(.dark)
-                .tint(DS.Palette.accent)
-        )
-        renderer.scale = 2
-        var ok = false
-        if let img = renderer.nsImage,
-           let tiff = img.tiffRepresentation,
-           let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]) {
-            ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
-        }
-        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
-                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
-    }
-
-    /// Render a view that ImageRenderer can't (HSplitView/VSplitView and other
-    /// AppKit-backed content) by hosting it offscreen in an NSHostingView and
-    /// caching its layer to a bitmap. Heavier than ImageRenderer but it actually
-    /// draws split views, so the live Code tab gets a real picture.
-    private static func snapHosted<V: View>(_ view: V, _ name: String, _ desc: String, _ size: CGSize, in dir: URL) {
         let start = Date()
         let host = NSHostingView(rootView:
             view.frame(width: size.width, height: size.height)
@@ -258,7 +252,9 @@ private struct ChatSampleGallery: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             gallerySection("Messages — rhythm, blocks, document flow") {
-                LazyVStack(spacing: 10) {
+                // Plain VStack on purpose: round-1 evidence showed a Lazy stack
+                // misplacing a sample row below later sections in static renders.
+                VStack(spacing: 10) {
                     ForEach(samples) { msg in MessageBubble(message: msg) }
                 }
             }
@@ -278,7 +274,9 @@ private struct ChatSampleGallery: View {
             }
         }
         .padding(28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Pin to the TOP of the fixed snapshot frame — round 1 centered the
+        // content vertically, wasting a third of the picture as dead space.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.Palette.codeSurface)
     }
 

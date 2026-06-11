@@ -93,12 +93,27 @@ nonisolated final class ChatTabUITests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 3), "View menu should offer Capture QA Snapshots")
         item.click()
 
-        // Rendering ~9 surfaces takes a moment; poll for the marker file.
-        let deadline = Date().addingTimeInterval(20)
+        // Rendering ~13 surfaces takes a moment; poll for the marker file.
+        let deadline = Date().addingTimeInterval(25)
         while Date() < deadline, !FileManager.default.fileExists(atPath: marker.path) {
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path),
                       "Snapshot capture should write qa/snapshots/chat_samples.png")
+
+        // The capture self-judges (QAAudit → AUDIT.json). A visual regression —
+        // blank render, canvas losing the flat grey — fails THIS test, i.e.
+        // fails the gate, exactly like a broken unit test would.
+        let auditURL = snapshotsDir.appendingPathComponent("AUDIT.json")
+        let auditDeadline = Date().addingTimeInterval(10)
+        while Date() < auditDeadline, !FileManager.default.fileExists(atPath: auditURL.path) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        guard let data = try? Data(contentsOf: auditURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let failures = json["failures"] as? [String] else {
+            XCTFail("AUDIT.json missing or unreadable after capture"); return
+        }
+        XCTAssertTrue(failures.isEmpty, "Visual audit failures: \(failures.joined(separator: ", "))")
     }
 }
