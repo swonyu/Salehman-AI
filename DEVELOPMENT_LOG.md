@@ -1440,3 +1440,17 @@ a QA-forced user-row hover sample so the two-button pill is photographed + basel
 (extractForEdit), `Tools/QASnapshots.swift` (gallery sample; QA lane re-claimed — Chat C released
 it); bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — Chat C: tabs polish (owner-directed "polish all tabs except code/chat", ultracode/xhigh, no workflows)
+**Files:** `Views/MarketsView.swift` (Chat A lane, owner-auth), `Views/AgentsView.swift` (Chat B lane, owner-auth),
+`Tools/QASnapshots.swift`. Commits `4d3deb6`, `2962e62`.
+**What & why:** Closed the loop with the QA I built — it flagged Markets badge text at ~1.9:1 (white on the LIGHT
+successSoft/warningSoft buy/hold badges), so I fixed it: `recTextColor` = dark ink on the light buy/hold badges,
+white kept on the dark-red sell badge. **Measured 1.9→2.7:1; verified readable by eye.** Heatmap tiles (white on
+saturated green/red) got a legibility shadow + are now CAPTURED (`markets_heatmap`, via a new `MarketsView(qaSection:)`
+init) so they're verifiable — advisory textContrast honestly notes the brightest tiles at ~2.3:1 (didn't darken the
+heat colours — that encodes magnitude). Agents: direct-command field gains the unified hairline + a11y label.
+**Verified by marker:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **` (re-ran past one flaky CodeView type-checker
+timeout — Chat B's WIP, not mine). Notes/Knowledge re-checked: already clean (textContrast 3.3:1, no failures).
+TodayView left alone (it's your uncommitted off-main-refresh WIP).
+**→ Continuing into a 3h marathon (owner): heavy refine + polish + test + new FEATURES on these tabs.**
