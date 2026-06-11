@@ -26,6 +26,7 @@ struct CommandPalette: View {
                 app.selectedTab = .chat; app.newChatRequested = true },
             .init(title: "Go to Today", subtitle: "Your home dashboard at a glance", icon: "sun.max.fill") { app.selectedTab = .today },
             .init(title: "Go to Chat", subtitle: "", icon: "bubble.left.and.bubble.right.fill") { app.selectedTab = .chat },
+            .init(title: "Go to Code", subtitle: "Agentic coding workspace", icon: "chevron.left.forwardslash.chevron.right") { app.selectedTab = .code },
             .init(title: "Go to Agents", subtitle: "Your specialist agent team", icon: "person.3.fill") { app.selectedTab = .agents },
             .init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets },
             .init(title: "Go to Notes", subtitle: "Your notes & tasks scratchpad", icon: "checklist") { app.selectedTab = .scratchpad },

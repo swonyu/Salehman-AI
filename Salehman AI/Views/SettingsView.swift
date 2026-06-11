@@ -138,7 +138,7 @@ struct SettingsView: View {
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
                         toggle("Salehman leads",
-                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. Skipped automatically when Salehman is already the picked brain, or when Salehman isn't reachable (the draft answer stands).",
+                               "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
                                "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
@@ -146,6 +146,7 @@ struct SettingsView: View {
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
                                "forward.end.alt.fill", $settings.autoContinue)
+                        effortRow
                     }
 
                     section("Power & Privacy", "Two opposite extremes — only one can be on at a time.") {
@@ -342,7 +343,6 @@ struct SettingsView: View {
 
                     section("Capabilities", nil) {
                         toggle("Web access", "Search & read the web", "globe", $settings.webAccess)
-                        toggle("Local coding model", "Use the local qwen2.5-coder model for code", "chevron.left.forwardslash.chevron.right", $settings.useCodeModel)
                         toggle("Image vision", "Understand images with qwen2.5vl", "eye", $settings.useVision)
                         toggle("Autonomous Mode",
                                "Agents can chain tasks, self-correct, and continue working with minimal input",
@@ -1211,6 +1211,37 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
             }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),
+    /// so its call count is `approxRefineCalls`, not `approxModelCalls`.
+    private var effortCallsHint: String {
+        let e = settings.salehmanEffort
+        let n = settings.brainPreference == .salehman ? e.approxRefineCalls : e.approxModelCalls
+        let calls = n == 0 ? "no extra calls" : "~\(n) extra model call\(n == 1 ? "" : "s")"
+        return "\(e.subtitle) · \(calls)/reply"
+    }
+
+    /// Effort — how hard Salehman thinks before answering (self-critique rounds
+    /// + candidate fan-out/judge). Higher = better answers, more model calls.
+    private var effortRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Effort").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(effortCallsHint)
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("Effort", selection: $settings.salehmanEffort) {
+                ForEach(Effort.allCases) { e in
+                    Text(e.displayName).tag(e)
+                }
+            }
+            .labelsHidden().pickerStyle(.menu).frame(width: 150)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }

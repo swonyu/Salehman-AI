@@ -1,22 +1,15 @@
 import Foundation
 
-/// Abstraction for a JSON-backed store — lets tests inject an in-memory fake
-/// instead of hitting disk, without changing any production call sites.
-protocol JSONStore<Item> {
-    associatedtype Item: Codable
-    func load(defaultValue: Item) -> Item
-    func save(_ value: Item) throws
-}
-
 /// Generic, injectable JSON file store — one place for the "encode → atomic write
 /// / decode-or-default" boilerplate the per-feature stores used to repeat:
 /// - atomic writes
-/// - injectable base directory (defaults to Application Support/SalehmanAI)
+/// - injectable base directory (defaults to Application Support/SalehmanAI;
+///   tests redirect persistence via this seam — see PersistenceRoundTripTests)
 /// - decode-or-default on a missing/corrupt file
 ///
 /// `nonisolated` so off-main, lock-guarded callers (e.g. `MemoryStore`) can use it
 /// directly — it holds only value state (a URL + FileManager) and does pure file I/O.
-nonisolated final class JSONFileStore<T: Codable>: JSONStore {
+nonisolated final class JSONFileStore<T: Codable> {
     private let fileURL: URL
     private let fileManager = FileManager.default
 
@@ -38,12 +31,5 @@ nonisolated final class JSONFileStore<T: Codable>: JSONStore {
     nonisolated func save(_ value: T) throws {
         let data = try JSONEncoder().encode(value)
         try data.write(to: fileURL, options: .atomic)
-    }
-
-    /// Remove the backing file if it exists.
-    func delete() throws {
-        if fileManager.fileExists(atPath: fileURL.path) {
-            try fileManager.removeItem(at: fileURL)
-        }
     }
 }

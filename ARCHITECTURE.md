@@ -8,7 +8,7 @@
 
 **Core Architecture**: Swift 6 with strict concurrency (actors, MainActor isolation), SwiftUI, Foundation frameworks (Speech, Vision, PDFKit, ProcessInfo). Minimum deployment: macOS 15.0 (Sequoia).
 
-**Key Innovation**: The app routes user messages through multiple "brains" (Apple Intelligence, Ollama local, or cloud APIs) with an intelligent fallback hierarchy. For complex tasks, it spawns a 15-agent team that runs in phases, with memory-aware concurrency caps to avoid freezing low-end hardware.
+**Key Innovation**: The app routes user messages through multiple "brains" (the Salehman cloud-first chain — the default, local Ollama/MLX, local OpenAI-compatible servers, or cloud APIs) with an intelligent fallback hierarchy. (Apple Intelligence was removed 2026-06-08.) For complex tasks, it spawns a 15-agent team that runs in phases, with memory-aware concurrency caps to avoid freezing low-end hardware.
 
 ---
 
@@ -22,59 +22,75 @@ Salehman AI/
 │   └── AppSettings.swift             # Preferences singleton (UserDefaults)
 │
 ├── Views/
-│   ├── RootView.swift                # Tab container (Chat / Agents / Markets)
-│   ├── ContentView.swift             # Chat UI (1108 lines; core UX)
+│   ├── RootView.swift                # Tab container (Today/Chat/Code/Agents/Markets/Notes/Knowledge)
+│   ├── ContentView.swift             # Chat UI (presentation; pipeline in ChatViewModel)
+│   ├── ChatViewModel.swift           # Conversation + send/stop/regenerate pipeline
 │   ├── AgentsView.swift              # Autonomous mode + agent progress
-│   ├── SettingsView.swift            # Brain picker, API keys, preferences
+│   ├── SettingsView.swift            # Brain grid, API keys, preferences
 │   ├── MarketsView.swift             # Stock monitoring
+│   ├── CodeView.swift                # Agentic coding workspace (⌘3)
 │   ├── LiveTranscriptionView.swift   # Real-time meeting transcription
 │   └── ...other views
 │
 ├── LLM/ (Brain layer)
-│   ├── LocalLLM.swift               # Brain routing logic (896 lines)
+│   ├── LocalLLM.swift               # Brain routing + the model tool loop
 │   ├── BrainStatus.swift            # Live brain availability monitor
 │   ├── OpenAICompatibleClient.swift # Generic HTTP client for cloud brains
-│   ├── CloudBrains.swift            # Provider configs (Groq, Mistral, etc.)
+│   ├── CloudBrains.swift            # Provider configs (Groq, Mistral, Cerebras, OpenRouter, DeepSeek, NVIDIA)
 │   ├── GrokClient.swift             # xAI Grok
 │   ├── GeminiClient.swift           # Google Gemini
-│   ├── GroqClient.swift             # Groq
-│   ├── MistralClient.swift          # Mistral
-│   ├── CerebrasClient.swift         # Cerebras
 │   ├── AnthropicClient.swift        # Anthropic Claude
 │   ├── OpenAIClient.swift           # OpenAI / Codex
 │   ├── CopilotClient.swift          # GitHub Copilot
 │   ├── OllamaClient.swift           # Local Ollama server
+│   ├── SalehmanEngine.swift         # .salehman default brain (cloud-first chain)
+│   ├── SalehmanLeader.swift         # Salehman-voice finalizer for pipeline output
+│   ├── SalehmanPersona.swift        # Persona / system prompt
+│   ├── MLXSalehmanEngine.swift      # Local MLX (Apple-Silicon) inference
+│   ├── UnslothStudio.swift          # Local OpenAI-compat server brain
+│   ├── VLLM.swift                   # Local vLLM server brain
+│   ├── BrainAdapter.swift           # Adapter protocol (+ Ollama/Anthropic adapters)
 │   ├── MemoryManager.swift          # RAM/thermal awareness (actor)
 │   └── KeychainStore.swift          # Secure API key storage
 │
+├── Intelligence/
+│   ├── Effort.swift                 # Effort ladder (candidates × critique × judge) — drives SalehmanLeader.finalize
+│   └── SelfCritique.swift           # Refine loop (used by Effort)
+│
 ├── Agents/ (Multi-agent orchestration)
-│   ├── AgentPipeline.swift          # Main coordination (300+ lines)
+│   ├── AgentPipeline.swift          # Main coordination
 │   ├── AgentDefinitions.swift       # The 15-agent team spec
 │   ├── AgentRegistry.swift          # Handler lookup & lifecycle
 │   ├── MissionMemory.swift          # Accumulates outputs + results
 │   ├── MissionPlan.swift            # Problem statement
 │   ├── Orchestrator.swift           # Autonomous mode
-│   └── SelfImprove.swift            # Self-patching builds
+│   └── SelfImprove.swift            # Self-patching primitives (parse/patch/backup)
 │
 ├── Tools/ (Callable by agents, gated by policy)
-│   ├── ToolPolicy.swift             # What tools are enabled (security)
+│   ├── ToolPolicy.swift             # External-tools gate + command-risk vocabulary
 │   ├── CommandApprovalCenter.swift  # User approval gate for shell
 │   ├── ShellTool.swift              # Terminal command execution
-│   ├── MacControlTools.swift        # Mouse/keyboard via Accessibility
 │   ├── WebTools.swift               # DuckDuckGo search + URL fetch
 │   ├── VisionAnalyzer.swift         # On-device image understanding
-│   ├── AnalyzeImageTool.swift       # Wrapper for agents
-│   ├── TranscribeMediaTool.swift    # Audio/video → text
-│   ├── StockSageTool.swift          # Market data (sample)
-│   ├── StockAnalysisTool.swift      # Offline TASI/Saudi analysis
-│   ├── ImageGen.swift               # On-device Image Playground
-│   ├── CodeTool.swift               # Delegate to Ollama qwen-coder
-│   └── ...others
+│   ├── RepoPacker.swift             # pack_repository whole-codebase digest
+│   ├── GrokWatchTool.swift          # read_grok_session bridge-log snapshot
+│   └── StockSageMini.swift          # Canonical TASI disclaimer text
+│
+├── Knowledge/
+│   ├── KnowledgeStore.swift         # Private document vault (chunk + embedding search)
+│   └── ExternalToolsKnowledge.swift # Curated external-tools knowledge
 │
 ├── Persistence/
 │   ├── Attachments.swift            # File/image/PDF/audio attachment handling
 │   ├── MemoryStore.swift            # Long-term facts (embeddings-based)
+│   ├── ScratchpadStore.swift        # Notes + tasks
+│   ├── JSONFileStore.swift          # Generic atomic JSON store (injectable base dir)
+│   ├── TrainingExporter.swift       # Chat → fine-tune dataset export
 │   └── PromptLibrary.swift          # Saved prompt templates
+│
+├── Voice/
+│   ├── VoiceSession.swift           # Hands-free dictate→answer→speak loop
+│   └── VoiceTurn.swift
 │
 ├── Media/
 │   ├── Transcriber.swift            # Audio/video transcription (on-device)
@@ -88,8 +104,9 @@ Salehman AI/
 │   ├── StockSageStore.swift
 │   ├── StockSageBriefingService.swift
 │   ├── StockSageSignalEngine.swift
-│   ├── StockSageScreenAnalysis.swift
-│   └── ...others
+│   ├── StockSageScreenAnalysis.swift # Built but not yet wired to a chat tool
+│   ├── StockSagePortfolio.swift
+│   └── StockSageMonitor.swift
 │
 └── DesignSystem/
     └── DesignSystem.swift           # Unified theme (colors, motion)
@@ -222,20 +239,27 @@ Salehman AI/
 
 | Preference | Primary | Fallback | Scope | Cost |
 |------------|---------|----------|-------|------|
-| `.auto` | Apple Intelligence | Ollama qwen-coder | Local only | $0 |
-| `.apple` | Apple Intelligence | Ollama qwen-coder | Local only | $0 |
-| `.ollama` | Ollama qwen-coder | Apple Intelligence | Local only | $0 |
-| `.freeAuto` | Free clouds (race) | Ollama → Apple Intl | Hybrid | $0 |
+| `.salehman` **(default)** | Cloud-first chain (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) | Local floor (MLX, Ollama) | Hybrid | $0 unless paid backstop reached |
+| `.auto` | Local tier (Ollama/MLX) | None | Local only | $0 |
+| `.ollama` | Ollama qwen-coder | None | Local only | $0 |
+| `.freeAuto` | Free clouds (race) | Local tier (sequential) | Hybrid | $0 |
+| `.freeCoding` | Free coding-strong clouds | Local tier | Hybrid | $0 |
+| `.cloudCoding` | Coding-strong clouds (incl. paid) | None | Cloud only | Mixed |
+| `.unslothStudio` | Local OpenAI-compat server (Unsloth Studio) | None | Local only | $0 |
+| `.vllm` | Local vLLM server | None | Local only | $0 |
 | `.claudeHaiku` | Claude Haiku (API key required) | None | Cloud only | Pay-per-token |
 | `.grok` | xAI Grok (API key required) | None | Cloud only | Pay-per-token |
 | `.gemini` | Google Gemini (free tier available) | None | Cloud only | Free/$$ |
 | `.groq` | Groq (free tier available) | None | Cloud only | Free/$$ |
 | `.mistral` | Mistral (free tier available) | None | Cloud only | Free/$$ |
 | `.cerebras` | Cerebras (free tier available) | None | Cloud only | Free/$$ |
+| `.deepSeek` | DeepSeek (API key, very cheap) | None | Cloud only | Pay-per-token |
 | `.codex` | OpenAI GPT (API key required) | None | Cloud only | Pay-per-token |
 | `.copilot` | GitHub Copilot (subscription) | None | Cloud only | Subscription |
 | `.openRouter` | OpenRouter aggregator (free models available) | None | Cloud only | Free/$$ |
 | `.ensemble` | All configured brains (parallel) | None | Hybrid | Highest cost (all APIs hit) |
+
+*(Exact resolution lives in `LocalLLM.currentBrain()`; `.apple` / Apple Intelligence was removed 2026-06-08.)*
 
 ---
 

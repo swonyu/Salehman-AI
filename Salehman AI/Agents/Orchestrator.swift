@@ -10,11 +10,6 @@ import Foundation
 ///      final answer without losing any facts or results.
 enum Orchestrator {
 
-    static func run(mission: String) async {
-        let result = await runAndReturnResult(mission: mission)
-        print(result.output)
-    }
-
     static func runAndReturnResult(mission: String) async -> (output: String, successRating: Double) {
         let answer = await AgentPipeline.run(mission: mission)
         let rating = AgentPipeline.lastOutcome?.successRating ?? (LocalLLM.isAvailable ? 1.0 : 0.0)

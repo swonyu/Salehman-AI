@@ -4,6 +4,8 @@
 
 **Status note:** the working tree was red at review time (the other session's in-progress Unsloth Studio). Fixes below are **proposed, not applied**; they'll be applied once the tree is green and per the lane rules in `COORDINATION.md`. Several findings extend the 2026-06-06 privacy/a11y audit logged in `DEVELOPMENT_LOG.md`.
 
+> **HISTORICAL (2026-06-06 snapshot — do not implement from this document without re-checking).** The Apple-Intelligence / FoundationModels tool layer described in §2 C2 and §5 (`SelfImproveTool`, `RememberFactTool`, scratchpad/knowledge FM tools, `StockSageBriefingTool`, `LanguageModelSession`) was **removed on 2026-06-08**; tools now run solely through `LocalLLM`'s Ollama/OpenAI-compatible tool loop. The 2026-06-11 cleanup also removed several items this review references (FM-era tool files, the unreachable `SelfImprove` loop, `instructionsToolMenu`). Treat this file as a point-in-time review record.
+
 ---
 
 ## Executive summary

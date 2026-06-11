@@ -24,12 +24,15 @@
 ## 1. What this app is
 
 **Salehman AI** is a native **macOS SwiftUI** desktop app: a multi-brain AI chat
-assistant. It can answer from several "brains" — Apple Intelligence (on-device),
-a local **Ollama** model (`qwen2.5-coder:7b`), or cloud providers (Claude, xAI
-Grok, Google Gemini, Groq, Mistral, Cerebras, OpenAI/Codex, GitHub Copilot,
-OpenRouter). It has a multi-agent pipeline, on-device tools (shell, mouse/keyboard
-control, vision, transcription, web), live audio transcription, a StockSage
-market-analysis subsystem, and persistent chat + long-term memory.
+assistant. It can answer from several "brains" — the **Salehman** chain (default:
+cloud-first NVIDIA-hosted DeepSeek → free frontier tiers → paid backstop, with a
+local MLX/Ollama floor), a local **Ollama** model (`qwen2.5-coder:7b`), local
+OpenAI-compatible servers (**Unsloth Studio**, **vLLM**), or cloud providers
+(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, DeepSeek, NVIDIA NIM,
+OpenAI/Codex, GitHub Copilot, OpenRouter). (Apple Intelligence was removed
+2026-06-08.) It has a multi-agent pipeline, on-device tools (shell, vision,
+transcription, web), live audio transcription, a StockSage market-analysis
+subsystem, and persistent chat + long-term memory.
 
 - **Language / runtime:** Swift 6 **language mode** (`SWIFT_VERSION = 6.0`, enforced as of 2026-06-09 — data races are compile errors, not warnings), `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target and, mirrored, the test targets. Off-main work is explicitly `nonisolated`/`nonisolated(unsafe)`.
   Pure utility statics are marked `nonisolated`.
@@ -67,18 +70,22 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `LLM/` — the brain layer (Chat B's lane)
 | File | Purpose |
 |---|---|
-| `LocalLLM.swift` | **The brain router** (896 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel) and `generateFreeAuto` (free parallel-race + local backstop). Apple Intelligence (Foundation Models) path lives here. |
+| `LocalLLM.swift` | **The brain router** (~1500 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
-| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/OpenAI/OpenRouter are thin configs of this. |
-| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient` (endpoint + model lists + Keychain account). |
+| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
+| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
+| `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain**: cloud-first provider chain + persona/system-prompt; `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
+| `MLXSalehmanEngine.swift` | Local MLX (Apple-Silicon) inference path for the fine-tuned Salehman weights. |
+| `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio `:8888`/`:8000`; `vllm serve` `:8000/v1`) as pinnable brains. |
+| `BrainAdapter.swift` / `OllamaBrainAdapter.swift` / `AnthropicBrainAdapter.swift` | `BrainAdapter` protocol + adapters — start of the data-driven brain registry (CODEBASE_REVIEW §3 R1). |
 | `GrokClient.swift` | xAI Grok (`api.x.ai`) — OpenAI-ish chat + SSE. |
 | `GeminiClient.swift` | Google Gemini (non-OpenAI shape: contents array, `?key=` param). |
 | `AnthropicClient.swift` | Claude Haiku via Anthropic Messages API. |
 | `OpenAIClient.swift` | The "Codex" brain → OpenAI chat completions. |
 | `CopilotClient.swift` | GitHub Copilot (OAuth device-flow, no API key). |
 | `KeychainStore.swift` | `SecItem*` Keychain wrapper. `Account` enum = one slot per provider. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. |
-| `MemoryManager.swift` | Actor: subscribes to memory-pressure + thermal notifications; `concurrencyLimit()` + `shouldRefuseHeavyModel()`; auto-evicts Ollama under pressure. |
-| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`). |
+| `MemoryManager.swift` | Actor: subscribes to memory-pressure + thermal notifications; instance `concurrencyLimit()` + pure static policy funcs (`concurrencyLimit(pressure:thermal:physicalGB:)`, `shouldRefuseHeavyModel(...)`); auto-evicts Ollama under pressure. |
+| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`/`symbol`). |
 
 ### `Agents/` — multi-agent pipeline (Chat A's lane)
 | File | Purpose |
@@ -88,34 +95,35 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `AgentRegistry.swift` | Per-agent execution input (Sendable) + handler registry. |
 | `Orchestrator.swift` | Top-level orchestration; reads run outcome for rating. |
 | `MissionMemory.swift` / `MissionPlan.swift` | Outcome memory + lightweight plan structs. |
-| `SelfImprove.swift` | Build→parse compiler errors→ask local model for a patch→apply with backup→rebuild. **Project-escape guarded** (`isInsideProject`, symlink-resolving). |
+| `SelfImprove.swift` | Self-patching **primitives**: compiler-error parsing (`parseErrors`), patch application with timestamped backups (`applyPatch`/`backup`), **project-escape guarded** (`isInsideProject`, symlink-resolving). The build→fix→rebuild loop that drove them went with the FM tool layer (2026-06-08); primitives are test-covered and kept. |
 
 ### `Tools/` — what the assistant can DO (security-sensitive)
 | File | Purpose |
 |---|---|
-| `ToolPolicy.swift` | **Gate:** whether external/non-local tools are allowed; the active tool set + instructions menu. |
+| `ToolPolicy.swift` | **Gate:** whether external/non-local tools are allowed (`isExternalAllowed`, `webToolsDisabledReason`) + the `CommandRisk` blocked/risky command vocabulary. |
 | `CommandApprovalCenter.swift` | Bridges background tool exec → UI approval; `confirmationEnabled` toggle. |
 | `ShellTool.swift` | Runs shell commands on the Mac (gated by approval). |
-| `MacControlTools.swift` | Mouse/keyboard control via CGEvent (needs Accessibility permission). |
 | `WebTools.swift` | DuckDuckGo search + page fetch. **SSRF-guarded** (`ssrfRejectionReason` blocks non-http(s) + private/loopback/link-local hosts). |
-| `VisionAnalyzer.swift` / `AnalyzeImageTool.swift` | On-device image understanding (Apple Vision). |
-| `TranscribeMediaTool.swift` | On-device audio/video → text. |
-| `CodeTool.swift` | Delegate coding to a local qwen2.5-coder model. |
-| `ImageGen.swift` | On-device image generation (Image Playground). |
-| `StockAnalysisTool.swift` / `StockSageMini.swift` / `StockSageTool.swift` | Saudi/TASI stock analysis tools. |
+| `VisionAnalyzer.swift` | On-device image understanding (Apple Vision: scene/text/barcodes). |
+| `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
+| `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
+| `StockSageMini.swift` | Canonical Saudi/TASI educational disclaimer (rendered by MarketsView). |
+
+*(The actual model-callable tools are defined inline in `LocalLLM`'s tool loop — see §5. The FM-era per-tool files — AnalyzeImageTool, TranscribeMediaTool, CodeTool, StockAnalysisTool, ImageGen, MacControlTools — were removed with the Apple-Intelligence layer / 2026-06-11 cleanup.)*
 
 ### `Views/` — UI (ContentView + SettingsView = Chat B's lane)
 | File | Purpose |
 |---|---|
 | `ContentView.swift` | The chat UI: message list, composer, streaming bubbles, `ChatStore` (persistence), approval card. Presentation/input/focus/search only — the conversation + send pipeline live in `ChatViewModel`. |
 | `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
-| `SettingsView.swift` | Settings panel (1170 lines): Apple-Intelligence toggle, **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, performance/voice/privacy/status sections. |
-| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**6 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
+| `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. |
+| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |
-| `AgentsView.swift` | **Agents tab (⌘3)**: live agent status + Autonomous Mode loop. |
-| `MarketsView.swift` / `MarketsStub.swift` | **Markets tab (⌘4)** shell + placeholder store (Chat A). |
-| `ScratchpadView.swift` | **Notes tab (⌘5)** — notes + tasks UI over `ScratchpadStore`; same data the `capture_note`/`add_task`/… tools write. |
-| `KnowledgeView.swift` | **Knowledge tab (⌘6)** — private document Q&A: add files (button/drag-drop) or paste text, grounded answers w/ sources over `KnowledgeStore`; on-device-only generation; chat reaches it via `search_documents`. |
+| `CodeView.swift` / `CodeSyntaxView.swift` / `FileTree.swift` | **Code tab (⌘3)** — agentic coding workspace (file tree + syntax-highlighted editor). |
+| `AgentsView.swift` | **Agents tab (⌘4)**: live agent status + Autonomous Mode loop. |
+| `MarketsView.swift` / `MarketsStub.swift` | **Markets tab (⌘5)** shell + placeholder store (Chat A). |
+| `ScratchpadView.swift` | **Notes tab (⌘6)** — notes + tasks UI over `ScratchpadStore`; same data the `capture_note`/`add_task`/… tools write. |
+| `KnowledgeView.swift` | **Knowledge tab (⌘7)** — private document Q&A: add files (button/drag-drop) or paste text, grounded answers w/ sources over `KnowledgeStore`; on-device-only generation; chat reaches it via `search_documents`. |
 | `BottomShortcutBar.swift` | Always-visible footer of clickable shortcut hints (⌘K · ⌘N · ⌘J · ⌘/ · ⌘,); flips the same `AppState` flags as the menu bar. |
 | `VoiceModeView.swift` | **Hands-free Voice (⌘J)** — full-screen dictate→answer→speak loop (`Voice/VoiceSession`); "Save to Notes" writes the transcript to `ScratchpadStore`. |
 | `OnboardingView.swift` / `CommandPalette.swift` (⌘K) / `ShortcutsView.swift` (⌘/) | First-run welcome; searchable command palette; keyboard-shortcuts cheat sheet. |
@@ -125,10 +133,11 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 
 ### `Persistence/`, `Media/`, `StockSage/`, `Knowledge/`, `Voice/`, `DesignSystem/`
 - **Persistence:** `Attachments.swift` (attached items + screen capture), `MemoryStore.swift` (long-term user facts), `PromptLibrary.swift` (reusable prompts), `ScratchpadStore.swift` (notes + tasks; `@MainActor ObservableObject`, JSON in App Support).
-- **Knowledge:** `KnowledgeStore.swift` (`@unchecked Sendable` doc vault — chunk + keyword-primary/`NLEmbedding`-boosted search, JSON-persisted) + `SearchDocumentsTool.swift` (the `search_documents` FM tool).
+- **Knowledge:** `KnowledgeStore.swift` (`@unchecked Sendable` doc vault — chunk + keyword-primary/`NLEmbedding`-boosted search, JSON-persisted; the `search_documents` tool is implemented inline in `LocalLLM.runLocalTool`) + `ExternalToolsKnowledge.swift`.
 - **Voice:** `VoiceSession.swift` / `VoiceTurn.swift` — hands-free dictate→LocalLLM→TTS loop driving `VoiceModeView`.
 - **Media:** `LiveTranscriber.swift` (system-audio live transcription), `MediaTranscribe.swift`/`Transcriber.swift` (file transcription), `SpeechIn.swift` (mic dictation), `SpeechOut.swift` (TTS).
-- **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/BriefingTool` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped).
+- **StockSage:** `StockSageModels/Store/SignalEngine/BriefingService/ScreenAnalysis/Monitor/Portfolio` — namespaced market subsystem (in-memory store, pure signal engine, real LocalLLM briefings + real vision; theater dropped). `ScreenAnalysis` is built-but-unwired (pending a chat-tool hookup decision).
+- **Intelligence:** `Effort.swift` (effort ladder: candidates × self-critique rounds × judge — **wired 2026-06-11 into `SalehmanLeader.finalize`**: leader pass runs at the configured effort; pinned `.salehman` drafts get critique-only refinement (`refineRounds`, gated on the Leader toggle); coding modes excluded; default `.instant` = exact pre-Effort call count, higher effort opt-in) + `SelfCritique.swift` (refine loop, used by Effort).
 - **DesignSystem:** `DesignSystem.swift` — `DS.*` tokens, motion curves (`DS.Motion.snappy/smooth/…`), `Bezel`/`Eyebrow`/`SuggestionCard`.
 
 ---
@@ -136,10 +145,12 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ## 3. The brain system (the heart of the app)
 
 Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned: `.auto`,
-  `.freeAuto`, `.apple`, `.ollama`, `.claudeHaiku`, `.grok`, `.gemini`, `.groq`,
-  `.mistral`, `.cerebras`, `.codex`, `.copilot`, `.openRouter`, `.ensemble`.
-  Persisted under `Keys.brainPreference`.
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
+  `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
+  `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
+  `.openRouter`, `.deepSeek`, `.ensemble`, **`.salehman` (the default)**,
+  `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
   live availability), used for the header label/dot.
 
@@ -151,7 +162,7 @@ Two enums drive everything:
   then the single-brain `*Allowed` gates (`claudeAllowed`, `grokAllowed`, …).
 - ⚠️ **`generate` is NOT on-device** — it routes to the pinned (possibly paid cloud)
   brain. Features that PROMISE privacy must use **`generateOnDevice(_:maxTokens:) -> String?`**
-  (local tier only: Apple Intelligence → Ollama; `nil` if neither). The Knowledge
+  (local tier only; `nil` if no local brain is reachable). The Knowledge
   vault uses it (added 2026-06-05 after an audit caught the leak — see DEVELOPMENT_LOG).
 - `AgentPipeline.run` short-circuits ensemble/freeAuto BEFORE spawning the agent
   team (those modes ask the raw prompt, not a 15-agent pipeline).
@@ -163,8 +174,8 @@ Two enums drive everything:
 - **Free · Auto (`.freeAuto`)** — `generateFreeAuto`: races the *configured free*
   cloud brains (Groq/Cerebras/Gemini/Mistral/OpenRouter) in parallel, returns the
   **first usable** answer (a 429/error/empty reply loses the race via
-  `isUsableFreeAnswer`); if all free cloud brains fail it falls back to LOCAL
-  (Apple → Ollama) **sequentially** (never concurrent — preserves the RAM
+  `isUsableFreeAnswer`); if all free cloud brains fail it falls back to the LOCAL
+  tier **sequentially** (never concurrent — preserves the RAM
   guardrail). Effectively never blocked. Never uses paid brains.
 
 ---
@@ -182,6 +193,8 @@ Two enums drive everything:
 | OpenAI / Codex | `OpenAIClient` | `api.openai.com/v1` | `openai-api-key` | **paid** (needs billing); `gpt-4o-mini` |
 | GitHub Copilot | `CopilotClient` | Copilot API | `copilot-github-token` | OAuth device-flow (subscription) |
 | OpenRouter | `OpenRouterClient` | `openrouter.ai/api/v1` | `openrouter-api-key` | **free `:free` models**; default `openai/gpt-oss-120b:free` |
+| DeepSeek | `DeepSeekClient` | `api.deepseek.com/v1` | `deepseek-api-key` | pay-as-you-go (very cheap); `deepseek-chat` / `deepseek-reasoner` |
+| NVIDIA NIM | `NvidiaClient` | `integrate.api.nvidia.com/v1` | `nvidia-api-key` | **free tier** — hosts real DeepSeek V4; default `deepseek-ai/deepseek-v4-flash` |
 
 ⚠️ **Cloud model IDs rotate.** Defaults are best-effort; verify against each
 provider's `GET /v1/models`. The app's `*ModelCurrent` accessors fall back to the
@@ -227,7 +240,8 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 **Grok Tab A (2026-06-06) added 8 new suites per CODEBASE_REVIEW.md §4 (start of coverage for highest-blast-radius logic):**
 - Direct (enabled, green): `KnowledgeRAGTests` (chunk/keyword/cosine/search), `ShellSecurityTests` (isBlocked + run harness + looksRisky limits), `WebToolsOfflineGateTests` (FM tool gates + decodeDDG/stripHTML), `SelfImprovePatchTests` (applyPatch/parseErrors/isInside/backup — locks the double-patch-original fix).
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
-- Refactor-dependent (disabled with header, per COORDINATION): `BrainRoutingDispatchTests`, `PersistenceRoundTripTests`, `SettingsBrainReadyTests` — wait for Tab B (BrainAdapter registry + JSONFileStore + brainReady extract).
+- `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
+- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests`, `SettingsBrainReadyTests` — wait for the BrainAdapter registry + brainReady extract.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
@@ -238,10 +252,10 @@ Tests run **in parallel** — never have two tests mutate the same global (`User
 **Fixed & shipped:** WebTools SSRF guard; SelfImprove symlink escape; ensemble
 "Not working" false-negative; stale Groq/Cerebras/OpenRouter model IDs.
 
-**Open / flagged for the other session (Agents lane):**
-- `AnalyzeImageTool` / `TranscribeMediaTool` follow symlinks (arbitrary file read).
-- `AgentPipeline.lastOutcome` is `nonisolated(unsafe)` → data race with `Orchestrator`.
-- `AgentRegistry` first-run registration race (`nonisolated(unsafe)` + unguarded once-init).
+**Since resolved (verified 2026-06-11):**
+- `AnalyzeImageTool` / `TranscribeMediaTool` symlink follow — moot: both files were removed with the FM tool layer.
+- `AgentPipeline.lastOutcome` data race — now `NSLock`-guarded (`_lastOutcome` + `lastOutcomeLock`).
+- `AgentRegistry` first-run registration race — now a thread-safe `registerToken` static-let once-init.
 
 **Recommendations (not yet applied):**
 - `CommandApprovalCenter.alwaysAllow()` disables the shell gate in one click with
@@ -269,3 +283,10 @@ Tests run **in parallel** — never have two tests mutate the same global (`User
 ---
 
 _Keep this file current. Last refreshed: 2026-06-05._
+
+
+## 9. New Intelligence Layer Additions (2026-06-10)
+
+### Effort Control
+The Effort control in Salehman AI/Intelligence/Effort.swift provides runtime-adjustable reasoning depth, token budget, and computational effort for the intelligence layer. It enables the orchestrator (and agents) to scale effort per-task — low for quick factual answers, high for complex multi-step reasoning or self-critique. This is a core Phase 1 deliverable for quality-over-quantity intelligence.
+

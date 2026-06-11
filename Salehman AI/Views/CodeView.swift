@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import UniformTypeIdentifiers
 
 // MARK: - Diff model
 
@@ -202,6 +203,8 @@ struct CodeView: View {
     @State private var runningTask: Task<Void, Never>?
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
+    @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
+    @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -210,6 +213,7 @@ struct CodeView: View {
     @State private var searchIndex = 0
     @State private var scrollLine: Int? = nil         // drives CodeTextView scroll
     @FocusState private var findFocused: Bool         // ⌘F focuses the find-in-file field
+    @FocusState private var inputFocused: Bool        // ⌘L jumps to the message input
 
     /// Files matching the current filter (by relative path, case-insensitive).
     private var filteredFiles: [URL] {
@@ -265,6 +269,8 @@ struct CodeView: View {
                     .keyboardShortcut("f", modifiers: .command)
                 Button("") { if isRunning { stop() } }
                     .keyboardShortcut(".", modifiers: .command)
+                Button("") { inputFocused = true }
+                    .keyboardShortcut("l", modifiers: .command)
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -298,8 +304,11 @@ struct CodeView: View {
                 Spacer()
                 if ws.projectRoot != nil {
                     Button { reviewProject() } label: {
-                        Label("Review", systemImage: "sparkles.rectangle.stack")
-                            .font(.system(size: 12, weight: .semibold))
+                        Label("Review", systemImage: "sparkles")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(DS.Palette.accent.opacity(0.15), in: Capsule())
+                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
                     }
                     .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
@@ -314,10 +323,21 @@ struct CodeView: View {
             .padding(10)
 
             if let root = ws.projectRoot {
-                Text(root.lastPathComponent)
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                    .lineLimit(1).truncationMode(.middle)
-                    .padding(.horizontal, 10).padding(.bottom, 6)
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+                    Text(root.lastPathComponent)
+                        .font(.system(size: 11.5, weight: .bold)).foregroundStyle(.white)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    if !ws.files.isEmpty {
+                        Text("\(ws.files.count)")
+                            .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 10).padding(.bottom, 6)
             }
 
             Divider().overlay(DS.Palette.hairline)
@@ -382,12 +402,22 @@ struct CodeView: View {
     }
 
     private var emptyTreeHint: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 26)).foregroundStyle(.secondary)
+        VStack(spacing: 11) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 23, weight: .light))
+                .foregroundStyle(DS.Palette.accent.opacity(0.8))
             Text("Open a project folder\nto start coding")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button(action: ws.openFolder) {
+                Text("Open Folder")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 13).padding(.vertical, 6)
+                    .background(DS.Palette.accent.opacity(0.15), in: Capsule())
+                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+            }
+            .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -432,8 +462,22 @@ struct CodeView: View {
         VStack(spacing: 0) {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
-                HStack {
+                HStack(spacing: 12) {
+                    Text("\(messages.count) message\(messages.count == 1 ? "" : "s")")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
                     Spacer()
+                    Button {
+                        let md = messages
+                            .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
+                            .joined(separator: "\n\n---\n\n")
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(md, forType: .string)
+                    } label: {
+                        Label("Copy all", systemImage: "doc.on.doc").font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Copy the whole conversation as Markdown")
+                    .accessibilityLabel("Copy the whole conversation")
                     Button { messages.removeAll() } label: {
                         Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
                     }
@@ -480,33 +524,96 @@ struct CodeView: View {
         .background(Color.black.opacity(0.12))
     }
 
+    /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
+    private let welcomeExamples: [(icon: String, text: String)] = [
+        ("sparkles", "Review this project"),
+        ("ladybug", "Find & fix a bug"),
+        ("doc.text.magnifyingglass", "Explain a file"),
+    ]
+
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 14) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(DS.Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(DS.Palette.accent.opacity(0.12), in: Circle())
+                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 14)
             Text("Code with Salehman")
-                .font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
-            Text("Open a project folder, then ask me to build, fix, or explain code. I can run terminal commands and edit files (you approve each one), and you'll see the diffs here.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+            Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
+                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(welcomeExamples, id: \.text) { ex in
+                    Button { input = ex.text } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: ex.icon).font(.system(size: 10.5))
+                                .foregroundStyle(DS.Palette.accent)
+                            Text(ex.text).font(.system(size: 11.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.white.opacity(0.88))
+                }
+            }
+            .padding(.top, 6)
+            HStack(spacing: 16) {
+                shortcutHint("⌘O", "Open")
+                shortcutHint("⌘R", "Review")
+                shortcutHint("⌘L", "Ask")
+            }
+            .padding(.top, 10)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 46)
+    }
+
+    /// A small keyboard-shortcut chip (key + label) for the welcome footer.
+    @ViewBuilder
+    private func shortcutHint(_ key: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+        }
     }
 
     private var agentSteps: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(progress.steps) { step in
-                    HStack(spacing: 5) {
-                        stepIcon(step.status)
-                        Text(step.adapted ?? step.name)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.85))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(Color.white.opacity(0.05), in: Capsule())
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            // Progress header — "Working · done/total" (the Background-tasks feel).
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+                Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Spacer()
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(progress.steps) { step in
+                        HStack(spacing: 5) {
+                            stepIcon(step.status)
+                            Text(step.adapted ?? step.name)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(step.status == .running ? DS.Palette.accent.opacity(0.14) : Color.white.opacity(0.05), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 12).padding(.bottom, 8)
+            }
         }
         .background(.ultraThinMaterial)
     }
@@ -520,12 +627,21 @@ struct CodeView: View {
         }
     }
 
+    /// Sender avatar — Salehman gets an accent-tinted disc matching the welcome icon.
+    @ViewBuilder
+    private func senderAvatar(isUser: Bool) -> some View {
+        ZStack {
+            if !isUser { Circle().fill(DS.Palette.accent.opacity(0.13)).frame(width: 26, height: 26) }
+            Image(systemName: isUser ? "person.crop.circle.fill" : "sparkles")
+                .font(.system(size: isUser ? 17 : 13, weight: isUser ? .regular : .semibold))
+                .foregroundStyle(isUser ? Color.white.opacity(0.55) : DS.Palette.accent)
+        }
+        .frame(width: 26, height: 26)
+    }
+
     private func codeBubble(_ msg: ChatMessage) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: msg.isUser ? "person.crop.circle.fill" : "sparkles")
-                .font(.system(size: 14))
-                .foregroundStyle(msg.isUser ? Color.white.opacity(0.6) : DS.Palette.accent)
-                .frame(width: 20)
+            senderAvatar(isUser: msg.isUser)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(msg.isUser ? "You" : "Salehman")
@@ -549,16 +665,30 @@ struct CodeView: View {
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles").font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 20)
+            senderAvatar(isUser: false)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Salehman").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.6)
-                        Text("Working…").font(.system(size: 12)).foregroundStyle(.secondary)
+                        // After ~5s of silence the local model is probably still
+                        // loading into RAM (a 14B is ~9 GB) — say so instead of
+                        // looking frozen.
+                        Text(showWarmupHint ? "Warming up the local model — first reply after a pause takes a few seconds…"
+                                            : "Working…")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                } else {
+                } else if progress.streamingAnswer.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: progress.streamingAnswer)
+                } else {
+                    // Long reply still streaming: render plain to keep the main thread
+                    // free — full Markdown re-parses O(n) every throttle tick, which is
+                    // what makes a fast local model (the 32B) lag the UI. The committed
+                    // message renders full Markdown once, the moment streaming ends.
+                    Text(progress.streamingAnswer)
+                        .font(.system(size: 14))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Spacer(minLength: 0)
@@ -591,9 +721,13 @@ struct CodeView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(1...5)
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .focused($inputFocused)
                     .onSubmit(send)
+                    // Focusing the input = intent to send: pre-load the local model
+                    // (a 14B takes seconds to come into RAM) while the user types.
+                    .onChange(of: inputFocused) { _, focused in
+                        if focused { OllamaClient.warmupChatModel() }
+                    }
 
                 Button {
                     // Explicit body, not `action: isRunning ? stop : send`: unifying
@@ -608,6 +742,29 @@ struct CodeView: View {
                 .buttonStyle(.plain)
                 .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityLabel(isRunning ? "Stop generating" : "Send")
+            }
+            // One cohesive input pill (Claude-style) instead of loose controls.
+            // Border warms to the accent while you're typing.
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                isDropTargeted ? DS.Palette.accent
+                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
+                        ? Color.white.opacity(0.09) : DS.Palette.accent.opacity(0.45)),
+                lineWidth: isDropTargeted ? 1.5 : 1))
+            .animation(.easeOut(duration: 0.18), value: input.isEmpty)
+            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            // Drag a file onto the input to attach it as context.
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, url.isFileURL else { return }
+                    Task { @MainActor in
+                        attachedFile = url
+                        attachedText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                    }
+                }
+                return true
             }
         }
         .padding(10)
@@ -629,14 +786,21 @@ struct CodeView: View {
             Toggle("Web access", isOn: $settings.webAccess)
             Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
         } label: {
-            Image(systemName: "slider.horizontal.3").font(.system(size: 16))
+            HStack(spacing: 4) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                Text(settings.brainPreference.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: Capsule())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundStyle(.secondary)
-        .help("Brain, effort & toggles")
-        .accessibilityLabel("Brain, effort and toggles")
+        .help("Active brain — tap to switch brain, effort & toggles")
+        .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
@@ -656,19 +820,45 @@ struct CodeView: View {
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 }
                 Spacer()
-                if !ws.changedFiles.isEmpty {
-                    Text("\(ws.changedFiles.count) changed")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(DS.Palette.accent)
+                if rightPane == .diff && !ws.diff.isEmpty {
+                    let stats = diffStats
+                    HStack(spacing: 8) {
+                        HStack(spacing: 3) {
+                            Circle().fill(Color.green.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.green)
+                        }
+                        HStack(spacing: 3) {
+                            Circle().fill(Color.red.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red)
+                        }
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.white.opacity(0.03), in: Capsule())
+                }
+                if !ws.changedFiles.isEmpty && rightPane != .diff {
+                    HStack(spacing: 4) {
+                        Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                        Text("\(ws.changedFiles.count) changed")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
 
             if ws.selectedFile == nil {
-                Text("Select a file to view it, or run a task to see diffs.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 9) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(.secondary.opacity(0.55))
+                    Text("Select a file to view it,\nor run a task to see diffs.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if rightPane == .diff {
                 diffView
             } else {
@@ -706,6 +896,23 @@ struct CodeView: View {
                     .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
                 Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+            Spacer(minLength: 8)
+            if let sel = ws.selectedFile {
+                let ext = sel.pathExtension.isEmpty ? "—" : sel.pathExtension.uppercased()
+                let lineCount = ws.fileContent.split(separator: "\n", omittingEmptySubsequences: false).count
+                let sizeKB = Int((try? sel.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) / 1024
+                HStack(spacing: 6) {
+                    Text(ext).font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    Text("·").foregroundStyle(.secondary.opacity(0.5))
+                    Text("\(lineCount) lines").font(.system(size: 9))
+                    if sizeKB > 0 {
+                        Text("·").foregroundStyle(.secondary.opacity(0.5))
+                        Text("\(sizeKB) KB").font(.system(size: 9))
+                    }
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Color.white.opacity(0.03), in: Capsule())
             }
         }
         .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -781,6 +988,12 @@ struct CodeView: View {
         }
     }
 
+    /// Quick add/remove counts for the diff view.
+    private var diffStats: (added: Int, removed: Int) {
+        (ws.diff.filter { $0.kind == .add }.count,
+         ws.diff.filter { $0.kind == .remove }.count)
+    }
+
     /// Annotate diff lines with their old/new file line numbers for the gutter.
     private func numberedDiff(_ diff: [DiffLine]) -> [(line: DiffLine, old: Int?, new: Int?)] {
         var out: [(line: DiffLine, old: Int?, new: Int?)] = []
@@ -813,16 +1026,33 @@ struct CodeView: View {
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
         isRunning = true
+        // If nothing has streamed after 5s, the local model is likely still loading —
+        // flip the status line to say so (cleared when the run ends).
+        showWarmupHint = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if isRunning && progress.streamingAnswer.isEmpty { showWarmupHint = true }
+        }
 
         let projectLine = ws.projectRoot.map {
             "Project folder (your working directory for terminal + file edits): \($0.path)\n\n"
         } ?? ""
         let attached = attachedText.isEmpty ? "" : "\n\nAttached file \"\(attachedFile?.lastPathComponent ?? "file")\":\n\(attachedText)"
-        let mission = """
-        \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
+        // A bare greeting / chit-chat ("hi", "thanks") shouldn't get the heavy
+        // coding-mode preamble: that preamble alone is multi-line, >200 chars and
+        // multi-sentence, so `complexity()` rates EVERY wrapped message `.hard` — and
+        // in Maximum mode that spins up all 15 agents for a simple "hi". Sending the
+        // raw text lets the pipeline see it's trivial → one agent → fast reply.
+        let mission: String
+        if attached.isEmpty, AgentPipeline.isTrivialMission(text) {
+            mission = text
+        } else {
+            mission = """
+            \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
 
-        Task: \(text)\(attached)
-        """
+            Task: \(text)\(attached)
+            """
+        }
         attachedFile = nil; attachedText = ""
 
         runningTask = Task {
@@ -832,6 +1062,7 @@ struct CodeView: View {
             await MainActor.run {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
+                showWarmupHint = false
                 MissionProgress.shared.finish()
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
@@ -929,6 +1160,7 @@ struct CodeView: View {
             await MainActor.run {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
+                showWarmupHint = false
                 MissionProgress.shared.finish()
             }
         }

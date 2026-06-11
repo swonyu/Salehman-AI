@@ -119,10 +119,4 @@ enum SalehmanPersona {
     nonisolated static var activeSystemPrompt: String {
         LocalLLM.applyUnrestricted(systemPrompt)
     }
-
-    /// Combine the persona with the live tool menu so Salehman knows which tools
-    /// are actually wired right now. Pure + nonisolated.
-    nonisolated static func instructions(toolMenu: String) -> String {
-        activeSystemPrompt + "\n\n## Tools available right now\n" + toolMenu
-    }
 }

@@ -13,6 +13,56 @@ task → [bridge injects primer + task into grok.com via Safari JS]
 
 ---
 
+## The file family (what each piece does)
+
+| File | Role |
+|------|------|
+| **`grok_terminal_bridge.py`** | **The engine.** One Grok agent: injects the task into grok.com, parses `CMD:` lines from Grok's reply, runs them locally, feeds output back. Everything else wraps this. |
+| **`run_parallel_safari.sh`** | **The parallel bridge.** Launches N engines at once, each pinned to its own Safari tab. RAM-aware, looped, Think-toggle. |
+| `run_parallel_grok.sh` | Older parallel launcher using agent-browser (isolated logins per window) — pre-Safari approach; kept for reference. |
+| `grok_status.sh` | Live dashboard (`--watch`) reading the `.status.json` heartbeats. |
+| `grok_sessions_summary.py` | Post-run summary of finished sessions from their logs. |
+| `PARALLEL_GROK_GUIDE.md` | Friendly, share-with-friends how-to. |
+| `~/grok_sessions/<label>.out` | Live human log of one agent (streamed; run with `python3 -u`). |
+| `~/grok_sessions/<label>.jsonl` | Structured event trail — for Salehman to ingest. |
+| `~/grok_sessions/<label>.status.json` | Heartbeat the dashboard reads. |
+
+> The engine inverts the usual agent design: Grok never runs anything — it only
+> *suggests* a `CMD:` as text, and **your machine runs it and reports back.** The
+> primer ("reply with exactly one `CMD:` line, no prose") is the contract that
+> makes parsing reliable.
+
+---
+
+## How the parallel bridge works (`run_parallel_safari.sh`)
+
+One person → a team of agents, without them fighting over the browser:
+
+1. **Auto-detect a safe agent count** from RAM (`hw.memsize`; 16 GB → 3). Override `MAX_AGENTS=N`.
+2. **Pre-create N grok.com tabs SEQUENTIALLY** in one Safari window — no race, because one
+   script makes them in order and records each tab's index.
+3. **Launch N engines**, handing each its exact tab via `--safari-target "tab K of window id W"`.
+4. Each runs `--yolo --loop` (+ `--think` unless `THINK=0`), capped at `MAX_CMDS`, logging to
+   `~/grok_sessions/safari-K.*` and claiming a lane in `COORDINATION.md`.
+
+```bash
+# 3 agents (auto-capped on 16 GB), standard model (fast), looped:
+THINK=0 tools/run_parallel_safari.sh "task 1" "task 2" "task 3"
+tools/grok_status.sh --watch        # watch all of them
+pkill -f grok_terminal_bridge.py    # stop all
+```
+
+> **The bug this design avoids:** when each agent opened *its own* tab they raced and all
+> grabbed the same one (Safari opens new docs as tabs; "current tab" is shared state). Fix:
+> move tab-creation **out of the agents into the launcher** — allocate up front, then assign.
+> When parallel workers fight over a shared resource, let one coordinator hand it out.
+
+> **Think mode (`--think`)** uses Grok's reasoning model — smarter but on a tight quota and
+> slow (minutes/reply). For a fleet, use **`THINK=0`** (standard model, seconds/reply); save
+> Think for a single high-value agent.
+
+---
+
 ## One-time Safari setup
 
 ```

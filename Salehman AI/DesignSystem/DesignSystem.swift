@@ -44,10 +44,6 @@ enum DS {
         static let successSoft   = Color(red: 0.45, green: 0.85, blue: 0.55)
         static let warningSoft   = Color(red: 1.0,  green: 0.72, blue: 0.35)
 
-        // Unrestricted Mode
-        static let unrestrictedRed     = Color(red: 0.98, green: 0.18, blue: 0.29)
-        static let unrestrictedRedSoft = Color(red: 0.98, green: 0.18, blue: 0.29).opacity(0.15)
-
         // SuperGrok (xAI) – elevated "Super" brain visual identity
         static let superGrok     = Color(red: 0.55, green: 0.45, blue: 0.95)
         static let superGrokSoft = Color(red: 0.55, green: 0.45, blue: 0.95).opacity(0.15)
@@ -113,17 +109,9 @@ enum DS {
         static let bg = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-
-    // MARK: - Unrestricted Mode
-    enum Unrestricted {
-        static let badgeColor = Palette.unrestrictedRed
-        static let badgeFill  = Palette.unrestrictedRedSoft
-        static let badgeFont  = Font.system(size: 11, weight: .semibold, design: .rounded)
-    }
 }
 
 // MARK: - Components (CircleIconButton, Card, etc.)
-// ... (keep the rest of your original components exactly as they were)
 // MARK: - CircleIconButton
 struct CircleIconButton: View {
     let systemName: String
@@ -390,10 +378,3 @@ struct CloudKeyHintBanner: View {
     }
 }
 
-    // MARK: Glassmorphism & Materials (premium macOS depth & translucency)
-    enum Glass {
-        static let ultraThin = Material.ultraThinMaterial
-        static let thin      = Material.thinMaterial
-        static let regular   = Material.regularMaterial
-        static let thick     = Material.thickMaterial
-    }

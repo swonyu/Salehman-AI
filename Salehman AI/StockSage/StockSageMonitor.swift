@@ -22,10 +22,6 @@ final class StockSageMonitor {
     private var task: Task<Void, Never>?
     private(set) var isRunning = false
 
-    /// Symbols that have most recently fired a strong signal — a lightweight
-    /// "smart watchlist" surfaced via `smartWatchlist`.
-    private(set) var smartWatchlist: Set<String> = []
-
     enum MonitorError: LocalizedError {
         case alreadyRunning
         var errorDescription: String? {
@@ -74,7 +70,6 @@ final class StockSageMonitor {
             guard let signal = StockSageSignalEngine.generateSignal(for: symbol) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
-            smartWatchlist.insert(symbol.symbol)
             if notify {
                 await sendAlert(signal: signal, market: symbol.market)
             }

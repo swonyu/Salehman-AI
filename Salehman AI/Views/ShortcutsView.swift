@@ -18,10 +18,11 @@ struct ShortcutsView: View {
         .init(title: "Navigation", items: [
             .init(keys: "⌘1", label: "Today"),
             .init(keys: "⌘2", label: "Chat"),
-            .init(keys: "⌘3", label: "Agents"),
-            .init(keys: "⌘4", label: "Markets"),
-            .init(keys: "⌘5", label: "Notes"),
-            .init(keys: "⌘6", label: "Knowledge"),
+            .init(keys: "⌘3", label: "Code"),
+            .init(keys: "⌘4", label: "Agents"),
+            .init(keys: "⌘5", label: "Markets"),
+            .init(keys: "⌘6", label: "Notes"),
+            .init(keys: "⌘7", label: "Knowledge"),
         ]),
         .init(title: "Conversation", items: [
             .init(keys: "⌘N", label: "New chat"),

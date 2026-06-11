@@ -5,7 +5,7 @@ import Foundation
 /// the most recent CMD+output pairs — so Salehman can observe what Grok is doing.
 enum GrokWatchTool {
 
-    private nonisolated(unsafe) static let sessionDir = FileManager.default.homeDirectoryForCurrentUser
+    private nonisolated static let sessionDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("grok_sessions")
 
     /// Find the newest .log file and return a readable snapshot.

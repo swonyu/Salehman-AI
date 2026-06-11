@@ -36,10 +36,6 @@ struct AgentRegistry {
 
     nonisolated static func handler(for name: String) -> AgentHandler? { handlers[name] }
 
-    nonisolated static func isRegistered(_ name: String) -> Bool { handlers[name] != nil }
-
-    nonisolated static func registeredAgents() -> [String] { handlers.keys.sorted() }
-
     /// Register a handler for every agent in the team. Each handler captures its
     /// spec and picks the right LocalLLM call (tools / streamed final / terse note).
     ///

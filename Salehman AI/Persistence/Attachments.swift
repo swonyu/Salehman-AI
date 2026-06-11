@@ -118,29 +118,6 @@ enum AttachmentLoader {
         return String(out.prefix(20_000))
     }
 
-    static func ocr(_ url: URL) async -> String {
-        guard let cg = loadCGImage(url) else { return "" }
-
-        let box = ResumeBox()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
-            let request = VNRecognizeTextRequest { req, _ in
-                let text = (req.results as? [VNRecognizedTextObservation])?
-                    .compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: "\n") ?? ""
-                if box.resumeOnce() { continuation.resume(returning: text) }
-            }
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US", "ar-SA"]
-
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-            DispatchQueue.global(qos: .userInitiated).async {
-                do { try handler.perform([request]) }
-                catch { if box.resumeOnce() { continuation.resume(returning: "") } }
-            }
-        }
-    }
-
     /// Decode an image file straight to a CGImage. Uses ImageIO (thread-safe),
     /// avoiding NSImage which is not safe to touch off the main thread.
     static func loadCGImage(_ url: URL) -> CGImage? {

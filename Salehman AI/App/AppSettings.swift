@@ -33,9 +33,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// User's preferred brain. `.auto` is local-first (Ollama qwen-coder when
-    /// reachable). `.ollama` / `.salehman` force a specific brain. Defaults to
-    /// `.auto`.
+    /// User's preferred brain. Defaults to `.salehman` — the trained primary, which
+    /// cascades cloud→free→local on its own. `.auto` is local-first (Ollama
+    /// qwen-coder when reachable). The picker surfaces only those two now; see
+    /// `selectableCases`.
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
@@ -86,12 +87,6 @@ final class AppSettings: ObservableObject {
     @Published var rotationBrains: [BrainPreference] {
         didSet { UserDefaults.standard.set(rotationBrains.map(\.rawValue), forKey: Keys.rotationBrains) }
     }
-    /// OpenAI model id for the "Codex" (OpenAI) cloud brain. The API **key**
-    /// lives in the Keychain (`KeychainStore.Account.openAIAPIKey`), matching the
-    /// other cloud brains — never here.
-    @Published var openAIModel: String {
-        didSet { UserDefaults.standard.set(openAIModel, forKey: Keys.openAIModel) }
-    }
     /// Which xAI Grok model to call when `BrainPreference.grok` is active.
     /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
     /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
@@ -127,7 +122,6 @@ final class AppSettings: ObservableObject {
     /// Selected voice identifier; empty = automatic (by language).
     @Published var speechVoiceID: String { didSet { UserDefaults.standard.set(speechVoiceID, forKey: Keys.speechVoiceID) } }
     @Published var webAccess: Bool    { didSet { UserDefaults.standard.set(webAccess, forKey: Keys.webAccess) } }
-    @Published var useCodeModel: Bool { didSet { UserDefaults.standard.set(useCodeModel, forKey: Keys.codeModel) } }
     @Published var useVision: Bool    { didSet { UserDefaults.standard.set(useVision, forKey: Keys.vision) } }
     /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
     /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
@@ -171,9 +165,10 @@ final class AppSettings: ObservableObject {
 
     /// **Salehman Leader.** When ON, every brain's answer is passed through the
     /// Salehman model for one final pass — Salehman is the "leader" that owns the
-    /// last word regardless of which brain drafted it. Default ON. Becomes a no-op
-    /// when the brain is already `.salehman`, the draft is an error/off message, or
-    /// the Salehman engine isn't reachable (then it returns the draft unchanged).
+    /// last word regardless of which brain drafted it. Default ON. OFF = zero extra
+    /// passes for ALL brains (including pinned `.salehman`). Becomes a no-op when
+    /// the draft is an error/off message or Salehman is unreachable. Pinned
+    /// `.salehman` with Leader ON: the Effort dial applies (self-critique only).
     @Published var salehmanLeader: Bool {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
@@ -184,6 +179,15 @@ final class AppSettings: ObservableObject {
     /// turn ON for max-quality single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
+    }
+
+    /// **Effort.** How hard Salehman thinks before answering — one knob over the
+    /// Core-Intelligence primitives (self-critique rounds + candidate fan-out/judge).
+    /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.instant`
+    /// (preserves pre-Effort behavior — no surprise extra model calls on upgrade).
+    /// (Independent of `salehmanRefine`, which is the older DeepSeek-critique toggle.)
+    @Published var salehmanEffort: Effort {
+        didSet { UserDefaults.standard.set(salehmanEffort.rawValue, forKey: Keys.salehmanEffort) }
     }
 
     /// Auto-continue (claude-autocontinue style): when a reply looks unfinished — it
@@ -201,7 +205,6 @@ final class AppSettings: ObservableObject {
     enum Keys {
         nonisolated static let autoSpeak = "set_autoSpeak"
         nonisolated static let webAccess = "set_webAccess"
-        nonisolated static let codeModel = "set_useCodeModel"
         nonisolated static let vision    = "set_useVision"
         nonisolated static let autonomousMode = "set_autonomousMode"
         nonisolated static let offlineOnly    = "set_offlineOnly"
@@ -209,6 +212,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let unrestrictedTools = "set_unrestrictedTools"
         nonisolated static let salehmanLeader    = "set_salehmanLeader"
         nonisolated static let salehmanRefine    = "set_salehmanRefine"
+        nonisolated static let salehmanEffort    = "set_salehmanEffort"
         nonisolated static let autoContinue      = "set_autoContinue"
         nonisolated static let privateMode       = "set_privateMode"
         nonisolated static let speechRate = "set_speechRate"
@@ -346,6 +350,11 @@ final class AppSettings: ObservableObject {
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
     nonisolated static var salehmanRefineEnabled: Bool { UserDefaults.standard.bool(forKey: Keys.salehmanRefine) }
+    /// Thread-safe read of the Effort dial (validate-or-default, like the
+    /// `*ModelCurrent` accessors) so the answer path reads it off the main actor.
+    nonisolated static var salehmanEffortCurrent: Effort {
+        Effort(rawValue: UserDefaults.standard.string(forKey: Keys.salehmanEffort) ?? "") ?? .instant
+    }
     /// Auto-continue switch (defaults ON) — read off-main by the chat send loop.
     nonisolated static var autoContinueEnabled: Bool { boolDefaultTrue(Keys.autoContinue) }
 
@@ -401,7 +410,6 @@ final class AppSettings: ObservableObject {
         speechRate   = d.object(forKey: Keys.speechRate) == nil ? 0.5 : d.double(forKey: Keys.speechRate)
         speechVoiceID = d.string(forKey: Keys.speechVoiceID) ?? ""
         webAccess    = AppSettings.boolDefaultTrue(Keys.webAccess)
-        useCodeModel = AppSettings.boolDefaultTrue(Keys.codeModel)
         useVision    = AppSettings.boolDefaultTrue(Keys.vision)
         autonomousMode = d.bool(forKey: Keys.autonomousMode)   // default off
         offlineOnly    = d.bool(forKey: Keys.offlineOnly)      // default off (opt-in)
@@ -409,9 +417,18 @@ final class AppSettings: ObservableObject {
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
         salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
+        salehmanEffort = Effort(rawValue: d.string(forKey: Keys.salehmanEffort) ?? "") ?? .instant  // default Instant — preserves pre-Effort call count; opt in to quality via the dial
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off
-        brainPreference = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
+        // The Brain menu is now pared to `selectableCases` (Salehman + Auto). Migrate a
+        // stale/hidden saved pick (e.g. an old cloud brain that's no longer in the menu)
+        // to the default so the picker is never blank — and PERSIST it, because
+        // `brainPreferenceCurrent` reads UserDefaults directly in the LLM layer and must
+        // agree with what the menu can show.
+        let savedBrain = BrainPreference(rawValue: d.string(forKey: Keys.brainPreference) ?? "") ?? .salehman
+        let normalizedBrain = BrainPreference.selectableCases.contains(savedBrain) ? savedBrain : .salehman
+        if normalizedBrain != savedBrain { d.set(normalizedBrain.rawValue, forKey: Keys.brainPreference) }
+        brainPreference = normalizedBrain
         customModelName = d.string(forKey: Keys.customModel) ?? "salehman"   // your own model, default name
         customMLXModelPath = d.string(forKey: Keys.customMLXModelPath) ?? "" // empty = use default HF MLX model
         unslothStudioEndpoint = d.string(forKey: Keys.unslothStudioEndpoint) ?? "" // empty = not configured
@@ -419,8 +436,6 @@ final class AppSettings: ObservableObject {
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
-        let storedOAI = d.string(forKey: Keys.openAIModel) ?? ""
-        openAIModel = OpenAIClient.allModels.contains(storedOAI) ? storedOAI : OpenAIClient.defaultModel
         let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
         grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
         let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""
@@ -490,8 +505,12 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Cases shown in the Brain picker — paid providers excluded.
-    static var selectableCases: [BrainPreference] { allCases.filter { !$0.isPaid } }
+    /// Cases shown in the Brain picker. Pared to the essentials now that Salehman is
+    /// the trained primary — it already cascades cloud→free→local internally, so the
+    /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
+    /// offline use. (Every other case still functions if set directly — e.g. by the
+    /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
+    static var selectableCases: [BrainPreference] { [.salehman, .auto] }
 
     var title: String {
         switch self {

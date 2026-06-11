@@ -8,9 +8,9 @@ import Foundation
 // (web_search, fetch_url) on top of the always-on local core. It's the gate
 // that keeps a local-first session from silently reaching the network, so it
 // must behave exactly. These tests pin: (1) the `override` pin wins; (2) with
-// no override, the policy follows the user's web-access setting; (3) the
-// instructions menu only advertises web tools when they're actually enabled
-// (otherwise the model promises a capability it doesn't have).
+// no override, the policy follows the user's web-access setting. (The
+// model-facing "web tools never offered when off" property is pinned against
+// the live tool list in OllamaToolGateTests via `ollamaToolNames`.)
 //
 // The suite is `.serialized`: it mutates the process-globals `ToolPolicy.override`
 // and the `webAccess` UserDefaults key, and Swift Testing runs tests in parallel —
@@ -18,7 +18,7 @@ import Foundation
 // globals, so cross-suite parallelism stays safe. We avoid `==` on the
 // `ToolPolicy` enum itself (its Equatable conformance is main-actor-isolated under
 // `-default-isolation=MainActor`) and assert through the `nonisolated` surface
-// (`isExternalAllowed`, `instructionsToolMenu()`).
+// (`isExternalAllowed`).
 
 @Suite(.serialized)
 struct ToolPolicyTests {
@@ -73,25 +73,4 @@ struct ToolPolicyTests {
         }
     }
 
-    @Test func menuHidesWebToolsWhenLocalOnly() {
-        withCleanPolicy {
-            ToolPolicy.override = .localOnly
-            let menu = ToolPolicy.instructionsToolMenu()
-            #expect(menu.contains("Web access is DISABLED"))
-            #expect(!menu.contains("web_search"))
-            #expect(!menu.contains("fetch_url"))
-            // The always-on local core is still advertised.
-            #expect(menu.contains("run_terminal_command"))
-        }
-    }
-
-    @Test func menuAdvertisesWebToolsWhenExternalAllowed() {
-        withCleanPolicy {
-            ToolPolicy.override = .allowExternalTools
-            let menu = ToolPolicy.instructionsToolMenu()
-            #expect(menu.contains("web_search"))
-            #expect(menu.contains("fetch_url"))
-            #expect(!menu.contains("Web access is DISABLED"))
-        }
-    }
 }

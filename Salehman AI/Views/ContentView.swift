@@ -1385,7 +1385,19 @@ struct StreamingBubble: View {
                     .symbolEffect(.pulse.byLayer, options: .repeating)
             }
             .accessibilityHidden(true)   // decorative — bubble label conveys "Assistant"
-            MarkdownText(text: displayedText)
+            Group {
+                if displayedText.count <= StreamRender.liveMarkdownLimit {
+                    MarkdownText(text: displayedText)
+                } else {
+                    // Long reply still streaming: plain text avoids the O(n) Markdown
+                    // re-parse every throttle tick (what lags a fast local model). The
+                    // finalised bubble renders full Markdown the instant streaming ends.
+                    Text(displayedText)
+                        .font(.system(size: 14))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // parity with finalised bubble — no rhythm jump on stream-end
                 .padding(.horizontal, 16).padding(.vertical, 12)

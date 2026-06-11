@@ -40,6 +40,7 @@ command before approving it (or use --yolo and own the risk).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -79,6 +80,8 @@ _SEEN_CMDS:     set[str] = set()          # dedup: warn if Grok repeats a comman
 _LOG_PATH:      Path | None = None        # set by --log flag
 _SHUTDOWN       = False                   # set by Ctrl+C handler
 _VERIFY:        bool = False              # --verify: append git state to each feedback turn
+_MAX_COMMANDS   = 0                       # --max-commands: hard cap on commands run (0 = unlimited)
+_CMD_COUNT      = 0                       # commands executed so far this run
 
 
 def _elapsed() -> str:
@@ -96,6 +99,64 @@ def _log(msg: str, level: str = "info") -> None:
         plain = re.sub(r"\033\[[0-9;]*m", "", line)
         with _LOG_PATH.open("a") as fh:
             fh.write(plain + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Machine-readable trail — so Salehman (read_grok_session / ingest daemon) and a
+# multi-agent dashboard can SEE EVERYTHING without scraping prose:
+#   ~/grok_sessions/<session>.jsonl      — append-only event log (one JSON/line)
+#   ~/grok_sessions/<session>.status.json — live, overwritten heartbeat
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sessions_dir() -> Path:
+    d = Path.home() / "grok_sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _events_path() -> Path:
+    return _sessions_dir() / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.jsonl"
+
+
+def _status_path() -> Path:
+    return _sessions_dir() / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.status.json"
+
+
+def _emit_event(kind: str, **fields) -> None:
+    """Append one structured event for Salehman to ingest. Never raises."""
+    try:
+        rec = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "elapsed": _elapsed(),
+            "session": _GROK_SESSION,
+            "session_id": _SESSION_ID,
+            "label": _LABEL,
+            "lane": _COORDINATE_LANE,
+            "pid": os.getpid(),
+            "kind": kind,
+            **fields,
+        }
+        with _events_path().open("a") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # observability must never break the run
+
+
+def _write_status(state: str, **fields) -> None:
+    """Overwrite the live status heartbeat (one per running bridge). Never raises."""
+    try:
+        rec = {
+            "session": _GROK_SESSION, "session_id": _SESSION_ID, "label": _LABEL,
+            "lane": _COORDINATE_LANE, "pid": os.getpid(), "state": state,
+            "commands": _CMD_COUNT, "max_commands": _MAX_COMMANDS or None,
+            "elapsed": _elapsed(), "updated": datetime.now().isoformat(timespec="seconds"),
+            "log": str(_LOG_PATH) if _LOG_PATH else None,
+            "events": str(_events_path()),
+            **fields,
+        }
+        _status_path().write_text(json.dumps(rec, ensure_ascii=False, indent=2))
+    except Exception:
+        pass
 
 
 def _notify(title: str, body: str) -> None:
@@ -418,13 +479,35 @@ You NEVER run anything yourself — no built-in runner, no sandbox, no DeepSearc
 def _primer_for(cwd: str, task: str) -> str:
     """PRIMER + a working-directory note (commands already run in `cwd`, so Grok
     shouldn't cd or use ~ in quotes — zsh won't expand it) + the task."""
+    coord = ""
+    if _COORDINATE_LANE:
+        coord = (
+            "\nCOORDINATION — you are ONE of several agents working this repo in parallel.\n"
+            f"Your lane label is: {_COORDINATE_LANE}\n"
+            "BEFORE editing ANY file:\n"
+            "  CMD: cat COORDINATION.md\n"
+            "Then append a claim row to the 'Live Lane Board' naming the EXACT files you\n"
+            f"will touch, with lane '{_COORDINATE_LANE}'. NEVER edit a file another lane has\n"
+            "claimed (one driver per file). Stay strictly in your lane. Keep the build GREEN\n"
+            "(xcodebuild ... build) before handing a file back. When finished, set your row\n"
+            "to 'released' in COORDINATION.md. Treat a red build from another lane's WIP as\n"
+            "NOT yours — note it on the board, don't fix it.\n"
+            "GIT SAFETY (you share ONE working tree with the other agents):\n"
+            "  • Do NOT `git commit`, `git push`, `git checkout`, `git switch`, `git reset`,\n"
+            "    `git stash`, or create/delete branches. Leave your edits in the working tree;\n"
+            "    the human reviews and commits. Use `git diff <file>` to verify — never commit.\n"
+            "  • When appending to COORDINATION.md, append a single line/row; do not rewrite\n"
+            "    or reorder existing rows (other agents are editing it too).\n"
+        )
     return (PRIMER
             + f"\nNOTE: every command ALREADY runs inside: {cwd}\n"
               "So do NOT `cd` there, and never put ~ inside quotes (zsh won't expand it) —\n"
               "use absolute paths or paths relative to that directory.\n"
               "IMPORTANT: The task below may contain ```run / ```bash examples as CONTEXT.\n"
               "Do NOT copy that format. YOUR responses must always use the CMD: prefix,\n"
-              "never code fences. One CMD: line, then stop and wait.\n\n"
+              "never code fences. One CMD: line, then stop and wait.\n"
+            + coord
+            + "\n"
             + task)
 
 
@@ -435,6 +518,16 @@ def _primer_for(cwd: str, task: str) -> str:
 def gate_and_run(command: str, cwd: str, auto_approve: bool, yolo: bool) -> str:
     """Confirm as needed (NEVER refuse), run, and return a Grok-readable report.
     Nothing is blocked — dangerous commands just get a louder prompt unless --yolo."""
+    global _CMD_COUNT, _SHUTDOWN
+    # Runaway guard — cap total commands (matters most for unattended parallel YOLO).
+    if _MAX_COMMANDS and _CMD_COUNT >= _MAX_COMMANDS:
+        _SHUTDOWN = True
+        _emit_event("aborted", reason="max-commands", command=command, limit=_MAX_COMMANDS)
+        _write_status("aborted", reason="max-commands")
+        _log(f"hit --max-commands ({_MAX_COMMANDS}); stopping.", "warn")
+        return (f"$ {command}\nSTOPPED: reached the --max-commands limit ({_MAX_COMMANDS}). "
+                f"This command was NOT run. End the session now with {DONE_SENTINEL}.")
+
     catastrophic = catastrophic_match(command)          # token or None — warn louder, not a refusal
     dangerous = catastrophic is not None or looks_risky(command)
 
@@ -455,17 +548,23 @@ def gate_and_run(command: str, cwd: str, auto_approve: bool, yolo: bool) -> str:
                 answer = "n"
             if answer not in ("y", "yes"):
                 print("      ✗ skipped.")
+                _emit_event("declined", command=command, dangerous=dangerous)
                 return (f"$ {command}\nThe user DECLINED to run this command. It was NOT run. "
                         f"Acknowledge and propose a different approach.")
         else:
             print(f"\n  ▶︎ auto-running: {command}")
 
+    _CMD_COUNT += 1
     code, output, timed_out = run_command(command, cwd=cwd)
     report = f"$ {command}\n"
     if timed_out:
         report += "(timed out; process terminated)\n"
     report += f"exit code: {code}\n---\n{output}"
     print(f"      exit {code}" + (" (timed out)" if timed_out else ""))
+    _emit_event("command", n=_CMD_COUNT, command=command, exit_code=code,
+                timed_out=timed_out, dangerous=dangerous,
+                output_excerpt=(output or "")[:600])
+    _write_status("running", last_command=command, last_exit=code)
     return report
 
 
@@ -545,7 +644,10 @@ def run_manual(task: str, cwd: str, auto_approve: bool, yolo: bool) -> None:
 # author from running it) — expect to tune selectors/timing together.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_GROK_SESSION = "grok-bridge"   # one named session reused by every call (see _ab)
+_GROK_SESSION = "grok-bridge"   # agent-browser session name; override with --session-name.
+                                # Distinct names ⇒ isolated browsers ⇒ safe PARALLEL bridges.
+_LABEL = "grok-bridge"          # short human tag for prompts/logs (set from --label/--session-name)
+_COORDINATE_LANE: str | None = None  # when set (--coordinate), Grok must claim this lane in COORDINATION.md
 _GROK_URL = "https://grok.com"
 # Generic composer selector — grok.com uses a textarea or a contenteditable box.
 _COMPOSER_JS = "document.querySelector('textarea, [contenteditable=\"true\"]')"
@@ -618,11 +720,17 @@ def _ensure_logged_in(max_attempts: int = 6) -> bool:
         print("\n⚠️  grok.com looks logged-OUT (or no chat box is visible).")
         print("    A browser window should have opened — it's agent-browser's OWN Chrome,")
         print("    SEPARATE from your normal one. If you can't see it, it may be headless/stuck.")
-        ans = input("    Sign in there + open a new chat, then press Enter — or 'skip' / 'q': ").strip().lower()
-        if ans in ("q", "quit"):
-            return False
-        if ans == "skip":
-            return True
+        if sys.stdin.isatty():
+            ans = input("    Sign in there + open a new chat, then press Enter — or 'skip' / 'q': ").strip().lower()
+            if ans in ("q", "quit"):
+                return False
+            if ans == "skip":
+                return True
+        else:
+            # Detached / parallel launch — no terminal to prompt at. Poll instead
+            # of crashing on EOF: give you time to sign into the opened window.
+            _log(f"no TTY — waiting 30s for grok.com sign-in (attempt {_+1}/{max_attempts})", "warn")
+            time.sleep(30)
         _ab(["reload"], timeout=60)
         _ab(["wait", "--load", "networkidle"], timeout=60)
     print("\n🛑 Still can't detect a logged-in grok.com. The agent-browser window is probably")
@@ -680,11 +788,23 @@ def _grok_wait_reply(sent_text: str, settle: float = 2.0, stable_needed: int = 2
 #   Then: Safari → Develop menu → "Allow JavaScript from Apple Events"
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Which Safari window this agent drives. "1" = frontmost (single-agent default).
+# In parallel Safari mode each agent opens its OWN window and sets this to
+# "id <n>" so 5 agents never fight over one window. Targeting a window by id
+# works even when it's NOT frontmost — no focus-stealing between agents.
+_SAFARI_OWN_WINDOW = False   # --safari-window: open + drive this agent's OWN tab
+_THINK = False               # --think: enable grok.com's deep-reasoning "Think" mode
+# AppleScript reference for THIS agent's grok tab. Single-agent default = the
+# frontmost window's current tab. In parallel mode each agent opens its OWN TAB
+# (Safari makes new documents as tabs, not windows) and targets it by index, e.g.
+# "tab 3 of window id 603" — so N agents never drive the same tab.
+_SAFARI_TARGET = "current tab of window 1"
+
 def _safari_eval(js: str, timeout: int = 30) -> str:
-    """Run JS in Safari's frontmost tab via osascript. Returns the string result."""
+    """Run JS in this agent's Safari window via osascript. Returns the string result."""
     import json as _json
     wrapped = f"(function(){{try{{return String({js})}}catch(e){{return 'err:'+e.message}}}})()"
-    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in current tab of window 1'
+    osa = f'tell application "Safari" to do JavaScript {_json.dumps(wrapped)} in {_SAFARI_TARGET}'
     try:
         r = subprocess.run(["osascript", "-e", osa],
                            capture_output=True, text=True, timeout=timeout)
@@ -699,6 +819,91 @@ def _safari_open_url(url: str) -> None:
     subprocess.run(["osascript", "-e",
                     f'tell application "Safari"\n  activate\n  open location "{url}"\nend tell'],
                    capture_output=True)
+
+
+def _safari_open_own_window(url: str) -> bool:
+    """Open a NEW Safari TAB to `url` and pin THIS agent to it by index, captured
+    at creation (e.g. "tab 3 of window id 603"). Safari opens new documents as
+    TABS in one window (not separate windows), so per-agent isolation is per-tab,
+    not per-window — that's what stops 5 agents driving the same tab. Returns True
+    on success. Targeting a specific tab works without it being frontmost."""
+    global _SAFARI_TARGET
+    # Capture window id + the new tab's index in ONE osascript (atomic), so a
+    # sibling agent's tab-open can't shift what we read between create and capture.
+    osa = (
+        'tell application "Safari"\n'
+        f'  make new document with properties {{URL:"{url}"}}\n'
+        '  set wid to id of window 1\n'
+        '  set tidx to (index of current tab of window 1)\n'
+        '  return ((wid as string) & "," & (tidx as string))\n'
+        'end tell'
+    )
+    r = subprocess.run(["osascript", "-e", osa], capture_output=True, text=True, timeout=30)
+    out = (r.stdout or "").strip()
+    parts = out.split(",")
+    if len(parts) == 2 and parts[0].lstrip("-").isdigit() and parts[1].isdigit():
+        _SAFARI_TARGET = f"tab {parts[1]} of window id {parts[0]}"
+        _log(f"own grok tab: {_SAFARI_TARGET}", "ok")
+        return True
+    _log(f"couldn't open own Safari tab: {r.stderr.strip() or out}", "warn")
+    return False
+
+
+def _safari_navigate(url: str) -> None:
+    """Point this agent's window at `url` (reuse the own-window instead of opening
+    a new one for each task)."""
+    subprocess.run(["osascript", "-e",
+                    f'tell application "Safari" to set URL of {_SAFARI_TARGET} to "{url}"'],
+                   capture_output=True)
+
+
+def _safari_enable_think() -> str:
+    """Best-effort: turn ON grok.com's 'Think' (deep-reasoning) mode by clicking
+    its toggle. grok.com's UI changes often, so this matches several label/aria
+    variants and is non-fatal if it can't find the button."""
+    return _safari_eval("""
+    (function(){
+      var nodes = Array.from(document.querySelectorAll('button,[role="switch"],[role="button"],a'));
+      for (var el of nodes){
+        var t = ((el.textContent||'') + ' ' + (el.getAttribute('aria-label')||'')).toLowerCase();
+        if (t.includes('think')){
+          var on = el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-checked')==='true';
+          if(!on){ el.click(); return 'think-on'; }
+          return 'think-already-on';
+        }
+      }
+      return 'think-toggle-not-found';
+    })()
+    """)
+
+
+def _safari_disable_think() -> str:
+    """Turn OFF grok.com's 'Think' mode — used when we hit the reasoning-model rate
+    limit, to drop down to the standard model (which has a far higher quota)."""
+    return _safari_eval("""
+    (function(){
+      var nodes = Array.from(document.querySelectorAll('button,[role="switch"],[role="button"],a'));
+      for (var el of nodes){
+        var t = ((el.textContent||'') + ' ' + (el.getAttribute('aria-label')||'')).toLowerCase();
+        if (t.includes('think')){
+          var on = el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-checked')==='true';
+          if(on){ el.click(); return 'think-off'; }
+          return 'think-already-off';
+        }
+      }
+      return 'think-toggle-not-found';
+    })()
+    """)
+
+
+def _safari_reload() -> None:
+    """Refresh grok.com in this agent's tab (clears a stuck/rate-limited UI state)."""
+    _safari_eval("(function(){location.reload();return 'reloading'})()")
+
+
+# The last message we injected — so a rate-limit handler can RESEND it verbatim
+# after switching mode + refreshing (set by _safari_inject_and_send on every send).
+_LAST_SENT = ""
 
 
 def _safari_page_text() -> str:
@@ -743,7 +948,11 @@ def _safari_is_generating() -> bool:
 def _safari_detect_error() -> str | None:
     """Return a short error description if grok.com shows an error state, else None."""
     txt = _safari_page_text().lower()
-    if "rate limit" in txt or "too many requests" in txt:
+    # grok's real rate-limit wording — the literal "rate limit" rarely appears;
+    # what shows is "N minutes before limit is gone / continue once it resets".
+    if ("rate limit" in txt or "too many requests" in txt
+            or "before limit is gone" in txt or "once it resets" in txt
+            or "you've reached your limit" in txt or "reached your limit" in txt):
         return "rate limit"
     if "sign in" in txt or "sign up" in txt:
         return "logged out"
@@ -752,6 +961,20 @@ def _safari_detect_error() -> str | None:
     if "cloudflare" in txt or "you are unable to access" in txt:
         return "cloudflare block"
     return None
+
+
+def _safari_rate_limit_wait_seconds(default: int = 120, cap: int = 900) -> int:
+    """Read grok's stated reset ('N minutes/hours before limit is gone') and pick a
+    sane re-probe interval: at least 60s, never more than `cap` (15min) in one nap so
+    we wake up and notice an early reset instead of looking frozen for an hour."""
+    import re
+    txt = _safari_page_text().lower()
+    m = re.search(r"(\d+)\s*(hour|hr|minute|min)", txt)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        secs = n * 3600 if unit.startswith(("hour", "hr")) else n * 60
+        return min(cap, max(60, secs))
+    return default
 
 
 def _safari_get_last_message() -> str | None:
@@ -817,6 +1040,8 @@ def _safari_inject_and_send(text: str, retries: int = 3) -> bool:  # noqa: C901
       pbcopy + System Events Cmd+A/V/Enter, then immediately re-activates
       whatever app was frontmost. User sees a brief flash, not a permanent switch.
     """
+    global _LAST_SENT
+    _LAST_SENT = text   # remember it so the rate-limit handler can resend verbatim
     import json as _j
 
     for attempt in range(retries):
@@ -1035,12 +1260,23 @@ def _git_verify(cwd: str) -> str:
 
 def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa: C901
                     new_chat: bool = True) -> None:
-    global _SHUTDOWN
+    global _SHUTDOWN, _THINK
     _SHUTDOWN = False
 
     _log(_bold(f"session {_SESSION_ID}  task: {task!r}"))
-    _log("opening grok.com in Safari …")
-    _safari_open_url("https://grok.com")
+    # Open/reuse the right Safari TAB. In parallel mode each agent drives its OWN
+    # tab (by index) so N can run side-by-side without clashing on one tab.
+    if _SAFARI_OWN_WINDOW:
+        if _SAFARI_TARGET == "current tab of window 1":      # not yet claimed a tab
+            _log("opening this agent's own Safari tab …")
+            if not _safari_open_own_window(_GROK_URL):
+                _safari_open_url(_GROK_URL)
+        else:
+            _log(f"reusing own grok tab: {_SAFARI_TARGET} …")
+            _safari_navigate(_GROK_URL)
+    else:
+        _log("opening grok.com in Safari …")
+        _safari_open_url(_GROK_URL)
     time.sleep(4)
 
     # Ensure logged in
@@ -1055,18 +1291,27 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                 return
         if _safari_logged_in():
             break
-        _log("grok.com looks logged-out. Sign in in Safari, then press Enter.", "warn")
-        try:
-            ans = input("   Press Enter when ready, or 'q' to quit: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return
-        if ans in ("q", "quit"):
-            return
+        _log("grok.com looks logged-out — sign into grok.com in Safari.", "warn")
+        if sys.stdin.isatty():
+            try:
+                ans = input("   Press Enter when ready, or 'q' to quit: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return
+            if ans in ("q", "quit"):
+                return
+        else:
+            # detached / parallel launch: no terminal to prompt at — poll instead
+            _log("no TTY — waiting 10s for grok.com sign-in", "warn")
+            time.sleep(10)
         time.sleep(2)
     else:
         _log("Could not detect a logged-in session after 6 attempts.", "err")
         _notify("Grok Bridge", "❌ Login check failed")
         return
+
+    # Deep-thinking ("Think" reasoning mode) — best-effort toggle, non-fatal.
+    if _THINK:
+        _log(f"enabling Grok Think mode: {_safari_enable_think()}", "ok")
 
     if new_chat:
         _log("starting fresh chat …")
@@ -1099,11 +1344,34 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         err = _safari_detect_error()
         if err:
             _log(f"grok.com error mid-session: {err}", "warn")
-            if err in ("rate limit", "logged out"):
+            if err == "rate limit":
+                # AWARE → CHANGE MODE → REFRESH → RESEND. Hitting the limit usually
+                # means the reasoning ("Think") model's quota is spent, so drop to the
+                # standard model (much higher limit), refresh the stuck UI, and resend
+                # the exact same message. Repeated hits add a backoff so we don't hammer.
                 _rate_limit_hits = getattr(run_auto_safari, "_rate_limit_hits", 0) + 1
                 run_auto_safari._rate_limit_hits = _rate_limit_hits  # type: ignore[attr-defined]
-                wait = min(30 * _rate_limit_hits, 300)  # 30s, 60s, 90s … cap at 5min
-                _log(f"Pausing {wait}s then retrying (hit #{_rate_limit_hits}) …")
+                _log(f"⚠ rate limit (#{_rate_limit_hits}) — switching mode + refreshing + resending", "warn")
+                if _THINK:
+                    _log(f"  ↳ Think OFF (standard model has a higher quota): {_safari_disable_think()}", "ok")
+                    _THINK = False
+                _safari_reload()
+                time.sleep(5)
+                if _rate_limit_hits >= 2:   # still limited after a mode switch → wait it out
+                    wait = _safari_rate_limit_wait_seconds()
+                    _log(f"  ↳ still limited; waiting {wait}s before resend", "warn")
+                    time.sleep(wait)
+                if _LAST_SENT:
+                    _log("  ↳ resending the last message", "ok")
+                    _safari_inject_and_send(_LAST_SENT)
+                else:
+                    _safari_inject_and_send(primer)   # nothing sent yet → re-prime
+                continue
+            if err == "logged out":
+                _rate_limit_hits = getattr(run_auto_safari, "_rate_limit_hits", 0) + 1
+                run_auto_safari._rate_limit_hits = _rate_limit_hits  # type: ignore[attr-defined]
+                wait = min(30 * _rate_limit_hits, 300)
+                _log(f"logged out — backing off {wait}s (agent stays alive) …", "warn")
                 time.sleep(wait)
                 continue
 
@@ -1412,9 +1680,54 @@ def main() -> None:
     ap.add_argument("--log", metavar="FILE",
                     help="Append all turns + commands to this log file. "
                          "In --auto mode a default log is written to ~/grok_sessions/<session>.log.")
+    ap.add_argument("--session-name", metavar="NAME", default="grok-bridge",
+                    help="agent-browser session = isolated browser. Give each PARALLEL bridge a "
+                         "UNIQUE name (e.g. grok-1, grok-2) so they don't share one grok.com tab. "
+                         "Only isolates --mode auto (agent-browser), NOT Safari. Default: grok-bridge.")
+    ap.add_argument("--label", metavar="NAME", default=None,
+                    help="Short tag shown in prompts/logs/notifications — handy when several "
+                         "windows are open. Defaults to --session-name.")
+    ap.add_argument("--coordinate", action="store_true",
+                    help="Tell Grok to claim its lane in COORDINATION.md before editing any file "
+                         "(safe parallel runs). Auto-enabled when --session-name is non-default.")
+    ap.add_argument("--max-commands", type=int, default=0, metavar="N",
+                    help="Stop after N commands (0 = unlimited). Safety cap for unattended "
+                         "parallel --yolo runs so a loop can't run forever.")
+    ap.add_argument("--safari-window", action="store_true",
+                    help="Safari mode: open + drive this agent's OWN Safari window (targeted by id). "
+                         "Lets several Safari agents run side-by-side without fighting over one window.")
+    ap.add_argument("--think", action="store_true",
+                    help="Turn on grok.com's deep-reasoning 'Think' mode before sending the task.")
+    ap.add_argument("--loop", action="store_true",
+                    help="Keep working after [[DONE]] — re-prime the agent for the next task in its "
+                         "lane and continue until --max-commands (set one!) or you stop it.")
+    ap.add_argument("--safari-target", metavar="REF", default=None,
+                    help="Exact AppleScript tab this agent drives, e.g. 'tab 3 of window id 603'. "
+                         "Set by run_parallel_safari.sh, which pre-creates N tabs SEQUENTIALLY "
+                         "(race-free) and assigns one per agent. Overrides --safari-window self-open.")
     args = ap.parse_args()
-    global _VERIFY
+    global _VERIFY, _GROK_SESSION, _LABEL, _COORDINATE_LANE, _MAX_COMMANDS
+    global _SAFARI_OWN_WINDOW, _THINK, _SAFARI_TARGET
     _VERIFY = args.verify
+    _MAX_COMMANDS = max(0, args.max_commands)
+    _SAFARI_OWN_WINDOW = args.safari_window
+    _THINK = args.think
+    # A launcher-assigned tab is race-free: use it directly (navigate branch), never self-open.
+    if args.safari_target:
+        _SAFARI_TARGET = args.safari_target
+        _SAFARI_OWN_WINDOW = True
+
+    # Per-instance browser session + human label (the keys to safe parallelism).
+    _GROK_SESSION = args.session_name
+    _LABEL = args.label or args.session_name
+    # Coordinate explicitly, or implicitly whenever this is a non-default (parallel) session.
+    if args.coordinate or args.session_name != "grok-bridge":
+        _COORDINATE_LANE = _LABEL
+    # agent-browser parallelism needs a unique --session-name; Safari parallelism
+    # needs --safari-window. Warn if a parallel agent-browser session forgot the name.
+    if args.session_name != "grok-bridge" and (args.safari or args.auto) and not args.safari_window:
+        print(_yellow("⚠  For parallel SAFARI agents use --safari-window (own window per agent). "
+                      "--session-name only isolates agent-browser, not Safari."))
 
     # --auto is a shortcut for --mode auto --safari
     if args.auto:
@@ -1430,7 +1743,9 @@ def main() -> None:
     if args.log:
         _LOG_PATH = Path(args.log).expanduser()
     elif args.mode == "auto":
-        _LOG_PATH = Path.home() / "grok_sessions" / f"{_SESSION_ID}.log"
+        # Readable per-session name AND inside ~/grok_sessions/ so Salehman's
+        # grok-session ingestion (read_grok_session / the launchd daemon) sees it.
+        _LOG_PATH = Path.home() / "grok_sessions" / f"{_GROK_SESSION}-{_SESSION_ID[:6]}.log"
     if _LOG_PATH:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _LOG_PATH.open("a") as fh:
@@ -1474,29 +1789,60 @@ def main() -> None:
 
     approval = _red("YOLO") if args.yolo else (_yellow("auto-safe") if args.auto_approve else "confirm-dangerous")
     browser  = _cyan("Safari") if args.safari else "agent-browser"
-    print(_bold(f"🌉 grok-bridge") + f"  mode={args.mode}  browser={browser}  approval={approval}  cwd={cwd}")
-    print(_dim(f"   session={_SESSION_ID}  tasks={task_list}"))
+    print(_bold(f"🌉 grok-bridge[{_LABEL}]") + f"  mode={args.mode}  browser={browser}  approval={approval}  cwd={cwd}")
+    print(_dim(f"   session={_GROK_SESSION} ({_SESSION_ID[:6]})  coordinate={bool(_COORDINATE_LANE)}  "
+               f"max-cmds={args.max_commands or '∞'}  tasks={task_list}"))
+    _write_status(state="running", task=task_list[0] if task_list else "", cwd=cwd)
+    _emit_event("start", mode=args.mode,
+                browser=("safari" if args.safari else "agent-browser"),
+                yolo=args.yolo, tasks=task_list, cwd=cwd)
 
-    if args.mode == "autofix":
-        run_autofix(cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo)
+    final_state = "done"
+    try:
+        if args.mode == "autofix":
+            run_autofix(cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo)
 
-    elif args.mode == "auto" and args.safari:
-        for i, task in enumerate(task_list):
-            if i > 0:
-                _log(f"task {i+1}/{len(task_list)}: {task!r}")
-            # Only open a new chat on the first task (or if --no-new-chat not set)
-            run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
-                            new_chat=(not args.no_new_chat or i == 0))
-            if _SHUTDOWN:
-                break
+        elif args.mode == "auto" and args.safari:
+            def _under_cap() -> bool:
+                return not _MAX_COMMANDS or _CMD_COUNT < _MAX_COMMANDS
+            loop_task = (
+                "Find the single next high-value improvement in your assigned lane and do it. "
+                "Read files before editing, verify each change with git diff, keep the build green. "
+                f"If there is genuinely nothing useful left, reply {DONE_SENTINEL}.")
+            first = True
+            while True:
+                for i, task in enumerate(task_list):
+                    if i > 0 or not first:
+                        _log(f"task: {task!r}")
+                    run_auto_safari(task, cwd=cwd, auto_approve=args.auto_approve, yolo=args.yolo,
+                                    new_chat=(not args.no_new_chat or i == 0 or not first))
+                    if _SHUTDOWN or not _under_cap():
+                        break
+                first = False
+                # --loop: after the task list, keep pulling new work until stopped/capped.
+                if not args.loop or _SHUTDOWN or not _under_cap():
+                    break
+                _log("loop: fetching next task …", "info")
+                task_list = [loop_task]
 
-    elif args.mode == "auto":
-        run_auto(task_list[0] if task_list else "", cwd=cwd,
-                 auto_approve=args.auto_approve, yolo=args.yolo)
+        elif args.mode == "auto":
+            run_auto(task_list[0] if task_list else "", cwd=cwd,
+                     auto_approve=args.auto_approve, yolo=args.yolo)
 
-    else:
-        run_manual(task_list[0] if task_list else "", cwd=cwd,
-                   auto_approve=args.auto_approve, yolo=args.yolo)
+        else:
+            run_manual(task_list[0] if task_list else "", cwd=cwd,
+                       auto_approve=args.auto_approve, yolo=args.yolo)
+    except KeyboardInterrupt:
+        final_state = "interrupted"
+    except Exception as e:                       # observability: record the crash, then re-raise
+        final_state = "error"
+        _emit_event("error", error=str(e))
+        _write_status("error", error=str(e))
+        raise
+    finally:
+        if final_state != "error":
+            _emit_event("end", state=final_state, commands=_CMD_COUNT)
+            _write_status(final_state)
 
 
 if __name__ == "__main__":

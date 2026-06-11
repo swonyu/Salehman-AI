@@ -1444,6 +1444,74 @@ Wiring (exhaustive switch arms all caught by compiler):
 - `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
 **Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
 
+## 2026-06-11 · Check in fleet bug-hunt reports for the Grok bridge tooling
+**Files:** `tools/BUGS_bridge_py.md`, `tools/BUGS_bridge_sh.md` (new)
+**What & why:** The 2026-06-10 parallel fleet run (fleet-1 / fleet-2 lanes) produced two bug-hunt reports against the bridge tooling: `BUGS_bridge_py.md` lists suspected races/throttling gaps in `grok_terminal_bridge.py` (Safari auto-drive partial-page race, no rate-limit guard in the build-rebuild loop, `_grok_send` flood risk), and `BUGS_bridge_sh.md` lists shell-script issues in `run_parallel_safari.sh` / `run_parallel_grok.sh` (uninitialized loop var, TABIDX off-by-one risk, no `--help`, quoting/portability problems) plus `grok_sessions_summary.py` lacking a shebang/CLI. They were left untracked in the working tree; committing them so the findings aren't lost. None of the listed bugs are fixed yet — these are the backlog for the next bridge-hardening pass.
+**Result:** Reports tracked in git. No code changed; build unaffected.
+
+## 2026-06-11 · Full code cleanup — dead code purge, honest-UI fixes, doc re-sync (multi-agent sweep, adversarially verified)
+**Files:** deleted `Tools/ImageGen.swift`, `Tools/MacControlTools.swift`, `Tools/StockSageTool.swift`; moved `Salehman AI/grok_parser.py` → `tools/`; deleted `Salehman AI/access.log`, `Salehman AI/parsed.json`, `tools/salehman_training.jsonl` (generated, 0 bytes); edited `LLM/{LocalLLM, OllamaClient, MemoryManager, BrainStatus, SalehmanPersona}.swift`, `App/{AppSettings, AppState, Salehman_AIApp}.swift`, `Views/{SettingsView, ChatViewModel, ShortcutsView, CommandPalette}.swift`, `Tools/{ToolPolicy, StockSageMini}.swift`, `Agents/{SelfImprove, Orchestrator, AgentRegistry, MissionMemory, MissionPlan, AgentPipeline}.swift`, `StockSage/{StockSageStore, StockSageMonitor}.swift`, `Persistence/{Attachments, JSONFileStore}.swift`, `DesignSystem/DesignSystem.swift`; tests `ToolPolicyTests`, `MemoryManagerTests`, `PersistenceRoundTripTests` (header), `LiveTranscriberSegmentTests` (header); tools `bundle_check.sh`, `grok_cleanup.py`, `fleet_supervisor.sh`; docs `PROJECT_CONTEXT.md`, `ARCHITECTURE.md`, `VERIFICATION.md`, `CODEBASE_REVIEW.md` (banner), `COORDINATION.md`, `.gitignore`.
+**What & why:** Owner asked for a full code cleanup. Ran a 67-agent find→adversarially-verify sweep (7 lenses: LLM, Views, Tools/Agents, Data/Media, docs, scripts, tests → 60 findings, 58 confirmed); applied the behavior-preserving subset:
+- **FM-era leftovers removed** (the Apple-Intelligence tool layer was deleted 2026-06-08; these survived it): `ToolPolicy.instructionsToolMenu()` (advertised ~18 tools, most nonexistent — zero production callers) + its 2 tests (web-gate property still pinned by `OllamaToolGateTests`); `ImageGen.swift` (`generate` had no callers; `GeneratedMedia` consumed-but-never-set → `ChatMessage.imagePath` producer was always nil); `MacControlTools.swift` + `StockSageTool.swift` (zero references; `StockSageMini` slimmed to the `disclaimer` MarketsView renders); `SelfImprove`'s unreachable build→fix→rebuild loop (kept the test-covered primitives: `parseErrors`, `applyPatch`, `backup*`, `isInsideProject`); `SalehmanPersona.instructions(toolMenu:)`.
+- **Dead settings/state:** `useCodeModel` (+ its lying "Local coding model" Settings toggle — read by nothing), `AppSettings.openAIModel` @Published (never written; `Keys.openAIModel`/`openAIModelCurrent` kept), `AppState.focusInputRequested`, `BrainStatus.hasVision`+`probeVision` (an Ollama probe every 10 s for a value nothing read), `BrainStatus.hasGrokKey`, `BrainStatus.labelColor`, `LocalLLM.statusNote`, `OllamaClient.code(task:)`, `Generation.tight/.full/numGPU`, `MemoryManager.Snapshot/snapshot()/instance shouldRefuseHeavyModel`, `Orchestrator.run(mission:)`, `AgentRegistry.isRegistered/registeredAgents`, `Outcome.keyLearnings/conflictsResolved/recommendedNextActions/notes` + `getSummary` (never populated, flagged since 2026-06-05), `MissionPlan.thinkingMode/recommendedAgents`, `StockSageStore.upsert`, `StockSageMonitor.smartWatchlist` (writer-no-reader), `AttachmentLoader.ocr` (superseded by `VisionAnalyzer.describe`), `JSONStore` protocol + `JSONFileStore.delete()` (baseDirectory seam supersedes; trivially re-addable), `DS.Glass`, `DS.Unrestricted` + 2 palette constants.
+- **Honest-UI fixes:** restored the **⌘K Command Palette** menu binding (accidentally deleted in commit 113fc76 — four UI surfaces advertised it while it did nothing); ShortcutsView cheat sheet re-synced to real ⌘1–7 (Code tab was missing, Agents→Knowledge were off by one); CommandPalette gained "Go to Code".
+- **Tooling repairs (Grok-web-UI `$`/`__` stripping, commit 360103c):** `bundle_check.sh` stale-check never ran (`{#stale_files[@]}` → fixed, first honest PASS verified); `grok_cleanup.py` crashed on every invocation (`if name == "main"` → fixed, smoke-tested with N=99999 → "Removed 0 file(s)"); `fleet_supervisor.sh` slot-7 path updated for the grok_parser move + slot-5 reworded ("Create tools/README.md if missing" — file never existed).
+- **Docs re-synced to the real tree:** PROJECT_CONTEXT (brain list → 19 cases w/ `.salehman` default, Salehman-engine family rows, real Tools table, 7-tab ⌘ map, DeepSeek+NVIDIA provider rows, §6/§7 resolved-items), ARCHITECTURE (module map — phantom per-provider/FM files removed, Intelligence/Voice/Knowledge added; routing matrix rebuilt without `.apple`), VERIFICATION (real subsystem filter `com.salehman.ai`, real signpost names), CODEBASE_REVIEW (dated HISTORICAL banner). COORDINATION: garbled 2026-06-10 safari-fleet claim rows cleared; void Grok Tab A/B claims released.
+**Deliberately NOT done (deferred, with reasons):** wiring `salehmanEffort` (Settings Effort picker is currently display-only — **owner decision needed: wire `SalehmanEngine.respond(to:effort:)` into the answer path or remove the row**; it's 1 day old and clearly intended to be wired); `StockSageScreenAnalysis` (built-but-unwired, intentional pre-integration); `tools/finetune_export.jsonl` (owner may still need it for the x.ai job; note it contains personal session data and is on the GitHub remote); duplicate-code consolidations (GrokClient→OpenAICompatibleClient, tool-dispatch switch, mediaExts, PromptLibrary boilerplate → refactor pass, not cleanup); DS token-vocabulary trim (intentional design vocabulary); duplicate/overlapping test suites + the `OllamaRAMBenchmarkTests` brainPreference-lock gap (test-target changes need a real test run to verify).
+**Result:** ~700 lines of dead/unreachable code removed; 3 Swift files + 3 artifacts deleted; all 90 remaining app sources pass `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) with **0 errors / 0 warnings**. `SOURCE_BUNDLE.md` regenerated; `bundle_check.sh` PASS. ⚠️ **xcodebuild + the test suite could NOT be run in this session** (sandboxed environment blocks Xcode's build service); test-target changes were verified by exhaustive grep only — **run the canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
+
+## 2026-06-11 · Effort wiring — review fixes (5 adversarially-confirmed bugs)
+
+**Files:** `Salehman AI/Intelligence/Effort.swift`, `Salehman AI/LLM/SalehmanLeader.swift`, `Salehman AI/App/AppSettings.swift`, `Salehman AI/Views/SettingsView.swift`, `Salehman AITests/EffortWiringTests.swift`, `SOURCE_BUNDLE.md`
+
+**What & why:** A 4-lens adversarial review (20 agents, 10 confirmed / 6 rejected findings) of the Effort wiring diff turned up 5 real bugs. Applied all 5:
+
+1. **[HIGH] Fresh-install default brain not detected as pinned `.salehman`** — `finalize` and `isLeading` were comparing against the raw UserDefaults string; on a fresh install the key is unset (nil), so the comparison `nil == "salehman"` was false, incorrectly routing the default user to the full leader fan-out instead of the cheap refine-only path. Fixed by using `AppSettings.brainPreferenceCurrent` (the validate-or-default accessor) in both functions.
+
+2. **[MEDIUM] Leader toggle OFF didn't zero-out pinned-`.salehman` passes** — the `finalize` pinned-.salehman branch fired before `guard isLeading`, completely bypassing the toggle. Pre-change, `guard isLeading else { return draft }` was the first line, so OFF = guaranteed zero passes. Fixed by adding `guard AppSettings.salehmanLeaderEnabled else { return draft }` inside the pinned-.salehman branch.
+
+3. **[MEDIUM] Default effort `.balanced` violated CLAUDE.md "never silently call a paid cloud API" invariant** — on factory defaults (brainPreference unset → `.salehman`, effort unset → `.balanced`), every non-code reply would silently invoke 2 extra `SalehmanEngine.generate` calls (critique + rewrite via `SelfCritique.refine`), which can route to the paid DeepSeek backstop. Changed default to `.instant` (0 extra calls, exactly pre-Effort behavior). Higher quality is now opt-in.
+
+4. **[MEDIUM] Non-monotonic effort dial for the refine-only path** — `.ultra` (critiqueRounds=2) did LESS refinement than `.high` (critiqueRounds=3) in `refineOwnDraft`, because `.ultra`'s value is lower (it offloads cost to fan-out, which isn't available here). Added `refineRounds` property to `Effort` with `.ultra` capped at `.high`'s depth (both 3 rounds), and added `approxRefineCalls = refineRounds * 2`. `refineOwnDraft` now uses `refineRounds`.
+
+5. **[MEDIUM] Settings cost hint overstated/misstated for pinned-`.salehman` path** — `approxModelCalls` is the leader fan-out cost (16 for `.ultra`), not the refine-only cost (6 extra calls max). Added `effortCallsHint` computed property to `SettingsView` that branches on `brainPreference == .salehman` and shows `approxRefineCalls` vs `approxModelCalls` accordingly. `.instant` for pinned `.salehman` now correctly shows "no extra calls".
+
+Updated test names and expectations in `EffortWiringTests.swift` to match the `.instant` default.
+
+**Result:** `swiftc -typecheck` 0 errors / 0 warnings (Swift 6, `-default-isolation MainActor`). `SOURCE_BUNDLE.md` regenerated (128 files, 23720 LOC). ⚠️ xcodebuild + test suite still cannot run in sandbox — **must run canonical build + `Salehman AITests` before merging PR #1** ([https://github.com/swonyu/Salehman-AI/pull/1](https://github.com/swonyu/Salehman-AI/pull/1)).
+
+## 2026-06-11 · Effort wiring — doc/copy sync follow-up
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `PROJECT_CONTEXT.md`, `COORDINATION.md`, `ARCHITECTURE.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Follow-up to the review fixes above. (1) The "Salehman leads" toggle subtitle still said pinned `.salehman` is "skipped automatically" — post-wiring that's only true at Effort=Instant; rewrote the copy to say the Effort dial still self-critiques the pinned brain's draft, and that OFF = no extra passes for any brain (this was the third doc-contradiction site flagged by review finding #1; the other two were fixed in the previous commit). (2) `PROJECT_CONTEXT.md` + `COORDINATION.md` still claimed "default `.balanced`" from before the review changed the default to `.instant` — synced both. Verified via `swiftc -typecheck` on a temp tree with the OTHER session's in-flight files (`AgentPipeline`, `OllamaClient`, `CodeView`, `ContentView`, `MarkdownText` — live streaming-render work, not mine, not committed here) pinned to HEAD: 0 errors / 0 warnings. Note: the shared working tree means `SOURCE_BUNDLE.md` snapshots their WIP too (same as the previous commit) — they'll regenerate when their work lands.
+
+**Result:** Docs, Settings copy, and code now tell the same story: Leader OFF = zero extra passes everywhere; pinned `.salehman` + Leader ON = critique-only at the dialed effort; default `.instant` = no silent spend.
+
+## 2026-06-11 · Cross-session heads-up posted (Effort defaults changed under the latency session)
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked to notify the other live session (the latency/fast-path one — its transcript shows it's building a trivial-greeting fast path in `AgentPipeline` partly to dodge `refineOwnDraft`'s critique cost). It isn't a CCD session, so `send_message` can't reach it; posted a dated note on the COORDINATION.md board (the canonical channel) instead. Key content: default effort is now `.instant` (refineOwnDraft = zero-call no-op at defaults — re-time any "finalize makes hi slow" measurements), Leader OFF is a true kill switch again, `brainPreferenceCurrent` replaces raw-string compares, new `refineRounds`/`approxRefineCalls`, and a merge-awareness warning that I touched `SettingsView.swift` while they hold uncommitted Views work.
+
+**Result:** Board note committed; bundle regenerated. Their in-flight files remain untouched/uncommitted.
+
+## 2026-06-11 · Build request handed to the build-capable session + deferred-refactor triage
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Appended a build request to the board note: the latency session demonstrably runs `xcodebuild` + launches the app (this sandboxed session cannot), so it's asked to run the canonical build + `Salehman AITests` (incl. the new `EffortWiringTests`) when its work lands and post pass/fail — the only remaining gate on PR #1. Also triaged the cleanup's deferred refactors: `mediaExts` dedup is **moot** (single definition in `MediaTranscribe.swift` since the cleanup); `PromptLibrary` boilerplate fold-in judged **not worth the churn** (~15 lines saved, clear file as-is); `GrokClient→OpenAICompatibleClient` + tool-dispatch dedup **deliberately left** — the other session is actively studying the cloud chain, collision risk. Review loose ends closed: the verify-agent-killed finding ("maxTokens / whitespace") was re-verified by hand — `maxTokens` difference is inert (`SalehmanEngine.generate` only uses it at the MLX floor as `?? 1024`, identical to the old explicit 1024); leader answers now arriving whitespace-trimmed is cosmetic.
+
+**Result:** PR #1 fully done from this session's side; merge gate = owner (or latency session) runs build + tests.
+
+## 2026-06-11 · 14B training babysit accepted (API-side); PR #1 build gate PASSED by the other session
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** The latency session answered the board: (1) **PR #1 build gate cleared** — canonical build + `Salehman AITests` on the combined tree: BUILD SUCCEEDED, 297 tests passed / 0 failed (incl. all `EffortWiringTests`); it also updated stale `selectableCasesExcludeAllPaid` in `ToolLoopTests.swift` (rides its next commit). (2) It handed off the owner-mandated **14B Salehman training babysit** (pod `37ar55sx5i1h1h`, A100, round 1 of Qwen2.5-14B QLoRA running; runbook on the board). Accepted with a capability split: this sandbox blocks outbound SSH (`Operation not permitted`) but the RunPod HTTPS API works — so this session runs a 60s-poll monitor (GPU-sustained-idle = round boundary; pod-not-running; balance<$3; 30-min heartbeats), does the balance math, and will `podTerminate` + report final spend; the SSH legs (adapter verify/scp/eval/retrain/GGUF) stay with the other session unless the owner grants SSH egress. Monitor v1 had a real bug — zsh doesn't word-split unquoted `$line`, so `set -- $line` parked the whole status string in `$1` and zsh's `[` coerced the empty `$bal` to 0 → false "balance $0" alarm; v2 moved all logic into a single Python poller (no shell parsing). The other session also cleaned the RunPod money leak with owner confirmation (13 volumes + 11 dead pods deleted; burn now $1.415/hr) — my "surface the leak at the end" runbook step is moot.
+
+**Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -1838,3 +1906,255 @@ Wiring (exhaustive switch arms all caught by compiler):
   refine-then-converge, cap-at-maxRounds, empty-draft short-circuit,
   blank-rewrite-keeps-prior, token-in-prose). Uncommitted on the grok branch pending
   owner decision to commit/merge.
+
+## 2026-06-10 — AI bug fixes: generateOnDevice vLLM gap + SelfImprove codesign + nonisolated(unsafe) warnings
+- What: Three AI-layer bugs fixed after a thorough audit of the LLM/Intelligence/Agents stack.
+  1. `LocalLLM.generateOnDevice` was missing the `VLLM.isLocalLoopback` branch. `VLLM.swift`'s own
+     doc comment explicitly says "`generateOnDevice` uses vLLM for the on-device-only path only when
+     this is true," but the implementation only tried Ollama and UnslothStudio. Knowledge vault, StockSage
+     briefings, and screen-analysis calls (all privacy-sensitive and routed through `generateOnDevice`)
+     would silently skip a running local vLLM server. Fixed by adding the `VLLM.isLocalLoopback` check.
+  2. `SelfImprove.runXcodebuild` was missing `CODE_SIGNING_ALLOWED=NO` — the canonical flag from
+     CLAUDE.md. Without it, code-signing failures (common in CI/automation contexts) would appear as
+     "no structured errors parsed — likely a linker/codesign issue" and the self-fix loop would bail
+     out immediately without attempting any patches. Fixed by adding the flag.
+  3. Two `nonisolated(unsafe)` annotations were spurious: `SelfCritique.approvedToken` (a `String` literal)
+     and `GrokWatchTool.sessionDir` (a `URL`) are both `Sendable` types — `nonisolated(unsafe)` is only
+     needed for non-Sendable mutable state. The compiler warned about both. Removed the unnecessary
+     annotations (changed to plain `nonisolated static let`).
+- Files: `Salehman AI/LLM/LocalLLM.swift`, `Salehman AI/Agents/SelfImprove.swift`,
+  `Salehman AI/Intelligence/SelfCritique.swift`, `Salehman AI/Tools/GrokWatchTool.swift`
+- Why: `generateOnDevice` gap was a documentation/implementation mismatch — VLLM.swift documented the
+  intended behavior but the code never caught up. The codesign flag was a copy-paste omission vs. the
+  canonical command. The warnings were unnecessary escalations of safe constants to unsafe.
+- Result: BUILD SUCCEEDED, zero warnings. All pre-existing tests green.
+
+## 2026-06-10 — cloudSystemPrompt wording drift fix (declaresNoLocalToolAccess test)
+- What: `CloudSystemPromptTests/declaresNoLocalToolAccess` was failing — the test pins six
+  specific substrings ("no local tools", "local tools", "no access", etc.) as proof the prompt
+  declares tool unavailability, but the prompt had drifted to "no terminal or web access" which
+  matches none of them. Single-word fix: changed "no terminal or web access" →
+  "no local tools or web access" so the phrase now contains "no local tools" (a test pattern)
+  while keeping the same semantic meaning. This was a pre-existing failure unrelated to the
+  AI bug fixes above.
+- Files: `Salehman AI/LLM/LocalLLM.swift` (`cloudSystemPromptBase`)
+- Why: Wording drift between prompt and the test that pins its semantic constraints. The test
+  was written with "local tools" terminology; the prompt evolved toward "terminal" terminology.
+- Result: All 6 CloudSystemPromptTests pass. Full suite green.
+
+## 2026-06-10 — Effort control: one knob over the Core-Intelligence primitives
+- What: New `Effort` enum (`instant` / `balanced` / `high` / `ultra`) that dials *how hard
+  Salehman thinks* before answering — the local analogue of an agent harness's "reasoning
+  effort + workflows" selector. It orchestrates the primitives we already had: `SelfCritique.refine`
+  (draft → critique → rewrite, N rounds) plus a candidate fan-out + judge pass for `.ultra`
+  (generate 3 drafts, self-critique each, pick the best). The generator is injected, so it's
+  brain-agnostic (MLX / Ollama / cloud) and unit-testable. `SalehmanEngine.respond(to:effort:)`
+  bridges it to the real brain; an `Effort` picker was added to Settings → Intelligence, persisted
+  via `AppSettings.salehmanEffort` (default `.balanced`).
+- Files: `Salehman AI/Intelligence/Effort.swift` (new), `Salehman AITests/EffortTests.swift` (new,
+  8 tests), `Salehman AI/App/AppSettings.swift` (+`salehmanEffort` published setting + Keys + init),
+  `Salehman AI/Views/SettingsView.swift` (+`effortRow` picker in the Intelligence section).
+- Why: Owner asked for a Salehman equivalent of the "Effort / Ultracode" control — a single dial
+  trading compute for answer quality, reusing `SelfCritique` (the first Core-Intelligence primitive)
+  rather than bolting on a parallel mechanism. Computed properties are `nonisolated` so the
+  `nonisolated` orchestrator can read them under the project's main-actor-default isolation.
+- Result: Build SUCCEEDED; all 8 EffortTests pass. Full suite green.
+
+## 2026-06-10 — Fine-tune kit: scrubbed chat dataset + 8B QLoRA run on RunPod
+- What: Trained Salehman on RunPod (A100 80GB). First validated the existing `salehman-training/runpod`
+  kit end-to-end on the 3B default (caught + fixed three env issues: PEP-668 `--break-system-packages`,
+  a broken torchvision vs torch 2.8 → removed it, and a CPU-torch clobber → reinstalled `torch==2.8.0+cu128`).
+  Then built `build_chat_dataset.py` to mine the 27 Claude Code transcripts for clean Saleh↔Claude turns,
+  **aggressively scrubbing API keys/tokens** (11 transcripts contained key-like strings — training raw would
+  bake secrets into weights, violating the Keychain-only rule), filtering harness noise, → 221 pairs.
+  Combined with the 289 persona examples = 510. Launched an 8B QLoRA (`unsloth/Meta-Llama-3.1-8B-Instruct`,
+  batch 16×2048 — saturates the A100 at ~100% util) with a disk-safe merge (frees the HF cache mid-merge so
+  the 16GB fp16 merge fits the 30GB pod disk), exporting `q5_K_M` GGUF.
+- Files: `salehman-training/build_chat_dataset.py` (new), `salehman-training/dataset_chats.jsonl` (new),
+  `salehman-training/dataset_combined.jsonl` (new). Pod-side: patched `runpod/03_merge.py` (disk-safe),
+  added `runpod/run_8b.sh`.
+- Why: Owner wants a smarter Salehman that also sounds like our actual conversations, and to actually use
+  the A100 they're paying for (3B left it ~34% idle; 8B + big batch pins it at 100%).
+- Result: 3B pipeline validated (training only — `train_loss` 0.47). 8B run in progress at log time;
+  GGUF downloads to the Mac and imports into Ollama as `salehman` (the app's local brain). NOTE: chat
+  transcripts are mostly tool calls — yield was modest (221 usable pairs) and persona remains the backbone.
+
+## 2026-06-10 — grok_terminal_bridge: parallel-safe multi-agent mode + Salehman-ingestible trail
+- What: Made the Grok Terminal Bridge runnable as **N parallel agents on one repo** without colliding,
+  emitting a machine-readable trail Salehman can ingest. New flags: `--session-name` (each agent gets
+  its OWN agent-browser session ⇒ isolated browser/grok.com tab — the hardcoded `_GROK_SESSION` was the
+  blocker; now per-instance), `--label`, `--coordinate` (injects a COORDINATION.md primer: claim your
+  lane before editing, one-driver-per-file, plus a GIT-SAFETY clause forbidding commit/branch ops since
+  agents share one working tree), and `--max-commands N` (runaway cap for unattended `--yolo`). Added a
+  trail in `~/grok_sessions/`: `<session>.jsonl` (append-only events: start/command/declined/aborted/
+  error/end, each with exit code + output excerpt) and `<session>.status.json` (live heartbeat) so the
+  grok-session ingestion + a dashboard SEE EVERYTHING without scraping prose. New `run_parallel_grok.sh`
+  (launch N lane-scoped isolated bridges) + `grok_status.sh` (live dashboard). Fixed a latent bug: the
+  module only imported `json` locally, so module-level use raised NameError — added top-level `import json`.
+- Files: `tools/grok_terminal_bridge.py`, `tools/run_parallel_grok.sh` (new), `tools/grok_status.sh` (new).
+- Why: Owner wants ~5 Grok agents at once (coordinating via COORDINATION.md, not isolation) and Salehman
+  to watch everything they do.
+- Result: `ast.parse` clean; end-to-end test (no browser) confirms events + status write and the
+  `--max-commands` cap fires; both shell scripts pass `bash -n`. Xcode build unaffected (Python-only).
+
+## 2026-06-10 — GeminiClient 429/503 backoff + LiveTranscriber testable seams (two parallel-split tasks)
+- What: Two tasks that were earmarked for parallel Grok agents but kept for Claude (Grok is weak at
+  Swift concurrency). (1) **GeminiClient**: `chat()` now retries transient 429 (RESOURCE_EXHAUSTED) and
+  503 responses with capped exponential backoff (0.5·2^attempt, cap 8s, maxRetries 3) before surfacing
+  the error; `nil` (unreachable) is still left for the brain-chain to roll past. The two decisions are
+  pure `nonisolated static` helpers — `isRetryableStatus(_:)` and `backoffDelay(attempt:base:cap:)` —
+  covered by a new hermetic `GeminiBackoffTests` (4 cases, no network). (2) **LiveTranscriber**: extracted
+  the partial-selection and publish-throttle decisions into pure statics — `longestPartial(_:)` (stronger/
+  longest hypothesis wins) and `shouldPublishPartial(text:lastPublished:now:lastPublishAt:minInterval:)`
+  (changed-AND-≥0.11s ≈ 9 Hz gate) — and refactored the call sites to use them. That un-disabled 2 of the
+  5 previously-blocked tests in `LiveTranscriberSegmentTests` (longest-partial, throttle); the 3 that
+  genuinely need a live Screen/Speech capture seam stay honestly `.disabled` (no fake green).
+- Files: `Salehman AI/LLM/GeminiClient.swift`, `Salehman AITests/GeminiBackoffTests.swift` (new),
+  `Salehman AI/Media/LiveTranscriber.swift`, `Salehman AITests/LiveTranscriberSegmentTests.swift`.
+- Why: real reliability (Gemini rate-limits are common on the free tier) + convert two honestly-disabled
+  test stubs into real coverage by adding pure seams, matching the repo's "no green tautologies" rule.
+- Result: BUILD SUCCEEDED; LiveTranscriberSegment (3 pass / 2 honestly disabled) + GeminiBackoff (4) +
+  Effort (8) all green. (`AppSettings` default Effort also set to `.ultra` per owner request.)
+
+## 2026-06-10 — Parallel-session notification (desktop ↔ VS Code) — applied twice (first copy wiped)
+**Files:** `COORDINATION.md` (docs only)
+**What & why:** Owner asked the desktop Claude Code session to notify the VS Code session of parallel
+work. Direct cross-session messaging requires interactive approval (unavailable unsupervised), so the
+notification went into COORDINATION.md per protocol: a Live Lane Board claim row (desktop session,
+`tools/grok_terminal_bridge.py` + `tools/run_parallel_safari.sh`, branch `feat/effort-grok-tooling`)
+plus a dated Notes/handoffs entry. **Reversal logged:** the first application (plus its dev-log entry)
+was wiped when the working tree was restored to HEAD content (~16:35 and ~16:45 file mtimes; no reflog
+reset — likely a `git restore` by another session or a wholesale file rewrite by a safari bridge lane).
+Re-applied ~16:50 with an explicit "don't revert uncommitted coordination edits" warning. Also observed:
+Grok safari lanes (safari-1/3/5) are appending malformed loose-line claims at the END of COORDINATION.md
+instead of board rows — flagged in the Notes entry.
+**Result:** Docs-only; no build impact. Watch for a second clobber — if it recurs, the restore step in
+whatever automation is doing it needs to exclude COORDINATION.md / DEVELOPMENT_LOG.md.
+
+## 2026-06-10 — Parallel Safari Grok fleet (race-free) + rate-limit backoff + chat-trained Salehman
+**Files:** `tools/grok_terminal_bridge.py`, `tools/run_parallel_safari.sh`, `tools/PARALLEL_GROK_GUIDE.md`
+(new), `salehman-training/{mac,runpod}/01_prepare_data.py`, `salehman-training/dataset_combined.jsonl`
+(gitignored), `salehman-training/build_chat_dataset.py`.
+**What & why:** Owner wanted N Grok web agents working the repo in parallel, non-stop, off-screen.
+- **Race-free parallel Safari.** First tried per-agent own-window (`--safari-window`) — all agents grabbed
+  the SAME window id (Safari opens `make new document` as a TAB, not a window). Switched to per-TAB
+  targeting — still collided (all got `tab 3`): each agent opened+captured its own tab and they raced.
+  **Fix that worked:** the launcher pre-creates N tabs SEQUENTIALLY in one window (no race) and hands each
+  agent its exact tab via a new `--safari-target "tab K of window id W"` flag. Verified 5 and 7 agents on
+  distinct tabs.
+- **RAM auto-limit:** launcher reads `hw.memsize` and caps agents (16 GB → 3; override `MAX_AGENTS`).
+  Added after 10 grok.com tabs pinned a 16 GB Mac (each tab ~1 GB).
+- **Rate-limit handling:** the existing backoff never fired because `_safari_detect_error` matched only
+  "rate limit"/"too many requests" while grok actually says "N minutes before limit is gone / once it
+  resets." Added those markers + `_safari_rate_limit_wait_seconds()` (reads grok's stated reset, naps ≤15min
+  re-probing). Agents now WAIT instead of spinning at 0 cmds burning RAM. **Cause of the cap:** running
+  fleets with `--think` (reasoning model = tightest quota) exhausted even SuperGrok Heavy's hourly bucket.
+  Made `--think` a default with `THINK=0` opt-out.
+- **Unbuffered logs** (`python3 -u`) so `~/grok_sessions/*.out` stream live (were block-buffered → looked empty).
+- **Chat-trained Salehman:** `build_chat_dataset.py` extracted 289 scrubbed Saleh↔Claude pairs (0 secret
+  leaks, verified) → `dataset_combined.jsonl` (578 w/ persona style). Repointed both training kits'
+  `01_prepare_data.py` from `dataset_saleh_style.jsonl` → `dataset_combined.jsonl` (DATASET= override,
+  style fallback), and inject a `SALEHMAN_SYSTEM` persona system-turn into every example (520/520 verified)
+  so the fine-tune learns identity + voice, not just Q→A.
+**Result:** bridge `py_compile` clean, launcher `bash -n` clean; commits on `feat/effort-grok-tooling`.
+Grok-agent net output was low-value (2 usable tools `grok_cleanup.py`/`bundle_check.sh`, one gutted-file
+regression reverted, one hallucinated wrong-path file) — unsupervised Grok needs `git diff` review before
+keeping anything. Training upload to RunPod is owner-run (data-egress guard correctly blocks auto-upload of
+personal chat data).
+
+## 2026-06-11 — Code tab UI overhaul (Claude-parity) + complete 32B fine-tune (1,028 examples)
+**Files:** `Salehman AI/Views/CodeView.swift` (UI, Chat-B lane); `salehman-training/*`
+(datasets + `runpod/02_train.py`, `test_salehman.py`, generator scripts — gitignored data).
+**What & why:** Owner wanted the Code tab "as good as Claude" + Salehman trained on the full Claude
+working style, then run locally on a 4080 later. Verified UI changes by **building + launching + screen-
+capturing the app** (`screencapture` + `osascript`), iterating on real screenshots rather than blind.
+- **CodeView polish/features (all build-verified):** centered welcome with a glowing accent-circle `</>`
+  icon + tappable example chips (`Review`/`Find & fix a bug`/`Explain a file`) + `⌘O/⌘R/⌘L` shortcut hints;
+  cohesive input "pill" (one rounded container, border warms to accent while typing); message avatars in a
+  matching accent disc; inspector empty-state → centered icon+text; file-tree project header (folder icon +
+  file-count badge); empty-tree → folder icon + inline **Open Folder** button; **Review** promoted to an
+  accent pill (primary action); active-brain label in the input controls; agent-steps **progress header**
+  ("Working · N/M" + running step glows); **Copy-all** conversation (Markdown) + message count; **drag-a-file-
+  onto-input** to attach (`.onDrop`, `import UniformTypeIdentifiers`); **⌘L** focuses the input.
+- **Complete 32B fine-tune.** Dataset grown to **1,028** examples: 869 scrubbed chats+persona, 71
+  workflow/ultracode, 44 Claude-style coding (root-cause debugging etc.), 44 full-feature-set (effort dial,
+  pipeline-vs-barrier, judge panel…), 12 hand-crafted identity/domain. Trained `Qwen2.5-32B-Instruct-bnb-4bit`
+  QLoRA (r64/α128, 4-bit pre-quant so the 32B fits a small disk) on an **H100 + 140 GB network volume**
+  (after the L40S pods' ephemeral disk truncated a save and lost a run — fixed by a persistent volume +
+  verify-adapter-loads-before-trusting). `02_train.py`: added pre-quantized-model branch (skip
+  BitsAndBytesConfig when name contains `4bit`/`bnb`) + `save_strategy="steps"` checkpointing.
+- **Eval (`test_salehman.py`):** the complete model knows it's Salehman (local-first) and reproduces the
+  workflow training verbatim ("the test isn't 'is this big,' it's 'does correctness need decomposition'";
+  pipeline-vs-barrier explained correctly). Distillation landed.
+**Result:** `xcodebuild` **BUILD SUCCEEDED** throughout (one red build was the parallel Chat-A `Agents/*`
+refactor, not this lane — left for them per coordination; went green when they landed it). Adapter validated
+(896 tensors) + backed up to the Mac twice (round 1 + round 2, ~2 GB each) — double-safe vs the ephemeral-pod
+data loss. Pod terminated by owner after backup. Serving (GGUF `Q3_K_M` + speculative decoding on the 4080)
+deferred to owner, next month. Lesson re-learned: a disk-full **truncates** a safetensors save silently —
+always verify the artifact *loads* before calling training done.
+
+## 2026-06-11 — "Why doesn't Salehman answer / it takes forever": mute-floor + 15-agents-for-"hi" fixes; brain menu pared; 14B-for-Mac kit
+**Files:** `LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Views/CodeView.swift`,
+`Views/ContentView.swift`, `Views/MarkdownText.swift`, `App/AppSettings.swift`;
+`salehman-training/runpod/run_14b_for_mac.sh` (new), `salehman-training/make_mac_polish_dataset.py` (new).
+**What & why:** Owner sent "hi" in the Code tab → stuck on "Working 0/15", no answer ever.
+Three stacked root causes, found by reading the live Ollama state + the routing code:
+- **Mute local floor.** `.salehman`'s `activeChatModel()` returned ONLY the custom model named
+  "salehman" — by design ("never silently fall back") — but that model isn't pulled (the 32B
+  isn't served yet), and with no cloud key the brain went silent. Fix: prefer the custom model
+  when present, else fall back to the best available local coder (qwen2.5-coder:7b) so Salehman
+  is never mute.
+- **15 agents for "hi".** `complexity()` correctly rates a greeting `.simple` — but the Code tab
+  wraps EVERY message in a multi-line >200-char coding preamble, which alone trips the
+  `.hard` heuristics → in Maximum mode that's the full 15-agent team for "hi". Fix: trivial
+  input (`isTrivialMission`) skips the preamble in CodeView, AND `AgentPipeline.run` got a
+  trivial fast-path: one direct warm-local reply (Ollama + persona), no team, no
+  leader/critique finalize, cloud engine only as fallback. (`finalize` was the second tax:
+  even a 1-agent run paid a `refineOwnDraft` self-critique pass.)
+- **Streaming lag guards** (owner: "the 32B must never lag the app"): still-streaming replies
+  longer than `StreamRender.liveMarkdownLimit` (1200 chars, shared constant in AgentPipeline)
+  render as plain text — the O(n)-per-tick Markdown re-parse was the jank source — full
+  Markdown renders once on commit. Applied in both CodeView's streamingView and the main
+  chat's StreamingBubble.
+- **Brain menu pared to Salehman + Auto** (owner: "stupid to have this many models" — picked
+  via AskUserQuestion). `selectableCases` = `[.salehman, .auto]`; init migrates+persists a
+  stale hidden pick to `.salehman` so picker and `brainPreferenceCurrent` can't disagree.
+  All other cases still function if set programmatically (rotation untouched).
+- **Markdown upgrades:** chat code blocks now syntax-highlighted via the existing `CodeSyntax`
+  engine (single AttributedString so selection spans the block; >6000-char blocks stay plain —
+  the per-tick re-highlight is quadratic while streaming); GFM tables (`| a | b |` + separator)
+  parse into a real Grid with bold header.
+- **14B-for-Mac kit:** owner wants HIS fine-tune fast on THIS Mac (M4/16 GB — a 32B can't fit:
+  ~18 GB weights alone). New turnkey `run_14b_for_mac.sh` (train Qwen2.5-14B QLoRA on the same
+  dataset → merge → GGUF Q4_K_M ≈ 9 GB → `ollama create salehman`; the floor fix above makes the
+  app auto-use it). Dataset grown 1,040 → **1,062** (`make_mac_polish_dataset.py`: Arabic pairs,
+  direct-short-answer habits, honest local-identity answers) — parse-clean, secret-scan clean.
+**Result:** build green after each step (one intermediate red: `await` on both sides of `??` is
+illegal in Swift — restructured). Verified via the app's persisted `chat_history.json` that
+Salehman now actually answers ("hi" → "مرحباً! كيف أقدر أساعدك اليوم؟"). Synthetic-keystroke UI
+tests were unreliable while the owner used the Mac live — timing of the fast path still needs a
+hands-on check. NEXT: owner deploys a RunPod GPU ($15 budget), Claude drives multi-round 14B
+training to spend it well (eval-checkpointed rounds, weakness-targeted data, final Q4_K_M GGUF).
+
+## 2026-06-11 — 14B-readiness app tuning (keep-warm, warmup-on-focus, stream parity, reply caps)
+**Files:** `LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Views/CodeView.swift`,
+`Salehman AITests/ToolLoopTests.swift`, `COORDINATION.md`.
+**What & why:** The 14B fine-tune (GGUF ≈ 9 GB, Ollama name "salehman") lands today; at that size the
+7B-era knobs actively hurt: `keep_alive 30s` evicts 9 GB after every pause (each next reply re-pays a
+multi-second load), `chatStream` hardcoded 30s and skipped `num_ctx` entirely, and nothing warned the
+user that a silent first reply = model loading.
+- `Generation.tuned(for:)` — per-model knobs: the user's own model gets `keep_alive 5m` + `num_ctx 4096`
+  (matches its Modelfile); other models keep the RAM-lean 30s/2048. Applied to `chat()` AND `chatStream`
+  (parity — stream also gained `num_ctx`/`num_predict` options it never had).
+- `Generation.numPredict` — optional reply-length cap; trivial fast-path greetings capped at 384 tokens
+  (~25 tok/s local ⇒ seatbelt against a 30 s ramble).
+- `warmupChatModel()` (once per launch) — empty-prompt /api/generate pre-loads the active model; fired
+  from CodeView when the input gains FOCUS, so the 9 GB load happens while the user is still typing.
+- CodeView: "Warming up the local model…" status after 5 s of pre-stream silence (was an indistinguishable
+  "Working…" that looked frozen during model load).
+- `selectableCasesExcludeAllPaid` test updated to pin the new owner-approved picker contract
+  (`[.salehman, .auto]`) — was asserting the pre-pare menu (.gemini/.freeAuto present).
+**Result:** build green; suite green earlier at 297/297 (this entry's changes re-verified by build; suite
+re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
+live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
+concurrency audit + agents-lane sweep.

@@ -4,12 +4,11 @@ import Foundation
 
 // MARK: - Persistence round-trips (MemoryStore, ScratchpadStore, StockSagePortfolio, ...)
 //
-// These require the injectable JSONFileStore + base-dir seam from §3 refactor (R4).
-// The stores hard-code their Application Support path and are singletons with
-// private fileURL, so no way to point them at a temp dir for hermetic tests.
-// All cases here are disabled until the refactor provides a testable constructor
-// or base-dir override. Then the round-trip + dedup + snapshot cases become
-// straightforward.
+// Hermetic round-trips via the injected seams that landed with the R4 refactor:
+// `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`,
+// `StockSagePortfolio(userDefaults:)`. Each test redirects persistence to a
+// throwaway temp dir / UserDefaults suite, so nothing touches the user's real
+// Application Support data. All cases are ACTIVE.
 
 struct PersistenceRoundTripTests {
 

@@ -239,8 +239,15 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         }
     }
 
+    /// The winning hypothesis across recognizers = the LONGEST text (the stronger
+    /// hypothesis wins; ties keep the first). Pure + static so it's unit-testable
+    /// without a live recognition stream.
+    nonisolated static func longestPartial(_ partials: [String]) -> String {
+        partials.max(by: { $0.count < $1.count }) ?? ""
+    }
+
     private nonisolated var bestPartial: String {
-        recs.map { $0.partial }.max(by: { $0.count < $1.count }) ?? ""
+        Self.longestPartial(recs.map { $0.partial })
     }
 
     private nonisolated func commit() {
@@ -279,10 +286,20 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
     /// when the text actually changed. Recognition callbacks fire far faster than
     /// that, and each push re-rendered the whole transcript — the old behavior was
     /// a big part of the lag. `commit()` flushes the final text via teardown.
+    /// Throttle gate for partial updates: publish only when the text actually
+    /// CHANGED and at least `minInterval` (0.11s ≈ 9 Hz) has elapsed since the last
+    /// publish. Pure + static so it's unit-testable without a live stream.
+    nonisolated static func shouldPublishPartial(text: String, lastPublished: String,
+                                                 now: CFTimeInterval, lastPublishAt: CFTimeInterval,
+                                                 minInterval: CFTimeInterval = 0.11) -> Bool {
+        text != lastPublished && (now - lastPublishAt) >= minInterval
+    }
+
     private nonisolated func publishPartial() {
         let text = bestPartial
         let now = CACurrentMediaTime()
-        guard text != lastPublishedPartial, now - lastPublishAt >= 0.11 else { return }
+        guard Self.shouldPublishPartial(text: text, lastPublished: lastPublishedPartial,
+                                        now: now, lastPublishAt: lastPublishAt) else { return }
         lastPublishedPartial = text
         lastPublishAt = now
         DispatchQueue.main.async { self.partialThem = text }
