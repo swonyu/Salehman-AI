@@ -451,12 +451,16 @@ struct ContentView: View {
             EmptyStateLogo()
 
             VStack(spacing: 10) {
-                // Live eyebrow: flips to "your 14B is live" once the fine-tuned
-                // model is actually pulled in Ollama — same probe the Settings
-                // row uses, so the two never disagree.
-                Eyebrow(text: localModelReady
-                        ? "Salehman AI · your 14B is live"
-                        : "Salehman AI · On-device")
+                // Live, HONEST eyebrow (the blanket "On-device" claim was false
+                // for a cloud-first brain — same inaccuracy class the other
+                // session flagged on Today's greeting): say "offline only" when
+                // that mode is on, "your 14B is live" when the fine-tune is
+                // actually pulled (same probe as the Settings row), else just
+                // the name.
+                Eyebrow(text: settings.offlineOnly
+                        ? "Salehman AI · Offline only"
+                        : (localModelReady ? "Salehman AI · your 14B is live"
+                                           : "Salehman AI"))
                 Text(greetingLine)
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
