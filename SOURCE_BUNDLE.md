@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:18 +03 · Swift files: 129 · Swift LOC: 24335_
+_Generated: 2026-06-11 17:21 +03 · Swift files: 129 · Swift LOC: 24355_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14141,7 +14141,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1409 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1429 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14160,6 +14160,9 @@ enum Theme {
 
 struct ContentView: View {
     @State private var mission: String = ""
+    /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
+    /// drives the empty-state eyebrow. Probed once per empty-state appearance.
+    @State private var localModelReady = false
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -14571,16 +14574,21 @@ struct ContentView: View {
 
     // MARK: Empty state
     private var emptyState: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 26) {
             // Hero logo — twin glow halos with a slow "breathing" scale on the
-            // brand tile. Gives the empty state a living, cinematic centerpiece
-            // instead of a static glyph.
+            // brand tile. The landing moment keeps its glow (design language
+            // allows it on landing surfaces); everything else stays flat.
             EmptyStateLogo()
 
             VStack(spacing: 10) {
-                Eyebrow(text: "Salehman AI · On-device")
-                Text("How can I help, Saleh?")
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                // Live eyebrow: flips to "your 14B is live" once the fine-tuned
+                // model is actually pulled in Ollama — same probe the Settings
+                // row uses, so the two never disagree.
+                Eyebrow(text: localModelReady
+                        ? "Salehman AI · your 14B is live"
+                        : "Salehman AI · On-device")
+                Text(greetingLine)
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text("Ask me anything, or let me run things on your Mac.")
@@ -14599,11 +14607,23 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 540)
+            .frame(maxWidth: 560)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
+        .task { localModelReady = await OllamaClient.hasCustomModel() }
+    }
+
+    /// Time-aware greeting — the same buckets the Today tab uses, so the two
+    /// landing surfaces always agree about the time of day.
+    private var greetingLine: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "Good morning, Saleh"
+        case 12..<17: return "Good afternoon, Saleh"
+        case 17..<22: return "Good evening, Saleh"
+        default:      return "Working late, Saleh?"
+        }
     }
 
     // MARK: Input bar
