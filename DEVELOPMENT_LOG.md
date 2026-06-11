@@ -1508,3 +1508,18 @@ claims vision).
 pickFiles), `Salehman AITests/ChatComposerLogicTests.swift`; bundle regenerated. (Thanks to
 whichever session added the missing `import Foundation` to the test file — caught pre-red.)
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned); no stale single-attachment refs (grep).
+
+## 2026-06-11 (night) — Chat C: tabs marathon (owner "heavily refine/polish/test + features, 3h") — cycles 1–2
+**Files:** `Views/MarketsView.swift`, `Tests/MarketSortTests`, `Tests/StockSagePortfolioTests`,
+`Tests/ChatComposerLogicTests` (import fix). Commits `81af460`, `16a4694` (+ test-unblock).
+- **Feature — Markets watchlist sort** (Default / Top gainers / Strongest signal / A–Z): new pure `MarketSort`
+  enum + a compact sort Menu above the watchlist. "Strongest signal" ranks strong>buy/sell>hold, tie-break by
+  move magnitude. **8 `MarketSortTests`** pin the comparator; sort control verified in `markets.png`.
+- **Tests — StockSagePortfolio** (the untested P&L gap): cost math, add() input guards, remove/clear, JSON
+  persistence — 6 hermetic tests (unique UserDefaults suite each).
+- **Unblocked the suite:** `ChatComposerLogicTests` was committed-red (UUID without `import Foundation`) — 3rd
+  missing-import-class miss after QAGeometryTests. Added the import (idle Chat B test file). Re-read.
+- **Lessons (ultracode bar):** check for EXISTING tests before writing a suite (my first signal-engine file
+  duplicated `StockSageSignalEngineTests` → deleted); verify by the `** TEST SUCCEEDED **` MARKER, not a
+  background `$?` (which is a trailing grep's).
+**Result:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` **355 cases** (was ~322). Marathon continues.
