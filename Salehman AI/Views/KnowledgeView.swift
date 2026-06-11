@@ -28,6 +28,7 @@ struct KnowledgeView: View {
     @State private var pasteTitle = ""
     @State private var pasteBody = ""
     @State private var detailDoc: KnowledgeDoc?
+    @State private var docSort: KnowledgeSort = .recent
 
     var body: some View {
         ScrollView {
@@ -144,9 +145,25 @@ struct KnowledgeView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 30)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if docs.count > 1 {
+                        Menu {
+                            ForEach(KnowledgeSort.allCases) { s in
+                                Button { docSort = s } label: {
+                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
+                                }
+                            }
+                        } label: {
+                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                    }
+                }
                 VStack(spacing: 1) {
-                    ForEach(docs) { doc in docRow(doc) }
+                    ForEach(docSort.apply(docs)) { doc in docRow(doc) }
                 }
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -276,6 +293,26 @@ struct KnowledgeView: View {
         """
         answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
         asking = false
+    }
+}
+
+/// Document ordering for the Knowledge list (Chat C feature). Pure `apply` → tested.
+enum KnowledgeSort: String, CaseIterable, Identifiable {
+    case recent, name, passages
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent:   return "Recent"
+        case .name:     return "Name (A–Z)"
+        case .passages: return "Most passages"
+        }
+    }
+    func apply(_ docs: [KnowledgeDoc]) -> [KnowledgeDoc] {
+        switch self {
+        case .recent:   return docs.sorted { $0.addedAt > $1.addedAt }
+        case .name:     return docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .passages: return docs.sorted { $0.chunkCount > $1.chunkCount }
+        }
     }
 }
 
