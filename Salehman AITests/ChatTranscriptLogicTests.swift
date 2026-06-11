@@ -161,6 +161,70 @@ struct ChatPinTests {
     }
 }
 
+// MARK: - Transcript cadence (separators + grouping)
+
+struct TranscriptCadenceTests {
+
+    private let cal = Calendar.current
+    /// Calendar-built dates (not raw epochs) so day boundaries hold in any zone.
+    private func at(_ h: Int, _ m: Int = 0, day: Int = 11) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 6, day: day, hour: h, minute: m))!
+    }
+    private func msg(_ d: Date, user: Bool = true) -> ChatMessage {
+        ChatMessage(id: UUID(), text: "x", isUser: user, timestamp: d)
+    }
+
+    @Test func separatorAfter30MinGapOrDayChange() {
+        let a = msg(at(12, 0))
+        #expect(ContentView.needsSeparator(prev: nil, curr: a) == false)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 29))) == false)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 31))) == true)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 0, day: 12))) == true)
+    }
+
+    @Test func groupBreaksOnSenderFlipOr5MinGap() {
+        let list = [msg(at(12, 0), user: true),
+                    msg(at(12, 1), user: true),
+                    msg(at(12, 2), user: false),
+                    msg(at(12, 10), user: false)]
+        #expect(ContentView.isFirstInGroup(idx: 0, list: list))
+        #expect(!ContentView.isFirstInGroup(idx: 1, list: list))   // same sender, 1 min
+        #expect(ContentView.isFirstInGroup(idx: 2, list: list))    // sender flip
+        #expect(ContentView.isFirstInGroup(idx: 3, list: list))    // 8 min > 5 min
+    }
+}
+
+// MARK: - Export filename
+
+struct ChatExportFilenameTests {
+
+    private func msg(_ text: String, at t: TimeInterval) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: true,
+                    timestamp: Date(timeIntervalSince1970: t))
+    }
+
+    @Test func usesTitleAndLastActivityDate() {
+        // 86_400s after the 1970 epoch = Jan 2 1970 in UTC-anchored zones;
+        // assert the stable parts (title + .md), not the zone-dependent day.
+        let name = ChatExporter.exportFilename(for: [msg("Plan my week", at: 0),
+                                                     msg("more", at: 86_400)])
+        #expect(name.hasPrefix("Plan my week — 19"))
+        #expect(name.hasSuffix(".md"))
+    }
+
+    @Test func scrubsFilesystemHostileCharacters() {
+        let name = ChatExporter.exportFilename(for: [msg("a/b:c*d?e\"f", at: 0)])
+        #expect(!name.contains("/") && !name.contains(":") && !name.contains("*")
+                && !name.contains("?") && !name.contains("\""))
+        #expect(name.hasPrefix("abcdef — "))
+    }
+
+    @Test func emptyOrAllScrubbedTitleFallsBack() {
+        let name = ChatExporter.exportFilename(for: [msg("///", at: 0)])
+        #expect(name.hasPrefix("Conversation — "))
+    }
+}
+
 // MARK: - History sheet title filter
 
 struct ChatHistoryFilterTests {

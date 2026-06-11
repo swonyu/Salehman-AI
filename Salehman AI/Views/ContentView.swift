@@ -368,10 +368,10 @@ struct ContentView: View {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if needsSeparator(prev: prev, curr: msg) {
+                                    if Self.needsSeparator(prev: prev, curr: msg) {
                                         TimeSeparator(date: msg.timestamp)
                                     }
-                                    let isFirst = isFirstInGroup(idx: idx, list: list)
+                                    let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
                                                   onRegenerate: vm.regenerate,
                                                   onEdit: { m in
@@ -449,13 +449,15 @@ struct ContentView: View {
     // a 5-min window. Separator inserts on a >30-min gap or a different
     // calendar day. All read from `filteredMessages` so hidden/system vm.messages
     // never create phantom group breaks.
-    private func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
+    // Transcript cadence rules — `nonisolated static` so tests pin them (a
+    // silent change here reshapes every conversation's rhythm with no error).
+    nonisolated static func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
         guard let prev else { return false }
         let cal = Calendar.current
         if !cal.isDate(prev.timestamp, inSameDayAs: curr.timestamp) { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 30 * 60
     }
-    private func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
+    nonisolated static func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
         guard idx > 0 else { return true }
         let prev = list[idx - 1]; let curr = list[idx]
         if prev.isUser != curr.isUser { return true }
@@ -1555,10 +1557,23 @@ enum ChatExporter {
         NSPasteboard.general.setString(markdown(messages), forType: .string)
     }
 
+    /// Suggested export filename: conversation title + last-activity date,
+    /// scrubbed of path/filesystem-hostile characters. Pure for tests.
+    nonisolated static func exportFilename(for messages: [ChatMessage]) -> String {
+        let raw = ChatStore.archiveTitle(for: messages)
+        let banned = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        let safe = raw.components(separatedBy: banned).joined()
+            .trimmingCharacters(in: .whitespaces)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let date = messages.map(\.timestamp).max() ?? Date()
+        return "\(safe.isEmpty ? "Conversation" : safe) — \(df.string(from: date)).md"
+    }
+
     @MainActor static func savePanel(_ messages: [ChatMessage]) {
         guard !messages.isEmpty else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Salehman AI Conversation.md"
+        panel.nameFieldStringValue = exportFilename(for: messages)
         panel.canCreateDirectories = true
         panel.title = "Export Conversation"
         if panel.runModal() == .OK, let url = panel.url {
