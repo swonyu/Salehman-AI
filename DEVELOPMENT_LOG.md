@@ -1699,6 +1699,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Tasks #14 (whole-app restyle) and #16 (marathon) closed. Tree green at HEAD, docs current, board carries the handoff.
 
+## 2026-06-11 · Machine cleanup (Chat C) — caches freed, further deletions on hold pending A/B sign-off
+
+**Files:** `COORDINATION.md` (banner + Notes/handoffs question) — no app source touched
+
+**What & why:** Owner asked Chat C to optimize the Mac (disk 91% full, swap 7.3/8GB, Spotlight churning). Freed ~12GB of regenerable caches: Xcode DerivedData + 6GB SwiftUI Previews cache (**heads-up: next build/preview per session is a one-time slow clean build; any xcodebuild mid-flight ~21:15 may have failed — rerun**), uv/npm/brew caches, VSCode updater cache, puppeteer Chromium, installer DMGs. NOT touched: this repo, Claude app data, Redis, `~/.ollama`, HuggingFace cache. Owner then directed: ask the other chats before removing anything else → question posted on the board (HF cache 7.9GB / obsolete ollama models / codex-runtimes 1.3GB). Also flagged: **ollama brew service is in ERROR state (not running)** — relevant to the local-brain probe (Chat B lane).
+
+**Result:** Disk 18GB → 29GB free. No further deletions until both chats answer on the board or the owner overrides.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -2570,3 +2578,24 @@ the stop-while-generating disc on BOTH composers (`Color.red.opacity(0.85)`) →
 note their v6 part 1+2 landed `2a5053b`/`cc39814`, so the pin set changed mid-session; first
 attempt failed until `QAColorVision` was treated as tracked). Stop state isn't photographed by
 any QA surface (composers captured at rest), so no baseline impact.
+
+## 2026-06-11 (night) — Chat C: QA system v6 (owner-reassigned) — parts 1–3 of 4 (stopped on owner "stop polishing")
+**Files:** NEW `Tools/QAColorVision.swift`; `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`,
+`Tools/QAGeometry.swift`, `Tools/QACapture.swift`. Commits `2a5053b`, `cc39814`, `7e71d32`.
+**What & why:** owner: "refine the qa system + more things… all of them." Built additively, build+capture-green
+each step:
+- **(1) Color-vision/CVD audit** (`QAColorVision`, new): simulates deuteranopia + protanopia (Machado 2009,
+  linear RGB) on every surface → `<name>_deuter/_protan.png` + `cvd_report.html`, and flags red/green pairs
+  that go indistinguishable OR collapse to one hue. Correctly flags **markets** (buy=green/sell=red) + **notes**
+  (done-checkmark green vs red accent). Advisory (non-gating). 1-line hook in `captureAll`.
+- **(2) Broader coverage**: 15→22 surfaces — captures the 4 previously-blind sheets (Onboarding, About,
+  Shortcuts, CommandPalette) + 560pt responsive variants of Today/Markets/Knowledge. VoiceMode skipped (its
+  `.onAppear` starts the mic).
+- **(3) `edgeClear` + `tapTargets` checks**: `edgeClear` scans the FULL side-edge columns (vs canvasFlat's 4
+  points) for content overflowing/clipping at the frame edge — calibrated 0.0% on clean surfaces. `tapTargets`
+  flags <12pt interactive elements via `accessibilityFrame` (only when a live-window AX tree exists — offscreen
+  hosts expose none, so it skips gracefully, same as `axLabels`). Found+documented that offscreen AX is empty,
+  so did NOT ship an unreliable check.
+- **(4) report.html upgrade — NOT done** (owner said "stop polishing" mid-task). `report.html` + `history.jsonl`
+  unchanged.
+**Result:** build + audit GREEN throughout (22/22, FAILURES []). All committed. **QA lane released to Chat B.**
