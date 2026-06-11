@@ -2748,3 +2748,11 @@ each time) — the auto-rebuild stopped when the owner stopped Chat C's guardian
 fleet supervisor relaunches without building. Needs one `bash
 .claude/skills/run-salehman-ai/run.sh --build` from a build-capable session (or the owner) to
 photograph + re-adopt baselines.
+
+## 2026-06-11 (night) — Chat C: QA v6.1+ — consolidated ♿ accessibility-findings banner
+**File:** `Tools/QAAudit.swift`. Commit `d67d8ca`.
+Report dashboard now rolls up every a11y signal per surface — CVD red/green merges + low-contrast text +
+unlabeled controls + tiny tap targets — into one banner so real issues are unmissable. `markets` correctly
+shows the COMPOUND finding "red/green-only, low-contrast text" (the badges are both, verified by eye). Advisory
+display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **`
+(318) · audit 24 surfaces FAILURES []. QA v6+v6.1 complete; lane released to Chat B.
