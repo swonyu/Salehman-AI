@@ -1817,3 +1817,17 @@ identical to the sibling pattern; no longer main-pinned). (3) No live Codable-co
 not in scope (Chat B's active CodeView WIP, landed red after my 01:00 green). Flagged on COORDINATION board;
 not fixing (not my lane). Will reconfirm green once CodeView compiles.
 **Files:** `Salehman AI/Persistence/MemoryStore.swift`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 — marathon J: design pass 2 — haptic depth (owner: /high-end-visual-design again)
+**What:** (1) `LuxPressStyle` — pills and primary actions compress (0.97) under the
+pointer on the lux curve: simulated mass, transform-only/GPU-safe; applied to the
+welcome pills + send/stop. (2) **Island pills**: the welcome starters' icons no longer
+sit naked next to text — each is seated in its own accent-tinted circle flush with the
+capsule's leading edge (button-in-button). (3) **Slash menu double-bezel**: inner core
+(codeSurface + top-bevel gradient hairline, r11) in an outer tray carrying the accent
+ring (r15, concentric). (4) **Activity tiles**: machined top-bevel hairline per step
+card. Web-only skill clauses (scroll observers, mobile collapse, webfonts) consciously
+N/A for a native desktop tool — fidelity to the app's own token system wins.
+**Verified in pixels:** welcome pills + eyebrow (code_tab crop), bezeled slash menu +
+activity tiles (code_samples crop). Build green; QA all surfaces pass.
+**Files:** `Views/CodeView.swift`.

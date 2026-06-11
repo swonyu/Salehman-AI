@@ -311,6 +311,17 @@ struct SlashCommand: Identifiable {
     var trigger: String { "/" + id }
 }
 
+/// Press physics for pills and primary actions (design language): the whole
+/// control compresses slightly under the pointer — simulated mass, not a color
+/// swap. GPU-safe (transform only), sprung on the shared lux curve.
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(CodeView.lux, value: configuration.isPressed)
+    }
+}
+
 /// The `/`-command dropdown rendered above the Code composer. Extracted as its own
 /// view so the QA gallery can photograph it deterministically (the inline version
 /// only exists while `input` starts with "/").
@@ -344,9 +355,19 @@ struct SlashMenuView: View {
             }
         }
         .padding(5)
-        .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        // Inner core: its own surface + machined top bevel…
+        .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        )
+        // …seated in an outer tray carrying the accent ring (double-bezel, 15−4=11).
+        .padding(4)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
     }
 }
 
@@ -365,7 +386,13 @@ struct ActivityStepRow: View {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // Machined top bevel — each step card reads as a physical tile.
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(LinearGradient(colors: [.white.opacity(0.09), .white.opacity(0.01)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        )
     }
 
     @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {
@@ -1124,17 +1151,23 @@ struct CodeView: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 ForEach(welcomeExamples, id: \.text) { ex in
+                    // Island architecture: the icon never sits naked next to the
+                    // text — it's seated in its own circular wrapper, flush with
+                    // the capsule's leading padding. Press = physical compression.
                     Button { input = ex.text } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: ex.icon).font(.system(size: 10.5))
+                        HStack(spacing: 7) {
+                            Image(systemName: ex.icon).font(.system(size: 9.5))
                                 .foregroundStyle(DS.Palette.accent)
+                                .frame(width: 19, height: 19)
+                                .background(DS.Palette.accent.opacity(0.13), in: Circle())
                             Text(ex.text).font(.system(size: 11.5, weight: .medium))
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .padding(.leading, 5).padding(.trailing, 13).padding(.vertical, 5)
                         .background(Color.white.opacity(0.06), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
                 }
             }
@@ -1350,7 +1383,7 @@ struct CodeView: View {
                                 in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityLabel(isRunning ? "Stop generating" : "Send")
                 }
