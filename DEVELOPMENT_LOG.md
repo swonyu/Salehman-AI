@@ -1496,6 +1496,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Board note committed; bundle regenerated. Their in-flight files remain untouched/uncommitted.
 
+## 2026-06-11 · Build request handed to the build-capable session + deferred-refactor triage
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Appended a build request to the board note: the latency session demonstrably runs `xcodebuild` + launches the app (this sandboxed session cannot), so it's asked to run the canonical build + `Salehman AITests` (incl. the new `EffortWiringTests`) when its work lands and post pass/fail — the only remaining gate on PR #1. Also triaged the cleanup's deferred refactors: `mediaExts` dedup is **moot** (single definition in `MediaTranscribe.swift` since the cleanup); `PromptLibrary` boilerplate fold-in judged **not worth the churn** (~15 lines saved, clear file as-is); `GrokClient→OpenAICompatibleClient` + tool-dispatch dedup **deliberately left** — the other session is actively studying the cloud chain, collision risk. Review loose ends closed: the verify-agent-killed finding ("maxTokens / whitespace") was re-verified by hand — `maxTokens` difference is inert (`SalehmanEngine.generate` only uses it at the MLX floor as `?? 1024`, identical to the old explicit 1024); leader answers now arriving whitespace-trimmed is cosmetic.
+
+**Result:** PR #1 fully done from this session's side; merge gate = owner (or latency session) runs build + tests.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

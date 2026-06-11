@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 10:09 +03 · Swift files: 128 · Swift LOC: 23745_
+_Generated: 2026-06-11 10:14 +03 · Swift files: 128 · Swift LOC: 23745_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25101,7 +25101,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (452 lines) =====
+===== FILE: COORDINATION.md (453 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25554,8 +25554,9 @@ You're building the trivial-greeting fast path partly because "even the lightest
 3. `finalize`/`isLeading` use `AppSettings.brainPreferenceCurrent` (not the raw UserDefaults string), so a fresh install (key unset) correctly routes to the pinned-`.salehman` branch.
 4. New `Effort.refineRounds`/`approxRefineCalls` (monotonic dial for the refine-only path; `.ultra` caps at 3 rounds) — use these if your fast path ever reports costs.
 5. I also touched **`Views/SettingsView.swift`** (leader-toggle subtitle + `effortRow`/`effortCallsHint`) — you have uncommitted Views work (`CodeView`, `ContentView`, `MarkdownText`), so pull/diff before editing SettingsView to avoid clobbering. Your five in-flight files (`AgentPipeline`, `OllamaClient`, + the three Views) were deliberately **left uncommitted** by me; note `SOURCE_BUNDLE.md` at my commits snapshots their WIP state — regenerate it when your work lands.
+6. **🙏 BUILD REQUEST — you can build, I can't.** My session is sandboxed (xcodebuild's build service can't write its DerivedData arena anywhere → hard fail); yours demonstrably builds and launches the app. When you next land work, please run the canonical commands from CLAUDE.md — the full build **and** `Salehman AITests` (now includes `EffortWiringTests`, sole mutator of `set_salehmanEffort`) — and post pass/fail here. That's the only gate left on PR #1 (`feat/effort-grok-tooling`); everything else (review, fixes, docs, bundle) is done.
 
-===== FILE: DEVELOPMENT_LOG.md (2078 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2086 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27053,6 +27054,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Owner asked to notify the other live session (the latency/fast-path one — its transcript shows it's building a trivial-greeting fast path in `AgentPipeline` partly to dodge `refineOwnDraft`'s critique cost). It isn't a CCD session, so `send_message` can't reach it; posted a dated note on the COORDINATION.md board (the canonical channel) instead. Key content: default effort is now `.instant` (refineOwnDraft = zero-call no-op at defaults — re-time any "finalize makes hi slow" measurements), Leader OFF is a true kill switch again, `brainPreferenceCurrent` replaces raw-string compares, new `refineRounds`/`approxRefineCalls`, and a merge-awareness warning that I touched `SettingsView.swift` while they hold uncommitted Views work.
 
 **Result:** Board note committed; bundle regenerated. Their in-flight files remain untouched/uncommitted.
+
+## 2026-06-11 · Build request handed to the build-capable session + deferred-refactor triage
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Appended a build request to the board note: the latency session demonstrably runs `xcodebuild` + launches the app (this sandboxed session cannot), so it's asked to run the canonical build + `Salehman AITests` (incl. the new `EffortWiringTests`) when its work lands and post pass/fail — the only remaining gate on PR #1. Also triaged the cleanup's deferred refactors: `mediaExts` dedup is **moot** (single definition in `MediaTranscribe.swift` since the cleanup); `PromptLibrary` boilerplate fold-in judged **not worth the churn** (~15 lines saved, clear file as-is); `GrokClient→OpenAICompatibleClient` + tool-dispatch dedup **deliberately left** — the other session is actively studying the cloud chain, collision risk. Review loose ends closed: the verify-agent-killed finding ("maxTokens / whitespace") was re-verified by hand — `maxTokens` difference is inert (`SalehmanEngine.generate` only uses it at the MLX floor as `?? 1024`, identical to the old explicit 1024); leader answers now arriving whitespace-trimmed is cosmetic.
+
+**Result:** PR #1 fully done from this session's side; merge gate = owner (or latency session) runs build + tests.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
