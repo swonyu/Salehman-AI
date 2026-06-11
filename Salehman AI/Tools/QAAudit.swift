@@ -130,6 +130,22 @@ enum QAAudit {
                 checks.append(contentsOf: contrastChecks(rep))
             }
 
+            // textContrast (v6.1) — scan the REAL surface for low-contrast text the
+            // synthetic ContrastProbe (fixed token strips) can't see. Heuristic, so
+            // advisory (never gates). Skip the montage (tiny scaled thumbnails read
+            // as low-contrast text) + the probe (synthetic, intentionally includes
+            // failing bands — the dedicated `contrast` check owns it).
+            if name != "contact_sheet" && name != "contrast_probe" {
+                let tc = scanTextContrast(rep)
+                if tc.cells >= 4 {
+                    let extra = tc.low45 > tc.low3 ? ", \(tc.low45) <4.5:1" : ""
+                    let detail = tc.low3 == 0
+                        ? "worst real-text \(String(format: "%.1f", tc.worst)):1 over \(tc.cells) cells — clear (advisory)"
+                        : "worst real-text \(String(format: "%.1f", tc.worst)):1 · \(tc.low3) cell(s) <3:1\(extra) (advisory)"
+                    checks.append(.init(name: "textContrast", pass: true, detail: detail))
+                }
+            }
+
             // Structural checks from capture: layout-invariant assertions and
             // the accessibility sweep (unlabeled interactive elements FAIL;
             // an empty AX tree offscreen is reported, not failed).
@@ -232,7 +248,11 @@ enum QAAudit {
                 failByName[String(c.name.split(separator: ":").first ?? ""), default: 0] += 1
             }
         }
-        let totalDrift = report.results.compactMap(\.diffPercent).reduce(0, +)
+        // Exclude inherently-live surfaces (real chat history, the live window) so
+        // the number reflects the DETERMINISTIC UI's drift, not conversation churn.
+        let totalDrift = report.results
+            .filter { !$0.snapshot.hasPrefix("chat_live") && !$0.snapshot.hasSuffix("_live") }
+            .compactMap(\.diffPercent).reduce(0, +)
         let slow = structure.max { $0.value.renderMs < $1.value.renderMs }
 
         let maxFail = max(1, hist.map(\.failures).max() ?? 0)
@@ -271,7 +291,7 @@ enum QAAudit {
         html += stat(report.failures.isEmpty ? "GREEN" : "\(report.failures.count) ✗",
                      "\(report.results.count) surfaces", report.failures.isEmpty ? "ok" : "bad")
         html += stat("\(totalChecks - failChecks)/\(totalChecks)", "checks pass")
-        html += stat(String(format: "%.1f%%", totalDrift), "total drift")
+        html += stat(String(format: "%.1f%%", totalDrift), "det. drift")
         html += stat("\(slow?.value.renderMs ?? 0) ms", "slowest · \(slow?.key ?? "—")")
         html += stat("\(cvdFlagged.count)", "color-blind risks", cvdFlagged.isEmpty ? "ok" : "warn")
         html += "<div class=\"stat\"><div class=\"sparks\">\(sparks)</div><span>fail history · \(hist.count) runs</span></div>"
@@ -315,7 +335,54 @@ enum QAAudit {
     private static func severityClass(_ c: CheckResult) -> String {
         if !c.pass { return "bad" }
         let d = c.detail.lowercased()
+        // An advisory textContrast WITH findings still wants a visible (warn) badge.
+        if c.name == "textContrast" { return d.contains("<3:1") ? "warn" : "info" }
         return (d.contains("advisory") || d.contains("not assessable") || d.contains("no baseline")) ? "info" : "ok"
+    }
+
+    /// Heuristic real-surface text-contrast scan: grid the image into small cells,
+    /// and in each cell that looks like TEXT (a thin "ink" minority over a uniform
+    /// background) measure the WCAG ratio between the ink and the background. Returns
+    /// the worst ratio + how many cells fall below the AA thresholds. Background
+    /// median vs the farther extreme = bg vs ink; cells without a clean fg/bg split
+    /// (gradients, photos, solid fills, icons) are skipped, keeping it conservative.
+    private static func scanTextContrast(_ rep: NSBitmapImageRep) -> (worst: Double, low3: Int, low45: Int, cells: Int) {
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard w > 48, h > 48 else { return (21, 0, 0, 0) }
+        let cw = 32, ch = 16, step = 3
+        var worst = 21.0, low3 = 0, low45 = 0, cells = 0
+        var cy = 0
+        while cy + ch <= h {
+            var cx = 0
+            while cx + cw <= w {
+                var ls: [CGFloat] = []
+                var y = cy
+                while y < cy + ch {
+                    var x = cx
+                    while x < cx + cw {
+                        if let c = rep.colorAt(x: x, y: y) { ls.append(luma(c)) }
+                        x += step
+                    }
+                    y += step
+                }
+                cx += cw
+                guard ls.count >= 20 else { continue }
+                ls.sort()
+                let med = ls[ls.count / 2], lo = ls.first!, hi = ls.last!
+                let ink = (med - lo) > (hi - med) ? lo : hi          // extreme farther from bg median
+                guard abs(ink - med) > 0.12 else { continue }        // real fg/bg separation
+                let inkFrac = Double(ls.filter { abs($0 - ink) <= 0.06 }.count) / Double(ls.count)
+                let bgFrac  = Double(ls.filter { abs($0 - med) <= 0.06 }.count) / Double(ls.count)
+                guard inkFrac >= 0.03, inkFrac <= 0.40, bgFrac >= 0.45 else { continue }  // thin ink / uniform bg = text
+                let ratio = Double((max(med, ink) + 0.05) / (min(med, ink) + 0.05))
+                cells += 1
+                worst = min(worst, ratio)
+                if ratio < 3.0 { low3 += 1 }
+                if ratio < 4.5 { low45 += 1 }
+            }
+            cy += ch
+        }
+        return (cells == 0 ? 21 : worst, low3, low45, cells)
     }
     private static func esc(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
