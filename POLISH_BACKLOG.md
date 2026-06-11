@@ -9,6 +9,13 @@ low-risk — just not mine to decide solo. The safe, unambiguous fixes are alrea
 Lane note: Chat C's claimed lane is the 7 secondary view surfaces only. Items touching `DesignSystem/*`,
 `ContentView`, `SettingsView`, `Markets*`, `Agents`, `Code*` are flagged for the owning session.
 
+> **✅ 2026-06-11 — owner said "yes": ALL 4 owner-decision items below were APPLIED** (commits `fcda86b`,
+> `485cd8a`; build + AITests green, today within QA budget). Eyebrow on Today + Shortcuts (NOT Knowledge's
+> inline answer labels — pill too heavy mid-content); Notes Organize/Summarize → on-device; `DS.Typography.titleXL`
+> + `DS.Gradient.bgVertical` added append-only. The numbered items below are kept as the record + rationale.
+> **Easy reverts if you disagree:** #1 = swap `Eyebrow(text:)` back to the tracked `Text`; #4 (behavior) =
+> one line `generateOnDevice` → `generate` in `ScratchpadView.runAI`. The low-priority hygiene list is still open.
+
 ---
 
 ## ✅ Shipped (pass #1, commit `1bcd7ae` — build + AITests green, QA 14/14)

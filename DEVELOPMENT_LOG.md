@@ -2443,3 +2443,24 @@ Completed tasks now sink below active ones (stable partition `orderedTasks`, pre
 mutation; matches Reminders/Todoist). Build + AITests green; QA 14/14 (the 2 prior cross-lane failures are
 now resolved by Chat B at commit `22ba4249`). Effect isn't visible in the current `notes.png` (live store has
 only completed tasks), but is correct for the common mixed-task case.
+
+## 2026-06-11 (evening) — Chat C: polish pass #3 (owner-greenlit POLISH_BACKLOG — all 4 items)
+**Files:** `Views/TodayView.swift`, `Views/ShortcutsView.swift`, `Views/ScratchpadView.swift`,
+`Views/OnboardingView.swift`, `Views/AboutView.swift`, **`DesignSystem/DesignSystem.swift`** (cross-lane,
+owner-authorized, append-only). Commits `fcda86b` + `485cd8a`.
+**What & why:** Owner said "yes" → applied all 4 `POLISH_BACKLOG.md` items.
+- **#1 Eyebrow adoption:** TodayView ("QUICK ACTIONS"/"AT A GLANCE") + ShortcutsView group titles now use
+  the DS `Eyebrow` component (accent capsule) instead of hand-rolled tracked text. **Screenshot-verified on
+  Today — clean/branded, within budget.** Deliberately LEFT Knowledge's inline answer sub-labels
+  (SOURCES/ANSWER/ON-DEVICE SUMMARY) as plain text (a pill mid-content reads too heavy).
+- **#4 Notes privacy:** ScratchpadView Organize/Summarize `LocalLLM.generate` → `generateOnDevice` (+ clear
+  "start Ollama" fallback). Private scratchpad content no longer routes to a pinned cloud brain (matches the
+  Knowledge vault). **Behavior change — revert this one line if cloud-organize was intended.**
+- **#2 titleXL token:** new `DS.Typography.titleXL` (30/bold/rounded) ← TodayView greeting magic 30.
+- **#3 bgVertical token:** new `DS.Gradient.bgVertical` ← the identical inline gradient Onboarding + About
+  both had. Both DS additions are **append-only + render-identical** (today QA diff unchanged at 6.67%, which
+  is purely the Eyebrow delta).
+**Result:** `** BUILD SUCCEEDED **`; `** TEST SUCCEEDED **`; QA fresh, my surfaces within budget. Committed
+selectively. **Flag for Chat B:** `chat_samples` fails QA baselineDiff (~5%) across this window — your
+`ChatSampleGallery`/`ContentView` churn; re-adopt baseline when you settle. Also added 2 append-only tokens
+to your `DesignSystem.swift` (no existing token touched/reordered).
