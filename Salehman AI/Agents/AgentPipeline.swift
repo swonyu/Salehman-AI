@@ -643,7 +643,20 @@ enum AgentPipeline {
     /// work" signal escalates to `.hard`, and the middle defaults to
     /// `.moderate` (a safe reason+final pair), never `.simple`.
     nonisolated static func complexity(of mission: String) -> MissionComplexity {
-        let trimmed = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Judge the ACTUAL ask, not wrapper boilerplate. The Code tab wraps a fixed
+        // multi-line >200-char coding preamble around "Task: <ask>"; judging the whole
+        // string rated EVERY message .hard (multi-line + long + multi-sentence), so a
+        // 6-word question like "who are you" spun up the full 15-agent team. Extract
+        // the text after the last "Task:" marker when present. (The main chat sends raw
+        // messages with no marker, so it's unaffected.)
+        let raw = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed: String = {
+            guard let r = raw.range(of: "Task:", options: .backwards) else { return raw }
+            let t = raw[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Drop an appended "Attached file …" block so a pasted file doesn't inflate it.
+            let ask = t.range(of: "\n\nAttached file").map { String(t[..<$0.lowerBound]) } ?? t
+            return ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? raw : ask.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         guard !trimmed.isEmpty else { return .simple }
         let lower = trimmed.lowercased()
         let wordCount = trimmed.split { $0 == " " || $0 == "\n" }.count
@@ -667,7 +680,7 @@ enum AgentPipeline {
 
         // SIMPLE — greetings, acknowledgements, and short single-clause
         // questions ("who are u", "what's the weather"). One agent is plenty.
-        if isTrivialMission(mission) { return .simple }
+        if isTrivialMission(trimmed) { return .simple }
         if wordCount <= 6 { return .simple }
 
         // MODERATE — a normal one-line request (7–30 words, single sentence,

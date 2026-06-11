@@ -117,6 +117,32 @@ struct LocalWindowTrimTests {
     }
 }
 
+// MARK: - Complexity judges the ASK, not the Code-tab wrapper boilerplate
+//
+// The Code tab wraps every message in a long multi-line coding preamble ending in
+// "Task: <ask>". complexity() must judge the ask — judging the whole wrapper rated
+// EVERYTHING .hard (multi-line + >200 chars), so a 6-word question spun up all 15
+// agents in Maximum mode. Caught by live functional QA 2026-06-11.
+struct WrappedMissionComplexityTests {
+    private static let preamble = """
+    Project folder (your working directory for terminal + file edits): /Users/x/proj
+
+    You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
+
+    Task:
+    """
+    @Test func wrappedShortQuestionIsSimple() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "who are you in one sentence") == .simple)
+    }
+    @Test func wrappedRealCodingTaskStaysHard() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "refactor the auth module and add tests") == .hard)
+    }
+    @Test func wrappedAttachedFileDoesNotInflateAShortAsk() {
+        let m = Self.preamble + "what does this do\n\nAttached file \"x.swift\":\n" + String(repeating: "let x = 1\n", count: 200)
+        #expect(AgentPipeline.complexity(of: m) != .hard)   // the ASK is short; the pasted file mustn't force the team
+    }
+}
+
 // MARK: - AgentPipeline.looksIncomplete (auto-continue trigger)
 //
 // Drives the optional claude-autocontinue loop: it must fire on clear "to be
