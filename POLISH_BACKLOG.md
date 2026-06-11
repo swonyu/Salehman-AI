@@ -1,6 +1,25 @@
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
 
+## 🔴 HIGH — privacy copy is now INACCURATE (the app went cloud-first)
+**Found ~19:50 (Chat C guardian cycle).** `AppSettings.swift:45` now states the app *"itself is cloud-first;
+this is its offline fallback model"* — the DEFAULT routes to cloud brains. But user-facing surfaces still
+imply local/private-by-default:
+- **🔴 `TodayView` greeting subtitle: *"everything here stays on this Mac."*** — **unconditionally FALSE by
+  default** (data leaves the Mac unless the user turns on Offline/Private Mode). A false privacy claim on the
+  HOME SCREEN of a privacy-marketed app — the exact class of "UI that lies" the dev log shows you repeatedly
+  fixing. Today is Chat C's lane; **one-line fix ready on your word.**
+- **🟠 `AboutView` capability #1 (lines 20–22):** title *"Private, on-device"* but body *"Runs cloud-first…"*
+  — title contradicts its own body.
+- **🟠 `OnboardingView` page 2 (lines 22–24):** title *"Private by design"* + *"runs cloud-first…"* body.
+  (About + Onboarding both add "Turn on Offline Mode to keep everything on this Mac," so they're *defensible*
+  if the titles are reworded; Today's blanket claim is not.)
+**Why I did NOT just rewrite it:** privacy positioning is your most owner-defining call and you're mid-pivot
+to cloud-first ("God Mode"). A coherent re-voice across all three (+ any other "on-device"/"stays on this Mac"
+strings) is a product decision, not a polish edit — and changing one in isolation would fragment the message.
+**Recommended minimal fix (say the word, I'll do a coherent pass in my lane):** make Today accurate, e.g.
+*"cloud-first, fully private in Offline Mode,"* and align the About/Onboarding titles with their own bodies.
+
 This is the **owner-decision** list: higher-impact / aesthetic refinements I deliberately did **not** apply
 unilaterally, because the owner is actively iterating the app's visual language (Code-tab "Claude-minimal"
 restyle in flight) and these would impose a direction. Each item is concrete (file:line), reversible, and
