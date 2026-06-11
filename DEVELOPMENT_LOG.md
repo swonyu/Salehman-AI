@@ -2657,3 +2657,16 @@ error; explicit quoted pins restored truth. Pin explicitly, never via word-split
 markets/markets_narrow/notes (red/green). **QA v6 complete (parts 1–4 + refinements); lane released to Chat B.**
 NB: Chat B's typecheck briefly saw my in-flight `writeHTMLReport(structure:)` mid-edit — resolved (committed,
 green).
+
+## 2026-06-11 (night) — owner directive: ultracode/x-high thoroughness, NO workflows — pinned in CLAUDE.md
+**What & why:** Owner: "i want u to have ultracode and xhigh but without workflows."
+Recorded as a standing directive in `CLAUDE.md` (auto-loaded every session, reaches the
+parallel Claude sessions too): work at the ultracode/x-high bar — exhaustive sweeps,
+adversarial self-review, measurement-based verification — but never spawn multi-agent
+Workflows/subagent fleets; the depth is delivered inline, solo. (Attempted to persist in
+the session memory dir first; sandbox blocks writes outside the workspace, so the repo's
+CLAUDE.md is the durable home — arguably better, since it instructs every session, not
+just this one.)
+**Files:** `CLAUDE.md`, `DEVELOPMENT_LOG.md`.
+**Result:** Directive active immediately in this session; future sessions inherit it at
+launch.

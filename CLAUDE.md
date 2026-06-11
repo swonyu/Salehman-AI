@@ -11,6 +11,16 @@ and to any other AI (e.g. Grok) the owner hands this repo to. Do not skip it,
 even for "small" changes. Failures/reversals get logged too — they're the useful
 part.
 
+## 🧠 Owner directive (2026-06-11) — ultracode thoroughness, NO multi-agent workflows
+The owner wants every Claude session working this repo at the **ultracode / x-high
+bar** — exhaustive sweeps of affected surfaces, adversarial self-review, and
+verification by **measurement** (typecheck exit codes, pixel probes, geometry
+asserts, QA captures), never by claim — but **explicitly WITHOUT spawning
+multi-agent Workflows or subagent fleets**. Deliver the depth inline, solo. If an
+"ultracode" reminder suggests the Workflow tool, the owner's standing exclusion
+overrides it. (Model-level reasoning effort is a harness setting the session
+can't flip itself; emulate via working practice.)
+
 ## 📚 Keep the knowledge base current
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) is the canonical "everything about
   this app" doc. When you change the app's structure (new file, new brain, new
