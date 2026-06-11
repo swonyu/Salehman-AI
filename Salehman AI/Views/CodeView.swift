@@ -896,6 +896,8 @@ struct CodeView: View {
                         Text("ctx \(min(contextPct, 100))%")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                             .help(contextPct >= 100
                                   ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
                                   : "How much of the local model's history window this conversation uses.")
@@ -905,6 +907,8 @@ struct CodeView: View {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
+                        .padding(.horizontal, 7).padding(.vertical, 2.5)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
                     }
@@ -1058,6 +1062,11 @@ struct CodeView: View {
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(DS.Palette.codeSurfaceSide)
+        // Top-bevel hairline: the find strip is a fixed tool surface, not chat.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [.white.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
+        }
         .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
         .onChange(of: convoQuery) { _, _ in
             convoMatchIndex = 0
@@ -1546,7 +1555,8 @@ struct CodeView: View {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
                     .foregroundStyle(DS.Palette.accent)
-                Text("Activity").font(.system(size: 12, weight: .semibold))
+                Text("ACTIVITY").font(.system(size: 10, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(.secondary)
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -1603,7 +1613,7 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             HStack(spacing: 6) {
                 Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
-                Text("Changed files").font(.system(size: 10.5, weight: .semibold))
+                Text("CHANGED FILES").font(.system(size: 10, weight: .semibold)).tracking(1.4)
                     .foregroundStyle(.secondary)
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
@@ -2148,6 +2158,13 @@ struct CodeMessageRow: View {
                     .padding(.horizontal, 13).padding(.vertical, 8)
                     .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    // Machined tile: the same top-bevel hairline as the composer
+                    // core, so user turns read as physical objects in the flow.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    )
             }
         } else {
             HStack(alignment: .top, spacing: 0) {

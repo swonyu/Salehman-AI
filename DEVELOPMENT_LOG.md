@@ -1858,3 +1858,58 @@ also CONFIRMED the previously-pending green for the `458e4c5` MemoryStore `recal
 `nonisolated` fix (CodeView red cleared by Chat B).
 **Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AITests/MemorySortTests.swift`,
 `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:00) — Chat D slice 1: Settings brainReady perf seam + 5th blocked suite enabled + Hijri filename fix
+**Who:** Chat D (new session tonight — owner: "work on salehman with 3 other sessions", ultracode/xhigh inline, full-auto).
+**What & why:**
+- **CODEBASE_REVIEW HIGH perf fix:** `SettingsView.brainReady` fired live Keychain
+  `hasKey()` syscalls per visible grid cell on EVERY body recompute (each keystroke +
+  each 5s poll tick ≈ 25+ `SecItemCopyMatching`; `.salehman` alone walked the 10-key
+  `SalehmanEngine.hasAnyCloud` chain) while the cached `@State` *KeySaved flags sat
+  unused. Extracted the rules to NEW `Views/SettingsBrainReadiness.swift` —
+  `BrainReadiness` (pure per-`BrainPreference` reachability over plain Bools) — and
+  `brainReady` is now a thin caller fed ONLY by cached flags: **0 Keychain syscalls
+  per recompute**. Behavior preserved exactly (rule-for-rule copy of the old switch).
+- Same file gains `ActiveBrainProbe` (the overlapping testActiveBrain-runs counter as
+  a value type), `BrainPing.verdict` (ping-reply classification), and
+  `AnthropicKeyPresentation` (no-leak key subtitle) — SettingsView rewired to all
+  three (3 @State vars → 1 probe; logic unchanged).
+- **`SettingsBrainReadyTests` ENABLED** (4th of the 5 blocked §4 suites): the 5
+  disabled stubs replaced by 7 real tests pinning `.auto` local-only (cloud keys must
+  never light it), `.freeAuto` never-spends, `.salehman` cloud-first + named-model
+  local floor, ensemble/coding pool membership, probe overlap rules (superseded run
+  never publishes; spinner clears at zero in-flight), ping verdict, and subtitle
+  no-leak assertions. (Stub names referenced the pre-cloud-first model — renamed to
+  today's semantics.)
+- **Cross-lane one-liner (claimed on board): `ContentView.swift` `exportFilename`** —
+  first real run of Chat A's exporter tests caught a genuine cross-locale bug: a bare
+  `DateFormatter` follows the DEVICE calendar, and this Mac runs Hijri (xcresult path
+  literally `…1447.12.26…`), so export filenames rendered Hijri-era dates and
+  `usesTitleAndLastActivityDate` failed. Fix: `df.locale = en_US_POSIX` (Apple's
+  fixed-format rule).
+- Docs: PROJECT_CONTEXT (SettingsView row + new seam row + §4 suite status).
+**Process note (own fault, logged per house rules):** my sequential edits opened a
+~minutes-long red window (`activeBrain*` decls replaced before usages) that Chat C's
+typecheck caught and flagged as Chat B's. Resolved + apologized on the board; lesson:
+order multi-site renames usages-first, decls-last.
+**Verified (by measurement):** app `** BUILD SUCCEEDED **` (canonical command); QA
+capture run — `settings` surface passes all checks (baselineDiff 0.33%, in budget,
+render 402ms; grid dots pixel-identical through the cached-flag path); AITests run:
+**454 passed, my 7 SettingsBrainReadyTests all green**; sole failure was the
+pre-existing Hijri filename bug above → fixed, full-suite re-run pending behind
+another session's build-DB lock (will confirm the `** TEST SUCCEEDED **` marker
+before releasing the lane).
+**Files:** `Salehman AI/Views/SettingsBrainReadiness.swift` (new),
+`Salehman AI/Views/SettingsView.swift`, `Salehman AI/Views/ContentView.swift`
+(one-liner, claimed), `Salehman AITests/SettingsBrainReadyTests.swift`,
+`PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 — marathon K: design pass 3 — the quiet surfaces
+**What (variance: rails/headers/chips this round, not heroes):** user message tiles get
+the composer-core top-bevel hairline (machined objects in the flow); the find-in-
+conversation strip gets a leading top bevel; tok/s + ctx header chips seated in hairline
+capsules; ACTIVITY / CHANGED FILES section headers unified onto the tracked-caps
+eyebrow idiom (10pt, 1.4 tracking).
+**Verified:** build green; gallery drift 8.83% eyes-verified = the intended user-tile
+bevel; baseline adopted; all other surfaces pass.
+**Files:** `Views/CodeView.swift`.
