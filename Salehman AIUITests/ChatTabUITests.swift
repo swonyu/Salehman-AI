@@ -97,6 +97,44 @@ nonisolated final class ChatTabUITests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])   // close the menu
     }
 
+    /// Typing `/` opens the slash-command menu; narrowing + ↵ fills the
+    /// template into the composer (the matcher contract is unit-tested in
+    /// ChatComposerLogicTests — this verifies the UI wiring end-to-end).
+    @MainActor
+    func testSlashMenuAppearsAndReturnPicksTopCommand() throws {
+        let app = launchToChat()
+        let field = app.textFields["chat.composer.field"]
+        field.click()
+        field.typeText("/")
+        XCTAssertTrue(app.staticTexts["/summarize"].waitForExistence(timeout: 3),
+                      "Typing / should open the slash menu with /summarize visible")
+
+        field.typeText("su")          // narrows to /summarize
+        field.typeKey(.return, modifierFlags: [])
+        let value = field.value as? String ?? ""
+        XCTAssertTrue(value.contains("Summarize our conversation"),
+                      "↵ on /su should fill the summarize template, got: \(value)")
+
+        // Leave the composer clean for the next test.
+        field.typeKey("a", modifierFlags: .command)
+        field.typeKey(.delete, modifierFlags: [])
+    }
+
+    /// Esc dismisses a dangling slash query instead of leaving half a command
+    /// in the composer.
+    @MainActor
+    func testEscDismissesSlashMenu() throws {
+        let app = launchToChat()
+        let field = app.textFields["chat.composer.field"]
+        field.click()
+        field.typeText("/")
+        XCTAssertTrue(app.staticTexts["/copy"].waitForExistence(timeout: 3),
+                      "Typing / should open the slash menu")
+        field.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(app.staticTexts["/copy"].waitForExistence(timeout: 1),
+                       "Esc should dismiss the slash menu")
+    }
+
     /// View ▸ Capture QA Snapshots renders every surface to qa/snapshots/*.png —
     /// the bridge that lets the screen-blind polish session SEE the app. This
     /// test both verifies the menu item and (as a side effect of running in

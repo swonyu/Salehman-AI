@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:46 +03 · Swift files: 137 · Swift LOC: 27222_
+_Generated: 2026-06-11 22:48 +03 · Swift files: 136 · Swift LOC: 27149_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -19327,7 +19327,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (477 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (493 lines) =====
 ```swift
 import SwiftUI
 
@@ -19339,6 +19339,7 @@ import SwiftUI
 /// built show a clear "coming soon".
 struct MarketsView: View {
     @State private var section: MarketSection
+    @State private var sort: MarketSort = .feed
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @State private var briefing = ""
@@ -19663,7 +19664,22 @@ struct MarketsView: View {
             if store.symbols.isEmpty {
                 emptyState
             } else {
-                ForEach(store.symbols) { signalCard($0) }
+                HStack {
+                    Spacer()
+                    Menu {
+                        ForEach(MarketSort.allCases) { s in
+                            Button { sort = s } label: {
+                                Label(s.title, systemImage: sort == s ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Label("Sort: \(sort.title)", systemImage: "arrow.up.arrow.down")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Sort watchlist")
+                }
+                ForEach(sort.apply(store.symbols)) { signalCard($0) }
             }
         }
     }
@@ -27014,99 +27030,6 @@ struct ShellSecurityTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageSignalEngineTests.swift (89 lines) =====
-```swift
-import Testing
-@testable import Salehman_AI
-
-/// Pins `StockSageSignalEngine.generateSignal` — the pure price→recommendation
-/// map behind the Markets tab. The thresholds are a product contract (the
-/// briefing service + the watchlist badges read off them), so a future
-/// "obvious cleanup" of the if-ladder can't silently move a band.
-///   |Δ| > 6%  → strong buy/sell · |Δ| > 2.5% → buy/sell · else hold(0.65)
-///   confidence = min(|Δ|/8, 0.92) for non-hold.
-struct StockSageSignalEngineTests {
-
-    private func sig(_ cur: Double, _ prev: Double) -> StockSageSignal {
-        StockSageSignalEngine.generateSignal(symbol: "T", currentPrice: cur, previousPrice: prev)
-    }
-
-    // MARK: Bands (clear of the fp boundary)
-
-    @Test func bigGainIsStrongBuy() {
-        let s = sig(107, 100)                          // +7%
-        #expect(s.recommendation == .strongBuy)
-        #expect(s.reason == "Very strong upward momentum")
-    }
-    @Test func bigDropIsStrongSell() {
-        let s = sig(92, 100)                           // -8%
-        #expect(s.recommendation == .strongSell)
-        #expect(s.reason == "Sharp selling pressure")
-    }
-    @Test func midGainIsBuy() {
-        let s = sig(104, 100)                          // +4%
-        #expect(s.recommendation == .buy)
-        #expect(s.reason == "Positive momentum building")
-    }
-    @Test func midDropIsSell() {
-        let s = sig(96, 100)                           // -4%
-        #expect(s.recommendation == .sell)
-        #expect(s.reason == "Downward pressure detected")
-    }
-    @Test func smallMoveIsHold() {
-        let s = sig(101, 100)                          // +1%
-        #expect(s.recommendation == .hold)
-        #expect(s.reason == "Price consolidating")
-    }
-    @Test func flatIsHold() {
-        #expect(sig(100, 100).recommendation == .hold)
-    }
-
-    // MARK: Boundaries (just on each side — the `>` is strict)
-
-    @Test func justAboveStrongThresholdIsStrong() {
-        #expect(sig(106.5, 100).recommendation == .strongBuy)   // +6.5%
-    }
-    @Test func justBelowStrongThresholdIsBuy() {
-        #expect(sig(105.5, 100).recommendation == .buy)         // +5.5%
-    }
-    @Test func justAboveBuyThresholdIsBuy() {
-        #expect(sig(102.6, 100).recommendation == .buy)         // +2.6%
-    }
-    @Test func justBelowBuyThresholdIsHold() {
-        #expect(sig(102.4, 100).recommendation == .hold)        // +2.4%
-    }
-
-    // MARK: Confidence
-
-    @Test func confidenceScalesWithMagnitude() {
-        #expect(abs(sig(104, 100).confidence - 0.5) < 1e-9)     // 4/8
-    }
-    @Test func confidenceCapsAt092() {
-        #expect(abs(sig(120, 100).confidence - 0.92) < 1e-9)    // 20/8 → capped
-    }
-    @Test func holdConfidenceIsFlat065() {
-        #expect(abs(sig(101, 100).confidence - 0.65) < 1e-9)
-    }
-
-    // MARK: Edge — no divide-by-zero on a missing previous price
-
-    @Test func zeroPreviousPriceIsHoldNotCrash() {
-        let s = sig(100, 0)
-        #expect(s.recommendation == .hold)
-        #expect(abs(s.confidence - 0.65) < 1e-9)
-    }
-
-    // MARK: Symbol passthrough
-
-    @Test func symbolIsCarriedThrough() {
-        let s = StockSageSignalEngine.generateSignal(symbol: "AAPL", currentPrice: 110, previousPrice: 100)
-        #expect(s.symbol == "AAPL")
-        #expect(s.recommendation == .strongBuy)
-    }
-}
-```
-
 ===== FILE: Salehman AITests/StockSageTests.swift (154 lines) =====
 ```swift
 import Testing
@@ -29688,7 +29611,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1456 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1470 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31145,6 +31068,20 @@ heat colours — that encodes magnitude). Agents: direct-command field gains the
 timeout — Chat B's WIP, not mine). Notes/Knowledge re-checked: already clean (textContrast 3.3:1, no failures).
 TodayView left alone (it's your uncommitted off-main-refresh WIP).
 **→ Continuing into a 3h marathon (owner): heavy refine + polish + test + new FEATURES on these tabs.**
+
+## 2026-06-11 (night) — marathon slice 3: quote-reply, Esc-everywhere, edit-resend test armor
+**What & why:** (1) **Quote** action on assistant hover pills — `> `-quotes the reply into the
+composer (pure `ContentView.quoted` helper, blank lines kept in-block so multi-paragraph quotes
+stay one quote). (2) Esc now closes the search bar (the Done button was the only way out);
+composer Esc (stop/dismiss-slash) landed in slice 1; ⌘. stop binding verified already wired in
+the App menu. Search match count already existed (earlier pass) — verified, no change. (3) Test
+armor: `ChatQuoteTests` (3 cases) + `ChatExtractForEditTests` (5 cases: truncation+returned
+text, assistant rows refused, attachment-line stripping, attachment-only refused, mid-run
+refused) — the whole new edit-resend contract is pinned.
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`; bundle
+regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). AITests run still owed by a build-capable
+session (board request standing).
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

@@ -1468,3 +1468,12 @@ refused) — the whole new edit-resend contract is pinned.
 regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). AITests run still owed by a build-capable
 session (board request standing).
+
+## 2026-06-11 (night) — marathon slice 4: slash-menu UI flows in the gate
+**What & why:** Two new `ChatTabUITests` flows wire-test what the unit tests pin in logic:
+(1) typing `/` opens the menu, narrowing to `/su` + ↵ fills the Summarize template into the
+composer; (2) Esc dismisses a dangling slash query. Same conservative XCUI idiom as the
+existing 6 flows (typeKey/typeText/staticTexts/waitForExistence only).
+**Files:** `Salehman AIUITests/ChatTabUITests.swift`; bundle regenerated.
+**Result:** UI-test target not compilable in this sandbox — flagged to the build-capable
+session with the standing AITests request (run `-only-testing:"Salehman AIUITests"` too).
