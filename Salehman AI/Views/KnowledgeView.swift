@@ -231,11 +231,11 @@ struct KnowledgeView: View {
             Text("Paste text").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             HStack {
                 Spacer()
@@ -342,7 +342,7 @@ private struct DocDetailSheet: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .padding(DS.Space.xl)

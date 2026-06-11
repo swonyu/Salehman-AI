@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:09 +03 · Swift files: 129 · Swift LOC: 24317_
+_Generated: 2026-06-11 17:11 +03 · Swift files: 129 · Swift LOC: 24319_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -12573,7 +12573,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1437 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1439 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13073,49 +13073,51 @@ struct CodeView: View {
 
     // MARK: Chat pane (top-right)
 
+    /// Quiet icon button for the conversation header — hover-brightens, tooltip label.
+    @ViewBuilder
+    private func headerIcon(_ icon: String, _ help: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 12))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help(help).accessibilityLabel(help)
+    }
+
     private var chatPane: some View {
         VStack(spacing: 0) {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    if treeCollapsed {
+                        headerIcon("sidebar.left", "Show the file tree") {
+                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                        }
+                    }
                     if let tps = lastTokPerSec {
                         HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill").font(.system(size: 8.5))
+                            Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
                     }
-                    if treeCollapsed {
-                        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
-                            Image(systemName: "sidebar.left").font(.system(size: 11))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary)
-                        .help("Show the file tree")
-                        .accessibilityLabel("Show the file tree")
-                    }
                     Spacer()
-                    Button {
+                    headerIcon("square.and.pencil", "New chat") {
+                        if !isRunning { withAnimation { messages.removeAll() } }
+                    }
+                    headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
                             .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
                             .joined(separator: "\n\n---\n\n")
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(md, forType: .string)
-                    } label: {
-                        Label("Copy all", systemImage: "doc.on.doc").font(.system(size: 11, weight: .medium))
                     }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Copy the whole conversation as Markdown")
-                    .accessibilityLabel("Copy the whole conversation")
-                    Button { messages.removeAll() } label: {
-                        Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Clear this conversation")
-                    .accessibilityLabel("Clear this conversation")
-                    .disabled(isRunning)
                 }
-                .padding(.horizontal, 12).padding(.top, 8)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8)
+                .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
             }
             // Agent steps — feature: plan / agent steps view.
             if isRunning && !progress.steps.isEmpty {
@@ -16024,11 +16026,11 @@ struct KnowledgeView: View {
             Text("Paste text").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             HStack {
                 Spacer()
@@ -16135,7 +16137,7 @@ private struct DocDetailSheet: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .padding(DS.Space.xl)
