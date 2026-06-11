@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:19 +03 · Swift files: 133 · Swift LOC: 25519_
+_Generated: 2026-06-11 19:24 +03 · Swift files: 133 · Swift LOC: 25528_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1244,7 +1244,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (600 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (603 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1758,7 +1758,10 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
     /// offline use. (Every other case still functions if set directly — e.g. by the
     /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
-    static var selectableCases: [BrainPreference] { [.salehman, .auto] }
+    // Salehman + Auto, plus the custom-server brain so you can point the app at your
+    // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
+    // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
+    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio] }
 
     var title: String {
         switch self {
@@ -1779,7 +1782,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .openRouter:  return "OpenRouter (Cloud · free models)"
         case .ensemble:    return "All Brains at Once"
         case .salehman:    return "Salehman AI"
-        case .unslothStudio: return "Unsloth Studio (local server)"
+        case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
         }
     }
@@ -1802,7 +1805,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
         case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a DeepSeek critique pass"
-        case .unslothStudio: return "Local · your fine-tuned model served by Unsloth Studio (or mlx_lm.server / LM Studio) over OpenAI-compatible HTTP · no key needed"
+        case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
     }
@@ -13600,7 +13603,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1519 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1525 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14489,9 +14492,15 @@ struct CodeView: View {
             Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
         } label: {
             HStack(spacing: 4) {
+                // EXPLICIT child styles: the QA render proved Menu-level tint
+                // quiets Image-only labels but NOT label text — explicit styles
+                // on the children are what actually win (same mechanism that
+                // keeps `· salehman14b` accent below).
                 Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's
@@ -25693,7 +25702,7 @@ struct PaidBrainHidingTests {
         // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
-        #expect(BrainPreference.selectableCases == [.salehman, .auto])
+        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
     }
 }
 
@@ -26948,7 +26957,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
-| **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 committed `1bcd7ae`** (Knowledge/Today/Scratchpad/Memory — field-hairline consistency + truncation guards + DS tokens; build+AITests green, my 4 surfaces within QA budget). Backlog of aesthetic items → `POLISH_BACKLOG.md`. | no — IN PROGRESS |
+| **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). | no — guardian loop |
 
 **🚩 Chat C → Chat B (your lane, NOT fixing): 2 QA-audit regressions at commit `910a5d61`** (surfaced when I re-captured after my pass; both render your files): (1) **`chat_narrow` FAILS geo check** — narrow column measures **560pt, expected ≈524** (`ContentView` centered-column constraint not applying at 560pt width). (2) **`settings` baselineDiff 0.34%** (budget 0.1%) — looks like an intentional `SettingsView` edit that just needs `bash tools/qa.sh --adopt` to re-baseline. My 4 surfaces pass. Re-verify on your next loop.
 
@@ -27854,7 +27863,7 @@ your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergen
 not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
 (owner praised after). Back off CodeView after this push.
 
-===== FILE: DEVELOPMENT_LOG.md (2445 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2466 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -30301,6 +30310,27 @@ mutation; matches Reminders/Todoist). Build + AITests green; QA 14/14 (the 2 pri
 now resolved by Chat B at commit `22ba4249`). Effect isn't visible in the current `notes.png` (live store has
 only completed tasks), but is correct for the common mixed-task case.
 
+## 2026-06-11 (evening) — Chat C: polish pass #3 (owner-greenlit POLISH_BACKLOG — all 4 items)
+**Files:** `Views/TodayView.swift`, `Views/ShortcutsView.swift`, `Views/ScratchpadView.swift`,
+`Views/OnboardingView.swift`, `Views/AboutView.swift`, **`DesignSystem/DesignSystem.swift`** (cross-lane,
+owner-authorized, append-only). Commits `fcda86b` + `485cd8a`.
+**What & why:** Owner said "yes" → applied all 4 `POLISH_BACKLOG.md` items.
+- **#1 Eyebrow adoption:** TodayView ("QUICK ACTIONS"/"AT A GLANCE") + ShortcutsView group titles now use
+  the DS `Eyebrow` component (accent capsule) instead of hand-rolled tracked text. **Screenshot-verified on
+  Today — clean/branded, within budget.** Deliberately LEFT Knowledge's inline answer sub-labels
+  (SOURCES/ANSWER/ON-DEVICE SUMMARY) as plain text (a pill mid-content reads too heavy).
+- **#4 Notes privacy:** ScratchpadView Organize/Summarize `LocalLLM.generate` → `generateOnDevice` (+ clear
+  "start Ollama" fallback). Private scratchpad content no longer routes to a pinned cloud brain (matches the
+  Knowledge vault). **Behavior change — revert this one line if cloud-organize was intended.**
+- **#2 titleXL token:** new `DS.Typography.titleXL` (30/bold/rounded) ← TodayView greeting magic 30.
+- **#3 bgVertical token:** new `DS.Gradient.bgVertical` ← the identical inline gradient Onboarding + About
+  both had. Both DS additions are **append-only + render-identical** (today QA diff unchanged at 6.67%, which
+  is purely the Eyebrow delta).
+**Result:** `** BUILD SUCCEEDED **`; `** TEST SUCCEEDED **`; QA fresh, my surfaces within budget. Committed
+selectively. **Flag for Chat B:** `chat_samples` fails QA baselineDiff (~5%) across this window — your
+`ChatSampleGallery`/`ContentView` churn; re-adopt baseline when you settle. Also added 2 append-only tokens
+to your `DesignSystem.swift` (no existing token touched/reordered).
+
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
 
@@ -31117,7 +31147,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: POLISH_BACKLOG.md (74 lines) =====
+===== FILE: POLISH_BACKLOG.md (81 lines) =====
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
 
@@ -31128,6 +31158,13 @@ low-risk — just not mine to decide solo. The safe, unambiguous fixes are alrea
 
 Lane note: Chat C's claimed lane is the 7 secondary view surfaces only. Items touching `DesignSystem/*`,
 `ContentView`, `SettingsView`, `Markets*`, `Agents`, `Code*` are flagged for the owning session.
+
+> **✅ 2026-06-11 — owner said "yes": ALL 4 owner-decision items below were APPLIED** (commits `fcda86b`,
+> `485cd8a`; build + AITests green, today within QA budget). Eyebrow on Today + Shortcuts (NOT Knowledge's
+> inline answer labels — pill too heavy mid-content); Notes Organize/Summarize → on-device; `DS.Typography.titleXL`
+> + `DS.Gradient.bgVertical` added append-only. The numbered items below are kept as the record + rationale.
+> **Easy reverts if you disagree:** #1 = swap `Eyebrow(text:)` back to the tracked `Text`; #4 (behavior) =
+> one line `generateOnDevice` → `generate` in `ScratchpadView.runAI`. The low-priority hygiene list is still open.
 
 ---
 
