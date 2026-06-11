@@ -48,7 +48,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
                 .font(DS.Typography.titleXL).foregroundStyle(.white)
-            Text("Welcome back to Salehman AI — everything here stays on this Mac.")
+            Text("Welcome back to Salehman AI — many brains, real tools, your own model.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
