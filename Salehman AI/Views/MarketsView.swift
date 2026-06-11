@@ -8,6 +8,7 @@ import SwiftUI
 /// built show a clear "coming soon".
 struct MarketsView: View {
     @State private var section: MarketSection
+    @State private var sort: MarketSort = .feed
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @State private var briefing = ""
@@ -332,7 +333,22 @@ struct MarketsView: View {
             if store.symbols.isEmpty {
                 emptyState
             } else {
-                ForEach(store.symbols) { signalCard($0) }
+                HStack {
+                    Spacer()
+                    Menu {
+                        ForEach(MarketSort.allCases) { s in
+                            Button { sort = s } label: {
+                                Label(s.title, systemImage: sort == s ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Label("Sort: \(sort.title)", systemImage: "arrow.up.arrow.down")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Sort watchlist")
+                }
+                ForEach(sort.apply(store.symbols)) { signalCard($0) }
             }
         }
     }
@@ -458,6 +474,42 @@ enum MarketSection: String, CaseIterable, Identifiable {
         case .portfolio: return "Portfolio"
         case .alerts:    return "Alerts"
         case .briefing:  return "Briefing"
+        }
+    }
+}
+
+/// Watchlist ordering (Chat C feature). `apply` is pure → unit-tested.
+enum MarketSort: String, CaseIterable, Identifiable {
+    case feed, change, signal, symbol
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .feed:   return "Default"
+        case .change: return "Top gainers"
+        case .signal: return "Strongest signal"
+        case .symbol: return "A–Z"
+        }
+    }
+    /// Rank for the "strongest signal" sort: strong > buy/sell > hold.
+    static func rank(_ r: StockSageRecommendation) -> Int {
+        switch r {
+        case .strongBuy, .strongSell: return 2
+        case .buy, .sell:             return 1
+        case .hold:                   return 0
+        }
+    }
+    func apply(_ syms: [StockSageSymbol]) -> [StockSageSymbol] {
+        switch self {
+        case .feed:   return syms
+        case .symbol: return syms.sorted { $0.symbol.localizedCaseInsensitiveCompare($1.symbol) == .orderedAscending }
+        case .change: return syms.sorted { ($0.latest?.changePercent ?? 0) > ($1.latest?.changePercent ?? 0) }
+        case .signal:
+            return syms.sorted { a, b in
+                let ra = StockSageSignalEngine.generateSignal(for: a).map { MarketSort.rank($0.recommendation) } ?? -1
+                let rb = StockSageSignalEngine.generateSignal(for: b).map { MarketSort.rank($0.recommendation) } ?? -1
+                if ra != rb { return ra > rb }
+                return abs(a.latest?.changePercent ?? 0) > abs(b.latest?.changePercent ?? 0)
+            }
         }
     }
 }
