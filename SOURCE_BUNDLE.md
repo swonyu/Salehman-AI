@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:00 +03 · Swift files: 129 · Swift LOC: 24330_
+_Generated: 2026-06-11 17:06 +03 · Swift files: 129 · Swift LOC: 24321_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -12573,7 +12573,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1406 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1437 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13151,6 +13151,7 @@ struct CodeView: View {
                     // read edge-to-edge on a wide window — cap and center.
                     .frame(maxWidth: 780)
                     .frame(maxWidth: .infinity)
+                    .animation(.easeOut(duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -13203,7 +13204,7 @@ struct CodeView: View {
                 .background(DS.Palette.accent.opacity(0.12), in: Circle())
                 .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
                 .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
-            Text("Code with Salehman")
+            Text("What are we building, Saleh?")
                 .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
@@ -13265,6 +13266,7 @@ struct CodeView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
                 Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer()
@@ -13359,17 +13361,12 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
             }
-            HStack(spacing: 8) {
-                controlsMenu
-                Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Attach a file as context")
-                    .accessibilityLabel("Attach a file as context")
-
+            VStack(spacing: 9) {
+                // Text first — full width, comfortable, nothing competing with it.
                 TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .lineLimit(1...5)
+                    .font(.system(size: 13.5))
+                    .lineLimit(1...6)
                     .focused($inputFocused)
                     .onSubmit(send)
                     // Focusing the input = intent to send: pre-load the local model
@@ -13377,24 +13374,40 @@ struct CodeView: View {
                     .onChange(of: inputFocused) { _, focused in
                         if focused { OllamaClient.warmupChatModel() }
                     }
-
-                Button {
-                    // Explicit body, not `action: isRunning ? stop : send`: unifying
-                    // two method references into one closure ICEs the type-checker
-                    // ("failed to produce diagnostic") under the Swift 6 language mode.
-                    if isRunning { stop() } else { send() }
-                } label: {
-                    Image(systemName: isRunning ? "stop.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isRunning ? Color.red : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : DS.Palette.accent))
+                // Controls live UNDER the text (Claude layout): brain/effort menu +
+                // attach on the left, filled send on the right.
+                HStack(spacing: 8) {
+                    controlsMenu
+                    Button { attachFile() } label: { Image(systemName: "paperclip").font(.system(size: 13)) }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Attach a file as context")
+                        .accessibilityLabel("Attach a file as context")
+                    Spacer()
+                    Button {
+                        // Explicit body, not `action: isRunning ? stop : send`: unifying
+                        // two method references into one closure ICEs the type-checker
+                        // ("failed to produce diagnostic") under the Swift 6 language mode.
+                        if isRunning { stop() } else { send() }
+                    } label: {
+                        Image(systemName: isRunning ? "stop.fill" : "arrow.up")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(isRunning ? Color.white
+                                : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .frame(width: 27, height: 27)
+                            .background(
+                                isRunning ? AnyShapeStyle(Color.red.opacity(0.85))
+                                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
+                                        ? AnyShapeStyle(Color.white.opacity(0.10))
+                                        : AnyShapeStyle(DS.Palette.accent)),
+                                in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel(isRunning ? "Stop generating" : "Send")
                 }
-                .buttonStyle(.plain)
-                .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
-            // One cohesive input pill (Claude-style) instead of loose controls.
-            // Border warms to the accent while you're typing.
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
             // The signature red ring (owner request — matches the main chat's input):
             // always visible, warms while typing, full-strength on file drop.
@@ -13403,8 +13416,10 @@ struct CodeView: View {
                     : DS.Palette.accent.opacity(
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
             .animation(.easeOut(duration: 0.18), value: input.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(.easeOut(duration: 0.2), value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -13484,21 +13499,37 @@ struct CodeView: View {
     /// reopen button lived in the conversation header (absent on an empty chat),
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
-        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
-            VStack(spacing: 8) {
+        VStack(spacing: 14) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
-                Spacer()
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
             }
-            .padding(.top, 12)
-            .frame(width: 24)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Show the file tree (⇧⌘E)")
+            .accessibilityLabel("Show the file tree")
+            Button(action: ws.openFolder) {
+                Image(systemName: "folder.badge.plus").font(.system(size: 10.5))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Open a project folder")
+            .accessibilityLabel("Open a project folder")
+            if ws.projectRoot != nil {
+                Button { reviewProject() } label: {
+                    Image(systemName: "sparkles").font(.system(size: 10.5))
+                        .frame(width: 24, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent.opacity(0.8))
+                .disabled(isRunning)
+                .help("Review this project (⌘R)")
+                .accessibilityLabel("Review this project")
+            }
+            Spacer()
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .padding(.top, 10)
+        .frame(width: 26)
+        .frame(maxHeight: .infinity)
         .background(DS.Palette.codeSurfaceSide)
-        .help("Show the file tree (⇧⌘E)")
-        .accessibilityLabel("Show the file tree")
     }
 
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
@@ -13519,7 +13550,7 @@ struct CodeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .help("Show the file viewer / diff panel")
         .accessibilityLabel("Show the files and diffs panel")
     }
@@ -14108,7 +14139,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1433 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1393 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14335,8 +14366,7 @@ struct ContentView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 30, height: 30)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    .background(Color.white.opacity(0.09), in: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -14392,7 +14422,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        // Flat opaque bar (design language — no translucent material).
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
@@ -14530,7 +14561,7 @@ struct ContentView: View {
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
 
@@ -14608,8 +14639,7 @@ struct ContentView: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .background(Color.white.opacity(0.09), in: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -14639,8 +14669,7 @@ struct ContentView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .background(Color.white.opacity(0.09), in: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -14660,26 +14689,14 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                // Premium focus ring: 2px gradient stroke + soft accent glow.
-                // The old single-color 0.6-opacity ring was barely visible on
-                // the dark canvas. Computed contrast: pure-accent stroke on the
-                // canvas clears the 3:1 non-text floor; glow is decorative.
+                // Quiet flat pill (design language). Focus = a solid accent
+                // hairline — visible on the flat canvas without glow chrome.
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    inputFocused ? Theme.accent.opacity(0.85)  : Color.white.opacity(0.10),
-                                    inputFocused ? Theme.accent2.opacity(0.65) : Color.white.opacity(0.05),
-                                ],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: inputFocused ? 2 : 1
-                        )
+                        .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                                lineWidth: inputFocused ? 1.5 : 1)
                 )
-                .shadow(color: inputFocused ? Theme.accent.opacity(0.20) : .clear,
-                        radius: inputFocused ? 12 : 0)
                 .animation(DS.Motion.smooth, value: inputFocused)
 
                 // Mic (dictation)
@@ -14705,7 +14722,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial)
+        // Flat — the input row sits directly on the chat canvas.
+        .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
@@ -14722,8 +14740,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(Color.white.opacity(0.09), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -14929,9 +14946,9 @@ struct ScrollToLatestButton: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(DS.Gradient.brand, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            .dsShadow(DS.Elevation.accentGlow(0.45))
+            // Solid accent, no gradient/glow (design language) — it floats over
+            // the transcript, so it still reads as actionable.
+            .background(DS.Palette.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(unreadCount > 0
@@ -15209,38 +15226,21 @@ struct CachedImage: View {
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
     @State private var animating = false
-    @State private var halo = false
     // After ~5s of pre-stream silence the local model is probably loading into
     // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
     // auto-cancels when streaming starts (this view disappears).
     @State private var warmHint = false
 
     var body: some View {
+        // Quiet flush-left working indicator (design language): three accent
+        // dots, no avatar disc, no halo/glow chrome — matches the streaming
+        // row's flush-left flow so the transition to text doesn't jump.
         HStack(spacing: 9) {
-            // Avatar with a breathing brand halo. The halo + the gradient dots
-            // are the visible heartbeat of "Salehman AI is working" — the
-            // single highest-leverage place to make the app feel premium during
-            // a wait. (Was a flat brand circle + three white dots.)
-            ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.55))
-                    .frame(width: 58, height: 58)
-                    .blur(radius: 14)
-                    .scaleEffect(halo ? 1.18 : 0.92)
-                    .opacity(halo ? 0.9 : 0.4)
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                    .shadow(color: DS.Palette.accent.opacity(0.55), radius: 10, y: 2)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-            }
             HStack(spacing: 6) {
-                // Gradient-tinted dots — the brand reads through every beat
-                // instead of generic white-on-dark blobs.
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 8, height: 8)
+                        .fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
                         .scaleEffect(animating ? 1.0 : 0.5)
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
@@ -15251,24 +15251,15 @@ struct TypingIndicator: View {
                             value: animating)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
-            )
             if warmHint {
                 Text("Warming up the local model…")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .transition(.opacity)
             }
         }
-        .onAppear {
-            animating = true
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                halo = true
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .onAppear { animating = true }
         .task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             withAnimation { warmHint = true }
@@ -18120,7 +18111,7 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -18744,7 +18735,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -18763,7 +18754,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -18812,7 +18803,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -18831,7 +18822,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -18984,7 +18975,7 @@ struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.92))
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         .textSelection(.enabled)
@@ -25690,7 +25681,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (757 lines) =====
+===== FILE: COORDINATION.md (770 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26449,7 +26440,20 @@ input pills white 0.09, hairline `surfaceStroke`, no shadows. Typecheck 0/0 (Cod
 temp tree — you were mid-edit). All 7 slices now in. Next: pass-2 refinements (Settings inner controls,
 ContentView empty-state/header polish) while you gate.
 
-===== FILE: DEVELOPMENT_LOG.md (2245 lines) =====
+#### 🎨 Restyle pass 2 DONE — main-chat chrome + Settings controls (cleanup/Effort session)
+ContentView de-glassed end to end: header/search/input bars `.ultraThinMaterial` → flat
+`codeSurfaceSide`/`codeSurface`; attach/library/export circles + attachment chip → white-0.09; the input
+pill is now a quiet white-0.07 pill whose FOCUS state is a solid accent hairline (gradient focus ring +
+accent glow shadow removed); ScrollToLatest gradient capsule + glow → solid accent; `TypingIndicator`
+avatar+halo+glass bubble → three flush-left accent dots (style-matches the streaming row; "warming up"
+hint kept). SettingsView: all six remaining translucent `surface` control fields → white-0.09 pills.
+DELIBERATELY KEPT: the chat empty-state hero (`EmptyStateLogo` twin halos) + `SuggestionCard`/`Eyebrow` —
+landing-moment identity per the spec's "glows stay on landing surfaces", and those components are in
+YOUR DesignSystem lane anyway; also the header brain-status halo dot (functional status, not chrome).
+Typecheck 0/0 (CodeView pinned). Committed+pushed — please gate. That's the full restyle: 7/7 slices +
+pass 2. I'll pick up polish items from your/owner feedback as they come.
+
+===== FILE: DEVELOPMENT_LOG.md (2253 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28022,6 +28026,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Final five slices of the owner-directive restyle ("continue working and refining, gone for 3 hours"; gate for slices 1+2 passed 306/306 with owner feedback "this looks much better than the coding tab"). Surface convention applied everywhere: canvas = flat opaque `codeSurface` (0.125), panels/cards = `codeSurfaceSide` (0.095) + hairline, input pills = white 0.09 with no stroke, no shadows, headers 17pt-semibold/11pt-secondary, content in a centered 780pt column. Per view: **Today** — tiles opaque (no translucency over the landing glow, which stays — landing surface); **Agents** — glass-hero Autonomous card flattened (gradient wash/halo sparkle/accent-glow shadow removed), "N agents" header counter dropped per chrome diet, cards' hover/active stroke is the only elevation; **Notes/Knowledge** — flat canvases, list/ask cards to panel shade, add/search fields to pills; **Markets** — all cards swapped, `.ultraThinMaterial` disclaimer footer → flat panel + hairline. Shared-tree note: the other session's `db57c44` unintentionally swept my in-flight TodayView edits + an intermediate AgentsView state into their commit (content correct, their gate covered it) — flagged on the board with the `git status`-before-`add` discipline reminder.
 
 **Result:** Typecheck 0 errors / 0 warnings (CodeView pinned to HEAD in a temp tree — other session mid-edit). All 7 restyle slices are now in. Gate requested; pass-2 refinements (Settings inner controls, ContentView empty-state polish) next.
+
+## 2026-06-11 · Whole-app restyle pass 2 — main-chat chrome + Settings controls de-glassed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final pass of the owner-directive restyle. ContentView: every `.ultraThinMaterial` removed — header/search/input bars to flat `codeSurfaceSide`/`codeSurface`, the attach/library/export circle buttons and attachment chip to white-0.09 fills; the message input is now a quiet white-0.07 pill whose focus state is a solid accent hairline (the gradient focus ring + accent-glow shadow are gone); the ScrollToLatest pill swapped its brand gradient + glow for solid accent; `TypingIndicator` rebuilt from avatar-with-breathing-halo + glass bubble to three flush-left accent dots that style-match the streaming row (the 14B "Warming up the local model…" hint kept; orphaned `halo` state removed). SettingsView: the six remaining translucent `DS.Palette.surface` control fields became white-0.09 pills. Deliberately kept: the chat empty-state hero + `SuggestionCard`/`Eyebrow` (landing-moment identity, and DS-lane components) and the header brain-status halo (functional status indicator).
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). Restyle complete: 7/7 slices + pass 2; gate requested on the board.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

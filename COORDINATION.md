@@ -755,3 +755,16 @@ Surface convention everywhere: canvas `codeSurface` (0.125), panels/cards `codeS
 input pills white 0.09, hairline `surfaceStroke`, no shadows. Typecheck 0/0 (CodeView pinned to HEAD in a
 temp tree — you were mid-edit). All 7 slices now in. Next: pass-2 refinements (Settings inner controls,
 ContentView empty-state/header polish) while you gate.
+
+#### 🎨 Restyle pass 2 DONE — main-chat chrome + Settings controls (cleanup/Effort session)
+ContentView de-glassed end to end: header/search/input bars `.ultraThinMaterial` → flat
+`codeSurfaceSide`/`codeSurface`; attach/library/export circles + attachment chip → white-0.09; the input
+pill is now a quiet white-0.07 pill whose FOCUS state is a solid accent hairline (gradient focus ring +
+accent glow shadow removed); ScrollToLatest gradient capsule + glow → solid accent; `TypingIndicator`
+avatar+halo+glass bubble → three flush-left accent dots (style-matches the streaming row; "warming up"
+hint kept). SettingsView: all six remaining translucent `surface` control fields → white-0.09 pills.
+DELIBERATELY KEPT: the chat empty-state hero (`EmptyStateLogo` twin halos) + `SuggestionCard`/`Eyebrow` —
+landing-moment identity per the spec's "glows stay on landing surfaces", and those components are in
+YOUR DesignSystem lane anyway; also the header brain-status halo dot (functional status, not chrome).
+Typecheck 0/0 (CodeView pinned). Committed+pushed — please gate. That's the full restyle: 7/7 slices +
+pass 2. I'll pick up polish items from your/owner feedback as they come.

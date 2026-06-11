@@ -223,8 +223,7 @@ struct ContentView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 30, height: 30)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    .background(Color.white.opacity(0.09), in: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -280,7 +279,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        // Flat opaque bar (design language — no translucent material).
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
@@ -418,7 +418,7 @@ struct ContentView: View {
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
 
@@ -496,8 +496,7 @@ struct ContentView: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .background(Color.white.opacity(0.09), in: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -527,8 +526,7 @@ struct ContentView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .background(Color.white.opacity(0.09), in: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -548,26 +546,14 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                // Premium focus ring: 2px gradient stroke + soft accent glow.
-                // The old single-color 0.6-opacity ring was barely visible on
-                // the dark canvas. Computed contrast: pure-accent stroke on the
-                // canvas clears the 3:1 non-text floor; glow is decorative.
+                // Quiet flat pill (design language). Focus = a solid accent
+                // hairline — visible on the flat canvas without glow chrome.
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    inputFocused ? Theme.accent.opacity(0.85)  : Color.white.opacity(0.10),
-                                    inputFocused ? Theme.accent2.opacity(0.65) : Color.white.opacity(0.05),
-                                ],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: inputFocused ? 2 : 1
-                        )
+                        .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                                lineWidth: inputFocused ? 1.5 : 1)
                 )
-                .shadow(color: inputFocused ? Theme.accent.opacity(0.20) : .clear,
-                        radius: inputFocused ? 12 : 0)
                 .animation(DS.Motion.smooth, value: inputFocused)
 
                 // Mic (dictation)
@@ -593,7 +579,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial)
+        // Flat — the input row sits directly on the chat canvas.
+        .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
@@ -610,8 +597,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(Color.white.opacity(0.09), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -817,9 +803,9 @@ struct ScrollToLatestButton: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(DS.Gradient.brand, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            .dsShadow(DS.Elevation.accentGlow(0.45))
+            // Solid accent, no gradient/glow (design language) — it floats over
+            // the transcript, so it still reads as actionable.
+            .background(DS.Palette.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(unreadCount > 0
@@ -1097,38 +1083,21 @@ struct CachedImage: View {
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
     @State private var animating = false
-    @State private var halo = false
     // After ~5s of pre-stream silence the local model is probably loading into
     // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
     // auto-cancels when streaming starts (this view disappears).
     @State private var warmHint = false
 
     var body: some View {
+        // Quiet flush-left working indicator (design language): three accent
+        // dots, no avatar disc, no halo/glow chrome — matches the streaming
+        // row's flush-left flow so the transition to text doesn't jump.
         HStack(spacing: 9) {
-            // Avatar with a breathing brand halo. The halo + the gradient dots
-            // are the visible heartbeat of "Salehman AI is working" — the
-            // single highest-leverage place to make the app feel premium during
-            // a wait. (Was a flat brand circle + three white dots.)
-            ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.55))
-                    .frame(width: 58, height: 58)
-                    .blur(radius: 14)
-                    .scaleEffect(halo ? 1.18 : 0.92)
-                    .opacity(halo ? 0.9 : 0.4)
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                    .shadow(color: DS.Palette.accent.opacity(0.55), radius: 10, y: 2)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-            }
             HStack(spacing: 6) {
-                // Gradient-tinted dots — the brand reads through every beat
-                // instead of generic white-on-dark blobs.
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 8, height: 8)
+                        .fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
                         .scaleEffect(animating ? 1.0 : 0.5)
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
@@ -1139,24 +1108,15 @@ struct TypingIndicator: View {
                             value: animating)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
-            )
             if warmHint {
                 Text("Warming up the local model…")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .transition(.opacity)
             }
         }
-        .onAppear {
-            animating = true
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                halo = true
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .onAppear { animating = true }
         .task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             withAnimation { warmHint = true }
