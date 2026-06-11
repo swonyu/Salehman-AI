@@ -106,6 +106,17 @@ struct SettingsView: View {
     // design just to drive UI updates.
     @State private var mlxState: MLXSalehmanEngine.State = .unavailable(reason: "")
 
+    // 14B-readiness: tri-state probe of the user's own Ollama model (the
+    // `.salehman` brain's offline floor — default name "salehman"). Drives
+    // `salehmanModelStatusRow`; probed on appear, on name edit, on demand.
+    enum LocalModelProbe: Equatable {
+        case checking
+        case installed(String)   // model with this name is pulled — floor ready
+        case missing(String)     // Ollama up but no such model created yet
+        case ollamaDown          // server unreachable — can't know either way
+    }
+    @State private var localModelProbe: LocalModelProbe = .checking
+
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
@@ -218,6 +229,12 @@ struct SettingsView: View {
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
+
+                        // Live status for the model named above: installed → the
+                        // .salehman brain's offline floor is ready; missing → a
+                        // copyable `ollama create` command for when the fine-tuned
+                        // GGUF lands; Ollama down → can't know.
+                        salehmanModelStatusRow
                     }
 
                     // Unsloth Studio (and any other local OpenAI-compatible server).
@@ -1213,6 +1230,59 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// 14B-readiness status row under the custom-model-name field: is a model
+    /// with the typed name (default "salehman") actually pulled in Ollama?
+    /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
+    /// `OllamaClient.hasModel`), so what this row says is what the brain does.
+    private var salehmanModelStatusRow: some View {
+        HStack(spacing: 6) {
+            switch localModelProbe {
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Checking for your local model…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .installed(let name):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
+                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .missing(let name):
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString("ollama create \(name) -f Modelfile", forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .accessibilityLabel("Copy the ollama create command")
+            case .ollamaDown:
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Ollama isn't running — can't check for your local model.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await probeLocalModel() }
+            } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Re-check").accessibilityLabel("Re-check local model status")
+        }
+        .padding(.horizontal, 14).padding(.bottom, 11)
+        .task { await probeLocalModel() }
+        .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
+    }
+
+    /// Probe Ollama for the model named in Settings. Cheap: `isUp` is a
+    /// localhost ping and `hasModel` reads a 30s-cached model list.
+    private func probeLocalModel() async {
+        localModelProbe = .checking
+        guard await OllamaClient.isUp() else { localModelProbe = .ollamaDown; return }
+        let name = AppSettings.customModelNameCurrent
+        localModelProbe = await OllamaClient.hasModel(name) ? .installed(name) : .missing(name)
     }
 
     /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),

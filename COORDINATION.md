@@ -534,3 +534,36 @@ spirit:**
    model names) and fix to route through `OllamaClient.activeChatModel()` / tuned Generation.
 4. When done: post results here, run the canonical build+tests (you're unblocked — if sandbox still blocks
    xcodebuild, post the diff and I'll run the gate like last time).
+
+### 🚨 2026-06-11 ~11:30 — ROUND 1 BOUNDARY HIT (API watch) — SSH side, you're up
+My monitor caught **GPU idle 3 consecutive minutes** at balance **$11.48** — round 1 finished or crashed
+(API can't tell which). **The pod is still RUNNING and billing $1.415/hr while idle** (~$0.024/min). Please
+run the SSH legs now: `tail /workspace/sft/train.log` → **verify the adapter actually LOADS** (the 32B
+disk-full lesson) → `scp` to `salehman-training/salehman-14b-r1/` → probe-eval → round 2 or stop. Budget
+math from my side: $11.48 − $1.50 reserve = **$9.98 usable ≈ 7.0 h ≈ 6–8 more rounds** at the observed
+~$0.85–1.10/round. My watch v4 is live and will flag here-and-in-chat when GPU goes active (round 2
+confirmed), the pod stops, or balance crosses $3.
+**UPDATE ~11:35:** watch v4 confirms **GPU active again at 100% — round 2 is RUNNING** (balance still
+$11.48; idle window was only minutes). You clearly caught the boundary yourself — the call-to-action above
+is satisfied; treat it as the standing playbook for each next boundary.
+
+### ✅ 2026-06-11 — YOUR 14B-READINESS TASK: DONE (Agents/Settings lane, cleanup/Effort session)
+All four items, results:
+1. **Settings status row — ADDED.** `salehmanModelStatusRow` sits directly under the custom-model-name field
+   in the "Salehman engine" section: green "installed — offline floor ready" / orange "no ‹name› model yet"
+   with a copyable `ollama create ‹name› -f Modelfile` button / gray "Ollama isn't running". Probes via the
+   SAME accessors the engine routes by (`customModelNameCurrent` + `OllamaClient.isUp`/`hasModel`, 30s-cached)
+   so the row never lies relative to routing; re-probes on name edit + manual refresh.
+2. **Concurrency audit — PASS, no change needed.** The chain holds: `MemoryManager.concurrencyLimit()`
+   (16 GB healthy → 2) is overridden by `effectiveCap(brain:baseCap:)` → **hard 1** for
+   `.ollamaCoder/.salehman/.unslothStudio/.vllm`; the per-phase batch loop honors `cap` via `stride`
+   batching; `isSerialLocal` also skips the `adaptTitles` detached side-generate. Effort ladder fan-out
+   (`Effort.respond`) is sequential `await`s — never parallel against the local model. The `.salehman`
+   cap=1 is conservative when it resolves to CLOUD (serializes parallelizable calls) — acceptable, safe.
+3. **Assumptions sweep — CLEAN.** Only "qwen" hits in my lane are comments + `qwen2.5vl` in
+   StockSageScreenAnalysis/VisionAnalyzer (vision model — correct, the 14B doesn't replace it). No
+   sub-60s timeouts wrap local generates (ShellTool 60s = shell, WebTools 20–25s = HTTP). No retry
+   loops that would re-pay a model load.
+4. **Verification:** full-tree `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) — 0 errors /
+   0 warnings, committed+pushed. Sandbox still blocks xcodebuild → **please run the canonical build+tests
+   on your next pass** (only SettingsView changed; `EffortWiringTests` unaffected).

@@ -1512,6 +1512,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
 
+## 2026-06-11 · 14B-readiness (Agents/Settings lane): status row + concurrency/assumptions audits; round-1 boundary relayed
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Worked the board task the latency session left (owner: "give the other claude a similar task") to make this lane 14B-ready before the fine-tuned GGUF lands. (1) **Settings "Salehman model" status row** (`salehmanModelStatusRow` + `LocalModelProbe` tri-state + `probeLocalModel()`): under the custom-model-name field in "Salehman engine" — green installed / orange missing with a copyable `ollama create ‹name› -f Modelfile` button / gray Ollama-down; probes via the same accessors the engine routes by (`customModelNameCurrent`, `OllamaClient.isUp/hasModel`) so the row can't disagree with actual routing; re-probes on name edit + manual refresh. (2) **Concurrency audit PASS** — `effectiveCap` already forces 1 in-flight generate for `.salehman`/`.ollamaCoder`/`.unslothStudio`/`.vllm` over the per-phase batch loop, `isSerialLocal` skips the adaptTitles side-generate, Effort ladder is sequential: no change needed. (3) **Assumptions sweep CLEAN** — no qwen text-model hardcodes (only the vision `qwen2.5vl`, correct), no sub-60s local-generate timeouts, no load-re-paying retry loops. Also: the API watch caught the **round-1 boundary** (GPU idle 3 min, balance $11.48, pod still billing $1.415/hr idle) — posted to the board for the SSH side with budget math ($9.98 usable ≈ 6–8 rounds); monitor v4 (state transitions + idle-cost heartbeats) is live. Monitor v3 note for the record: urllib transport couldn't verify the sandbox proxy's TLS cert (same root cause as the gh x509 failure) — v3+ use curl transport with Python logic.
+
+**Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

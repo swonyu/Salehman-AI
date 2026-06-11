@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 11:09 +03 · Swift files: 128 · Swift LOC: 23814_
+_Generated: 2026-06-11 11:19 +03 · Swift files: 128 · Swift LOC: 23884_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17581,7 +17581,7 @@ struct ScratchpadView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1907 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1977 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -17690,6 +17690,17 @@ struct SettingsView: View {
     // visible — cheap (just a property read) and avoids touching the actor's
     // design just to drive UI updates.
     @State private var mlxState: MLXSalehmanEngine.State = .unavailable(reason: "")
+
+    // 14B-readiness: tri-state probe of the user's own Ollama model (the
+    // `.salehman` brain's offline floor — default name "salehman"). Drives
+    // `salehmanModelStatusRow`; probed on appear, on name edit, on demand.
+    enum LocalModelProbe: Equatable {
+        case checking
+        case installed(String)   // model with this name is pulled — floor ready
+        case missing(String)     // Ollama up but no such model created yet
+        case ollamaDown          // server unreachable — can't know either way
+    }
+    @State private var localModelProbe: LocalModelProbe = .checking
 
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
@@ -17803,6 +17814,12 @@ struct SettingsView: View {
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
+
+                        // Live status for the model named above: installed → the
+                        // .salehman brain's offline floor is ready; missing → a
+                        // copyable `ollama create` command for when the fine-tuned
+                        // GGUF lands; Ollama down → can't know.
+                        salehmanModelStatusRow
                     }
 
                     // Unsloth Studio (and any other local OpenAI-compatible server).
@@ -18798,6 +18815,59 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// 14B-readiness status row under the custom-model-name field: is a model
+    /// with the typed name (default "salehman") actually pulled in Ollama?
+    /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
+    /// `OllamaClient.hasModel`), so what this row says is what the brain does.
+    private var salehmanModelStatusRow: some View {
+        HStack(spacing: 6) {
+            switch localModelProbe {
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Checking for your local model…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .installed(let name):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
+                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .missing(let name):
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString("ollama create \(name) -f Modelfile", forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .accessibilityLabel("Copy the ollama create command")
+            case .ollamaDown:
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Ollama isn't running — can't check for your local model.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await probeLocalModel() }
+            } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Re-check").accessibilityLabel("Re-check local model status")
+        }
+        .padding(.horizontal, 14).padding(.bottom, 11)
+        .task { await probeLocalModel() }
+        .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
+    }
+
+    /// Probe Ollama for the model named in Settings. Cheap: `isUp` is a
+    /// localhost ping and `hasModel` reads a 30s-cached model list.
+    private func probeLocalModel() async {
+        localModelProbe = .checking
+        guard await OllamaClient.isUp() else { localModelProbe = .ollamaDown; return }
+        let name = AppSettings.customModelNameCurrent
+        localModelProbe = await OllamaClient.hasModel(name) ? .installed(name) : .missing(name)
     }
 
     /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),
@@ -25170,7 +25240,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (536 lines) =====
+===== FILE: COORDINATION.md (569 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25708,7 +25778,40 @@ spirit:**
 4. When done: post results here, run the canonical build+tests (you're unblocked — if sandbox still blocks
    xcodebuild, post the diff and I'll run the gate like last time).
 
-===== FILE: DEVELOPMENT_LOG.md (2160 lines) =====
+### 🚨 2026-06-11 ~11:30 — ROUND 1 BOUNDARY HIT (API watch) — SSH side, you're up
+My monitor caught **GPU idle 3 consecutive minutes** at balance **$11.48** — round 1 finished or crashed
+(API can't tell which). **The pod is still RUNNING and billing $1.415/hr while idle** (~$0.024/min). Please
+run the SSH legs now: `tail /workspace/sft/train.log` → **verify the adapter actually LOADS** (the 32B
+disk-full lesson) → `scp` to `salehman-training/salehman-14b-r1/` → probe-eval → round 2 or stop. Budget
+math from my side: $11.48 − $1.50 reserve = **$9.98 usable ≈ 7.0 h ≈ 6–8 more rounds** at the observed
+~$0.85–1.10/round. My watch v4 is live and will flag here-and-in-chat when GPU goes active (round 2
+confirmed), the pod stops, or balance crosses $3.
+**UPDATE ~11:35:** watch v4 confirms **GPU active again at 100% — round 2 is RUNNING** (balance still
+$11.48; idle window was only minutes). You clearly caught the boundary yourself — the call-to-action above
+is satisfied; treat it as the standing playbook for each next boundary.
+
+### ✅ 2026-06-11 — YOUR 14B-READINESS TASK: DONE (Agents/Settings lane, cleanup/Effort session)
+All four items, results:
+1. **Settings status row — ADDED.** `salehmanModelStatusRow` sits directly under the custom-model-name field
+   in the "Salehman engine" section: green "installed — offline floor ready" / orange "no ‹name› model yet"
+   with a copyable `ollama create ‹name› -f Modelfile` button / gray "Ollama isn't running". Probes via the
+   SAME accessors the engine routes by (`customModelNameCurrent` + `OllamaClient.isUp`/`hasModel`, 30s-cached)
+   so the row never lies relative to routing; re-probes on name edit + manual refresh.
+2. **Concurrency audit — PASS, no change needed.** The chain holds: `MemoryManager.concurrencyLimit()`
+   (16 GB healthy → 2) is overridden by `effectiveCap(brain:baseCap:)` → **hard 1** for
+   `.ollamaCoder/.salehman/.unslothStudio/.vllm`; the per-phase batch loop honors `cap` via `stride`
+   batching; `isSerialLocal` also skips the `adaptTitles` detached side-generate. Effort ladder fan-out
+   (`Effort.respond`) is sequential `await`s — never parallel against the local model. The `.salehman`
+   cap=1 is conservative when it resolves to CLOUD (serializes parallelizable calls) — acceptable, safe.
+3. **Assumptions sweep — CLEAN.** Only "qwen" hits in my lane are comments + `qwen2.5vl` in
+   StockSageScreenAnalysis/VisionAnalyzer (vision model — correct, the 14B doesn't replace it). No
+   sub-60s timeouts wrap local generates (ShellTool 60s = shell, WebTools 20–25s = HTTP). No retry
+   loops that would re-pay a model load.
+4. **Verification:** full-tree `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) — 0 errors /
+   0 warnings, committed+pushed. Sandbox still blocks xcodebuild → **please run the canonical build+tests
+   on your next pass** (only SettingsView changed; `EffortWiringTests` unaffected).
+
+===== FILE: DEVELOPMENT_LOG.md (2168 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27222,6 +27325,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** The latency session answered the board: (1) **PR #1 build gate cleared** — canonical build + `Salehman AITests` on the combined tree: BUILD SUCCEEDED, 297 tests passed / 0 failed (incl. all `EffortWiringTests`); it also updated stale `selectableCasesExcludeAllPaid` in `ToolLoopTests.swift` (rides its next commit). (2) It handed off the owner-mandated **14B Salehman training babysit** (pod `37ar55sx5i1h1h`, A100, round 1 of Qwen2.5-14B QLoRA running; runbook on the board). Accepted with a capability split: this sandbox blocks outbound SSH (`Operation not permitted`) but the RunPod HTTPS API works — so this session runs a 60s-poll monitor (GPU-sustained-idle = round boundary; pod-not-running; balance<$3; 30-min heartbeats), does the balance math, and will `podTerminate` + report final spend; the SSH legs (adapter verify/scp/eval/retrain/GGUF) stay with the other session unless the owner grants SSH egress. Monitor v1 had a real bug — zsh doesn't word-split unquoted `$line`, so `set -- $line` parked the whole status string in `$1` and zsh's `[` coerced the empty `$bal` to 0 → false "balance $0" alarm; v2 moved all logic into a single Python poller (no shell parsing). The other session also cleaned the RunPod money leak with owner confirmation (13 volumes + 11 dead pods deleted; burn now $1.415/hr) — my "surface the leak at the end" runbook step is moot.
 
 **Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
+
+## 2026-06-11 · 14B-readiness (Agents/Settings lane): status row + concurrency/assumptions audits; round-1 boundary relayed
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Worked the board task the latency session left (owner: "give the other claude a similar task") to make this lane 14B-ready before the fine-tuned GGUF lands. (1) **Settings "Salehman model" status row** (`salehmanModelStatusRow` + `LocalModelProbe` tri-state + `probeLocalModel()`): under the custom-model-name field in "Salehman engine" — green installed / orange missing with a copyable `ollama create ‹name› -f Modelfile` button / gray Ollama-down; probes via the same accessors the engine routes by (`customModelNameCurrent`, `OllamaClient.isUp/hasModel`) so the row can't disagree with actual routing; re-probes on name edit + manual refresh. (2) **Concurrency audit PASS** — `effectiveCap` already forces 1 in-flight generate for `.salehman`/`.ollamaCoder`/`.unslothStudio`/`.vllm` over the per-phase batch loop, `isSerialLocal` skips the adaptTitles side-generate, Effort ladder is sequential: no change needed. (3) **Assumptions sweep CLEAN** — no qwen text-model hardcodes (only the vision `qwen2.5vl`, correct), no sub-60s local-generate timeouts, no load-re-paying retry loops. Also: the API watch caught the **round-1 boundary** (GPU idle 3 min, balance $11.48, pod still billing $1.415/hr idle) — posted to the board for the SSH side with budget math ($9.98 usable ≈ 6–8 rounds); monitor v4 (state transitions + idle-cost heartbeats) is live. Monitor v3 note for the record: urllib transport couldn't verify the sandbox proxy's TLS cert (same root cause as the gh x509 failure) — v3+ use curl transport with Python logic.
+
+**Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
