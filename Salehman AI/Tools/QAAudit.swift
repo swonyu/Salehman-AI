@@ -45,6 +45,14 @@ enum QAAudit {
         "markets": 0.095,   // bottom edge = the flat disclaimer footer
         // "memory" exempt: it's a SHEET with rounded corners — corner sampling
         // reads the cutout, not a canvas (round-1 false-positive).
+    ]
+
+    /// Deterministic surfaces must not drift past these change budgets without
+    /// an explicit baseline adoption — THE regression tripwire. Live surfaces
+    /// (real chat history, real window) stay informational: they change every
+    /// conversation by design.
+    private static let diffBudgets: [String: Double] = [
+        "chat_samples": 2.0, "code_samples": 2.0, "contrast_probe": 1.0,
         "settings": 0.095,
     ]
 
@@ -91,15 +99,23 @@ enum QAAudit {
             checks.append(.init(name: "nonBlank", pass: distinct >= 8,
                                 detail: "\(distinct) distinct sampled colors"))
 
-            // canvasFlat — bottom-corner samples within ±0.035 of the target grey.
+            // canvasFlat — bottom corners + mid-edges within ±0.035 of the
+            // target grey (edges catch a sidebar/panel regressing to
+            // translucent even when the corners survive).
             if let target = expectedCanvas[name] {
-                let measured = bottomCornerLuma(rep)
+                let measured = canvasSampleLuma(rep)
                 let ok = measured.allSatisfy { abs($0 - target) <= 0.035 }
                 checks.append(.init(name: "canvasFlat", pass: ok,
-                                    detail: "target \(target), corners \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
+                                    detail: "target \(target), samples \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
             }
 
-            // baselineDiff — informational unless a baseline exists AND moved.
+            // contrast — the readability probe's bands, measured for real.
+            if name == "contrast_probe" {
+                checks.append(contentsOf: contrastChecks(rep))
+            }
+
+            // baselineDiff — informational for live surfaces; a FAILURE for
+            // deterministic ones that exceed their drift budget.
             var diffPercent: Double? = nil
             let baseURL = baselinesDir.appendingPathComponent(file)
             if let base = bitmap(at: baseURL) {
@@ -108,8 +124,11 @@ enum QAAudit {
                 if pct > 0.5, let heat {
                     try? heat.write(to: snapshotsDir.appendingPathComponent("\(name)_diff.png"))
                 }
-                checks.append(.init(name: "baselineDiff", pass: true,
-                                    detail: String(format: "%.2f%% changed vs baseline", pct)))
+                let budget = diffBudgets[name]
+                let pass = budget.map { pct <= $0 } ?? true
+                checks.append(.init(name: "baselineDiff", pass: pass,
+                                    detail: String(format: "%.2f%% changed vs baseline%@", pct,
+                                                   budget.map { String(format: " (budget %.1f%%)", $0) } ?? "")))
             } else {
                 checks.append(.init(name: "baselineDiff", pass: true, detail: "no baseline adopted yet"))
             }
@@ -125,6 +144,53 @@ enum QAAudit {
         if let data = try? encoder.encode(report) {
             try? data.write(to: snapshotsDir.appendingPathComponent("AUDIT.json"))
         }
+
+        // Trend trail: one JSONL line per audit run (timestamp, fail count,
+        // total diff) — cheap history for "when did this start drifting?".
+        let totalDiff = results.compactMap(\.diffPercent).reduce(0, +)
+        let histLine = "{\"at\":\"\(report.generatedAt)\",\"failures\":\(failures.count),\"surfaces\":\(results.count),\"totalDiffPct\":\(String(format: "%.2f", totalDiff))}\n"
+        if let d = histLine.data(using: .utf8) {
+            let url = snapshotsDir.deletingLastPathComponent().appendingPathComponent("history.jsonl")
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile(); handle.write(d); try? handle.close()
+            } else {
+                try? d.write(to: url)
+            }
+        }
+
+        writeHTMLReport(report, in: snapshotsDir)
+    }
+
+    /// One-glance owner report: every surface with its badges, current image,
+    /// and (when present) baseline + heat-map side by side. Pure static HTML —
+    /// open qa/snapshots/report.html in any browser.
+    private static func writeHTMLReport(_ report: Report, in dir: URL) {
+        var html = """
+        <!doctype html><meta charset="utf-8"><title>Salehman AI — QA report</title>
+        <style>
+        body{background:#1b1b1b;color:#eee;font:14px -apple-system,sans-serif;margin:24px}
+        h1{font-size:18px} .ok{color:#5dd167} .bad{color:#ff5d5d}
+        .card{background:#252525;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin:14px 0}
+        .imgs{display:flex;gap:10px;flex-wrap:wrap} .imgs figure{margin:0}
+        .imgs img{max-width:380px;border:1px solid #444;border-radius:6px}
+        figcaption{font-size:11px;color:#999;margin-top:4px}
+        .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;background:#333;margin-right:6px}
+        </style>
+        <h1>QA report — \(report.generatedAt) ·
+        <span class="\(report.failures.isEmpty ? "ok" : "bad")">\(report.failures.isEmpty ? "ALL GREEN" : "\(report.failures.count) FAILING: \(report.failures.joined(separator: ", "))")</span></h1>
+        """
+        for r in report.results {
+            html += "<div class=\"card\"><b>\(r.snapshot)</b><br>"
+            for c in r.checks {
+                html += "<span class=\"badge \(c.pass ? "ok" : "bad")\">\(c.pass ? "✓" : "✗") \(c.name)</span> <small>\(c.detail)</small><br>"
+            }
+            html += "<div class=\"imgs\">"
+            html += "<figure><img src=\"\(r.snapshot).png\"><figcaption>current</figcaption></figure>"
+            html += "<figure><img src=\"../baselines/\(r.snapshot).png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>baseline</figcaption></figure>"
+            html += "<figure><img src=\"\(r.snapshot)_diff.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>diff heat-map</figcaption></figure>"
+            html += "</div></div>"
+        }
+        try? html.write(to: dir.appendingPathComponent("report.html"), atomically: true, encoding: .utf8)
     }
 
     /// Promote the current snapshots to baselines (menu/trigger-file driven).
@@ -169,16 +235,55 @@ enum QAAudit {
         return seen.count
     }
 
-    /// Average luma at two bottom-corner sample points (12 px inset).
-    private static func bottomCornerLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
+    /// Luma at canvas sample points: bottom corners + both mid-edges (12 px inset).
+    private static func canvasSampleLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
         let w = rep.pixelsWide, h = rep.pixelsHigh
         let inset = 12
-        let points = [(inset, h - inset), (w - inset, h - inset)]
+        let points = [(inset, h - inset), (w - inset, h - inset),
+                      (inset, h / 2), (w - inset, h / 2)]
         return points.compactMap { (x, y) in
-            rep.colorAt(x: x, y: y).map {
-                0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent
-            }
+            rep.colorAt(x: x, y: y).map { luma($0) }
         }
+    }
+
+    private static func luma(_ c: NSColor) -> CGFloat {
+        0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+    }
+
+    /// Measure each `ContrastProbe` band: scan the band's center line, take the
+    /// median sample as background and the most-distant sample as glyph core,
+    /// then compute the WCAG-style ratio (L1+0.05)/(L2+0.05). Anti-aliasing
+    /// dilutes glyph edges, so the probe packs heavy glyphs ("HHHH") across the
+    /// line and we take the EXTREME — the core of a stroke.
+    private static func contrastChecks(_ rep: NSBitmapImageRep) -> [CheckResult] {
+        let bands = ContrastProbe.bands
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard h > bands.count, w > 40 else {
+            return [.init(name: "contrast", pass: false, detail: "probe image too small")]
+        }
+        var results: [CheckResult] = []
+        for (i, band) in bands.enumerated() {
+            let y = Int((Double(i) + 0.5) / Double(bands.count) * Double(h))
+            var lumas: [CGFloat] = []
+            // Scan the middle 80% of the line (the text is centered).
+            var x = w / 10
+            while x < w - w / 10 {
+                if let c = rep.colorAt(x: x, y: y) { lumas.append(luma(c)) }
+                x += 2
+            }
+            guard lumas.count > 10 else {
+                results.append(.init(name: "contrast:\(band.0)", pass: false, detail: "no samples"))
+                continue
+            }
+            let sorted = lumas.sorted()
+            let bg = sorted[sorted.count / 2]                       // median = background
+            let extreme = abs(sorted.first! - bg) > abs(sorted.last! - bg)
+                ? sorted.first! : sorted.last!                       // farthest = glyph core
+            let ratio = Double((max(bg, extreme) + 0.05) / (min(bg, extreme) + 0.05))
+            results.append(.init(name: "contrast:\(band.0)", pass: ratio >= band.4,
+                                 detail: String(format: "%.2f:1 (min %.1f:1)", ratio, band.4)))
+        }
+        return results
     }
 
     /// Sampled pixel diff (per-channel threshold) + red heat-map at sample

@@ -89,6 +89,11 @@ enum QASnapshots {
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
         snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
+        // ── Readability probe — every text-style/surface pairing the design
+        // language uses, in fixed bands the audit measures for CONTRAST (the
+        // invisible-code-text class of bug, caught by eyes in round 1, is now
+        // caught by arithmetic every capture).
+        snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
 
         writeManifest(in: dir)
         buildContactSheet(in: dir)
@@ -218,6 +223,46 @@ enum QASnapshots {
 /// block, a long user paste (wrap-measure check), an assistant markdown
 /// document, a follow-up burst, the streaming row, the typing dots, and the
 /// agent strip — everything the heavy-polish passes touched.
+/// Fixed contrast bands: each row is one text-style/surface pairing at a known
+/// fractional y-position, so `QAAudit` can measure glyph-vs-background contrast
+/// without OCR — band i's center line sits at (i + 0.5) / bands.count of the
+/// image height. Order here MUST match `QAAudit.contrastBands`.
+struct ContrastProbe: View {
+    static let bandHeight: CGFloat = 56
+
+    /// (label, text style, foreground, background, minimum contrast the audit
+    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
+    static var bands: [(String, CGFloat, Color, Color, Double)] {
+        [
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+        ]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(Self.bands.enumerated()), id: \.offset) { _, band in
+                ZStack {
+                    band.3
+                    // Heavy glyph coverage across the scan line → the sampler
+                    // reliably hits glyph cores despite anti-aliasing.
+                    Text("HHHH \(band.0) — 0123 السلام HHHH")
+                        .font(.system(size: band.1, weight: .medium))
+                        .foregroundStyle(band.2)
+                        .lineLimit(1)
+                }
+                .frame(height: Self.bandHeight)
+            }
+        }
+    }
+}
+
 private struct ChatSampleGallery: View {
     private let now = Date(timeIntervalSince1970: 1_781_200_000)   // fixed clock
 

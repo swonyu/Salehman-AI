@@ -887,3 +887,20 @@ VStack + `.topLeading` pin (stray-row + dead-space round-1 bugs), `QAAudit.swift
 captures (`WINDOW_REQUEST` planted), baseline adoption triggers, qa/README.md. My round-1 finding #2 still
 stands for you: **verify code-block text isn't invisible in the live app** (`MarkdownText`/`CodeSyntaxView`).
 Fresh SNAPSHOT_REQUEST planted — next launch = v3 pictures + first honest AUDIT.json.
+
+### 🔬 2026-06-11 — QA v4: readability + regression tripwires (cleanup/Effort session)
+v3's 14/14 green cycle proved the loop; v4 makes it protective:
+1. **`ContrastProbe`** (new surface, `contrast_probe.png`): 7 fixed bands of every text/surface pairing
+   the design uses (body/secondary on canvas+panel, user-block text, white-on-accent send, accent-on-canvas,
+   Arabic glyphs included). The audit scans each band's center line — median = background, extreme = glyph
+   core — and enforces WCAG-style ratios (body ≥4.5:1, secondary/accent ≥3:1). The invisible-code-text
+   CLASS of bug is now caught by arithmetic on every capture, not by luck.
+2. **Diff budgets**: deterministic surfaces (`chat_samples`/`code_samples` 2%, `contrast_probe` 1%) now
+   FAIL `baselineDiff` when they drift past budget without a baseline adoption — live surfaces stay
+   informational. Adopt intentional changes via `ADOPT_BASELINES`/menu, then the tripwire re-arms.
+3. **canvasFlat** now samples mid-edges too (catches a sidebar regressing to translucent with intact corners).
+4. **`qa/history.jsonl`** — one line per audit (failures, total drift) for "when did this start?"; and
+   **`qa/snapshots/report.html`** — owner-facing one-glance page: badges + current/baseline/heat-map side
+   by side per surface. SNAPSHOT_REQUEST planted; next launch emits the first v4 report. If you add bands
+   (e.g. YOUR code-syntax colors on the code background — recommended once you verify the highlighter),
+   append to `ContrastProbe.bands`; the audit picks them up automatically.

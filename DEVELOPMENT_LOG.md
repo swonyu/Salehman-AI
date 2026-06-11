@@ -1627,6 +1627,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0/0; UI tests parse clean. Fresh SNAPSHOT_REQUEST + WINDOW_REQUEST planted — next app launch delivers v3 pictures + the first honest AUDIT.json; watcher armed.
 
+## 2026-06-11 · QA v4 — contrast probe, drift budgets, deeper canvas sampling, history + HTML report
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Fourth refinement round, turning the green loop into a protective one. (1) **`ContrastProbe`** — a new deterministic surface of 7 fixed text/surface bands (body+secondary on canvas and panel, user-block text, white-on-accent, accent-on-canvas; Arabic glyphs included); the audit scans each band's center line (median sample = background, extreme sample = glyph core) and enforces WCAG-style minimums (4.5:1 body, 3:1 secondary/accent) — the invisible-code-text class of bug found by eyes in round 1 is now caught by arithmetic every capture. (2) **Drift budgets** — deterministic galleries now FAIL `baselineDiff` beyond 2% (probe 1%) unless a baseline adoption made the change intentional; live surfaces stay informational. (3) `canvasFlat` samples mid-edges in addition to corners. (4) `qa/history.jsonl` trend trail (one line per audit) + `qa/snapshots/report.html` — an owner-facing page with badges and current/baseline/heat-map side by side. One Swift 6 isolation fix en route (DS tokens are MainActor; the probe's band table joined them).
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

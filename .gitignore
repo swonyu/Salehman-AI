@@ -51,3 +51,4 @@ qa/SNAPSHOT_REQUEST
 qa/WINDOW_REQUEST
 qa/ADOPT_BASELINES
 qa/baselines/
+qa/history.jsonl

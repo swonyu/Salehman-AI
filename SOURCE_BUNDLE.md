@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 18:02 +03 · Swift files: 132 · Swift LOC: 25075_
+_Generated: 2026-06-11 18:09 +03 · Swift files: 132 · Swift LOC: 25225_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10841,7 +10841,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QAAudit.swift (217 lines) =====
+===== FILE: Salehman AI/Tools/QAAudit.swift (322 lines) =====
 ```swift
 import AppKit
 
@@ -10890,6 +10890,14 @@ enum QAAudit {
         "markets": 0.095,   // bottom edge = the flat disclaimer footer
         // "memory" exempt: it's a SHEET with rounded corners — corner sampling
         // reads the cutout, not a canvas (round-1 false-positive).
+    ]
+
+    /// Deterministic surfaces must not drift past these change budgets without
+    /// an explicit baseline adoption — THE regression tripwire. Live surfaces
+    /// (real chat history, real window) stay informational: they change every
+    /// conversation by design.
+    private static let diffBudgets: [String: Double] = [
+        "chat_samples": 2.0, "code_samples": 2.0, "contrast_probe": 1.0,
         "settings": 0.095,
     ]
 
@@ -10936,15 +10944,23 @@ enum QAAudit {
             checks.append(.init(name: "nonBlank", pass: distinct >= 8,
                                 detail: "\(distinct) distinct sampled colors"))
 
-            // canvasFlat — bottom-corner samples within ±0.035 of the target grey.
+            // canvasFlat — bottom corners + mid-edges within ±0.035 of the
+            // target grey (edges catch a sidebar/panel regressing to
+            // translucent even when the corners survive).
             if let target = expectedCanvas[name] {
-                let measured = bottomCornerLuma(rep)
+                let measured = canvasSampleLuma(rep)
                 let ok = measured.allSatisfy { abs($0 - target) <= 0.035 }
                 checks.append(.init(name: "canvasFlat", pass: ok,
-                                    detail: "target \(target), corners \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
+                                    detail: "target \(target), samples \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
             }
 
-            // baselineDiff — informational unless a baseline exists AND moved.
+            // contrast — the readability probe's bands, measured for real.
+            if name == "contrast_probe" {
+                checks.append(contentsOf: contrastChecks(rep))
+            }
+
+            // baselineDiff — informational for live surfaces; a FAILURE for
+            // deterministic ones that exceed their drift budget.
             var diffPercent: Double? = nil
             let baseURL = baselinesDir.appendingPathComponent(file)
             if let base = bitmap(at: baseURL) {
@@ -10953,8 +10969,11 @@ enum QAAudit {
                 if pct > 0.5, let heat {
                     try? heat.write(to: snapshotsDir.appendingPathComponent("\(name)_diff.png"))
                 }
-                checks.append(.init(name: "baselineDiff", pass: true,
-                                    detail: String(format: "%.2f%% changed vs baseline", pct)))
+                let budget = diffBudgets[name]
+                let pass = budget.map { pct <= $0 } ?? true
+                checks.append(.init(name: "baselineDiff", pass: pass,
+                                    detail: String(format: "%.2f%% changed vs baseline%@", pct,
+                                                   budget.map { String(format: " (budget %.1f%%)", $0) } ?? "")))
             } else {
                 checks.append(.init(name: "baselineDiff", pass: true, detail: "no baseline adopted yet"))
             }
@@ -10970,6 +10989,53 @@ enum QAAudit {
         if let data = try? encoder.encode(report) {
             try? data.write(to: snapshotsDir.appendingPathComponent("AUDIT.json"))
         }
+
+        // Trend trail: one JSONL line per audit run (timestamp, fail count,
+        // total diff) — cheap history for "when did this start drifting?".
+        let totalDiff = results.compactMap(\.diffPercent).reduce(0, +)
+        let histLine = "{\"at\":\"\(report.generatedAt)\",\"failures\":\(failures.count),\"surfaces\":\(results.count),\"totalDiffPct\":\(String(format: "%.2f", totalDiff))}\n"
+        if let d = histLine.data(using: .utf8) {
+            let url = snapshotsDir.deletingLastPathComponent().appendingPathComponent("history.jsonl")
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile(); handle.write(d); try? handle.close()
+            } else {
+                try? d.write(to: url)
+            }
+        }
+
+        writeHTMLReport(report, in: snapshotsDir)
+    }
+
+    /// One-glance owner report: every surface with its badges, current image,
+    /// and (when present) baseline + heat-map side by side. Pure static HTML —
+    /// open qa/snapshots/report.html in any browser.
+    private static func writeHTMLReport(_ report: Report, in dir: URL) {
+        var html = """
+        <!doctype html><meta charset="utf-8"><title>Salehman AI — QA report</title>
+        <style>
+        body{background:#1b1b1b;color:#eee;font:14px -apple-system,sans-serif;margin:24px}
+        h1{font-size:18px} .ok{color:#5dd167} .bad{color:#ff5d5d}
+        .card{background:#252525;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin:14px 0}
+        .imgs{display:flex;gap:10px;flex-wrap:wrap} .imgs figure{margin:0}
+        .imgs img{max-width:380px;border:1px solid #444;border-radius:6px}
+        figcaption{font-size:11px;color:#999;margin-top:4px}
+        .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;background:#333;margin-right:6px}
+        </style>
+        <h1>QA report — \(report.generatedAt) ·
+        <span class="\(report.failures.isEmpty ? "ok" : "bad")">\(report.failures.isEmpty ? "ALL GREEN" : "\(report.failures.count) FAILING: \(report.failures.joined(separator: ", "))")</span></h1>
+        """
+        for r in report.results {
+            html += "<div class=\"card\"><b>\(r.snapshot)</b><br>"
+            for c in r.checks {
+                html += "<span class=\"badge \(c.pass ? "ok" : "bad")\">\(c.pass ? "✓" : "✗") \(c.name)</span> <small>\(c.detail)</small><br>"
+            }
+            html += "<div class=\"imgs\">"
+            html += "<figure><img src=\"\(r.snapshot).png\"><figcaption>current</figcaption></figure>"
+            html += "<figure><img src=\"../baselines/\(r.snapshot).png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>baseline</figcaption></figure>"
+            html += "<figure><img src=\"\(r.snapshot)_diff.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>diff heat-map</figcaption></figure>"
+            html += "</div></div>"
+        }
+        try? html.write(to: dir.appendingPathComponent("report.html"), atomically: true, encoding: .utf8)
     }
 
     /// Promote the current snapshots to baselines (menu/trigger-file driven).
@@ -11014,16 +11080,55 @@ enum QAAudit {
         return seen.count
     }
 
-    /// Average luma at two bottom-corner sample points (12 px inset).
-    private static func bottomCornerLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
+    /// Luma at canvas sample points: bottom corners + both mid-edges (12 px inset).
+    private static func canvasSampleLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
         let w = rep.pixelsWide, h = rep.pixelsHigh
         let inset = 12
-        let points = [(inset, h - inset), (w - inset, h - inset)]
+        let points = [(inset, h - inset), (w - inset, h - inset),
+                      (inset, h / 2), (w - inset, h / 2)]
         return points.compactMap { (x, y) in
-            rep.colorAt(x: x, y: y).map {
-                0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent
-            }
+            rep.colorAt(x: x, y: y).map { luma($0) }
         }
+    }
+
+    private static func luma(_ c: NSColor) -> CGFloat {
+        0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+    }
+
+    /// Measure each `ContrastProbe` band: scan the band's center line, take the
+    /// median sample as background and the most-distant sample as glyph core,
+    /// then compute the WCAG-style ratio (L1+0.05)/(L2+0.05). Anti-aliasing
+    /// dilutes glyph edges, so the probe packs heavy glyphs ("HHHH") across the
+    /// line and we take the EXTREME — the core of a stroke.
+    private static func contrastChecks(_ rep: NSBitmapImageRep) -> [CheckResult] {
+        let bands = ContrastProbe.bands
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard h > bands.count, w > 40 else {
+            return [.init(name: "contrast", pass: false, detail: "probe image too small")]
+        }
+        var results: [CheckResult] = []
+        for (i, band) in bands.enumerated() {
+            let y = Int((Double(i) + 0.5) / Double(bands.count) * Double(h))
+            var lumas: [CGFloat] = []
+            // Scan the middle 80% of the line (the text is centered).
+            var x = w / 10
+            while x < w - w / 10 {
+                if let c = rep.colorAt(x: x, y: y) { lumas.append(luma(c)) }
+                x += 2
+            }
+            guard lumas.count > 10 else {
+                results.append(.init(name: "contrast:\(band.0)", pass: false, detail: "no samples"))
+                continue
+            }
+            let sorted = lumas.sorted()
+            let bg = sorted[sorted.count / 2]                       // median = background
+            let extreme = abs(sorted.first! - bg) > abs(sorted.last! - bg)
+                ? sorted.first! : sorted.last!                       // farthest = glyph core
+            let ratio = Double((max(bg, extreme) + 0.05) / (min(bg, extreme) + 0.05))
+            results.append(.init(name: "contrast:\(band.0)", pass: ratio >= band.4,
+                                 detail: String(format: "%.2f:1 (min %.1f:1)", ratio, band.4)))
+        }
+        return results
     }
 
     /// Sampled pixel diff (per-channel threshold) + red heat-map at sample
@@ -11141,7 +11246,7 @@ enum QACapture {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (293 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (338 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11234,6 +11339,11 @@ enum QASnapshots {
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
         snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
+        // ── Readability probe — every text-style/surface pairing the design
+        // language uses, in fixed bands the audit measures for CONTRAST (the
+        // invisible-code-text class of bug, caught by eyes in round 1, is now
+        // caught by arithmetic every capture).
+        snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
 
         writeManifest(in: dir)
         buildContactSheet(in: dir)
@@ -11363,6 +11473,46 @@ enum QASnapshots {
 /// block, a long user paste (wrap-measure check), an assistant markdown
 /// document, a follow-up burst, the streaming row, the typing dots, and the
 /// agent strip — everything the heavy-polish passes touched.
+/// Fixed contrast bands: each row is one text-style/surface pairing at a known
+/// fractional y-position, so `QAAudit` can measure glyph-vs-background contrast
+/// without OCR — band i's center line sits at (i + 0.5) / bands.count of the
+/// image height. Order here MUST match `QAAudit.contrastBands`.
+struct ContrastProbe: View {
+    static let bandHeight: CGFloat = 56
+
+    /// (label, text style, foreground, background, minimum contrast the audit
+    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
+    static var bands: [(String, CGFloat, Color, Color, Double)] {
+        [
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+        ]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(Self.bands.enumerated()), id: \.offset) { _, band in
+                ZStack {
+                    band.3
+                    // Heavy glyph coverage across the scan line → the sampler
+                    // reliably hits glyph cores despite anti-aliasing.
+                    Text("HHHH \(band.0) — 0123 السلام HHHH")
+                        .font(.system(size: band.1, weight: .medium))
+                        .foregroundStyle(band.2)
+                        .lineLimit(1)
+                }
+                .frame(height: Self.bandHeight)
+            }
+        }
+    }
+}
+
 private struct ChatSampleGallery: View {
     private let now = Date(timeIntervalSince1970: 1_781_200_000)   // fixed clock
 
@@ -26447,7 +26597,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (889 lines) =====
+===== FILE: COORDINATION.md (906 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -27338,7 +27488,24 @@ captures (`WINDOW_REQUEST` planted), baseline adoption triggers, qa/README.md. M
 stands for you: **verify code-block text isn't invisible in the live app** (`MarkdownText`/`CodeSyntaxView`).
 Fresh SNAPSHOT_REQUEST planted — next launch = v3 pictures + first honest AUDIT.json.
 
-===== FILE: DEVELOPMENT_LOG.md (2331 lines) =====
+### 🔬 2026-06-11 — QA v4: readability + regression tripwires (cleanup/Effort session)
+v3's 14/14 green cycle proved the loop; v4 makes it protective:
+1. **`ContrastProbe`** (new surface, `contrast_probe.png`): 7 fixed bands of every text/surface pairing
+   the design uses (body/secondary on canvas+panel, user-block text, white-on-accent send, accent-on-canvas,
+   Arabic glyphs included). The audit scans each band's center line — median = background, extreme = glyph
+   core — and enforces WCAG-style ratios (body ≥4.5:1, secondary/accent ≥3:1). The invisible-code-text
+   CLASS of bug is now caught by arithmetic on every capture, not by luck.
+2. **Diff budgets**: deterministic surfaces (`chat_samples`/`code_samples` 2%, `contrast_probe` 1%) now
+   FAIL `baselineDiff` when they drift past budget without a baseline adoption — live surfaces stay
+   informational. Adopt intentional changes via `ADOPT_BASELINES`/menu, then the tripwire re-arms.
+3. **canvasFlat** now samples mid-edges too (catches a sidebar regressing to translucent with intact corners).
+4. **`qa/history.jsonl`** — one line per audit (failures, total drift) for "when did this start?"; and
+   **`qa/snapshots/report.html`** — owner-facing one-glance page: badges + current/baseline/heat-map side
+   by side per surface. SNAPSHOT_REQUEST planted; next launch emits the first v4 report. If you add bands
+   (e.g. YOUR code-syntax colors on the code background — recommended once you verify the highlighter),
+   append to `ContrastProbe.bands`; the audit picks them up automatically.
+
+===== FILE: DEVELOPMENT_LOG.md (2339 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28967,6 +29134,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Round-1 snapshots delivered first real eyes on the UI and an honest verdict on the harness itself. Findings: the chat gallery rendered correctly (rhythm/blocks/document-flow/agent-strip all match the design) except a stray sample row below the agent strip (LazyVStack misbehaving offscreen → plain VStack) and a third of the frame as dead space (vertical centering → `.topLeading` pin); `settings.png` rendered as a blank panel, `today.png` pure white, the live transcript empty, and TextField/Menu as yellow "unsupported" placeholders — plain `ImageRenderer` can't draw ScrollView/Lazy/AppKit content. Fix: the other session's `snapHosted` (NSHostingView offscreen render — both sessions converged on it independently) became THE single render path for all 13 surfaces. New **`QAAudit.swift`** makes the harness self-judging: after every capture it writes `AUDIT.json` (`nonBlank`, `canvasFlat` corner-luma vs the design greys, `baselineDiff` % + red heat-maps vs adoptable `qa/baselines`), and the capture UI test asserts `failures == []` — a visual regression now fails the gate like a broken unit test. New **`QACapture.swift`** photographs the app's real windows (`WINDOW_REQUEST`/menu — apps may capture their own windows, no permissions). The audit immediately earned its keep: it flagged `memory` (corners not design-grey); eyes-on triage showed a capture-config bug, not a missing canvas — MemoryView is a SHEET that floats in a tab-sized frame; now captured at 500×620 and exempted from corner sampling. Flagged to the other session: code-block text rendered invisible in the markdown sample — verify in the live app (their MarkdownText/CodeSyntaxView lane).
 
 **Result:** Typecheck 0/0; UI tests parse clean. Fresh SNAPSHOT_REQUEST + WINDOW_REQUEST planted — next app launch delivers v3 pictures + the first honest AUDIT.json; watcher armed.
+
+## 2026-06-11 · QA v4 — contrast probe, drift budgets, deeper canvas sampling, history + HTML report
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Fourth refinement round, turning the green loop into a protective one. (1) **`ContrastProbe`** — a new deterministic surface of 7 fixed text/surface bands (body+secondary on canvas and panel, user-block text, white-on-accent, accent-on-canvas; Arabic glyphs included); the audit scans each band's center line (median sample = background, extreme sample = glyph core) and enforces WCAG-style minimums (4.5:1 body, 3:1 secondary/accent) — the invisible-code-text class of bug found by eyes in round 1 is now caught by arithmetic every capture. (2) **Drift budgets** — deterministic galleries now FAIL `baselineDiff` beyond 2% (probe 1%) unless a baseline adoption made the change intentional; live surfaces stay informational. (3) `canvasFlat` samples mid-edges in addition to corners. (4) `qa/history.jsonl` trend trail (one line per audit) + `qa/snapshots/report.html` — an owner-facing page with badges and current/baseline/heat-map side by side. One Swift 6 isolation fix en route (DS tokens are MainActor; the probe's band table joined them).
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
