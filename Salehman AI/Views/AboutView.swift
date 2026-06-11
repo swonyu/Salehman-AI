@@ -85,7 +85,7 @@ struct AboutView: View {
                     VStack(spacing: 1) {
                         ForEach(capabilities) { cap in capabilityRow(cap) }
                     }
-                    .background(DS.Palette.surface,
+                    .background(DS.Palette.codeSurfaceSide,
                                 in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))

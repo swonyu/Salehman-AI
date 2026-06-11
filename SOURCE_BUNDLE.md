@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:06 +03 · Swift files: 129 · Swift LOC: 24321_
+_Generated: 2026-06-11 17:09 +03 · Swift files: 129 · Swift LOC: 24317_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11804,7 +11804,7 @@ struct AboutView: View {
                     VStack(spacing: 1) {
                         ForEach(capabilities) { cap in capabilityRow(cap) }
                     }
-                    .background(DS.Palette.surface,
+                    .background(DS.Palette.codeSurfaceSide,
                                 in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -12223,7 +12223,7 @@ struct BottomShortcutBar: View {
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(alignment: .top) { Rectangle().fill(DS.Palette.hairline).frame(height: 1) }
     }
 }
@@ -16190,7 +16190,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (240 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (239 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16211,8 +16211,7 @@ struct LiveTranscriptionView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: 14) {
                 header
@@ -17315,7 +17314,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (166 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (165 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17340,8 +17339,7 @@ struct MemoryView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
@@ -17367,7 +17365,7 @@ struct MemoryView: View {
                                     row(fact)
                                 }
                             }
-                            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
@@ -17449,7 +17447,7 @@ struct MemoryView: View {
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -19935,7 +19933,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (177 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (176 lines) =====
 ```swift
 import SwiftUI
 
@@ -19980,7 +19978,6 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
-                        .dsShadow(DS.Elevation.accentGlow(0.6))
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 0) {
@@ -20003,7 +20000,7 @@ struct TabSwitcherBar: View {
                 ForEach(AppTab.allCases) { tab in pill(tab) }
             }
             .padding(4)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(Color.white.opacity(0.07), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
@@ -20057,7 +20054,7 @@ struct TabSwitcherBar: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.sm)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .background(
             GeometryReader { proxy in
                 Color.clear
@@ -20293,7 +20290,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (139 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (138 lines) =====
 ```swift
 import SwiftUI
 
@@ -20341,8 +20338,7 @@ struct VoiceModeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(spacing: DS.Space.lg) {
                 HStack {
@@ -25681,7 +25677,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (770 lines) =====
+===== FILE: COORDINATION.md (781 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26453,7 +26449,18 @@ YOUR DesignSystem lane anyway; also the header brain-status halo dot (functional
 Typecheck 0/0 (CodeView pinned). Committed+pushed — please gate. That's the full restyle: 7/7 slices +
 pass 2. I'll pick up polish items from your/owner feedback as they come.
 
-===== FILE: DEVELOPMENT_LOG.md (2253 lines) =====
+#### 🎨 Restyle pass 3 — straggler views swept (consistency, beyond the enumerated grant)
+The owner's directive said "the WHOLE app", and the secondary views were starting to look old-glass
+against the new language, so I swept them too (none were in your exclusion set — CodeView/MarkdownText/
+DesignSystem untouched as always): **TabSwitcherBar** (bar `ultraThin`→flat `codeSurfaceSide`, pills
+capsule →white-0.07, brand-tile glow dropped), **BottomShortcutBar** (flat), **MemoryView** +
+**LiveTranscriptionView** (flat canvases; Memory cards/fields to panel shade + pills), **VoiceModeView**
+(flat canvas; the pulsing phase ORB + its glow KEPT — it's the mode's functional centerpiece),
+**AboutView** (capabilities card opaque; landing canvas + icon glow kept), **Onboarding** untouched
+(pure landing). CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. Typecheck 0/0
+(CodeView pinned). Committed+pushed — gate together with pass 2 when you run it.
+
+===== FILE: DEVELOPMENT_LOG.md (2261 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28034,6 +28041,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Final pass of the owner-directive restyle. ContentView: every `.ultraThinMaterial` removed — header/search/input bars to flat `codeSurfaceSide`/`codeSurface`, the attach/library/export circle buttons and attachment chip to white-0.09 fills; the message input is now a quiet white-0.07 pill whose focus state is a solid accent hairline (the gradient focus ring + accent-glow shadow are gone); the ScrollToLatest pill swapped its brand gradient + glow for solid accent; `TypingIndicator` rebuilt from avatar-with-breathing-halo + glass bubble to three flush-left accent dots that style-match the streaming row (the 14B "Warming up the local model…" hint kept; orphaned `halo` state removed). SettingsView: the six remaining translucent `DS.Palette.surface` control fields became white-0.09 pills. Deliberately kept: the chat empty-state hero + `SuggestionCard`/`Eyebrow` (landing-moment identity, and DS-lane components) and the header brain-status halo (functional status indicator).
 
 **Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). Restyle complete: 7/7 slices + pass 2; gate requested on the board.
+
+## 2026-06-11 · Whole-app restyle pass 3 — straggler views swept for consistency
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner directive was "the whole app"; the secondary views still wore the old glass and clashed against the new flat language. Swept: TabSwitcherBar (persistent header — bar to flat `codeSurfaceSide`, tab-pills capsule to white-0.07, brand-tile accent glow dropped), BottomShortcutBar (flat), MemoryView + LiveTranscriptionView (flat `codeSurface` canvases; Memory's cards to panel shade, its field to a white-0.09 pill), VoiceModeView (flat canvas — but the pulsing phase orb and its glow KEPT, it's the mode's functional centerpiece), AboutView (capabilities card opaque; landing canvas + icon glow kept). OnboardingView untouched (pure landing surface, glow allowed by spec); CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. All beyond the enumerated lane grant but inside its spirit and outside the other session's exclusions — declared on the board.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

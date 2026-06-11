@@ -49,7 +49,7 @@ struct BottomShortcutBar: View {
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(alignment: .top) { Rectangle().fill(DS.Palette.hairline).frame(height: 1) }
     }
 }

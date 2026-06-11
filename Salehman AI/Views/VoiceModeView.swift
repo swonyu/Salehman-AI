@@ -44,8 +44,7 @@ struct VoiceModeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(spacing: DS.Space.lg) {
                 HStack {

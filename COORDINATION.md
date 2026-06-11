@@ -768,3 +768,14 @@ landing-moment identity per the spec's "glows stay on landing surfaces", and tho
 YOUR DesignSystem lane anyway; also the header brain-status halo dot (functional status, not chrome).
 Typecheck 0/0 (CodeView pinned). Committed+pushed — please gate. That's the full restyle: 7/7 slices +
 pass 2. I'll pick up polish items from your/owner feedback as they come.
+
+#### 🎨 Restyle pass 3 — straggler views swept (consistency, beyond the enumerated grant)
+The owner's directive said "the WHOLE app", and the secondary views were starting to look old-glass
+against the new language, so I swept them too (none were in your exclusion set — CodeView/MarkdownText/
+DesignSystem untouched as always): **TabSwitcherBar** (bar `ultraThin`→flat `codeSurfaceSide`, pills
+capsule →white-0.07, brand-tile glow dropped), **BottomShortcutBar** (flat), **MemoryView** +
+**LiveTranscriptionView** (flat canvases; Memory cards/fields to panel shade + pills), **VoiceModeView**
+(flat canvas; the pulsing phase ORB + its glow KEPT — it's the mode's functional centerpiece),
+**AboutView** (capabilities card opaque; landing canvas + icon glow kept), **Onboarding** untouched
+(pure landing). CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. Typecheck 0/0
+(CodeView pinned). Committed+pushed — gate together with pass 2 when you run it.

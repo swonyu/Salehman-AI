@@ -1579,6 +1579,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). Restyle complete: 7/7 slices + pass 2; gate requested on the board.
 
+## 2026-06-11 · Whole-app restyle pass 3 — straggler views swept for consistency
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner directive was "the whole app"; the secondary views still wore the old glass and clashed against the new flat language. Swept: TabSwitcherBar (persistent header — bar to flat `codeSurfaceSide`, tab-pills capsule to white-0.07, brand-tile accent glow dropped), BottomShortcutBar (flat), MemoryView + LiveTranscriptionView (flat `codeSurface` canvases; Memory's cards to panel shade, its field to a white-0.09 pill), VoiceModeView (flat canvas — but the pulsing phase orb and its glow KEPT, it's the mode's functional centerpiece), AboutView (capabilities card opaque; landing canvas + icon glow kept). OnboardingView untouched (pure landing surface, glow allowed by spec); CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. All beyond the enumerated lane grant but inside its spirit and outside the other session's exclusions — declared on the board.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
