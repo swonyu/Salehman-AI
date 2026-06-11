@@ -1589,6 +1589,10 @@ enum ChatExporter {
         let safe = raw.components(separatedBy: banned).joined()
             .trimmingCharacters(in: .whitespaces)
         let df = DateFormatter()
+        // Fixed-format dates need the POSIX locale: a bare DateFormatter
+        // follows the DEVICE locale+calendar, so on a Hijri-calendar Mac
+        // (this machine) "yyyy-MM-dd" rendered 1447-era dates in filenames.
+        df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd"
         let date = messages.map(\.timestamp).max() ?? Date()
         return "\(safe.isEmpty ? "Conversation" : safe) — \(df.string(from: date)).md"
