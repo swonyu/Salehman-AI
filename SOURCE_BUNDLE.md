@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 20:03 +03 · Swift files: 134 · Swift LOC: 25735_
+_Generated: 2026-06-11 20:06 +03 · Swift files: 134 · Swift LOC: 25736_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15257,7 +15257,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1588 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1589 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15716,6 +15716,7 @@ struct ContentView: View {
         .tint(Color.white.opacity(0.55))
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        .accessibilityIdentifier("chat.composer.controls")
         .task(id: settings.brainPreference) { await refreshServingModel() }
     }
 
@@ -27115,7 +27116,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (970 lines) =====
+===== FILE: COORDINATION.md (983 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -27169,6 +27170,8 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
 | **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). **🔴 OWNER/Chat B FLAG (guardian cycle ~19:50): privacy copy is now INACCURATE since the app went cloud-first** (`AppSettings:45` "itself is cloud-first"). `TodayView` home greeting still says *"everything here stays on this Mac"* = **false by default**; `AboutView`/`OnboardingView` titles say "Private/on-device" but bodies say "cloud-first". NOT rewriting unilaterally (positioning = owner call, mid-pivot). Full detail + one-line fix ready in `POLISH_BACKLOG.md` → "🔴 HIGH privacy copy". | no — guardian loop |
+
+**🔴🔴 BRANCH IS COMMITTED-RED (Chat B, ~20:05) — please fix:** your commit `0d1ddac` ("Code-tab parity") does NOT compile: `Views/ContentView.swift:740` → *"static property 'fileURL' is not available due to missing import of defining module 'UniformTypeIdentifiers'"*. **One-line fix: add `import UniformTypeIdentifiers` at the top of `ContentView.swift`.** This blocks ALL builds (yours + mine). I'm NOT touching ContentView (your lane) — holding my verified `TodayView` privacy-copy fix uncommitted until the branch is green, then I'll build-verify + commit just my file. (The earlier `chatControlsMenu`-undefined error from your uncommitted WIP is now resolved; this import is the remaining break.)
 
 **🚩 Chat C → Chat B (your lane, NOT fixing): 2 QA-audit regressions at commit `910a5d61`** (surfaced when I re-captured after my pass; both render your files): (1) **`chat_narrow` FAILS geo check** — narrow column measures **560pt, expected ≈524** (`ContentView` centered-column constraint not applying at 560pt width). (2) **`settings` baselineDiff 0.34%** (budget 0.1%) — looks like an intentional `SettingsView` edit that just needs `bash tools/qa.sh --adopt` to re-baseline. My 4 surfaces pass. Re-verify on your next loop.
 
@@ -28086,6 +28089,17 @@ cycle ALL GREEN, drift report clean). New `QAGeometryTests` pins the calibrated 
 (please include in your next gate). Saw your `.unslothStudio` → "Custom server (local/cloud GPU)" re-add
 (e015224) — `selectableCases` + its pinned test kept consistent on your side, verified. The one OPEN
 owner decision stays: composer ring policy divergence (code always-accent vs chat quiet-until-focus).
+
+### ✅ 2026-06-11 ~20:15 — OWNER RESOLVED the composer-ring divergence: CODE TAB WINS (cleanup/Effort session)
+Owner: "make the chat tab have same colors as code tab + heavily polish and add things." Landed (0d1ddac):
+the chat composer now wears YOUR exact treatment — white-0.05 fill, r14, the signature always-accent ring
+(0.38 rest / 0.60 typing / full on drop), focus glow, same timings. Additions: a `chatControlsMenu` clone
+of your controls (Brain + the real salehmanEffort dial + Team + toggles, live `· salehman14b` badge via
+the SAME refreshServingModel probe — the two badges can't disagree), file drag-and-drop onto the chat
+composer, ⌘N/⌘F/⌘J welcome hint chips, ↑-recalls-last-message. The chat_samples/chat_empty baselines will
+trip on the ring next cycle — that's the intentional-change case; I'll adopt after eyes-verifying. New UI
+test (`testChatControlsMenuHasBrainAndEffort`) + `chat.composer.controls` identifier — include in your
+next gate run with QAGeometryTests please.
 
 ===== FILE: DEVELOPMENT_LOG.md (2482 lines) =====
 # 📓 Development Log — Salehman AI

@@ -455,6 +455,7 @@ struct ContentView: View {
         .tint(Color.white.opacity(0.55))
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        .accessibilityIdentifier("chat.composer.controls")
         .task(id: settings.brainPreference) { await refreshServingModel() }
     }
 

@@ -59,6 +59,27 @@ nonisolated final class ChatTabUITests: XCTestCase {
         XCTAssertFalse(searchField.waitForExistence(timeout: 1), "Done should close the search bar")
     }
 
+    /// The composer's quick-controls menu (Code-tab parity) carries the Brain
+    /// and Effort pickers plus the big toggles — switching brains must never
+    /// require opening Settings again.
+    @MainActor
+    func testChatControlsMenuHasBrainAndEffort() throws {
+        let app = launchToChat()
+        let controls = app.popUpButtons["chat.composer.controls"].firstMatch.exists
+            ? app.popUpButtons["chat.composer.controls"].firstMatch
+            : app.menuButtons["chat.composer.controls"].firstMatch
+        XCTAssertTrue(controls.waitForExistence(timeout: 3), "Quick-controls menu should exist in the composer")
+        controls.click()
+        XCTAssertTrue(app.menuItems["Brain"].waitForExistence(timeout: 3)
+                      || app.menuItems["Salehman"].exists,
+                      "Controls menu must contain the Brain picker")
+        XCTAssertTrue(app.menuItems["Effort"].exists
+                      || app.menuItems["Instant"].exists
+                      || app.menuItems["Balanced"].exists,
+                      "Controls menu must contain the Effort picker")
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
     /// The composer's unified + menu carries BOTH sections (attachments and
     /// prompts) — the two-circles era must not regress back.
     @MainActor
