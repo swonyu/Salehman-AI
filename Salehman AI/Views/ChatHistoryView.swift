@@ -114,7 +114,12 @@ struct ChatHistoryView: View {
                 ChatStore.archives()
             }.value
             loaded = true
-            revealed = true   // rows render hidden for one frame, then cascade in
+            // The reveal flip must land a frame AFTER the rows mount: flipping
+            // in the same update as insertion renders them at final values and
+            // `.animation(value:)` has no transition to interpolate (self-review
+            // catch — the cascade silently never fired when set together).
+            try? await Task.sleep(for: .milliseconds(50))
+            revealed = true
         }
     }
 
