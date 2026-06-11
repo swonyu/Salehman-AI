@@ -257,25 +257,34 @@ struct MarkdownText: View {
     }
 
     /// Render a parsed table as an aligned grid with a bold header row.
+    /// Cells CAP at 300pt and WRAP — a Grid otherwise sizes columns to each cell's
+    /// ideal (single-line) width, so long cells overflowed the message column and
+    /// were clipped mid-word (owner hit this). Wide tables h-scroll as the escape.
     @ViewBuilder
     static func tableView(header: [String], rows: [[String]]) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow {
-                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                    Text(inlineMarkdown(cell))
-                        .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
-                }
-            }
-            Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                        Text(inlineMarkdown(cell))
+                            .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 300, alignment: .leading)
+                    }
+                }
+                Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 300, alignment: .leading)
+                        }
                     }
                 }
             }
+            .padding(10)
         }
-        .padding(10)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }

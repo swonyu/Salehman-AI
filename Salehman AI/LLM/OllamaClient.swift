@@ -324,6 +324,19 @@ enum OllamaClient {
     }
     @MainActor private static var didWarmup = false
 
+    // MARK: - Last-generation stats (speed visibility for the local model)
+
+    /// (model, tokens/sec) of the most recent completed local generation, with a
+    /// lock so the stream task can write while the UI reads. Display-only.
+    nonisolated(unsafe) private static var _lastStats: (model: String, tps: Double)?
+    nonisolated private static let statsLock = NSLock()
+    nonisolated static func recordStats(model: String, tokensPerSec: Double) {
+        statsLock.lock(); _lastStats = (model, tokensPerSec); statsLock.unlock()
+    }
+    nonisolated static var lastStats: (model: String, tps: Double)? {
+        statsLock.lock(); defer { statsLock.unlock() }; return _lastStats
+    }
+
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
     /// with the cumulative text after each token chunk. Returns the final
     /// text, or nil if the server/model isn't reachable.
@@ -359,7 +372,15 @@ enum OllamaClient {
                     accumulated += chunk
                     onUpdate(accumulated)
                 }
-                if (json["done"] as? Bool) == true { break }
+                if (json["done"] as? Bool) == true {
+                    // Final chunk carries generation stats — capture tokens/sec so the
+                    // UI can show how fast the local model actually ran.
+                    if let count = json["eval_count"] as? Int,
+                       let ns = json["eval_duration"] as? Int, ns > 0 {
+                        recordStats(model: model, tokensPerSec: Double(count) / (Double(ns) / 1e9))
+                    }
+                    break
+                }
             }
         } catch {
             // Network/stream errors — surface what we accumulated so the UI can decide.

@@ -206,6 +206,9 @@ struct CodeView: View {
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
+    @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
+    @State private var hoveredFile: URL?            // file-tree row under the pointer
+    @State private var atBottom = true              // chat scrolled to the end (hides the jump button)
     // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
     // across launches. Auto-expands when a file is selected or a run leaves diffs.
     @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
@@ -473,8 +476,11 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(isSel ? Color.white.opacity(0.08)
+                        : (hoveredFile == url ? Color.white.opacity(0.04) : .clear),
+                        in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
+            .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
         }
         .buttonStyle(.plain)
         .contextMenu { fileActionsMenu(url) }
@@ -492,6 +498,14 @@ struct CodeView: View {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
                 HStack(spacing: 12) {
+                    if let tps = lastTokPerSec {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill").font(.system(size: 8.5))
+                            Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                        .help("Speed of the last local reply")
+                    }
                     if treeCollapsed {
                         Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
                             Image(systemName: "sidebar.left").font(.system(size: 11))
@@ -541,6 +555,10 @@ struct CodeView: View {
                         if isRunning {
                             streamingView.id("stream")
                         }
+                        // Bottom sentinel — tracks whether the view is scrolled to the end.
+                        Color.clear.frame(height: 1).id("bottom")
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 20).padding(.vertical, 16)
                     // Centered reading column (Claude-style): long lines are hard to
@@ -555,6 +573,26 @@ struct CodeView: View {
                 }
                 .onChange(of: progress.streamingAnswer) { _, _ in
                     proxy.scrollTo("stream", anchor: .bottom)
+                }
+                // Floating jump-to-latest (only when scrolled up in history).
+                .overlay(alignment: .bottomTrailing) {
+                    if !atBottom && !messages.isEmpty {
+                        Button {
+                            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: 30, height: 30)
+                                .background(DS.Palette.codeSurfaceSide, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .padding(.trailing, 16).padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .help("Jump to the latest message")
+                        .accessibilityLabel("Jump to the latest message")
+                    }
                 }
             }
 
@@ -609,6 +647,15 @@ struct CodeView: View {
                 shortcutHint("⌘L", "Ask")
             }
             .padding(.top, 10)
+            // The 14B's home: show when the owner's own model is serving locally.
+            if let m = localServingModel {
+                HStack(spacing: 5) {
+                    Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                    Text("\(m) · local · ready")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 46)
@@ -654,7 +701,8 @@ struct CodeView: View {
                 .padding(.horizontal, 12).padding(.bottom, 8)
             }
         }
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.5)) }
     }
 
     @ViewBuilder
@@ -1124,6 +1172,7 @@ struct CodeView: View {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
                 showWarmupHint = false
+                lastTokPerSec = OllamaClient.lastStats?.tps   // show how fast the local model ran
                 MissionProgress.shared.finish()
             }
             await ws.refreshAfterRun()                   // off-main post-run diff

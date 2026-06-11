@@ -115,6 +115,11 @@ struct CodeTextView: View {
         content.isEmpty ? [] : content.components(separatedBy: "\n")
     }
 
+    /// Prose-y files WRAP (a clipped sentence reads as broken UI — the owner hit
+    /// this on a .md); code keeps one-row lines + horizontal scroll, which is
+    /// what you want for indentation-meaningful source.
+    private var wraps: Bool { ["md", "markdown", "txt", ""].contains(ext.lowercased()) }
+
     var body: some View {
         if lines.isEmpty {
             Text("‹empty file›")
@@ -124,7 +129,9 @@ struct CodeTextView: View {
         } else {
             let gutter = String(lines.count).count
             ScrollViewReader { proxy in
-                ScrollView([.vertical, .horizontal]) {
+                // Wrapping needs a vertical-only scroll: a horizontal axis proposes
+                // infinite width, so Text would never wrap.
+                ScrollView(wraps ? [.vertical] : [.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                             HStack(alignment: .top, spacing: 12) {
@@ -134,7 +141,7 @@ struct CodeTextView: View {
                                 Text(highlighted(line))
                                     .font(.system(size: 11.5, design: .monospaced))
                                     .textSelection(.enabled)
-                                    .fixedSize(horizontal: true, vertical: false)
+                                    .fixedSize(horizontal: !wraps, vertical: wraps)
                             }
                             .padding(.horizontal, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)

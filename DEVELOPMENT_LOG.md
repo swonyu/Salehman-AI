@@ -2209,3 +2209,29 @@ user that a silent first reply = model loading.
 re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
 live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
 concurrency audit + agents-lane sweep.
+
+## 2026-06-11 — Code tab: Claude-minimal restyle + clipping fixes + 14B speed visibility (owner-driven polish loop)
+**Files:** `Views/CodeView.swift`, `Views/MarkdownText.swift`, `Views/CodeSyntaxView.swift`,
+`Views/ContentView.swift`, `Views/BackgroundView.swift`, `DesignSystem/DesignSystem.swift`,
+`LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+**What & why:** Owner ("make it simple and elegant like Claude Code; grey background; never stop
+polishing; make it a home for salehman14b and he runs fast"):
+- **Minimal conversation:** `CodeMessageRow` — user = right-aligned quiet block (no avatar/label),
+  assistant = flush-left document flow, copy-on-hover. Streaming view matches. 780pt centered reading
+  column incl. the input pill.
+- **Grey, flat, neutral:** new DS tokens `codeSurface` (0.125) / `codeSurfaceSide` (0.095); Code tab is
+  opaque (no glow bleed), sidebar/inspector a step darker; `BackgroundView` glows halved app-wide.
+- **Collapsible panels:** file tree + inspector both collapse (persisted via @AppStorage); slim reopen
+  bar; auto-expand when a file is picked or a run produces diffs. (Owner: "I can't even minimize it.")
+- **Clipping fixes (owner screenshot):** markdown TABLE cells now wrap at 300pt inside an h-scrollable
+  grid — Grid sized columns to ideal width and clipped long cells mid-word; prose files (md/txt) in the
+  file viewer wrap (vertical-only scroll) instead of single-row clipping.
+- **14B speed visibility:** chatStream captures Ollama's eval stats → "⚡ N tok/s" in the conversation
+  header after each local reply; welcome shows "<model> · local · ready" when the owner's model serves.
+- Plus: agent-steps strip flattened to the new surface, file-row hover states, floating
+  scroll-to-latest button, main-chat "Warming up the local model…" hint, `trimmedForLocalWindow`
+  (4096-ctx history diet, +2 tests — suite 306/306).
+**Result:** builds green throughout; committed `70d6af7` + pushed (unblocks the parallel session's items
+7+8 and the whole-app restyle task assigned per owner). Parallel: r3-best GGUF finale running on the A40
+(merged ✓ converted ✓ quantizing), round-6 seed lottery training, all 4 adapters + 32B now mirrored to
+Proton Drive. Owner away; autonomous loop continues until the RunPod balance is spent.
