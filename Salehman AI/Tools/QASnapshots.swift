@@ -137,6 +137,10 @@ enum QASnapshots {
         // diff + heat-maps). The UI-test gate asserts failures == [].
         QAAudit.run(snapshotsDir: dir,
                     baselinesDir: qaDir.appendingPathComponent("baselines"))
+
+        // Color-vision pass (Chat C, QA v6): deuteranopia/protanopia previews +
+        // red-green "merge" detection over each surface's vivid colors.
+        QAColorVision.run(snapshotsDir: dir)
     }
 
     /// ONE render path: host the view offscreen in an `NSHostingView` and cache
