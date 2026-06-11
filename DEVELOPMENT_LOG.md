@@ -1429,3 +1429,14 @@ and has a never-strip-to-empty floor. Both tabs are covered (chat → Orchestrat
 AgentPipeline.run; Code → AgentPipeline.run). 6 regression tests; the AITests target is
 unblocked again — **TEST SUCCEEDED**.
 **Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+
+## 2026-06-11 (night) — marathon slice 2: edit-and-resend on user rows
+**What & why:** Hovering a user message now offers **Edit & resend** (pencil, next to Copy in
+the same floating pill): `ChatViewModel.extractForEdit` removes that turn and everything after
+it (mirroring `regenerate`'s attachment-line stripping and guards) and the composer reloads the
+text, focused. The Claude-app fork-edit pattern, simplified to linear history. QA gallery gains
+a QA-forced user-row hover sample so the two-button pill is photographed + baselined.
+**Files:** `Views/ContentView.swift` (MessageBubble.onEdit + wiring), `Views/ChatViewModel.swift`
+(extractForEdit), `Tools/QASnapshots.swift` (gallery sample; QA lane re-claimed — Chat C released
+it); bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).

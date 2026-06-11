@@ -45,6 +45,22 @@ final class ChatViewModel: ObservableObject {
         send(text: clean, attachment: nil, recordUser: false)
     }
 
+    /// Edit-and-resend: pull this user message (and everything after it) out of
+    /// the transcript and hand its text back so the view can load the composer.
+    /// Mirrors `regenerate`'s attachment-line stripping. Returns nil when the
+    /// turn isn't editable (mid-run, not a user message, or attachment-only).
+    func extractForEdit(_ message: ChatMessage) -> String? {
+        guard !isRunning, message.isUser, let idx = messages.firstIndex(of: message) else { return nil }
+        let clean = message.text
+            .components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("📎") }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
+        return clean
+    }
+
     /// Send a user turn through the agent pipeline. The view passes the composed
     /// text + any attachment, and clears its own input/attachment afterward.
     func send(text: String, attachment att: Attachment?, recordUser: Bool = true) {

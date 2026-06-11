@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:38 +03 · Swift files: 136 · Swift LOC: 26945_
+_Generated: 2026-06-11 22:42 +03 · Swift files: 136 · Swift LOC: 27011_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11922,7 +11922,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (458 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (467 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12353,6 +12353,15 @@ private struct ChatSampleGallery: View {
                               onRegenerate: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
+            }
+            gallerySection("User row hover — edit & resend + copy (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Edit this message and resend it — the turn re-opens in the composer.",
+                                                   isUser: true,
+                                                   timestamp: now.addingTimeInterval(150)),
+                              onEdit: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)
             }
             gallerySection("Time separator — burst boundary") {
                 TimeSeparator(date: now)
@@ -13802,7 +13811,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (165 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (181 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -13849,6 +13858,22 @@ final class ChatViewModel: ObservableObject {
         guard !clean.isEmpty else { return }
         withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
         send(text: clean, attachment: nil, recordUser: false)
+    }
+
+    /// Edit-and-resend: pull this user message (and everything after it) out of
+    /// the transcript and hand its text back so the view can load the composer.
+    /// Mirrors `regenerate`'s attachment-line stripping. Returns nil when the
+    /// turn isn't editable (mid-run, not a user message, or attachment-only).
+    func extractForEdit(_ message: ChatMessage) -> String? {
+        guard !isRunning, message.isUser, let idx = messages.firstIndex(of: message) else { return nil }
+        let clean = message.text
+            .components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("📎") }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
+        return clean
     }
 
     /// Send a user turn through the agent pipeline. The view passes the composed
@@ -16184,7 +16209,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1725 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1741 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16522,7 +16547,13 @@ struct ContentView: View {
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate)
+                                                  onRegenerate: vm.regenerate,
+                                                  onEdit: { m in
+                                                      if let text = vm.extractForEdit(m) {
+                                                          mission = text
+                                                          inputFocused = true
+                                                      }
+                                                  })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -17413,6 +17444,9 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
+    /// Edit-and-resend on user rows: the view model truncates the transcript
+    /// from this message and the composer reloads its text. nil hides the action.
+    var onEdit: ((ChatMessage) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -17503,15 +17537,22 @@ struct MessageBubble: View {
             // Same floating-pill pattern as assistant rows — no reserved
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
-                actionButton("doc.on.doc", "Copy") { copyText() }
-                    .padding(.horizontal, 3).padding(.vertical, 1)
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    .offset(y: -10)
-                    .opacity(hovering || qaShowActions ? 1 : 0)
-                    .animation(DS.Motion.fade, value: hovering)
+                HStack(spacing: 2) {
+                    if onEdit != nil {
+                        actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
+                            onEdit?(message)
+                        }
+                    }
+                    actionButton("doc.on.doc", "Copy") { copyText() }
+                }
+                .padding(.horizontal, 3).padding(.vertical, 1)
+                .background(DS.Palette.codeSurfaceSide,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .offset(y: -10)
+                .opacity(hovering || qaShowActions ? 1 : 0)
+                .animation(DS.Motion.fade, value: hovering)
             }
         }
     }
@@ -27009,7 +27050,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (190 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (215 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -27132,6 +27173,31 @@ struct StripNarrationTests {
         // If what follows is itself scaffold, leave the whole thing for the rescue path.
         let nested = "Reasoning…\nResponse:\nInterpretation: still analyzing"
         #expect(AgentPipeline.stripNarration(nested) == nested)
+    }
+
+    // Trailing meta — the fine-tune appends reviewer boilerplate + fake footnotes
+    // after the real answer (caught live 2026-06-12: "Thoughts on this response?
+    // I'm happy to rephrase…" + "[1]: https://github.com/…" after a greeting).
+    @Test func cutsTrailingReviewerMetaAndFootnotes() {
+        let leak = """
+        Hi — what do you want to work on today?
+
+        ---
+
+        Thoughts on this response? I'm happy to rephrase / add more detail.
+
+          [1]: https://github.com/SalehmanAI/MLX-Studio
+        """
+        #expect(AgentPipeline.stripNarration(leak) == "Hi — what do you want to work on today?")
+    }
+    @Test func cutsSelfContinuedDialogue() {
+        let leak = "Sure, here's the plan.\nUser: hi\nSalehman AI: Hi again!"
+        #expect(AgentPipeline.stripNarration(leak) == "Sure, here's the plan.")
+    }
+    @Test func neverStripsToNothing() {
+        // A reply that is ONLY meta must come back unchanged, not empty.
+        let onlyMeta = "Thoughts on this response? Happy to rephrase."
+        #expect(AgentPipeline.stripNarration(onlyMeta) == onlyMeta)
     }
 }
 
@@ -29407,7 +29473,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1403 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1431 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -30811,6 +30877,34 @@ task (non-Sendable value can't be a shared static under default MainActor isolat
 **Verified:** seeded `code_history.json` → relaunch → screenshot shows the conversation
 restored (user bubble + assistant markdown) — pixels, not claims.
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-11 (night) — marathon slice 1: slash commands in the chat composer
+**What & why:** Owner's 3h chat marathon, slice 1. Typing `/` in the chat composer now opens
+the Code tab's command menu (same matcher rules, same visuals): `/summarize` `/continue`
+(templates) + `/clear` `/copy` `/export` `/find` `/voice` (actions wired to existing chat
+capabilities). ↵ picks the top row; Esc stops a running generation, else dismisses a dangling
+slash query. Matcher is a pure `nonisolated static` (`ChatSlashCommand.matches`) — single
+source of truth for menu + ↵-pick; `greeting(hour:)` extracted pure for the same reason. NEW
+`ChatComposerLogicTests.swift`: 6 matcher tests (prose/space/newline guards, case-insensitive
+prefix) + 9 greeting boundary cases.
+**Files:** `Views/ContentView.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`;
+bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). Tests target can't compile in my sandbox —
+build-capable session asked on the board to include AITests next run.
+
+## 2026-06-12 — marathon B: right-panel gallery coverage · stripNarration v2 (trailing meta)
+**B:** `ActivityStepRow` + `ChangedFileRow` extracted from CodeView's right panel (real
+components, not replicas) and photographed in the QA gallery in a deterministic
+"run in flight" state (done/running·tool-round/pending cards + changed-files rows with
+selection). Eyes-verified in the capture; baseline adopted.
+**stripNarration v2:** the fine-tune leaked a NEW shape live — reviewer boilerplate
+appended AFTER the answer ("Thoughts on this response? I'm happy to rephrase…", fake
+"[1]: https://…" footnotes, self-continued "User:/Salehman AI:" dialogue). The stripper
+now also truncates at those trailing markers, drops dangling dividers/footnote lines,
+and has a never-strip-to-empty floor. Both tabs are covered (chat → Orchestrator →
+AgentPipeline.run; Code → AgentPipeline.run). 6 regression tests; the AITests target is
+unblocked again — **TEST SUCCEEDED**.
+**Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

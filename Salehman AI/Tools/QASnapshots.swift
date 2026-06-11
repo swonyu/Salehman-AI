@@ -428,6 +428,15 @@ private struct ChatSampleGallery: View {
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
             }
+            gallerySection("User row hover — edit & resend + copy (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Edit this message and resend it — the turn re-opens in the composer.",
+                                                   isUser: true,
+                                                   timestamp: now.addingTimeInterval(150)),
+                              onEdit: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)
+            }
             gallerySection("Time separator — burst boundary") {
                 TimeSeparator(date: now)
             }

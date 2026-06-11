@@ -334,7 +334,13 @@ struct ContentView: View {
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate)
+                                                  onRegenerate: vm.regenerate,
+                                                  onEdit: { m in
+                                                      if let text = vm.extractForEdit(m) {
+                                                          mission = text
+                                                          inputFocused = true
+                                                      }
+                                                  })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -1225,6 +1231,9 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
+    /// Edit-and-resend on user rows: the view model truncates the transcript
+    /// from this message and the composer reloads its text. nil hides the action.
+    var onEdit: ((ChatMessage) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -1315,15 +1324,22 @@ struct MessageBubble: View {
             // Same floating-pill pattern as assistant rows — no reserved
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
-                actionButton("doc.on.doc", "Copy") { copyText() }
-                    .padding(.horizontal, 3).padding(.vertical, 1)
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    .offset(y: -10)
-                    .opacity(hovering || qaShowActions ? 1 : 0)
-                    .animation(DS.Motion.fade, value: hovering)
+                HStack(spacing: 2) {
+                    if onEdit != nil {
+                        actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
+                            onEdit?(message)
+                        }
+                    }
+                    actionButton("doc.on.doc", "Copy") { copyText() }
+                }
+                .padding(.horizontal, 3).padding(.vertical, 1)
+                .background(DS.Palette.codeSurfaceSide,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .offset(y: -10)
+                .opacity(hovering || qaShowActions ? 1 : 0)
+                .animation(DS.Motion.fade, value: hovering)
             }
         }
     }
