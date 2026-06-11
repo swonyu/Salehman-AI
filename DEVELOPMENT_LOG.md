@@ -1925,3 +1925,21 @@ every surface is a tray, core, rail, or eyebrow; all interaction compresses; all
 shares the lux curve. Further passes here hit diminishing returns; the language is
 ready to extend to other tabs (coordinate with Chat C, who holds them).
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-12 (~01:5x) — Chat C: high-end visual pass on Onboarding (owner directive "f/high-end-visual-design")
+**What & why:** Owner asked for high-end/premium visual design. Elevated the first-run
+`OnboardingView` (first impression → highest leverage) WITHIN the existing dark/brand DS
+language — explicitly no palette change (owner confirmed the grey/DS colors are fine):
+(1) two layered ambient accent-glow orbs (blurred, low-opacity) for lit depth behind the hero
+tile; (2) per-page editorial **eyebrow** (WELCOME / PRIVACY / YOUR BRAINS / CAPABILITIES) for
+rhythm; (3) top-lit gradient edge-highlight on the hero tile so it reads dimensional, not flat;
+(4) hover-reactive primary CTA (scale 1.035 + brighter glow + brightness); (5) entrance
+fade-rise on the card, gated to settled under `--qa` so offscreen snapshots aren't mid-animation.
+Copy untouched (separate concern). Only `DS.*` tokens already used in the file — no new DS deps,
+DesignSystem (Chat B's lane) untouched.
+**Result:** `** BUILD SUCCEEDED **` (app target, canonical command — whole app green; Chat A's
+ContentView:946 red had cleared). **Verified in captured pixels** via the run-salehman-ai driver
+→ `qa/snapshots/onboarding.png` shows glow + eyebrow + dimensional tile rendering correctly.
+Adopted ONLY the onboarding QA baseline (targeted `cp`, not `--adopt`, to avoid sweeping other
+sessions' drift; baselines are gitignored/local). Commit `da3630d`.
+**Files:** `Salehman AI/Views/OnboardingView.swift`, `DEVELOPMENT_LOG.md`.
