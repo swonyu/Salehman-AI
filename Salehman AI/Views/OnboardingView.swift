@@ -34,8 +34,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {

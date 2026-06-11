@@ -56,6 +56,7 @@ enum DS {
     // MARK: Typography
     enum Typography {
         static let titleL       = Font.system(size: 28, weight: .bold,     design: .rounded)
+        static let titleXL      = Font.system(size: 30, weight: .bold,     design: .rounded)
         static let titleM       = Font.system(size: 17, weight: .semibold, design: .rounded)
         static let body         = Font.system(size: 14)
         static let mono         = Font.system(size: 13, design: .monospaced)
@@ -112,6 +113,10 @@ enum DS {
             startPoint: .topLeading, endPoint: .bottomTrailing)
         static let bg = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
+        // Vertical variant for full-screen sheets (Onboarding/About) — straight
+        // top→bottom wash rather than the diagonal app background.
+        static let bgVertical = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
+                                               startPoint: .top, endPoint: .bottom)
     }
 }
 

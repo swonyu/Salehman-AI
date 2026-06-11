@@ -47,7 +47,7 @@ struct TodayView: View {
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
-                .font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                .font(DS.Typography.titleXL).foregroundStyle(.white)
             Text("Welcome back to Salehman AI — everything here stays on this Mac.")
                 .font(.callout).foregroundStyle(.secondary)
         }

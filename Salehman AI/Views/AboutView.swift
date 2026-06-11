@@ -43,8 +43,7 @@ struct AboutView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
