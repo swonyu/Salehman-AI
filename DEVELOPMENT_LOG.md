@@ -1668,3 +1668,13 @@ cross-lane flag (almost sent Chat A/C on a snipe hunt). The drift is Chat C's in
 agents polish (`4d3deb6`), passing.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0.
+
+## 2026-06-12 (early) — marathon slice 15: welcome history link + honest /clear copy
+**What & why:** The welcome now shows a quiet "N earlier conversations" link (clock glyph,
+secondary) when archives exist — opens the History sheet; exactly where "where did my chat
+go?" happens. Probed once per empty-state appearance alongside `localModelReady`; invisible in
+QA captures (offscreen `.task` never runs) so no baseline churn. `/clear`'s blurb now says
+"New chat (this one is archived)" — the command stopped being destructive in slice 11 and the
+copy should say so.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.

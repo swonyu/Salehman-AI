@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 00:12 +03 · Swift files: 142 · Swift LOC: 28145_
+_Generated: 2026-06-12 00:13 +03 · Swift files: 142 · Swift LOC: 28168_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -16548,7 +16548,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1991 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2014 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16583,6 +16583,9 @@ struct ContentView: View {
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
+    /// Archived-conversation count for the welcome's history link (probed once
+    /// per empty-state appearance, like `localModelReady`).
+    @State private var archiveCount = 0
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -17153,6 +17156,23 @@ struct ContentView: View {
                 }
                 .padding(.top, 6)
             }
+            // Quiet door back into archived conversations — the welcome is
+            // exactly where "wait, where did my chat go?" happens. Hidden in
+            // QA captures (the .task probe never runs offscreen), so no
+            // baseline churn.
+            if archiveCount > 0 {
+                Button { showHistory = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 10))
+                        Text("\(archiveCount) earlier conversation\(archiveCount == 1 ? "" : "s")")
+                            .font(.system(size: 10.5))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+                .help("Browse and restore archived conversations")
+            }
         }
         .frame(maxWidth: .infinity)
         // The chat viewport starts 55pt lower than the Code tab's (header row
@@ -17165,7 +17185,10 @@ struct ContentView: View {
         .padding(.bottom, 55)
         // Fill the scroll viewport and center, exactly like CodeView.welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
-        .task { localModelReady = await OllamaClient.hasCustomModel() }
+        .task {
+            localModelReady = await OllamaClient.hasCustomModel()
+            archiveCount = ChatStore.archives().count
+        }
     }
 
     /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
@@ -17213,7 +17236,7 @@ struct ContentView: View {
               blurb: "Ask it to keep going",
               kind: .template("Continue.")),
         .init(id: "clear", icon: "square.and.pencil",
-              blurb: "Start a new chat",
+              blurb: "New chat (this one is archived)",
               kind: .action("clear")),
         .init(id: "copy", icon: "doc.on.clipboard",
               blurb: "Copy conversation as Markdown",
@@ -30631,7 +30654,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1656 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1670 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32288,6 +32311,20 @@ qa request files; bundle regenerated.
 **Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **387 cases**. All 4 in-scope tabs now have
 a new feature (Markets sort, Knowledge sort, Notes search/clear, Agents filter) + heavy tests (29 new since
 marathon start, 322→387). Next: sheet polish (Memory/Onboarding/About/Shortcuts) or more tab tests.
+
+## 2026-06-12 (early) — marathon: post-adopt gate CLEAN + archive prune + a QA-eyes lesson
+**What & why:** (1) Post-adoption cycle: failures `[]`, every chat surface within budget against
+the new baselines — the marathon's visual state is fully baselined. (2) `pruneArchives(keep:100)`
+after each archive write — timestamped names sort chronologically, so name order is age order;
+unbounded growth would bloat `archives()` (it decodes every file). (3) **Eyes lesson:** the
+21.7% `agents` drift looked like a light-mode leak in my image preview (white canvas, black
+title) — but raw pixels, histogram (93.8% dark), and canvasFlat all said the file is a healthy
+dark capture. My preview renderer inverts SOME mostly-dark PNGs; the audit reads raw pixels and
+was right. Rule reinforced: a suspicious PICTURE gets verified with pixel math before any
+cross-lane flag (almost sent Chat A/C on a snipe hunt). The drift is Chat C's intentional
+agents polish (`4d3deb6`), passing.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

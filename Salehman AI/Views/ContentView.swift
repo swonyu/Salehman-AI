@@ -31,6 +31,9 @@ struct ContentView: View {
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
+    /// Archived-conversation count for the welcome's history link (probed once
+    /// per empty-state appearance, like `localModelReady`).
+    @State private var archiveCount = 0
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -601,6 +604,23 @@ struct ContentView: View {
                 }
                 .padding(.top, 6)
             }
+            // Quiet door back into archived conversations — the welcome is
+            // exactly where "wait, where did my chat go?" happens. Hidden in
+            // QA captures (the .task probe never runs offscreen), so no
+            // baseline churn.
+            if archiveCount > 0 {
+                Button { showHistory = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 10))
+                        Text("\(archiveCount) earlier conversation\(archiveCount == 1 ? "" : "s")")
+                            .font(.system(size: 10.5))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+                .help("Browse and restore archived conversations")
+            }
         }
         .frame(maxWidth: .infinity)
         // The chat viewport starts 55pt lower than the Code tab's (header row
@@ -613,7 +633,10 @@ struct ContentView: View {
         .padding(.bottom, 55)
         // Fill the scroll viewport and center, exactly like CodeView.welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
-        .task { localModelReady = await OllamaClient.hasCustomModel() }
+        .task {
+            localModelReady = await OllamaClient.hasCustomModel()
+            archiveCount = ChatStore.archives().count
+        }
     }
 
     /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
@@ -661,7 +684,7 @@ struct ContentView: View {
               blurb: "Ask it to keep going",
               kind: .template("Continue.")),
         .init(id: "clear", icon: "square.and.pencil",
-              blurb: "Start a new chat",
+              blurb: "New chat (this one is archived)",
               kind: .action("clear")),
         .init(id: "copy", icon: "doc.on.clipboard",
               blurb: "Copy conversation as Markdown",
