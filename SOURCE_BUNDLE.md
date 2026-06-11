@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 21:50 +03 · Swift files: 135 · Swift LOC: 26491_
+_Generated: 2026-06-11 22:00 +03 · Swift files: 135 · Swift LOC: 26586_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (775 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (778 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -128,6 +128,8 @@ final class MissionProgress: ObservableObject {
     @Published var steps: [Step] = []
     @Published var running = false
     @Published var streamingAnswer = ""   // live final answer as it streams
+    @Published var startedAt: Date?       // when the current run began (drives the
+                                          // Activity panel's elapsed-time readout)
 
     /// Monotonic timestamp of the last `streamingAnswer` publish, for throttling.
     private var lastStreamPushNs: UInt64 = 0
@@ -138,6 +140,7 @@ final class MissionProgress: ObservableObject {
         steps = specs.map { Step(name: $0.name, icon: $0.icon, status: .pending) }
         streamingAnswer = ""
         running = true
+        startedAt = Date()
     }
 
     /// Apply task-adapted titles (name → adapted title).
@@ -173,8 +176,8 @@ final class MissionProgress: ObservableObject {
         lastStreamPushNs = now
         streamingAnswer = text
     }
-    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0 }
-    func clear()  { steps = []; running = false; streamingAnswer = "" }
+    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0; startedAt = nil }
+    func clear()  { steps = []; running = false; streamingAnswer = ""; startedAt = nil }
 }
 
 /// Named tuning thresholds for the pipeline — were inline magic numbers scattered
@@ -10877,7 +10880,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QAAudit.swift (555 lines) =====
+===== FILE: Salehman AI/Tools/QAAudit.swift (574 lines) =====
 ```swift
 import AppKit
 
@@ -11184,6 +11187,25 @@ enum QAAudit {
         }
         if !cvdFlagged.isEmpty {
             html += "<div class=\"failsum warn\">⬣ Red/green merges on <b>\(cvdFlagged.joined(separator: ", "))</b> — color-blind users can't tell these apart by colour. Previews: <a href=\"cvd_report.html\">cvd_report.html</a></div>"
+        }
+
+        // Accessibility rollup (v6.1): consolidate every a11y signal — CVD merges,
+        // low-contrast text, unlabeled controls, tiny tap targets — per surface so
+        // the real issues are unmissable in one place.
+        var a11y: [(String, String)] = []
+        for r in report.results {
+            var fs: [String] = []
+            if cvdFail.contains(r.snapshot) { fs.append("red/green-only") }
+            for c in r.checks {
+                if c.name == "textContrast", c.detail.contains("<3:1") { fs.append("low-contrast text") }
+                if c.name == "axLabels", !c.pass { fs.append("unlabeled control") }
+                if c.name == "tapTargets", !c.pass { fs.append("tiny target") }
+            }
+            if !fs.isEmpty { a11y.append((r.snapshot, fs.joined(separator: ", "))) }
+        }
+        if !a11y.isEmpty {
+            let items = a11y.map { "<b>\($0.0)</b>: \($0.1)" }.joined(separator: " · ")
+            html += "<div class=\"failsum warn\">♿ Accessibility findings (advisory) — \(items)</div>"
         }
 
         for r in report.results {
@@ -14089,7 +14111,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1760 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1832 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14448,6 +14470,8 @@ struct CodeView: View {
                     .keyboardShortcut("l", modifiers: .command)
                 Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -14857,6 +14881,7 @@ struct CodeView: View {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
                 shortcutHint("⌘L", "Ask")
+                shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
             // The 14B's home: show when the owner's own model is serving locally.
@@ -15006,6 +15031,12 @@ struct CodeView: View {
                     .focused($inputFocused)
                     // Enter picks the top `/`-command when the menu is open; otherwise sends.
                     .onSubmit { if let top = slashMatches.first { applySlash(top) } else { send() } }
+                    // Esc dismisses the `/` menu (clears the half-typed trigger).
+                    .onKeyPress(.escape) {
+                        guard slashActive else { return .ignored }
+                        input = ""
+                        return .handled
+                    }
                     // Focusing the input = intent to send: pre-load the local model
                     // (a 14B takes seconds to come into RAM) while the user types.
                     .onChange(of: inputFocused) { _, focused in
@@ -15196,6 +15227,15 @@ struct CodeView: View {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 }
+                // Live elapsed readout — long local runs are minutes of silence
+                // otherwise; a ticking clock shows the run is alive.
+                if isRunning, let t0 = progress.startedAt {
+                    TimelineView(.periodic(from: t0, by: 1)) { ctx in
+                        Text(elapsedLabel(since: t0, now: ctx.date))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary.opacity(0.85))
+                    }
+                }
                 Spacer()
                 Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
@@ -15207,9 +15247,63 @@ struct CodeView: View {
             .padding(.horizontal, 10).frame(height: 34)
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             VSplitView {
-                activitySection.frame(minHeight: 90)
+                VStack(spacing: 0) {
+                    activitySection.frame(minHeight: 90)
+                    if !ws.changedFiles.isEmpty { changedFilesList }
+                }
                 inspectorPane.frame(minHeight: 150)
             }
+        }
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// "12s" / "2m 05s" — the Activity header's run clock.
+    private func elapsedLabel(since start: Date, now: Date) -> String {
+        let s = max(0, Int(now.timeIntervalSince(start)))
+        return s < 60 ? "\(s)s" : String(format: "%dm %02ds", s / 60, s % 60)
+    }
+
+    /// Clickable list of the files the last run touched — one tap opens its diff.
+    private var changedFilesList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().overlay(DS.Palette.hairline.opacity(0.5))
+            HStack(spacing: 6) {
+                Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                Text("Changed files").font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(ws.changedFiles.count)")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(ws.changedFiles, id: \.self) { url in
+                        Button {
+                            ws.select(url)
+                            rightPane = .diff
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: "plus.forwardslash.minus").font(.system(size: 9))
+                                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
+                                Text(relativePath(url))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(1).truncationMode(.head)
+                                    .foregroundStyle(ws.selectedFile == url ? .white : .secondary)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(ws.selectedFile == url ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show this file's diff")
+                    }
+                }
+                .padding(.horizontal, 5).padding(.bottom, 6)
+            }
+            .frame(maxHeight: 110)
         }
         .background(DS.Palette.codeSurfaceSide)
     }
@@ -15978,7 +16072,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1601 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1602 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16540,13 +16634,14 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        // The chat viewport starts 46pt lower than the Code tab's (header row
-        // 45pt + divider 1pt; Code has no header), so a plain viewport-center
-        // sits visibly LOWER than Code's welcome (owner: "its not centered").
-        // Centering content+46pt of bottom padding lifts the block by 23pt —
-        // both welcomes land at the same optical height. Padding, not offset:
-        // short windows keep clean scrolling with no clipped top.
-        .padding(.bottom, 46)
+        // The chat viewport starts 55pt lower than the Code tab's (header row
+        // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
+        // in chat_empty.png spans y=0–54; Code has no header), so a plain
+        // viewport-center sits visibly LOWER than Code's welcome (owner: "its
+        // not centered"). Centering content+55pt of bottom padding lifts the
+        // block by 27.5pt — both welcomes land at the same optical height.
+        // Padding, not offset: short windows keep clean scrolling, no clipping.
+        .padding(.bottom, 55)
         // Fill the scroll viewport and center, exactly like CodeView.welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
         .task { localModelReady = await OllamaClient.hasCustomModel() }
@@ -25528,7 +25623,7 @@ struct QAGeometryTests {
             QAGeometry.record("chat.column", CGRect(x: 110, y: 0, width: 780, height: 600))
             QAGeometry.record("chat.input",  CGRect(x: 110, y: 610, width: 780, height: 80))
             let results = QAGeometry.chatAssertions(rootWidth: 1000)
-            #expect(results.allSatisfy(\.pass), "\(results)")
+            #expect(results.allSatisfy { $0.pass }, "\(results)")
         }
     }
 
@@ -25538,7 +25633,7 @@ struct QAGeometryTests {
             QAGeometry.record("chat.column", CGRect(x: 0, y: 0, width: 560, height: 600))
             QAGeometry.record("chat.input",  CGRect(x: 0, y: 610, width: 560, height: 80))
             let results = QAGeometry.chatAssertions(rootWidth: 560)
-            #expect(results.allSatisfy(\.pass), "\(results)")
+            #expect(results.allSatisfy { $0.pass }, "\(results)")
         }
     }
 
@@ -27945,7 +28040,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
 | **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). **🔴 OWNER/Chat B FLAG (guardian cycle ~19:50): privacy copy is now INACCURATE since the app went cloud-first** (`AppSettings:45` "itself is cloud-first"). `TodayView` home greeting still says *"everything here stays on this Mac"* = **false by default**; `AboutView`/`OnboardingView` titles say "Private/on-device" but bodies say "cloud-first". NOT rewriting unilaterally (positioning = owner call, mid-pivot). Full detail + one-line fix ready in `POLISH_BACKLOG.md` → "🔴 HIGH privacy copy". | no — guardian loop |
-| **Claude Chat C — QA SYSTEM v6 (2026-06-11 eve)** | **OWNER REASSIGNED the QA system to Chat C** ("refine the qa system + more things… all of them"). Now editing: `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, NEW `Tools/QAColorVision.swift`, `tools/QA.md`. **Chat B: please PAUSE QA edits** while I land v6 (you're "marathon closeout" anyway) — ping here if you need a QA file and I'll hand it back. | 2026-06-11 ~20:45 | Building v6 in 4 additive parts, build-green + capture-verify each: (1) **CVD/color-blind audit** (new `QAColorVision` — deuteranopia/protanopia sim + merge-detection, relevant to Markets red/green signals), (2) **broader surfaces** (Onboarding/About/Shortcuts/CommandPalette/VoiceMode + narrow variants), (3) **tap-target(<44pt)+truncation checks**, (4) **report.html upgrade** (render-time budgets, history sparklines, severity, dashboard). Mostly additive; `QAGeometryTests` stays green. **🛑 STOPPED by owner ("stop polishing") after parts 1–3.** ✅ Landed: (1) CVD audit `2a5053b`, (2) broaden 15→22 surfaces `cc39814`, (3) `edgeClear`+`tapTargets` `7e71d32` — build+audit GREEN (22/22, FAILURES []). ❌ Part (4) report.html upgrade NOT done. **QA LANE RELEASED back to Chat B** — it's yours again; `QAColorVision.swift` is new+additive, the other QA files got small additive edits (re-read before editing). **▶️ RESUMED (owner "add and refine more") → v6 COMPLETE:** part (4) report dashboard `e779cc9` (pass/fail/drift/slowest/CVD/sparkline + renderMs + deuteranopia inline) + refinements `02146ee` (`tools/QA.md`→v6, history `cvdRisks`, `run.sh` CVD output). **Build + AITests GREEN; audit 24 surfaces FAILURES [].** ⚠️ Audit file-filter now excludes `_deuter/_protan` previews (they were being counted as surfaces). **QA lane RELEASED again — v6 done.** **▶️ RE-CLAIMED for v6.1 (owner "add and refine more"): adding a real-surface `textContrast` advisory scan + refining the drift stat. Chat B: pause QA edits again briefly.** | no — v6.1 in progress |
+| **Claude Chat C — QA SYSTEM v6 (2026-06-11 eve)** | **OWNER REASSIGNED the QA system to Chat C** ("refine the qa system + more things… all of them"). Now editing: `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, NEW `Tools/QAColorVision.swift`, `tools/QA.md`. **Chat B: please PAUSE QA edits** while I land v6 (you're "marathon closeout" anyway) — ping here if you need a QA file and I'll hand it back. | 2026-06-11 ~20:45 | Building v6 in 4 additive parts, build-green + capture-verify each: (1) **CVD/color-blind audit** (new `QAColorVision` — deuteranopia/protanopia sim + merge-detection, relevant to Markets red/green signals), (2) **broader surfaces** (Onboarding/About/Shortcuts/CommandPalette/VoiceMode + narrow variants), (3) **tap-target(<44pt)+truncation checks**, (4) **report.html upgrade** (render-time budgets, history sparklines, severity, dashboard). Mostly additive; `QAGeometryTests` stays green. **🛑 STOPPED by owner ("stop polishing") after parts 1–3.** ✅ Landed: (1) CVD audit `2a5053b`, (2) broaden 15→22 surfaces `cc39814`, (3) `edgeClear`+`tapTargets` `7e71d32` — build+audit GREEN (22/22, FAILURES []). ❌ Part (4) report.html upgrade NOT done. **QA LANE RELEASED back to Chat B** — it's yours again; `QAColorVision.swift` is new+additive, the other QA files got small additive edits (re-read before editing). **▶️ RESUMED (owner "add and refine more") → v6 COMPLETE:** part (4) report dashboard `e779cc9` (pass/fail/drift/slowest/CVD/sparkline + renderMs + deuteranopia inline) + refinements `02146ee` (`tools/QA.md`→v6, history `cvdRisks`, `run.sh` CVD output). **Build + AITests GREEN; audit 24 surfaces FAILURES [].** ⚠️ Audit file-filter now excludes `_deuter/_protan` previews (they were being counted as surfaces). **QA lane RELEASED again — v6 done.** **▶️ v6.1 DONE** `ac15006` (real-surface `textContrast` advisory scan — flags `markets` 1.9:1 white-on-green badges, verified real; + `det. drift` excludes live surfaces 58.5%→0.4%). **🔴 Heads-up: `Salehman AITests` was RED and I'd MISSED it** (I read background `$?` = a trailing `grep`, not the `xcodebuild` marker). Root cause: `QAGeometryTests.swift` `#expect(results.allSatisfy(\.pass))` macro-expanded to a "call can throw" compile error → **I fixed it `99f258d`** (`\.pass`→`{ $0.pass }`); suite now `** TEST SUCCEEDED **` (322). I edited your test file to unblock — re-read. SOURCE_BUNDLE regen `e45fe01`. Capture launch→AUDIT measured 19s. **QA lane RELEASED — v6.1 done.** | **released** |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). | **released** |
 
@@ -28892,7 +28987,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2702 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2733 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31595,6 +31690,37 @@ SlashCommand/SlashMenuView, composer cap, gallery section), `tools/qa.sh`.
 **Result:** Build green; QA **all surfaces pass** (code_samples Δ0.00% with the slash
 menu in the baseline, code_tab Δ0.00% with the new panel). Close→strip→reopen verified
 in pixels. Note for QA owner: the "structure" QAAudit refactor was NOT at fault.
+
+## 2026-06-11 (cont.) — Code tab round 3: Esc/⇧⌘I, changed-files list, live run clock, "/" welcome chip
+**What:** (1) Esc dismisses the half-typed `/` menu; (2) ⇧⌘I toggles the right panel
+(matches ⇧⌘E for the tree); (3) clickable **Changed files** list in the right panel —
+tap a file → its diff opens (the "include the diffs and files" half of the owner's
+sidebar ask, now one click); (4) **live elapsed clock** in the Activity header
+(TimelineView off `MissionProgress.startedAt`, new) — long local runs are no longer
+silent minutes; (5) welcome footer teaches `/` next to ⌘O/⌘R/⌘L.
+**Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift` (startedAt on
+begin/finish/clear).
+**Result:** Build green, QA all surfaces pass.
+
+## 2026-06-11 (night) — Chat C: QA v6.1 — real-surface textContrast scan + drift refinement + AITests fix
+**Files:** `Tools/QAAudit.swift`, `Salehman AITests/QAGeometryTests.swift`, `SOURCE_BUNDLE.md`.
+Commits `ac15006`, `99f258d`, `e45fe01`.
+**What & why:** owner "add and refine more" (at the ultracode/x-high bar, inline, no workflows).
+- **textContrast** (advisory): scans every REAL surface for low-contrast text the synthetic ContrastProbe
+  (fixed token strips) can't see — grids the image, finds text-like cells (thin ink minority over a uniform
+  bg), measures the WCAG ratio. Heuristic → never gates. **Calibrated by measurement:** clean surfaces
+  3.1–3.8:1; flags `markets`/`markets_narrow` at **1.9:1** — adversarially verified by eye as REAL (white text
+  on the light-green buy + amber hold badges is genuinely low-contrast; compounds the CVD red/green finding).
+  Excludes `contact_sheet` (montage) + `contrast_probe` (synthetic).
+- **det. drift**: dashboard "total drift" now excludes inherently-live surfaces (chat_live, *_live) → 58.5%→0.4%.
+- **🔴 AITests fix + honest correction:** discovered `Salehman AITests` was RED (test-target compile fail:
+  `QAGeometryTests.swift` `#expect(results.allSatisfy(\.pass))` — the key-path inside the macro expanded to code
+  the type-checker flags as throwing). Fixed: `\.pass` → `{ $0.pass }`. **I'd missed this earlier by reading
+  background-task `$?` (which was a trailing `grep`'s exit) instead of the `** TEST SUCCEEDED **` marker** — so
+  the suite was red for part of v6 while I believed it green. Now verified by marker: **322 passing.**
+**Result:** build `** BUILD SUCCEEDED **`; `** TEST SUCCEEDED **` (322); audit 24 surfaces FAILURES [];
+**capture launch→AUDIT measured 19s** (CVD 3s + audit/textContrast ~12s) — no UI-gate timeout risk.
+SOURCE_BUNDLE regenerated. **QA v6.1 done; lane released to Chat B.**
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

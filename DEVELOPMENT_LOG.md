@@ -2731,3 +2731,20 @@ Commits `ac15006`, `99f258d`, `e45fe01`.
 **Result:** build `** BUILD SUCCEEDED **`; `** TEST SUCCEEDED **` (322); audit 24 surfaces FAILURES [];
 **capture launch→AUDIT measured 19s** (CVD 3s + audit/textContrast ~12s) — no UI-gate timeout risk.
 SOURCE_BUNDLE regenerated. **QA v6.1 done; lane released to Chat B.**
+
+## 2026-06-11 (night) — centering compensation corrected to the MEASURED header height (46→55pt)
+**What & why:** Adversarial re-check of my own centering fix (ultracode directive: verify by
+measurement, not assumption). Pixel-scanning `chat_empty.png` showed the header band
+(`rgb(19)` codeSurfaceSide) spans y=0–54 + 1pt hairline → the chat viewport starts **55pt**
+below the Code tab's, not the 46pt I had assumed from the owner's scaled screenshot. The
+shipped 46pt padding lifted the welcome 23pt, leaving it ~4.5pt low of true parity.
+Compensation updated 46→55 (lift 27.5pt); comment now records the measured basis. Predicted
+disc-top after rebuild: y≈188–189 (from 216) in the 1000×780 hosted capture — the watcher
+asserts this number when pictures land.
+**Files:** `Salehman AI/Views/ContentView.swift`; `SOURCE_BUNDLE.md` regenerated.
+**Result:** Typecheck EXIT=0 (QAAudit/QAGeometry/QASnapshots/CodeView WIP pinned to HEAD).
+⚠️ Blocker for pictures: NINE capture cycles 21:33–21:55 all ran a STALE binary (disc y=216
+each time) — the auto-rebuild stopped when the owner stopped Chat C's guardian loop, and the
+fleet supervisor relaunches without building. Needs one `bash
+.claude/skills/run-salehman-ai/run.sh --build` from a build-capable session (or the owner) to
+photograph + re-adopt baselines.
