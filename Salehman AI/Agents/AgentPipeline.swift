@@ -197,6 +197,7 @@ enum AgentPipeline {
             if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
                 reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
             }
+            reply = stripNarration(reply)
             if !isErrorReply(reply) {
                 await ConversationStore.shared.add(role: "User", text: mission)
                 await ConversationStore.shared.add(role: "Salehman AI", text: reply)
@@ -221,7 +222,7 @@ enum AgentPipeline {
             }
         }
 
-        let finalAnswer = await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+        let finalAnswer = stripNarration(await SalehmanLeader.finalize(userPrompt: mission, draft: draft))
 
         // Record the turn HERE — the single chokepoint every mode funnels through —
         // so the short-circuit modes (which `return` before the multi-agent team's
@@ -232,6 +233,27 @@ enum AgentPipeline {
             await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
         }
         return finalAnswer
+    }
+
+    /// Strip the local fine-tune's "think out loud" scaffold. The Q3 model sometimes
+    /// emits a block of meta-reasoning ("You are Salehman AI…", "Interpretation:…",
+    /// "The most likely reading is…") and then puts the ACTUAL reply after a final
+    /// "Response:" line. When that shape is present, keep only what follows the last
+    /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
+    /// Conservative: only fires when a non-empty answer follows the marker, so a normal
+    /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    nonisolated static func stripNarration(_ text: String) -> String {
+        for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
+            if let r = text.range(of: marker, options: .backwards) {
+                let after = text[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                // Only strip if what's left is a real reply (not itself another
+                // "Interpretation:"-style scaffold, and not trivially short).
+                if after.count >= 2, !after.hasPrefix("Interpretation:"), !after.hasPrefix("You are Salehman") {
+                    return after
+                }
+            }
+        }
+        return text
     }
 
     /// True when a draft is an error/off sentinel rather than a real answer, so

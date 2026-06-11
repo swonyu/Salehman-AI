@@ -2513,3 +2513,21 @@ touch their actively-edited file (clobber risk), and escalated a top-of-board fl
 and noted their `swiftc -typecheck` pre-check gave a false-green. **Still open (flagged, not mine):** the
 AITests target won't compile — `Salehman AITests/QAGeometryTests.swift` missing `import CoreGraphics` (same
 false-green class). App is green; `xcodebuild test` is not until that import lands.
+
+## 2026-06-11 (night) — strip the local model's reasoning-dump from replies
+**What & why:** The local Q3 fine-tune, on a bare "hi", began emitting its whole agent
+prompt + meta-reasoning ("You are Salehman AI in this conversation… Interpretation:…
+The most likely reading is…") and only then the real answer after a "Response:" line.
+Worse, that narration got saved to the chat history, so the model read its own analysis
+back and ESCALATED it each turn (a feedback loop). Added `AgentPipeline.stripNarration`
+— when a reply has the "…Response: <answer>" scaffold shape, keep only <answer> — and
+apply it to BOTH the trivial fast-path reply and the finalized answer, BEFORE recording
+to history (so the loop is broken). Also fixed the Code-tab hover buttons vanishing
+(added `.contentShape(Rectangle())` so the row is one solid hover target).
+**Files:** `Agents/AgentPipeline.swift` (+stripNarration, applied x2), `Views/CodeView.swift`
+(contentShape), `Salehman AITests/ToolLoopTests.swift` (StripNarrationTests x3).
+**Result:** App builds green; verified the stripper turns the exact leaked text into the
+clean "Got it. What do you want me to help with today?". Unit test written but the test
+TARGET is currently blocked by `QAGeometryTests.swift` (other session's flagged break,
+not mine). **Honest caveat:** this is a band-aid over the Q3's narration habit — the real
+clean+fast path is the cloud-GPU Q4 (notebook ready). Local 14B stays RAM-bound on 16 GB.

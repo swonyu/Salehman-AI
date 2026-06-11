@@ -97,6 +97,31 @@ struct PaidBrainHidingTests {
     }
 }
 
+// MARK: - stripNarration (Q3 local model "think out loud" scaffold removal)
+//
+// The local Q3 fine-tune sometimes emits meta-reasoning ("You are Salehman AI…",
+// "Interpretation:…") then the real reply after a final "Response:". The stripper
+// keeps only the real reply — and must NOT touch normal answers. Caught live
+// 2026-06-11 when "hi" dumped the entire agent prompt into the chat.
+struct StripNarrationTests {
+    @Test func keepsOnlyTextAfterFinalResponse() {
+        let leak = "You are Salehman AI in this conversation.\nThe most likely reading is greeting.\n\nResponse:\nGot it. What do you need?"
+        #expect(AgentPipeline.stripNarration(leak) == "Got it. What do you need?")
+    }
+    @Test func normalReplyUntouched() {
+        let ok = "Good code is correct, readable, and testable."
+        #expect(AgentPipeline.stripNarration(ok) == ok)
+        // A reply that merely mentions the word is not a scaffold (no "\nResponse:").
+        let mentions = "The server returns a Response object you can inspect."
+        #expect(AgentPipeline.stripNarration(mentions) == mentions)
+    }
+    @Test func doesNotStripToAnotherScaffold() {
+        // If what follows is itself scaffold, leave the whole thing for the rescue path.
+        let nested = "Reasoning…\nResponse:\nInterpretation: still analyzing"
+        #expect(AgentPipeline.stripNarration(nested) == nested)
+    }
+}
+
 // MARK: - Local-window history trim (14B num_ctx 4096 protection)
 //
 // Oversized prompts are truncated SERVER-side from the top — eating the persona.

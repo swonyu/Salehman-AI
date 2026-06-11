@@ -1425,6 +1425,12 @@ struct CodeMessageRow: View {
                 .opacity(hovering ? 1 : 0)
                 .animation(.easeOut(duration: 0.12), value: hovering)
             }
+            // Make the ENTIRE row (text + the empty gap + the button area) a single
+            // solid hover target. Without this, the transparent space between the
+            // text and the top-right buttons isn't hit-testable, so moving the cursor
+            // toward the buttons reads as "left the row" and they vanish before you
+            // can click them.
+            .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }
     }
