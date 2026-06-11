@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 01:30 +03 · Swift files: 146 · Swift LOC: 29047_
+_Generated: 2026-06-12 01:34 +03 · Swift files: 146 · Swift LOC: 29137_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14403,7 +14403,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2272 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2283 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14716,6 +14716,17 @@ struct SlashCommand: Identifiable {
     let kind: Kind
     enum Kind { case template(String), action(String) }
     var trigger: String { "/" + id }
+}
+
+/// Press physics for pills and primary actions (design language): the whole
+/// control compresses slightly under the pointer — simulated mass, not a color
+/// swap. GPU-safe (transform only), sprung on the shared lux curve.
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(CodeView.lux, value: configuration.isPressed)
+    }
 }
 
 /// The `/`-command dropdown rendered above the Code composer. Extracted as its own
@@ -16804,7 +16815,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2199 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2214 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17176,10 +17187,10 @@ struct ContentView: View {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if needsSeparator(prev: prev, curr: msg) {
+                                    if Self.needsSeparator(prev: prev, curr: msg) {
                                         TimeSeparator(date: msg.timestamp)
                                     }
-                                    let isFirst = isFirstInGroup(idx: idx, list: list)
+                                    let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
                                                   onRegenerate: vm.regenerate,
                                                   onEdit: { m in
@@ -17257,13 +17268,15 @@ struct ContentView: View {
     // a 5-min window. Separator inserts on a >30-min gap or a different
     // calendar day. All read from `filteredMessages` so hidden/system vm.messages
     // never create phantom group breaks.
-    private func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
+    // Transcript cadence rules — `nonisolated static` so tests pin them (a
+    // silent change here reshapes every conversation's rhythm with no error).
+    nonisolated static func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
         guard let prev else { return false }
         let cal = Calendar.current
         if !cal.isDate(prev.timestamp, inSameDayAs: curr.timestamp) { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 30 * 60
     }
-    private func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
+    nonisolated static func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
         guard idx > 0 else { return true }
         let prev = list[idx - 1]; let curr = list[idx]
         if prev.isUser != curr.isUser { return true }
@@ -18363,10 +18376,23 @@ enum ChatExporter {
         NSPasteboard.general.setString(markdown(messages), forType: .string)
     }
 
+    /// Suggested export filename: conversation title + last-activity date,
+    /// scrubbed of path/filesystem-hostile characters. Pure for tests.
+    nonisolated static func exportFilename(for messages: [ChatMessage]) -> String {
+        let raw = ChatStore.archiveTitle(for: messages)
+        let banned = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        let safe = raw.components(separatedBy: banned).joined()
+            .trimmingCharacters(in: .whitespaces)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let date = messages.map(\.timestamp).max() ?? Date()
+        return "\(safe.isEmpty ? "Conversation" : safe) — \(df.string(from: date)).md"
+    }
+
     @MainActor static func savePanel(_ messages: [ChatMessage]) {
         guard !messages.isEmpty else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Salehman AI Conversation.md"
+        panel.nameFieldStringValue = exportFilename(for: messages)
         panel.canCreateDirectories = true
         panel.title = "Export Conversation"
         if panel.runModal() == .OK, let url = panel.url {
@@ -24679,7 +24705,7 @@ struct ChatGreetingBucketTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (211 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (275 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -24841,6 +24867,70 @@ struct ChatPinTests {
         #expect(ContentView.pinPreview("first\nsecond") == "first")
         let p = ContentView.pinPreview(String(repeating: "word ", count: 20))
         #expect(p.hasSuffix("…") && p.count <= 41)
+    }
+}
+
+// MARK: - Transcript cadence (separators + grouping)
+
+struct TranscriptCadenceTests {
+
+    private let cal = Calendar.current
+    /// Calendar-built dates (not raw epochs) so day boundaries hold in any zone.
+    private func at(_ h: Int, _ m: Int = 0, day: Int = 11) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 6, day: day, hour: h, minute: m))!
+    }
+    private func msg(_ d: Date, user: Bool = true) -> ChatMessage {
+        ChatMessage(id: UUID(), text: "x", isUser: user, timestamp: d)
+    }
+
+    @Test func separatorAfter30MinGapOrDayChange() {
+        let a = msg(at(12, 0))
+        #expect(ContentView.needsSeparator(prev: nil, curr: a) == false)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 29))) == false)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 31))) == true)
+        #expect(ContentView.needsSeparator(prev: a, curr: msg(at(12, 0, day: 12))) == true)
+    }
+
+    @Test func groupBreaksOnSenderFlipOr5MinGap() {
+        let list = [msg(at(12, 0), user: true),
+                    msg(at(12, 1), user: true),
+                    msg(at(12, 2), user: false),
+                    msg(at(12, 10), user: false)]
+        #expect(ContentView.isFirstInGroup(idx: 0, list: list))
+        #expect(!ContentView.isFirstInGroup(idx: 1, list: list))   // same sender, 1 min
+        #expect(ContentView.isFirstInGroup(idx: 2, list: list))    // sender flip
+        #expect(ContentView.isFirstInGroup(idx: 3, list: list))    // 8 min > 5 min
+    }
+}
+
+// MARK: - Export filename
+
+struct ChatExportFilenameTests {
+
+    private func msg(_ text: String, at t: TimeInterval) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: true,
+                    timestamp: Date(timeIntervalSince1970: t))
+    }
+
+    @Test func usesTitleAndLastActivityDate() {
+        // 86_400s after the 1970 epoch = Jan 2 1970 in UTC-anchored zones;
+        // assert the stable parts (title + .md), not the zone-dependent day.
+        let name = ChatExporter.exportFilename(for: [msg("Plan my week", at: 0),
+                                                     msg("more", at: 86_400)])
+        #expect(name.hasPrefix("Plan my week — 19"))
+        #expect(name.hasSuffix(".md"))
+    }
+
+    @Test func scrubsFilesystemHostileCharacters() {
+        let name = ChatExporter.exportFilename(for: [msg("a/b:c*d?e\"f", at: 0)])
+        #expect(!name.contains("/") && !name.contains(":") && !name.contains("*")
+                && !name.contains("?") && !name.contains("\""))
+        #expect(name.hasPrefix("abcdef — "))
+    }
+
+    @Test func emptyOrAllScrubbedTitleFallsBack() {
+        let name = ChatExporter.exportFilename(for: [msg("///", at: 0)])
+        #expect(name.hasPrefix("Conversation — "))
     }
 }
 
@@ -30506,7 +30596,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (116 lines) =====
+===== FILE: COORDINATION.md (117 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -30576,6 +30666,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Claude Chat C — TABS POLISH (2026-06-11 night)** | **OWNER-DIRECTED ("polish and refine all tabs except code and chat", ultracode/xhigh, no workflows):** `Views/MarketsView.swift` (Chat A lane — owner-authorized), `Views/AgentsView.swift` (Chat B lane — owner-authorized), `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/MemoryView.swift`, `Views/Onboarding/About/ShortcutsView.swift`. **Read-only DS.** **NOT touching** `TodayView.swift` (it's dirty = your uncommitted off-main-refresh WIP — leaving it alone), Code*, Chat/ContentView, Settings. | 2026-06-11 ~22:25 | Verified-by-measurement polish: each surface read+screenshot, fix, rebuild+recapture+audit-green, commit. **Headline:** fixing the QA-flagged Markets badge contrast (white-on-light-green/amber ≈1.9:1 → dark text) + Agents field hairline. Chat A/B: ping here if you need Markets/Agents back. | no — IN PROGRESS |
 | **effort/grok session — code-tab git dots (2026-06-12 ~00:45)** | `Views/CodeView.swift`, NEW `Salehman AITests/CodeGitStatusTests.swift` | 00:45–01:15 | ✅ DONE — amber "uncommitted in git" dots in the Code-tab tree (distinct from accent = AI-changed-this-run); parser extracted `nonisolated static` + 5 hermetic tests; `-uall` for untracked-dir contents. **Verified: full-target swiftc typecheck EXIT 0** at project settings (Swift 6, MainActor default, approachable concurrency). **🙏 BUILD REQUEST: my sandbox denies xcodebuild's DerivedData writes entirely (EPERM pre-compile, default + repo-local paths both) — please run canonical build + `AITests` when convenient; expect 5 new `CodeGitStatusTests` green, no behavior change elsewhere.** Dev-logged 06-12; SOURCE_BUNDLE regenerated. | **released** |
 | **effort/grok session — CHAT MARATHON 2 (2026-06-12 ~01:20)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift` (if present), `Salehman AITests/ChatComposerLogicTests.swift` (append-only) or NEW chat test files | now | **Owner-directed 3h marathon: refine/polish/test/add features on the Chat tab** (Chat B's lane — owner-authorized; Chat B's marathon row is released). Sandbox can't run xcodebuild → every slice verified by full-target swiftc typecheck (Swift 6/MainActor settings) + hermetic unit tests for the build-capable session to run. Slices commit individually with dev-log entries. Guardian session: ping here if you need ContentView back. | no — IN PROGRESS |
+| **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -31561,7 +31652,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1817 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1819 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32886,6 +32977,8 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** chat tab gains /stats + pins + length feedback; export is finally faithful to attachments. Marathon continues (self-review slice next).
 
 **Slices 5–6 (`2531fc0`):** (5) **Adversarial self-review of 1–4** — found+fixed "1 messages"/"1 replies" (shared `counted()` pluralizer in exporter footer + stats blurb) and the "X – X" date range on single-message exports; also KILLED a planned double-click-to-quote slice before writing it (would fight macOS double-click word-selection on `textSelection`-enabled rows) and rejected cosmetic pin-glyph overlays (no pixel verification available in this sandbox — blind UI placement is how layout bugs ship). (6) **History-sheet title filter** — case/diacritic-insensitive substring via pure `ChatHistoryView.filtered` (same pattern as the Knowledge/Agents filter slices), filter field + "no matches" state; +3 tests (now 22 in `ChatTranscriptLogicTests`). Typecheck EXIT 0 each slice.
+
+**Slices 7–8 (`f168cf3`), stretch 1 closeout:** (7) **Smart export filenames** — `ChatExporter.exportFilename` (conversation title + last-activity date, path/fs-hostile characters scrubbed, "Conversation" fallback) replaces the fixed "Salehman AI Conversation.md"; +3 tests. (8) **Transcript cadence regression-locked** — `needsSeparator`/`isFirstInGroup` extracted to `nonisolated static` and tested (30-min separator, day change, sender flip, 5-min grouping; dates calendar-built so day boundaries hold in any timezone); +2 tests. **FINAL STRETCH TALLY: 8 slices, 30 new tests in `ChatTranscriptLogicTests`, every slice typecheck-EXIT-0 at project settings.** Still owed by a build-capable session: one `AITests` run (30 tests here + the 5 in `CodeGitStatusTests` from the git-dots feature).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
