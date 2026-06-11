@@ -1539,6 +1539,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
 
+## 2026-06-11 · Board items 7–10: tool-loop cancel propagation + per-turn output bounds; budget/alias audits
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Second wave of owner-mandated 14B-in-app tasks. **Item 7:** both tool loops (`chatOllamaWithTools`, `chatOpenAICompatWithTools`) now check `Task.isCancelled` at the top of every round and before the final wrap-up generate — pressing Stop aborts between rounds and returns the best prose so far, instead of a cancelled mission holding the serial 14B slot for minutes (mid-request cancels were already safe — URLSession is cancellation-aware). **Item 8:** new shared `LocalLLM.toolTurnTokenCap = 2048`, wired as `max_tokens` into the compat tool-path bodies (vLLM/Studio otherwise generate to max_model_len) and as `num_predict` into the Ollama tool-loop body (same unbounded risk). **Item 9 (audit, no code):** all agent call sites already pass token budgets (700/110/300). **Item 10 (audit, no code):** the Settings status row (shipped a47bb49) works with the `salehman14b`+alias plan; flagged the `Generation.tuned` exact-name alias trap on the board — the other session closed it same-day (salehman* prefix match). Items 7/8 were deliberately queued until the other session's in-flight LocalLLM commit (`70d6af7`) landed — a background watcher on the file's git state gated the start (shared working tree discipline).
+
+**Result:** Typecheck 0 errors / 0 warnings; build+tests delegated via board (their last run: 306/306 green incl. FourteenBReadinessTests). Next: the owner-directive whole-app restyle (accepted on the board; per-view, my lane grant: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

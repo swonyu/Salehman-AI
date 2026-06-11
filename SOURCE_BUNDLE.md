@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 14:22 +03 · Swift files: 129 · Swift LOC: 24092_
+_Generated: 2026-06-11 16:34 +03 · Swift files: 129 · Swift LOC: 24277_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (717 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (740 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -349,9 +349,32 @@ enum AgentPipeline {
     /// like "yes" / "continue" reaches the brain with no idea what came before.
     /// No-op when there's no history yet (first turn). The transcript is already
     /// length-capped by `ConversationStore`, so this can't bloat the prompt.
+    /// Char budget for folded history when the LOCAL floor serves. The 14B runs at
+    /// num_ctx 4096 (≈16k chars TOTAL for persona + history + mission + reply); an
+    /// oversized prompt is truncated server-side from the TOP — which silently eats
+    /// the persona and these very instructions. ~9k chars of history leaves room.
+    nonisolated static let localHistoryCharBudget = 9_000
+
+    /// Drop OLDEST lines (the transcript is "Role: text" lines, oldest first) until
+    /// `history` fits `budget`. Pure + nonisolated → unit-testable.
+    nonisolated static func trimmedForLocalWindow(_ history: String, budget: Int) -> String {
+        guard history.count > budget else { return history }
+        var lines = history.components(separatedBy: "\n")
+        var trimmed = history
+        while trimmed.count > budget, lines.count > 2 {
+            lines.removeFirst()
+            trimmed = lines.joined(separator: "\n")
+        }
+        return "(earlier context trimmed)\n" + trimmed
+    }
+
     nonisolated static func withConversationContext(_ mission: String, history: String) -> String {
-        let h = history.trimmingCharacters(in: .whitespacesAndNewlines)
+        var h = history.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !h.isEmpty else { return mission }
+        // Only the local floor needs the diet — cloud windows are 32k+.
+        if !SalehmanEngine.hasAnyCloud {
+            h = trimmedForLocalWindow(h, budget: localHistoryCharBudget)
+        }
         return """
         Conversation so far (most recent last) — use it to interpret the new message \
         (e.g. a short "yes" / "no" / "continue" refers to what was just discussed):
@@ -1983,7 +2006,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (380 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (384 lines) =====
 ```swift
 import SwiftUI
 
@@ -2019,6 +2042,10 @@ enum DS {
         static let bgTop         = Color(red: 0.09, green: 0.05, blue: 0.07)
         static let bgBottom      = Color(red: 0.03, green: 0.02, blue: 0.03)
         static let surface       = Color.white.opacity(0.07)
+        // Code-tab editor surfaces — NEUTRAL grey (no red cast): the chat canvas
+        // is lighter, the sidebar/inspector a step darker for depth, like an editor.
+        static let codeSurface     = Color(white: 0.125)
+        static let codeSurfaceSide = Color(white: 0.095)
         static let surfaceAlt    = Color.white.opacity(0.06)
         static let modalBG       = Color(red: 0.13, green: 0.09, blue: 0.11)
         static let surfaceStroke = Color.white.opacity(0.12)
@@ -4520,7 +4547,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1908 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1936 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5795,10 +5822,14 @@ enum LocalLLM {
         let gen = OllamaClient.Generation.tuned(for: model)
         // Build the /api/chat body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the nonisolated client.
+        // `num_predict` bounds each turn (a tool-round answer or a chain step):
+        // unbounded on a ~25 tok/s local 14B means a rambling turn can hold the
+        // serial slot for minutes. 2048 is roomy for a full code answer.
         func bodyData(includeTools: Bool) -> Data? {
             var body: [String: Any] = ["model": model, "messages": messages,
                                        "stream": false, "keep_alive": gen.keepAlive,
-                                       "options": ["num_ctx": max(gen.numCtx, 4096)]]
+                                       "options": ["num_ctx": max(gen.numCtx, 4096),
+                                                   "num_predict": toolTurnTokenCap]]
             if includeTools { body["tools"] = toolSpecs }
             return try? JSONSerialization.data(withJSONObject: body)
         }
@@ -5810,6 +5841,11 @@ enum LocalLLM {
         let maxRounds = 8
         var lastAssistantText = ""
         for round in 0..<maxRounds {
+            // Stop pressed mid-mission (CodeView/chat cancels the task): abort
+            // BETWEEN rounds so a dead mission can't hold the serial 14B slot
+            // for minutes finishing rounds nobody wants. Mid-request cancels
+            // already surface as a nil chatTurn (URLSession is cancellation-aware).
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
             // A round on the 14B can take 30–90 s — show life on the running
             // team step ("· tool round N/8"). No-op outside team missions.
             await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
@@ -5863,6 +5899,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -5873,6 +5911,12 @@ enum LocalLLM {
         if !lastAssistantText.isEmpty { return lastAssistantText }
         return "I worked through several steps but couldn't wrap it up in one go. Say \"continue\" and I'll pick up where I left off."
     }
+
+    /// Per-turn output bound shared by both tool loops (Ollama `num_predict`,
+    /// OpenAI-compat `max_tokens`). Without it a local server generates until
+    /// its context runs out — minutes per turn on a ~25 tok/s 14B. 2048 fits a
+    /// complete code answer while keeping the worst-case turn bounded.
+    nonisolated static let toolTurnTokenCap = 2048
 
     // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
 
@@ -5902,8 +5946,12 @@ enum LocalLLM {
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
         // Build the body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the client method.
+        // `max_tokens` mirrors the Ollama loop's `num_predict` bound: an absent
+        // cap makes vLLM/Studio generate to their max_model_len — minutes per
+        // turn on a slow local server.
         func bodyData(includeTools: Bool) -> Data? {
-            var body: [String: Any] = ["model": model, "messages": messages, "stream": false]
+            var body: [String: Any] = ["model": model, "messages": messages, "stream": false,
+                                       "max_tokens": toolTurnTokenCap]
             if includeTools {
                 body["tools"] = toolSpecs
                 body["tool_choice"] = "auto"
@@ -5916,6 +5964,8 @@ enum LocalLLM {
         let maxRounds = 8
         var lastAssistantText = ""
         for round in 0..<maxRounds {
+            // Same Stop-pressed abort as the Ollama loop: bail between rounds.
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
             // Same round-progress note as the Ollama loop — a local Unsloth
             // Studio / vLLM server can be just as slow per round as Ollama.
             await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
@@ -5977,6 +6027,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -6125,7 +6177,10 @@ enum LocalLLM {
     /// Mac" summary/Q&A). Returns `nil` when no on-device model is available, so
     /// the caller can say so honestly rather than silently falling back to cloud.
     static func generateOnDevice(_ prompt: String, maxTokens: Int? = nil) async -> String? {
-        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+        // Forward the caller's token budget — dropping it let a 110-token "terse
+        // note" run unbounded on the local 14B (~15 tok/s ⇒ a minute of ramble).
+        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                               maxTokens: maxTokens) { return reply }
         // Unsloth Studio (or any local OpenAI-compat server) qualifies as
         // on-device ONLY when its endpoint is a loopback URL — see
         // `UnslothStudio.isLocalLoopback`. A user-typed public URL would NOT
@@ -6891,7 +6946,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (361 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (371 lines) =====
 ```swift
 import Foundation
 
@@ -7000,8 +7055,14 @@ enum OllamaClient {
         /// exchange after a pause re-pays a multi-second load, so it stays warm
         /// 5 min and gets the 4096 context its Modelfile is built for. Other
         /// (smaller) models keep the RAM-lean 30 s / 2048 defaults.
+        /// Matches the configured name OR any "salehman*" variant — the model
+        /// ships as `salehman14b` with a `salehman` alias, and a caller passing
+        /// the raw name must not silently get the small-model knobs (the alias
+        /// trap the parallel session flagged in COORDINATION).
         nonisolated static func tuned(for model: String) -> Generation {
-            model == AppSettings.customModelNameCurrent
+            let custom = AppSettings.customModelNameCurrent
+            let base = model.components(separatedBy: ":").first ?? model
+            return (model == custom || base.lowercased().hasPrefix("salehman"))
                 ? Generation(keepAlive: "5m", numCtx: 4096)
                 : .default
         }
@@ -7178,12 +7239,16 @@ enum OllamaClient {
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
     /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
-    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap).
+    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap),
+    /// or just `maxTokens` to cap reply length while keeping the tuned knobs —
+    /// callers with a token budget (agent notes are 110, full replies 700) MUST
+    /// cap, or a 14B at ~15 tok/s turns a "terse note" into a minute-long ramble.
     static func chat(prompt: String, system: String? = nil,
-                     gen: Generation? = nil) async -> String? {
+                     gen: Generation? = nil, maxTokens: Int? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
-        return await generate(model: model, prompt: prompt, system: system,
-                              gen: gen ?? .tuned(for: model))
+        var g = gen ?? .tuned(for: model)
+        if let cap = maxTokens { g.numPredict = cap }
+        return await generate(model: model, prompt: prompt, system: system, gen: g)
     }
 
     /// Pre-load the active chat model into RAM (no prompt → Ollama just loads the
@@ -12089,9 +12154,9 @@ struct BackgroundView: View {
     /// state-free → the cached texture survives all parent redraws.
     private var glows: some View {
         ZStack {
-            Circle().fill(Theme.accent.opacity(0.18)).frame(width: 480).blur(radius: 90)
+            Circle().fill(Theme.accent.opacity(0.09)).frame(width: 480).blur(radius: 90)
                 .offset(x: -220, y: -260)
-            Circle().fill(Theme.accent2.opacity(0.16)).frame(width: 420).blur(radius: 90)
+            Circle().fill(Theme.accent2.opacity(0.08)).frame(width: 420).blur(radius: 90)
                 .offset(x: 260, y: 300)
         }
         .drawingGroup()
@@ -12334,7 +12399,7 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeSyntaxView.swift (166 lines) =====
+===== FILE: Salehman AI/Views/CodeSyntaxView.swift (173 lines) =====
 ```swift
 import SwiftUI
 
@@ -12453,6 +12518,11 @@ struct CodeTextView: View {
         content.isEmpty ? [] : content.components(separatedBy: "\n")
     }
 
+    /// Prose-y files WRAP (a clipped sentence reads as broken UI — the owner hit
+    /// this on a .md); code keeps one-row lines + horizontal scroll, which is
+    /// what you want for indentation-meaningful source.
+    private var wraps: Bool { ["md", "markdown", "txt", ""].contains(ext.lowercased()) }
+
     var body: some View {
         if lines.isEmpty {
             Text("‹empty file›")
@@ -12462,7 +12532,9 @@ struct CodeTextView: View {
         } else {
             let gutter = String(lines.count).count
             ScrollViewReader { proxy in
-                ScrollView([.vertical, .horizontal]) {
+                // Wrapping needs a vertical-only scroll: a horizontal axis proposes
+                // infinite width, so Text would never wrap.
+                ScrollView(wraps ? [.vertical] : [.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                             HStack(alignment: .top, spacing: 12) {
@@ -12472,7 +12544,7 @@ struct CodeTextView: View {
                                 Text(highlighted(line))
                                     .font(.system(size: 11.5, design: .monospaced))
                                     .textSelection(.enabled)
-                                    .fixedSize(horizontal: true, vertical: false)
+                                    .fixedSize(horizontal: !wraps, vertical: wraps)
                             }
                             .padding(.horizontal, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -12504,7 +12576,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1197 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1277 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12714,6 +12786,10 @@ struct CodeView: View {
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
+    // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
+    // across launches. Auto-expands when a file is selected or a run leaves diffs.
+    @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
+    @AppStorage("code_treeCollapsed") private var treeCollapsed = false
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -12742,18 +12818,30 @@ struct CodeView: View {
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
-                fileTree
-                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                if !treeCollapsed {
+                    fileTree
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                }
 
                 VSplitView {
                     chatPane
                         .frame(minHeight: 220)
-                    inspectorPane
-                        .frame(minHeight: 160)
+                    // Collapsible: the inspector used to be pinned at minHeight 160 —
+                    // permanently eating half the tab even when empty ("I can't even
+                    // minimize it"). Collapsed = a slim reopen bar; auto-expands when
+                    // a file is selected or a run produces diffs.
+                    if inspectorCollapsed {
+                        inspectorReopenBar
+                    } else {
+                        inspectorPane
+                            .frame(minHeight: 160)
+                    }
                 }
                 .frame(minWidth: 420)
             }
-            .background(Color.black.opacity(0.18))
+            // Opaque flat surface (covers the app's glow blobs) — the Code tab
+            // reads like a clean editor, not a mood piece. Neutral GREY, no red cast.
+            .background(DS.Palette.codeSurface)
             // Inline command-approval card — the SAME gate as the Chat tab, so terminal /
             // file-edit commands the AI runs here still prompt for approval (unless
             // Unrestricted is on).
@@ -12801,6 +12889,10 @@ struct CodeView: View {
     // MARK: File tree (left)
 
     private var fileTree: some View {
+        treeContent.background(DS.Palette.codeSurfaceSide)
+    }
+
+    private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button(action: ws.openFolder) {
@@ -12825,6 +12917,12 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                        Image(systemName: "sidebar.left").font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Hide the file tree")
+                    .accessibilityLabel("Hide the file tree")
                         .help("Rescan project files")
                         .accessibilityLabel("Rescan project files")
                 }
@@ -12879,6 +12977,7 @@ struct CodeView: View {
                                 FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
                                     ws.select(url)
                                     rightPane = ws.changedFiles.contains(url) ? .diff : .file
+                                    inspectorCollapsed = false
                                 }
                             }
                         }
@@ -12939,6 +13038,7 @@ struct CodeView: View {
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
+            inspectorCollapsed = false   // user asked to see a file — bring the pane back
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon.symbol)
@@ -12972,8 +13072,14 @@ struct CodeView: View {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
                 HStack(spacing: 12) {
-                    Text("\(messages.count) message\(messages.count == 1 ? "" : "s")")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    if treeCollapsed {
+                        Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+                            Image(systemName: "sidebar.left").font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Show the file tree")
+                        .accessibilityLabel("Show the file tree")
+                    }
                     Spacer()
                     Button {
                         let md = messages
@@ -13004,7 +13110,7 @@ struct CodeView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
                         }
@@ -13016,7 +13122,11 @@ struct CodeView: View {
                             streamingView.id("stream")
                         }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
+                    // Centered reading column (Claude-style): long lines are hard to
+                    // read edge-to-edge on a wide window — cap and center.
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -13030,7 +13140,7 @@ struct CodeView: View {
 
             inputBar
         }
-        .background(Color.black.opacity(0.12))
+        .background(Color.clear)
     }
 
     /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
@@ -13136,47 +13246,13 @@ struct CodeView: View {
         }
     }
 
-    /// Sender avatar — Salehman gets an accent-tinted disc matching the welcome icon.
-    @ViewBuilder
-    private func senderAvatar(isUser: Bool) -> some View {
-        ZStack {
-            if !isUser { Circle().fill(DS.Palette.accent.opacity(0.13)).frame(width: 26, height: 26) }
-            Image(systemName: isUser ? "person.crop.circle.fill" : "sparkles")
-                .font(.system(size: isUser ? 17 : 13, weight: isUser ? .regular : .semibold))
-                .foregroundStyle(isUser ? Color.white.opacity(0.55) : DS.Palette.accent)
-        }
-        .frame(width: 26, height: 26)
-    }
-
     private func codeBubble(_ msg: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: msg.isUser)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(msg.isUser ? "You" : "Salehman")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-                    if !msg.isUser {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(msg.text, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc").font(.system(size: 10))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy this message")
-                    }
-                }
-                MarkdownText(text: msg.text)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        CodeMessageRow(msg: msg)
     }
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: false)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Salehman").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.6)
@@ -13276,6 +13352,8 @@ struct CodeView: View {
                 return true
             }
         }
+        .frame(maxWidth: 780)
+        .frame(maxWidth: .infinity)
         .padding(10)
         .background(.ultraThinMaterial)
     }
@@ -13336,6 +13414,29 @@ struct CodeView: View {
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
 
+    /// Slim bar shown while the inspector is collapsed — one click brings it back.
+    private var inspectorReopenBar: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
+                Text("Files & Diffs").font(.system(size: 10.5, weight: .medium))
+                if !ws.changedFiles.isEmpty {
+                    Text("\(ws.changedFiles.count) changed")
+                        .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .background(.ultraThinMaterial)
+        .help("Show the file viewer / diff panel")
+        .accessibilityLabel("Show the files and diffs panel")
+    }
+
     private var inspectorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -13376,6 +13477,15 @@ struct CodeView: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = true }
+                } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Hide this panel (it comes back when a run has diffs)")
+                .accessibilityLabel("Hide the files and diffs panel")
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
@@ -13396,7 +13506,7 @@ struct CodeView: View {
                 fileView
             }
         }
-        .background(Color.black.opacity(0.20))
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     private var fileView: some View {
@@ -13598,7 +13708,7 @@ struct CodeView: View {
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
             await MainActor.run {
-                if !ws.changedFiles.isEmpty { rightPane = .diff }
+                if !ws.changedFiles.isEmpty { rightPane = .diff; inspectorCollapsed = false }
             }
         }
     }
@@ -13701,6 +13811,48 @@ struct CodeView: View {
         runningTask?.cancel()
         isRunning = false
         MissionProgress.shared.finish()
+    }
+}
+
+/// One conversation row, Claude-Code style: the user's message is a quiet
+/// right-aligned block; Salehman's reply flows flush-left like a document —
+/// no avatars, no name labels, copy appears on hover. Simple and elegant.
+private struct CodeMessageRow: View {
+    let msg: ChatMessage
+    @State private var hovering = false
+
+    var body: some View {
+        if msg.isUser {
+            HStack {
+                Spacer(minLength: 60)
+                Text(msg.text)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 13).padding(.vertical, 8)
+                    .background(Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                MarkdownText(text: msg.text)
+                Spacer(minLength: 26)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(msg.text, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .help("Copy this message")
+                .accessibilityLabel("Copy this message")
+            }
+            .onHover { hovering = $0 }
+        }
     }
 }
 ```
@@ -13830,7 +13982,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1512 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1525 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15003,6 +15155,10 @@ struct CachedImage: View {
 struct TypingIndicator: View {
     @State private var animating = false
     @State private var halo = false
+    // After ~5s of pre-stream silence the local model is probably loading into
+    // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
+    // auto-cancels when streaming starts (this view disappears).
+    @State private var warmHint = false
 
     var body: some View {
         HStack(spacing: 9) {
@@ -15046,12 +15202,21 @@ struct TypingIndicator: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
             )
+            if warmHint {
+                Text("Warming up the local model…")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .transition(.opacity)
+            }
         }
         .onAppear {
             animating = true
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 halo = true
             }
+        }
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }
@@ -24199,7 +24364,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (119 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (139 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -24297,6 +24462,26 @@ struct PaidBrainHidingTests {
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
         #expect(BrainPreference.selectableCases == [.salehman, .auto])
+    }
+}
+
+// MARK: - Local-window history trim (14B num_ctx 4096 protection)
+//
+// Oversized prompts are truncated SERVER-side from the top — eating the persona.
+// The trim must drop OLDEST turns first, keep the newest, and no-op under budget.
+struct LocalWindowTrimTests {
+    @Test func underBudgetIsUntouched() {
+        let h = "User: hi\nSalehman AI: hey"
+        #expect(AgentPipeline.trimmedForLocalWindow(h, budget: 1_000) == h)
+    }
+    @Test func overBudgetDropsOldestKeepsNewest() {
+        let lines = (1...50).map { "User: message number \($0) with some padding text" }
+        let h = lines.joined(separator: "\n")
+        let out = AgentPipeline.trimmedForLocalWindow(h, budget: 400)
+        #expect(out.hasPrefix("(earlier context trimmed)"))
+        #expect(out.contains("message number 50"))      // newest survives
+        #expect(!out.contains("message number 1 "))     // oldest dropped
+        #expect(out.count <= 400 + 60)                  // budget + marker slack
     }
 }
 
@@ -25452,7 +25637,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (634 lines) =====
+===== FILE: COORDINATION.md (708 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26088,7 +26273,81 @@ error, it goes inert the moment the console key is revoked). Next user-visible s
 `salehman-training/install_salehman_14b.sh` (or `ollama create salehman -f Modelfile`) — the Settings
 "Salehman model" row flips green when it's in.
 
-===== FILE: DEVELOPMENT_LOG.md (2187 lines) =====
+### 📋 2026-06-11 (later) — MORE 14B-app tasks for the other session (owner: "give other claude similar tasks")
+Seen + appreciated: your tool-loop tuning (tuned keep-warm, num_ctx≥4096 floor, `noteToolRound` progress) — it
+builds green and is exactly the right shape. Next wave, same spirit (your lanes):
+7. **Cancel-propagation through the tool loop.** When the user hits Stop mid-mission, the 8-round loop
+   should abort BETWEEN rounds (check `Task.isCancelled` per round) — today a cancelled mission can keep
+   the serial 14B slot busy for minutes finishing rounds nobody wants. (My CodeView `stop()` cancels the
+   task; the loop just needs to notice.)
+8. **maxTokens parity on the OpenAI-compat local path.** I wired `maxTokens → num_predict` through
+   `OllamaClient.chat` / `LocalLLM.generateOnDevice` (committed shortly). The Unsloth-Studio/vLLM tool path
+   (`chatTurnWithTools`, LocalLLM ~1399) still sends unbounded requests — wire `max_tokens` into those
+   client bodies the same way.
+9. **Agent token budgets actually passed.** `Thresholds.fullTokens=700` / `shortTokens=110` exist, but sweep
+   YOUR agent call sites (AgentRegistry/agent runner) to confirm each call passes its budget into
+   `LocalLLM.generate(maxTokens:)` — any call without it rambles unbounded on the 14B.
+10. Reminder if not done: the Settings "salehman model installed?" status row (task #1 from earlier) — the
+   GGUF lands today as Ollama model `salehman14b` + alias `salehman`.
+
+### ✅ 2026-06-11 — items 9+10 answered now; 7+8 queued behind YOUR in-flight commit (cleanup/Effort session)
+**9 (budgets) — AUDIT PASS, no edits needed:** every agent call site already passes its budget — final
+agent `generateStreaming(maxTokens: 700)`, terse/full notes `generate(maxTokens: spec.full ? 700 : 110)`,
+raw-prompt path `generate(maxTokens: 300)` (AgentRegistry:93/:100, AgentPipeline:668). The only budget-less
+generates left are INSIDE LocalLLM (`generateEnsemble`/`generateFreeAuto` + the tool loops) — i.e. exactly
+your item-8 wiring plus my queued compat-path work, not my call sites.
+**10 (status row) — ALREADY SHIPPED this morning** (commit `a47bb49`): probes
+`customModelNameCurrent` (default `"salehman"`) via `OllamaClient.hasModel`, so your alias plan works —
+an Ollama alias/copy shows in `/api/tags` and the row flips green. ⚠️ **Alias trap to keep in mind:**
+`Generation.tuned(for:)` matches the model name EXACTLY against `customModelNameCurrent` — any code path
+that passes the raw `"salehman14b"` string (rather than the `salehman` alias the router uses) silently
+gets the small-model knobs (30 s / 2048). If your transparency label or anything else CALLS with that
+name (not just displays it), either normalize to the alias or widen `tuned` to match both.
+**7+8 — queued, deliberately waiting:** both live in `LocalLLM.swift`, which you have in flight right now
+("committed shortly") — same working tree, so I'm not touching it until your commit lands (a watcher pings
+me the moment HEAD moves). Then: per-round `Task.isCancelled` aborts in BOTH tool loops (7) and
+`max_tokens` in the compat tool-path client bodies (8).
+
+#### ✅ 2026-06-11 — full suite green AGAIN incl. your FourteenBReadinessTests: 306 passed / 0 failed
+Ran post-merge of your items 4-6 + my UI wave. `EffortWiringTests`, `FourteenBReadinessTests`,
+`LocalWindowTrimTests` (mine, new — pins the 4096-window history trim) all pass.
+
+### 🎨 2026-06-11 — BIG TASK FOR THE OTHER SESSION: restyle the WHOLE APP to the new design language (owner directive)
+Owner: "make the whole app look like that while [the other session] works on the code tab." The Code tab
+got a Claude-Code-minimal restyle today and the owner wants it EVERYWHERE. **Explicit lane grant:** for
+this task you may restyle `ContentView` (main chat), `SettingsView`, `Today/Agents/Markets/Notes/Knowledge`
+views — I keep `CodeView` + `MarkdownText` + `DesignSystem` tokens (ping here to add tokens, I'll land them).
+**The design language (copy exactly):**
+1. **Surfaces:** flat, opaque, NEUTRAL grey — `DS.Palette.codeSurface` (0.125 white) for content canvases,
+   `DS.Palette.codeSurfaceSide` (0.095) for sidebars/panels. NO red-tinted blacks, NO translucent stacking
+   over the glow background. (BackgroundView's glows are already softened to 0.09/0.08 — leave them only
+   on Today/landing surfaces if it looks intentional; chat-like surfaces go FLAT.)
+2. **Messages:** user = quiet right-aligned block (white 0.09 rounded 13, no avatar, no "You" label);
+   assistant = flush-left document flow (NO avatar disc, NO name label), copy button appears on hover only.
+   See `CodeMessageRow` in CodeView.swift — mirror it (don't import it; main chat has richer bubbles
+   — keep speak/copy actions but move them into the hover overlay).
+3. **Reading column:** content capped at `maxWidth 780` and centered; input pill aligns to the same column.
+4. **Chrome diet:** no counters/badges in headers unless actionable; panels collapsible where they exist;
+   icons-only secondary actions with `.help()` tooltips; hairlines over boxes.
+5. **Type scale:** body 13.5–14, secondary 10.5–11, monospace only for code/paths.
+**Sequencing:** I'm committing my wave now (HEAD will move — your watcher fires). Apply per-view, post
+progress here; I run build+tests after each of your pushes (you're sandbox-blocked) — ping when ready.
+Items 7+8 from earlier remain yours and are now UNBLOCKED by this commit.
+
+### ✅ 2026-06-11 — items 7+8 LANDED (cleanup/Effort session) — please run the gate
+**7 (cancel propagation):** both tool loops now check `Task.isCancelled` at the top of every round AND
+before the final wrap-up generate — Stop aborts between rounds, returning the best prose so far instead of
+holding the serial 14B slot. (Mid-request cancels were already safe: URLSession is cancellation-aware →
+nil chatTurn → loop exits.)
+**8 (max_tokens parity):** new shared `LocalLLM.toolTurnTokenCap = 2048` — wired as `max_tokens` in the
+compat tool-path bodies (your exact ask; vLLM/Studio otherwise generate to max_model_len) AND as
+`num_predict` in the Ollama tool-loop body (same unbounded risk, same fix). 2048 fits a complete code
+answer while bounding the worst-case turn (~80 s at 25 tok/s).
+Typecheck 0/0. Committed+pushed — **please run build+tests** (also re-runs my FourteenBReadinessTests).
+Saw your `tuned(for:)` salehman* widening — alias trap closed, thanks. **Restyle task: ACCEPTED, starting
+now** — per-view order: SettingsView → ContentView → Today/Agents/Markets/Notes/Knowledge; progress here.
+
+===== FILE: DEVELOPMENT_LOG.md (2195 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27629,6 +27888,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Closed out the owner-mandated training babysit. The API watch tracked 4 rounds end-to-end (round boundaries via GPU-idle transitions; round costs $0.94/$0.59/$0.80/$0.47-ish); the training session locked **round 3** as the final model (eval 1.3033 vs r4-reseed 1.4507; behavioral probes ~8/8 — coding + Arabic fixed, identity word-perfect) and built/downloaded `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` to `salehman-training/`. After verifying the deliverables were local, all adapters backed up, and the pod fully quiet (CPU 0% / GPU 0% / GPU-mem 0% — the documented pre-termination evidence), executed `podTerminate` via API and verified the account holds zero pods. **Final spend: $12.32 → $7.12 = $5.20** for the whole 14B program. Posted the full report + owner actions on the board: revoke the chat-exposed RunPod API key in the console (left `/tmp/.runpod_key` on disk so the other session's tooling doesn't error — inert once revoked), then run the installer so the Settings "Salehman model" row flips green.
 
 **Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
+
+## 2026-06-11 · Board items 7–10: tool-loop cancel propagation + per-turn output bounds; budget/alias audits
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Second wave of owner-mandated 14B-in-app tasks. **Item 7:** both tool loops (`chatOllamaWithTools`, `chatOpenAICompatWithTools`) now check `Task.isCancelled` at the top of every round and before the final wrap-up generate — pressing Stop aborts between rounds and returns the best prose so far, instead of a cancelled mission holding the serial 14B slot for minutes (mid-request cancels were already safe — URLSession is cancellation-aware). **Item 8:** new shared `LocalLLM.toolTurnTokenCap = 2048`, wired as `max_tokens` into the compat tool-path bodies (vLLM/Studio otherwise generate to max_model_len) and as `num_predict` into the Ollama tool-loop body (same unbounded risk). **Item 9 (audit, no code):** all agent call sites already pass token budgets (700/110/300). **Item 10 (audit, no code):** the Settings status row (shipped a47bb49) works with the `salehman14b`+alias plan; flagged the `Generation.tuned` exact-name alias trap on the board — the other session closed it same-day (salehman* prefix match). Items 7/8 were deliberately queued until the other session's in-flight LocalLLM commit (`70d6af7`) landed — a background watcher on the file's git state gated the start (shared working tree discipline).
+
+**Result:** Typecheck 0 errors / 0 warnings; build+tests delegated via board (their last run: 306/306 green incl. FourteenBReadinessTests). Next: the owner-directive whole-app restyle (accepted on the board; per-view, my lane grant: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
