@@ -29,15 +29,15 @@ enum DS {
     enum Palette {
         static let accent        = Color(red: 0.98, green: 0.18, blue: 0.29)
         static let accent2       = Color(red: 1.00, green: 0.33, blue: 0.55)
-        static let bgTop         = Color(red: 0.09, green: 0.05, blue: 0.07)
-        static let bgBottom      = Color(red: 0.03, green: 0.02, blue: 0.03)
+        static let bgTop         = Color(red: 0.11, green: 0.11, blue: 0.12)
+        static let bgBottom      = Color(red: 0.04, green: 0.04, blue: 0.045)
         static let surface       = Color.white.opacity(0.07)
         // Code-tab editor surfaces — NEUTRAL grey (no red cast): the chat canvas
         // is lighter, the sidebar/inspector a step darker for depth, like an editor.
         static let codeSurface     = Color(white: 0.125)
         static let codeSurfaceSide = Color(white: 0.095)
         static let surfaceAlt    = Color.white.opacity(0.06)
-        static let modalBG       = Color(red: 0.13, green: 0.09, blue: 0.11)
+        static let modalBG       = Color(red: 0.13, green: 0.13, blue: 0.14)
         static let surfaceStroke = Color.white.opacity(0.12)
         static let hairline      = Color.white.opacity(0.12)
         static let textPrimary   = Color.white
