@@ -194,6 +194,29 @@ struct TranscriptCadenceTests {
     }
 }
 
+// MARK: - Quote-block split (user rows)
+
+struct QuoteSplitTests {
+
+    @Test func plainTextHasNoQuote() {
+        #expect(MessageBubble.splitLeadingQuote("just text") == nil)
+        #expect(MessageBubble.splitLeadingQuote("mid > quote") == nil)
+    }
+
+    @Test func quoteThenBodySplits() {
+        let s = MessageBubble.splitLeadingQuote("> a\n> b\n\nreply text")
+        #expect(s?.quote == "a\nb")
+        #expect(s?.body == "reply text")
+    }
+
+    @Test func bareAngleAndQuoteOnlyWork() {
+        let tight = MessageBubble.splitLeadingQuote(">tight\nbody")
+        #expect(tight?.quote == "tight" && tight?.body == "body")
+        let only = MessageBubble.splitLeadingQuote("> alone")
+        #expect(only?.quote == "alone" && only?.body == "")
+    }
+}
+
 // MARK: - Export filename
 
 struct ChatExportFilenameTests {

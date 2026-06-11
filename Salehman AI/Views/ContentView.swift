@@ -951,7 +951,9 @@ struct ContentView: View {
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .frame(maxWidth: 520, alignment: .leading)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(.scale(scale: 0.97, anchor: .bottom)
+                    .combined(with: .opacity)
+                    .combined(with: .move(edge: .bottom)))
                 .accessibilityIdentifier("chat.composer.slashmenu")
             }
 
@@ -1131,6 +1133,9 @@ struct ContentView: View {
         // Flat — the input row sits directly on the chat canvas.
         .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
+        // Drives the slash-menu island's enter/exit transition (lux). Bound to
+        // the EMPTY flip only — row updates while typing stay instant.
+        .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
     }
 
     private func attachmentChip(icon: String, title: String,
@@ -1382,7 +1387,7 @@ struct ScrollToLatestButton: View {
             // the transcript, so it still reads as actionable.
             .background(DS.Palette.accent, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .accessibilityLabel(unreadCount > 0
             ? "\(unreadCount) new \(unreadCount == 1 ? "message" : "messages"), scroll to latest"
             : "Scroll to latest")
@@ -1791,15 +1796,72 @@ struct MessageBubble: View {
         .onHover { hovering = $0 }
     }
 
-    private var userRow: some View {
-        HStack {
-            Spacer(minLength: 60)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message.text)
+    /// Splits a composed message into the leading markdown quote block (the
+    /// `> `-prefixed lines quote-reply inserts) and the body beneath it.
+    /// nil when the text doesn't OPEN with a quote. Pure for tests.
+    nonisolated static func splitLeadingQuote(_ text: String) -> (quote: String, body: String)? {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.first?.hasPrefix(">") == true else { return nil }
+        var quote: [String] = [], rest: [String] = []
+        var inQuote = true
+        for line in lines {
+            if inQuote, line.hasPrefix(">") {
+                quote.append(String(line.dropFirst(line.hasPrefix("> ") ? 2 : 1)))
+            } else {
+                inQuote = false
+                rest.append(line)
+            }
+        }
+        let q = quote.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return nil }
+        return (q, rest.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Quoted reply rendered as a real quote block (accent rail + dimmed text)
+    /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
+    private func quoteCard(_ quote: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(DS.Palette.accent.opacity(0.55))
+                .frame(width: 2)
+            Text(quote)
+                .font(.system(size: 12))
+                .lineSpacing(1.2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(6)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(Color.white.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// User text, split into quote card + body when the message opens with a
+    /// quote. Extracted subview (type-checker budget discipline).
+    @ViewBuilder private var userTextBlock: some View {
+        if let split = Self.splitLeadingQuote(message.text) {
+            quoteCard(split.quote)
+            if !split.body.isEmpty {
+                Text(split.body)
                     .font(.system(size: 13.5))
                     .lineSpacing(1.5)
                     .textSelection(.enabled)
                     .foregroundStyle(.white)
+            }
+        } else {
+            Text(message.text)
+                .font(.system(size: 13.5))
+                .lineSpacing(1.5)
+                .textSelection(.enabled)
+                .foregroundStyle(.white)
+        }
+    }
+
+    private var userRow: some View {
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                userTextBlock
                 if let path = message.imagePath {
                     CachedImage(path: path)
                         .frame(maxWidth: 360, maxHeight: 360)
