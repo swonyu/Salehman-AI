@@ -1713,3 +1713,13 @@ entry, photographed, fixture removed + MRU reset). The two tok/s readouts are
 build-verified only — they need a live local generation to display, and they reuse the
 already-verified TimelineView/lastStats plumbing.
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-12 — marathon G: git-status dots in the file tree (joint with the guardian session)
+**What:** tree rows now show an **amber dot** for anything git considers uncommitted
+(modified/untracked, `-uall` so untracked dirs list per-file) — distinct from the accent
+dot (= files the AI touched THIS run). `CodeWorkspace.gitModified` refreshes on every
+`reload()` off-main; non-repos yield an empty set. Parser extracted pure
+(`gitModifiedURLs(porcelain:root:)` — renames take the new side, quoted paths
+unquoted) — extraction + `CodeGitStatusTests` landed mid-flight from the guardian
+session working the same file; sealed together. Build + tests green.
+**Files:** `Views/CodeView.swift`, `Salehman AITests/CodeGitStatusTests.swift`.

@@ -31,6 +31,41 @@ final class CodeWorkspace: ObservableObject {
     @Published var changeStats: [URL: DiffStat] = [:]
     struct DiffStat: Equatable { let added: Int; let removed: Int }
 
+    /// Files git considers modified/untracked (amber dot in the tree) — refreshed
+    /// on every `reload()`. Distinct from `changedFiles` (THIS RUN's edits, accent
+    /// dot): git dots show everything uncommitted, run dots show what the AI just
+    /// touched. Empty when the project isn't a git repo.
+    @Published var gitModified: Set<URL> = []
+
+    private func refreshGitStatus() async {
+        guard let root = projectRoot else { gitModified = []; return }
+        let modified = await Task.detached(priority: .utility) { () -> Set<URL> in
+            // -uall lists files inside untracked directories individually — without
+            // it git collapses them to one "dir/" entry that no tree row matches.
+            let escaped = root.path.replacingOccurrences(of: "'", with: "'\\''")
+            let res = Shell.run("git -C '\(escaped)' status --porcelain -uall", timeout: 10)
+            guard res.exitCode == 0 else { return [] }
+            return CodeWorkspace.gitModifiedURLs(porcelain: res.output, root: root)
+        }.value
+        gitModified = modified
+    }
+
+    /// Parses `git status --porcelain` output into the set of file URLs with
+    /// uncommitted changes. Renames count as the NEW path; C-quoted paths get
+    /// their quotes stripped (escape sequences inside are left as-is — those
+    /// rows just won't match a tree URL, which is a harmless miss).
+    nonisolated static func gitModifiedURLs(porcelain: String, root: URL) -> Set<URL> {
+        var out: Set<URL> = []
+        for line in porcelain.components(separatedBy: "\n") where line.count > 3 {
+            // porcelain: "XY path" (or "XY old -> new" for renames — take the new side)
+            var path = String(line.dropFirst(3))
+            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
+            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            out.insert(root.appendingPathComponent(path))
+        }
+        return out
+    }
+
     private var snapshots: [URL: String] = [:]
 
     /// UserDefaults key for the last-opened project folder, so the Code tab
@@ -140,6 +175,7 @@ final class CodeWorkspace: ObservableObject {
             }
             return out.sorted { $0.path < $1.path }
         }.value
+        await refreshGitStatus()
     }
 
     func select(_ url: URL) {
@@ -710,7 +746,12 @@ struct CodeView: View {
                     .lineLimit(1).truncationMode(.head)
                 Spacer(minLength: 0)
                 if changed {
+                    // Accent dot: the AI changed this file THIS run.
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                } else if ws.gitModified.contains(url) {
+                    // Amber dot: uncommitted in git (modified/untracked).
+                    Circle().fill(Color.orange.opacity(0.75)).frame(width: 5, height: 5)
+                        .help("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
