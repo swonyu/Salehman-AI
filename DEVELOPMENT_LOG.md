@@ -1444,6 +1444,11 @@ Wiring (exhaustive switch arms all caught by compiler):
 - `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
 **Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
 
+## 2026-06-11 · Check in fleet bug-hunt reports for the Grok bridge tooling
+**Files:** `tools/BUGS_bridge_py.md`, `tools/BUGS_bridge_sh.md` (new)
+**What & why:** The 2026-06-10 parallel fleet run (fleet-1 / fleet-2 lanes) produced two bug-hunt reports against the bridge tooling: `BUGS_bridge_py.md` lists suspected races/throttling gaps in `grok_terminal_bridge.py` (Safari auto-drive partial-page race, no rate-limit guard in the build-rebuild loop, `_grok_send` flood risk), and `BUGS_bridge_sh.md` lists shell-script issues in `run_parallel_safari.sh` / `run_parallel_grok.sh` (uninitialized loop var, TABIDX off-by-one risk, no `--help`, quoting/portability problems) plus `grok_sessions_summary.py` lacking a shebang/CLI. They were left untracked in the working tree; committing them so the findings aren't lost. None of the listed bugs are fixed yet — these are the backlog for the next bridge-hardening pass.
+**Result:** Reports tracked in git. No code changed; build unaffected.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
