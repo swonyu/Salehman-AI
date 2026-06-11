@@ -151,6 +151,42 @@ final class CodeWorkspace: ObservableObject {
         openProject(at: url)
     }
 
+    // MARK: Restore checkpoint (revert this run's AI edits)
+
+    /// Disk side of a revert: write the pre-run snapshot back, or — when the run
+    /// CREATED the file (no snapshot) — delete it. Pure function of its inputs;
+    /// unit-tested against a temp directory.
+    nonisolated static func revert(file: URL, toSnapshot snapshot: String?) throws {
+        if let snapshot {
+            try snapshot.write(to: file, atomically: true, encoding: .utf8)
+        } else {
+            try FileManager.default.removeItem(at: file)
+        }
+    }
+
+    /// Revert ONE changed file to its pre-run state (Cursor's "Restore Checkpoint",
+    /// per file). Updates every dependent surface: changed list, stats, tree, the
+    /// open file/diff pane, and the git dots.
+    @discardableResult
+    func restoreFromSnapshot(_ url: URL) -> Bool {
+        let snap = snapshots[url]          // nil ⇒ the run created this file
+        do { try Self.revert(file: url, toSnapshot: snap) } catch { return false }
+        changedFiles.removeAll { $0 == url }
+        changeStats[url] = nil
+        if snap == nil { files.removeAll { $0 == url } }
+        if selectedFile == url {
+            if let snap { fileContent = snap; diff = [] }
+            else { selectedFile = nil; fileContent = ""; diff = [] }
+        }
+        Task { await refreshGitStatus() }
+        return true
+    }
+
+    /// Revert EVERY file the last run touched — the one-click "Restore all".
+    func restoreAllChanged() {
+        for url in changedFiles { restoreFromSnapshot(url) }
+    }
+
     /// Scan the project tree OFF the main actor — file enumeration was blocking the
     /// UI at launch and on every refresh (part of the "lag"). Publishes `files` on main.
     func reload() async {
@@ -347,7 +383,9 @@ struct ChangedFileRow: View {
     let label: String
     let isSelected: Bool
     var stat: CodeWorkspace.DiffStat? = nil
+    var onRestore: (() -> Void)? = nil
     var onTap: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: onTap) {
@@ -359,7 +397,21 @@ struct ChangedFileRow: View {
                     .lineLimit(1).truncationMode(.head)
                     .foregroundStyle(isSelected ? .white : .secondary)
                 Spacer(minLength: 0)
-                if let stat {
+                // Hover swaps the stats for a per-file undo — accept the good
+                // files, revert just the bad one (Cursor/Zed review pattern).
+                if hovering, let onRestore {
+                    Button(action: onRestore) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Revert this file to its pre-run state")
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                } else if let stat {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
@@ -379,6 +431,8 @@ struct ChangedFileRow: View {
         }
         .buttonStyle(.plain)
         .help("Show this file's diff")
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -1468,6 +1522,21 @@ struct CodeView: View {
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
+                // The run-level safety net: one click reverts EVERY AI edit from
+                // this run (your own edits in other files are untouched).
+                Button { withAnimation(.easeOut(duration: 0.18)) { ws.restoreAllChanged() } } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
+                        Text("Restore all").font(.system(size: 9.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Revert every file this run changed back to its pre-run state")
+                .disabled(isRunning)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             ScrollView {
@@ -1475,7 +1544,8 @@ struct CodeView: View {
                     ForEach(ws.changedFiles, id: \.self) { url in
                         ChangedFileRow(label: relativePath(url),
                                        isSelected: ws.selectedFile == url,
-                                       stat: ws.changeStats[url]) {
+                                       stat: ws.changeStats[url],
+                                       onRestore: { withAnimation(.easeOut(duration: 0.18)) { _ = ws.restoreFromSnapshot(url) } }) {
                             ws.select(url)
                             rightPane = .diff
                         }

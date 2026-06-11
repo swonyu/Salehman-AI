@@ -1748,3 +1748,17 @@ global state (unique temp dir per test).
 **Result:** New suite green in isolation (16/16) AND full `Salehman AITests` green by
 the `** TEST SUCCEEDED **` marker. Additive only — no source/lane touched. Commit `3d7e8a1`.
 **Files:** `Salehman AITests/MemoryStoreFactsTests.swift` (new).
+
+## 2026-06-12 — marathon H: Restore Checkpoint (run-level undo) + per-file revert
+**What (deep-research #1+#2 — the trust features every shipped agent converged on):**
+- **Restore all** in the Changed-files header: one click reverts EVERY file the last
+  run touched to its pre-run snapshot (the snapshots already existed for the diff
+  pane — this completes the loop Cursor/Claude-Code/Zed all ship).
+- **Per-file revert**: hovering a changed-file row swaps its +N −M stats for an undo
+  button — accept the good files, revert just the bad one.
+- Engine: `CodeWorkspace.revert(file:toSnapshot:)` (snapshot back, or DELETE files the
+  run created — that is their pre-run state) + `restoreFromSnapshot`/`restoreAllChanged`
+  which sync changed-list, stats, tree, open file/diff pane, and git dots.
+**Verified:** build green; `RestoreSnapshotTests` (3 temp-dir round-trips: modified→
+snapshot restored, created→deleted, missing→throws) — TEST SUCCEEDED.
+**Files:** `Views/CodeView.swift`, `Salehman AITests/RestoreSnapshotTests.swift`.
