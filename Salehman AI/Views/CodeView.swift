@@ -355,6 +355,8 @@ struct CodeView: View {
                     .keyboardShortcut("l", modifiers: .command)
                 Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -913,6 +915,12 @@ struct CodeView: View {
                     .focused($inputFocused)
                     // Enter picks the top `/`-command when the menu is open; otherwise sends.
                     .onSubmit { if let top = slashMatches.first { applySlash(top) } else { send() } }
+                    // Esc dismisses the `/` menu (clears the half-typed trigger).
+                    .onKeyPress(.escape) {
+                        guard slashActive else { return .ignored }
+                        input = ""
+                        return .handled
+                    }
                     // Focusing the input = intent to send: pre-load the local model
                     // (a 14B takes seconds to come into RAM) while the user types.
                     .onChange(of: inputFocused) { _, focused in
@@ -1114,9 +1122,57 @@ struct CodeView: View {
             .padding(.horizontal, 10).frame(height: 34)
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             VSplitView {
-                activitySection.frame(minHeight: 90)
+                VStack(spacing: 0) {
+                    activitySection.frame(minHeight: 90)
+                    if !ws.changedFiles.isEmpty { changedFilesList }
+                }
                 inspectorPane.frame(minHeight: 150)
             }
+        }
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// Clickable list of the files the last run touched — one tap opens its diff.
+    private var changedFilesList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().overlay(DS.Palette.hairline.opacity(0.5))
+            HStack(spacing: 6) {
+                Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                Text("Changed files").font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(ws.changedFiles.count)")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(ws.changedFiles, id: \.self) { url in
+                        Button {
+                            ws.select(url)
+                            rightPane = .diff
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: "plus.forwardslash.minus").font(.system(size: 9))
+                                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
+                                Text(relativePath(url))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(1).truncationMode(.head)
+                                    .foregroundStyle(ws.selectedFile == url ? .white : .secondary)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(ws.selectedFile == url ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show this file's diff")
+                    }
+                }
+                .padding(.horizontal, 5).padding(.bottom, 6)
+            }
+            .frame(maxHeight: 110)
         }
         .background(DS.Palette.codeSurfaceSide)
     }
