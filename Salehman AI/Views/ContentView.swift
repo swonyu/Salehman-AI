@@ -52,6 +52,11 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showStats = false
     @State private var statsBlurb = ""
+    // /connect — paste the cloud-GPU tunnel URL, the app wires itself.
+    @State private var showConnect = false
+    @State private var connectURL = ""
+    @State private var showNotice = false
+    @State private var noticeText = ""
     /// Welcome entrance choreography (Code-tab parity): pre-revealed on QA
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
@@ -158,6 +163,26 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
+        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
+            TextField("https://….trycloudflare.com", text: $connectURL)
+            Button("Cancel", role: .cancel) { }
+            Button("Connect") {
+                if let url = Self.normalizedServerURL(connectURL) {
+                    settings.unslothStudioEndpoint = url
+                    settings.unslothStudioModel = "salehman"
+                    settings.brainPreference = .unslothStudio
+                    noticeText = "Connected — Custom server → \(url), model “salehman”. Replies now come from the cloud GPU; pick Salehman in the Brain menu to go back to local."
+                } else {
+                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
+                }
+                showNotice = true
+            }
+        } message: {
+            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
+        }
+        .alert("Cloud GPU", isPresented: $showNotice) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(noticeText) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -789,6 +814,21 @@ struct ContentView: View {
         return ("\(words) words", words >= budget)
     }
 
+    /// Normalizes a pasted tunnel/server URL for the Custom-server brain:
+    /// trims, defaults the scheme to https, requires http(s) + a host, strips
+    /// trailing slashes, appends `/v1` exactly once. nil = unusable. Pure.
+    nonisolated static func normalizedServerURL(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if !s.contains("://") { s = "https://" + s }
+        guard let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.hasSuffix("/v1") ? s : s + "/v1"
+    }
+
     /// Horizontal chip rail: click a chip to jump to (and center) its message.
     /// A chip whose message is search-filtered out scrolls nowhere — harmless.
     private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
@@ -872,6 +912,9 @@ struct ContentView: View {
         .init(id: "stats", icon: "chart.bar",
               blurb: "Conversation statistics",
               kind: .action("stats")),
+        .init(id: "connect", icon: "bolt.horizontal.circle",
+              blurb: "Connect to your cloud-GPU Salehman (paste tunnel URL)",
+              kind: .action("connect")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -905,6 +948,9 @@ struct ContentView: View {
             case "stats":
                 statsBlurb = ChatStats.summarize(vm.messages).blurb
                 showStats = true
+            case "connect":
+                connectURL = ""
+                showConnect = true
             default: break
             }
         }

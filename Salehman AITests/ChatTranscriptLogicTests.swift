@@ -194,6 +194,30 @@ struct TranscriptCadenceTests {
     }
 }
 
+// MARK: - /connect server-URL normalizer
+
+struct ConnectURLTests {
+
+    @Test func addsSchemeAndV1() {
+        #expect(ContentView.normalizedServerURL("abc-def.trycloudflare.com")
+                == "https://abc-def.trycloudflare.com/v1")
+    }
+
+    @Test func stripsTrailingSlashesAndKeepsExistingV1() {
+        #expect(ContentView.normalizedServerURL("https://x.trycloudflare.com/")
+                == "https://x.trycloudflare.com/v1")
+        #expect(ContentView.normalizedServerURL("http://localhost:11434/v1")
+                == "http://localhost:11434/v1")
+    }
+
+    @Test func rejectsJunk() {
+        #expect(ContentView.normalizedServerURL("") == nil)
+        #expect(ContentView.normalizedServerURL("   ") == nil)
+        #expect(ContentView.normalizedServerURL("not a url") == nil)
+        #expect(ContentView.normalizedServerURL("ftp://x.com") == nil)
+    }
+}
+
 // MARK: - Quote-block split (user rows)
 
 struct QuoteSplitTests {
