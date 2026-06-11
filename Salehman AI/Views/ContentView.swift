@@ -503,6 +503,7 @@ struct ContentView: View {
                     .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { submit(mission) }
+                    .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 8) {
@@ -544,6 +545,7 @@ struct ContentView: View {
                     .frame(width: 26)
                     .help("Attach files/images or insert a saved prompt")
                     .accessibilityLabel("Attach files, images, or insert a saved prompt")
+                    .accessibilityIdentifier("chat.composer.plus")
 
                     Spacer(minLength: 0)
 
@@ -558,6 +560,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help("Dictate with your voice")
                     .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+                    .accessibilityIdentifier("chat.composer.mic")
 
                     // Stop while generating, otherwise Send — the composer's
                     // one strong-color element (solid accent when sendable).
@@ -589,6 +592,7 @@ struct ContentView: View {
                         .disabled(!canSend)
                         .help("Send")
                         .accessibilityLabel("Send")
+                        .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
                     }
                 }

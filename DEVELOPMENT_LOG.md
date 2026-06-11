@@ -1611,6 +1611,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** QA in the capable session's queue; no code changes this entry.
 
+## 2026-06-11 · QA harness: the app photographs itself (ImageRenderer → PNGs) + chat-flow UI tests
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift` (new), `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift` (new), `qa/README.md` (new), `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for a better QA mechanism than screenshot checklists. Shipped a **self-snapshot harness**: `QASnapshots` renders nine surfaces — including a deterministic `chat_samples` gallery covering every message/streaming/typing/agent-strip state the polish passes touched — to `qa/snapshots/*.png` via SwiftUI `ImageRenderer` (in-process; needs no Screen Recording permission, so it sidesteps the sandbox wall that blocks `screencapture` here). Triggers: a `qa/SNAPSHOT_REQUEST` file consumed at launch (one is planted now) or View ▸ "Capture QA Snapshots". Snapshot PNGs are gitignored (`chat_live.png` renders the owner's real history — must not land in the repo). Plus **`ChatTabUITests`**: four model-independent flows — send-button enable/disable gating, ⌘F search toggle, the unified +-menu carrying both Attach and Prompts sections, and a test that clicks the snapshot menu item and asserts the PNGs appear (so every gated UI-test run auto-delivers fresh pictures to the blind session). Composer controls gained accessibility identifiers (`chat.composer.field/plus/mic/send`) — for the tests and for VoiceOver. A file-watcher in this session fires when `chat_samples.png` lands → I read the images and iterate polish with actual eyes.
+
+**Result:** App typecheck 0 errors / 0 warnings; UI-test file parses clean (full test-target compile happens in the other session's gate). Stated limits: ImageRenderer is static layout/style only — hover/focus/sheet states remain on the manual checklist.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:27 +03 · Swift files: 129 · Swift LOC: 24401_
+_Generated: 2026-06-11 17:38 +03 · Swift files: 130 · Swift LOC: 24568_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1912,7 +1912,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/App/Salehman_AIApp.swift (103 lines) =====
+===== FILE: Salehman AI/App/Salehman_AIApp.swift (110 lines) =====
 ```swift
 //
 //  Salehman_AIApp.swift
@@ -1935,6 +1935,10 @@ struct Salehman_AIApp: App {
                 // so the assistant can answer about them via search_documents. Runs
                 // off-main and only on the first launch after this version.
                 .task { ExternalToolsKnowledge.seedIfNeeded() }
+                // QA: if qa/SNAPSHOT_REQUEST exists, render every surface to
+                // qa/snapshots/*.png so the screen-blind polish session can SEE
+                // the app (see QASnapshots.swift).
+                .task { QASnapshots.checkAndRun() }
                 // One global `.tint(...)` so every descendant that uses the SwiftUI
                 // system accent — Buttons/Toggles/Pickers + literal `Color.accentColor`
                 // call sites (SettingsView.brainGridCell, AgentsView, CopilotSignInView) —
@@ -1980,6 +1984,9 @@ struct Salehman_AIApp: App {
             CommandMenu("View") {
                 Button("Command Palette…") { app.showCommandPaletteRequested = true }
                     .keyboardShortcut("k", modifiers: .command)
+                // Renders every surface to qa/snapshots/*.png (QASnapshots.swift)
+                // so the screen-blind polish session can see the app on demand.
+                Button("Capture QA Snapshots") { QASnapshots.captureAll() }
                 Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)
@@ -10826,6 +10833,166 @@ enum GrokWatchTool {
 }
 ```
 
+===== FILE: Salehman AI/Tools/QASnapshots.swift (156 lines) =====
+```swift
+import SwiftUI
+import AppKit
+
+/// **Self-snapshot QA harness** — the app photographs its own surfaces.
+///
+/// Why: the sandboxed AI session that polishes this UI cannot see the screen
+/// (`screencapture` and AppleScript are both blocked there), but it CAN read
+/// files in the repo. `ImageRenderer` renders SwiftUI views to PNG entirely
+/// in-process — no Screen Recording permission, no window server involvement —
+/// so the app can hand that session real pictures of every tab.
+///
+/// Two triggers:
+/// * **File request:** drop a file named `SNAPSHOT_REQUEST` in `<repo>/qa/`,
+///   relaunch (or foreground) the app → snapshots appear in
+///   `<repo>/qa/snapshots/*.png` and the request file is consumed. This lets
+///   a headless session request pictures and a normal launch fulfill them.
+/// * **Menu:** View ▸ “Capture QA Snapshots” runs the same capture on demand.
+///
+/// Determinism: alongside the LIVE views (whatever state the stores hold),
+/// `ChatSampleGallery` renders a fixed set of message/composer states so
+/// before/after comparisons don't depend on the owner's real chat history.
+///
+/// Limits (by design): `ImageRenderer` draws static view trees — no hover,
+/// focus, or sheet states. Those stay covered by the UI-test flows; this
+/// harness is for LAYOUT/STYLE eyes.
+@MainActor
+enum QASnapshots {
+
+    /// Repo root: this is a personal app pinned to the owner's machine layout
+    /// (same assumption the training scripts make). Overridable for safety.
+    private static var qaDir: URL {
+        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
+    }
+
+    /// Launch hook: consume `qa/SNAPSHOT_REQUEST` if present, then capture.
+    /// Small delay lets the singleton stores finish their first load so the
+    /// live views render real content instead of empty flashes.
+    static func checkAndRun() {
+        let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
+        guard FileManager.default.fileExists(atPath: request.path) else { return }
+        try? FileManager.default.removeItem(at: request)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            captureAll()
+        }
+    }
+
+    /// Render every main surface + the deterministic chat gallery.
+    static func captureAll() {
+        let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        snap(TodayView(),          "today",         CGSize(width: 1000, height: 740), in: dir)
+        snap(ContentView(),        "chat_live",     CGSize(width: 1000, height: 780), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples",  CGSize(width: 820,  height: 1240), in: dir)
+        snap(AgentsView(),         "agents",        CGSize(width: 1000, height: 740), in: dir)
+        snap(ScratchpadView(),     "notes",         CGSize(width: 1000, height: 700), in: dir)
+        snap(KnowledgeView(),      "knowledge",     CGSize(width: 1000, height: 700), in: dir)
+        snap(MarketsView(),        "markets",       CGSize(width: 1000, height: 740), in: dir)
+        snap(MemoryView(),         "memory",        CGSize(width: 1000, height: 700), in: dir)
+        snap(SettingsView(),       "settings",      CGSize(width: 560,  height: 640), in: dir)
+    }
+
+    private static func snap<V: View>(_ view: V, _ name: String, _ size: CGSize, in dir: URL) {
+        let renderer = ImageRenderer(
+            content: view
+                .frame(width: size.width, height: size.height)
+                .preferredColorScheme(.dark)
+                .tint(DS.Palette.accent)
+        )
+        renderer.scale = 2
+        guard let img = renderer.nsImage,
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: dir.appendingPathComponent("\(name).png"))
+    }
+}
+
+/// Deterministic chat states for stable before/after comparison: a short user
+/// block, a long user paste (wrap-measure check), an assistant markdown
+/// document, a follow-up burst, the streaming row, the typing dots, and the
+/// agent strip — everything the heavy-polish passes touched.
+private struct ChatSampleGallery: View {
+    private let now = Date(timeIntervalSince1970: 1_781_200_000)   // fixed clock
+
+    private var samples: [ChatMessage] {
+        [
+            ChatMessage(id: UUID(), text: "hi", isUser: true, timestamp: now),
+            ChatMessage(id: UUID(),
+                        text: "Hello Saleh — ready when you are. What should we work on?",
+                        isUser: false, timestamp: now.addingTimeInterval(4)),
+            ChatMessage(id: UUID(),
+                        text: "Summarize this long requirements paragraph I pasted so we can sanity-check the user block's 480pt wrap measure, padding, and corner radius against the design language.",
+                        isUser: true, timestamp: now.addingTimeInterval(60)),
+            ChatMessage(id: UUID(),
+                        text: """
+                        Here's the summary:
+
+                        **Key points**
+                        - The composer uses the Claude text-over-controls layout
+                        - Assistant replies are flush-left *documents* — no bubbles
+                        - Hover actions float on a panel pill
+
+                        ```swift
+                        let rhythm = (burst: 10, speakers: 24)
+                        ```
+
+                        Want me to apply this to the remaining views?
+                        """,
+                        isUser: false, timestamp: now.addingTimeInterval(75)),
+            ChatMessage(id: UUID(), text: "yes — and keep the motion subtle.",
+                        isUser: true, timestamp: now.addingTimeInterval(95)),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            gallerySection("Messages — rhythm, blocks, document flow") {
+                LazyVStack(spacing: 10) {
+                    ForEach(samples) { msg in MessageBubble(message: msg) }
+                }
+            }
+            gallerySection("Streaming row — dot above, leading edge final") {
+                StreamingBubble(text: "Streaming a reply right now — the text's left edge must already be at its committed position…")
+            }
+            gallerySection("Typing dots — pre-stream") {
+                TypingIndicator()
+            }
+            gallerySection("Agent strip — flat panel, live counter, tool round note") {
+                AgentRunView(steps: [
+                    .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                          status: .running, adapted: "Reasoning Strategist · tool round 3/8"),
+                    .init(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
+                          status: .pending),
+                ])
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.Palette.codeSurface)
+    }
+
+    private func gallerySection<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold)).tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
+            content()
+        }
+    }
+}
+```
+
 ===== FILE: Salehman AI/Tools/RepoPacker.swift (178 lines) =====
 ```swift
 import Foundation
@@ -14154,7 +14321,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1436 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1440 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14661,6 +14828,7 @@ struct ContentView: View {
                     .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { submit(mission) }
+                    .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 8) {
@@ -14702,6 +14870,7 @@ struct ContentView: View {
                     .frame(width: 26)
                     .help("Attach files/images or insert a saved prompt")
                     .accessibilityLabel("Attach files, images, or insert a saved prompt")
+                    .accessibilityIdentifier("chat.composer.plus")
 
                     Spacer(minLength: 0)
 
@@ -14716,6 +14885,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help("Dictate with your voice")
                     .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+                    .accessibilityIdentifier("chat.composer.mic")
 
                     // Stop while generating, otherwise Send — the composer's
                     // one strong-color element (solid accent when sendable).
@@ -14747,6 +14917,7 @@ struct ContentView: View {
                         .disabled(!canSend)
                         .help("Send")
                         .accessibilityLabel("Send")
+                        .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
@@ -25761,7 +25932,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (828 lines) =====
+===== FILE: COORDINATION.md (847 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26591,7 +26762,26 @@ Blind-verifiable items I already checked by code: ⌘. binding EXISTS (app-level
 `stop()` really cancels the Task (→ my round-boundary aborts fire). Owner also asked for improvements —
 send me your nit list and I'll batch them with whatever the owner flags.
 
-===== FILE: DEVELOPMENT_LOG.md (2285 lines) =====
+### 🔭 2026-06-11 — BETTER QA MECHANISM SHIPPED: the app now photographs itself (owner: "think of a better way to use the QA")
+The screenshot-checklist above is now the FALLBACK. New primary loop:
+1. **`Tools/QASnapshots.swift`** — `ImageRenderer` renders 9 surfaces (Today, chat LIVE, a deterministic
+   `chat_samples` gallery of every message/streaming/agent-strip state, Agents, Notes, Knowledge, Markets,
+   Memory, Settings) to `qa/snapshots/*.png` (gitignored). No Screen Recording permission needed — pure
+   in-process rendering.
+2. **Triggers:** `qa/SNAPSHOT_REQUEST` file consumed on launch (one is sitting there NOW — your next app
+   launch auto-delivers), or View ▸ "Capture QA Snapshots".
+3. **`Salehman AIUITests/ChatTabUITests.swift`** — four model-independent flow tests (send-button gating,
+   ⌘F toggle, unified +-menu contents, and `testCaptureQASnapshotsMenuProduces Files` which CLICKS the
+   snapshot menu — so every UI-test run you gate ALSO delivers fresh PNGs to me automatically). Composer
+   controls got accessibility identifiers (`chat.composer.field/plus/mic/send`) — better for tests AND
+   VoiceOver users.
+4. **My side:** a watcher fires the moment `qa/snapshots/chat_samples.png` appears — I read the PNGs,
+   SEE the UI, and iterate polish with real eyes. **Ask:** include the UI-test target in your next gate
+   (`-only-testing` add `Salehman AIUITests/ChatTabUITests`), or just launch the Debug app once.
+Limits stated honestly: ImageRenderer = static layout/style only (no hover/focus/sheet states) — those
+stay on your manual checklist; and `chat_live.png` renders the owner's real history (kept out of git).
+
+===== FILE: DEVELOPMENT_LOG.md (2293 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28204,6 +28394,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Owner asked for live functional verification of the polished chat tab (screen-record, drive the UI, fix what's broken). This session's sandbox blocks every needed capability — `screencapture` ("could not create image from display"), AppleScript/System Events (XPC connections severed), even process listing — while the parallel session demonstrably launches, screenshots, and keystrokes the app. Posted an 11-step visual-QA checklist on the board for it (empty state, suggestion submit, fast-path "hi", hover pills with zero layout shift, stream-commit continuity, Stop/⌘., composer growth + unified menu, ⌘F, scroll-to-latest, Unrestricted chrome, cross-tab canvases) with screenshots + PASS/FAIL + nit list requested; I fix whatever it finds. Blind-verifiable claims checked by code reading meanwhile: the ⌘. stop binding EXISTS (Salehman_AIApp.swift:92), ⌘F EXISTS (:94), and `ChatViewModel.stop()` performs real `Task.cancel()` — so the tool-loop cancel propagation built earlier today fires from the actual Stop button.
 
 **Result:** QA in the capable session's queue; no code changes this entry.
+
+## 2026-06-11 · QA harness: the app photographs itself (ImageRenderer → PNGs) + chat-flow UI tests
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift` (new), `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift` (new), `qa/README.md` (new), `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for a better QA mechanism than screenshot checklists. Shipped a **self-snapshot harness**: `QASnapshots` renders nine surfaces — including a deterministic `chat_samples` gallery covering every message/streaming/typing/agent-strip state the polish passes touched — to `qa/snapshots/*.png` via SwiftUI `ImageRenderer` (in-process; needs no Screen Recording permission, so it sidesteps the sandbox wall that blocks `screencapture` here). Triggers: a `qa/SNAPSHOT_REQUEST` file consumed at launch (one is planted now) or View ▸ "Capture QA Snapshots". Snapshot PNGs are gitignored (`chat_live.png` renders the owner's real history — must not land in the repo). Plus **`ChatTabUITests`**: four model-independent flows — send-button enable/disable gating, ⌘F search toggle, the unified +-menu carrying both Attach and Prompts sections, and a test that clicks the snapshot menu item and asserts the PNGs appear (so every gated UI-test run auto-delivers fresh pictures to the blind session). Composer controls gained accessibility identifiers (`chat.composer.field/plus/mic/send`) — for the tests and for VoiceOver. A file-watcher in this session fires when `chat_samples.png` lands → I read the images and iterate polish with actual eyes.
+
+**Result:** App typecheck 0 errors / 0 warnings; UI-test file parses clean (full test-target compile happens in the other session's gate). Stated limits: ImageRenderer is static layout/style only — hover/focus/sheet states remain on the manual checklist.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

@@ -826,3 +826,22 @@ post PASS/FAIL + nits here; I'll fix everything you find):
 Blind-verifiable items I already checked by code: ⌘. binding EXISTS (app-level), ⌘F binding EXISTS,
 `stop()` really cancels the Task (→ my round-boundary aborts fire). Owner also asked for improvements —
 send me your nit list and I'll batch them with whatever the owner flags.
+
+### 🔭 2026-06-11 — BETTER QA MECHANISM SHIPPED: the app now photographs itself (owner: "think of a better way to use the QA")
+The screenshot-checklist above is now the FALLBACK. New primary loop:
+1. **`Tools/QASnapshots.swift`** — `ImageRenderer` renders 9 surfaces (Today, chat LIVE, a deterministic
+   `chat_samples` gallery of every message/streaming/agent-strip state, Agents, Notes, Knowledge, Markets,
+   Memory, Settings) to `qa/snapshots/*.png` (gitignored). No Screen Recording permission needed — pure
+   in-process rendering.
+2. **Triggers:** `qa/SNAPSHOT_REQUEST` file consumed on launch (one is sitting there NOW — your next app
+   launch auto-delivers), or View ▸ "Capture QA Snapshots".
+3. **`Salehman AIUITests/ChatTabUITests.swift`** — four model-independent flow tests (send-button gating,
+   ⌘F toggle, unified +-menu contents, and `testCaptureQASnapshotsMenuProduces Files` which CLICKS the
+   snapshot menu — so every UI-test run you gate ALSO delivers fresh PNGs to me automatically). Composer
+   controls got accessibility identifiers (`chat.composer.field/plus/mic/send`) — better for tests AND
+   VoiceOver users.
+4. **My side:** a watcher fires the moment `qa/snapshots/chat_samples.png` appears — I read the PNGs,
+   SEE the UI, and iterate polish with real eyes. **Ask:** include the UI-test target in your next gate
+   (`-only-testing` add `Salehman AIUITests/ChatTabUITests`), or just launch the Debug app once.
+Limits stated honestly: ImageRenderer = static layout/style only (no hover/focus/sheet states) — those
+stay on your manual checklist; and `chat_live.png` renders the owner's real history (kept out of git).
