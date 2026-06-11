@@ -32,7 +32,7 @@ struct QAGeometryTests {
             QAGeometry.record("chat.column", CGRect(x: 110, y: 0, width: 780, height: 600))
             QAGeometry.record("chat.input",  CGRect(x: 110, y: 610, width: 780, height: 80))
             let results = QAGeometry.chatAssertions(rootWidth: 1000)
-            #expect(results.allSatisfy(\.pass), "\(results)")
+            #expect(results.allSatisfy { $0.pass }, "\(results)")
         }
     }
 
@@ -42,7 +42,7 @@ struct QAGeometryTests {
             QAGeometry.record("chat.column", CGRect(x: 0, y: 0, width: 560, height: 600))
             QAGeometry.record("chat.input",  CGRect(x: 0, y: 610, width: 560, height: 80))
             let results = QAGeometry.chatAssertions(rootWidth: 560)
-            #expect(results.allSatisfy(\.pass), "\(results)")
+            #expect(results.allSatisfy { $0.pass }, "\(results)")
         }
     }
 
