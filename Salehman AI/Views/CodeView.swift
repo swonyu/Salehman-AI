@@ -474,6 +474,14 @@ struct CodeView: View {
     @State private var convoMatchIndex = 0
     @FocusState private var convoSearchFocused: Bool
 
+    /// % of the local model's history window this conversation occupies (chars vs
+    /// `AgentPipeline.localHistoryCharBudget` — the same budget the trim uses, so
+    /// the meter and the trimming can never disagree).
+    private var contextPct: Int {
+        let chars = messages.reduce(0) { $0 + $1.text.count + 16 }
+        return Int((Double(chars) / Double(AgentPipeline.localHistoryCharBudget) * 100).rounded())
+    }
+
     private var convoMatches: [UUID] {
         let q = convoQuery.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2 else { return [] }
@@ -853,6 +861,17 @@ struct CodeView: View {
                         headerIcon("sidebar.left", "Show the file tree") {
                             withAnimation(CodeView.lux) { treeCollapsed = false }
                         }
+                    }
+                    // Context meter — the local 14B sees only ~9k chars of history;
+                    // beyond that the OLDEST turns silently drop. Surfacing it
+                    // answers "why did it forget" before the question is asked.
+                    if contextPct >= 50 {
+                        Text("ctx \(min(contextPct, 100))%")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .help(contextPct >= 100
+                                  ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
+                                  : "How much of the local model's history window this conversation uses.")
                     }
                     if let tps = lastTokPerSec {
                         HStack(spacing: 3) {
