@@ -2428,3 +2428,10 @@ selectively (4 files; left the active session's `CodeView.swift` WIP untouched).
 `Salehman_AIApp` bindings — no drift). **Flagged 2 audit regressions in Chat B's lane** (not mine — see
 COORDINATION): `chat_narrow` geo (column 560pt vs ≈524 expected) + `settings` baselineDiff 0.34%.
 Curated owner-decision backlog of the bigger (aesthetic) refinements written to `POLISH_BACKLOG.md`.
+
+## 2026-06-11 (evening) — Chat C: polish pass #2 (Notes task ordering)
+**File:** `Views/ScratchpadView.swift`. Commit `ba52a98`.
+Completed tasks now sink below active ones (stable partition `orderedTasks`, presentational only — no data
+mutation; matches Reminders/Todoist). Build + AITests green; QA 14/14 (the 2 prior cross-lane failures are
+now resolved by Chat B at commit `22ba4249`). Effect isn't visible in the current `notes.png` (live store has
+only completed tasks), but is correct for the common mixed-task case.
