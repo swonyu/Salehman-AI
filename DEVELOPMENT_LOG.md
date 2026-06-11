@@ -1555,6 +1555,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate delegated. Next slice: ContentView (main chat) message rows + reading column.
 
+## 2026-06-11 · Whole-app restyle 2/7 — ContentView (main chat) to the document-flow message style
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Slice 2 of the owner-directive restyle, mirroring the Code tab's `CodeMessageRow` while keeping the main chat's richer actions. `MessageBubble` rewritten: user messages are a quiet right-aligned block (white 0.09, radius 13, 13.5pt, no avatar, no label, hover-only copy); assistant replies are flush-left document flow (no avatar disc, no bubble chrome, no per-message timestamp — the existing `TimeSeparator` rows already mark time between bursts) with speak/copy/regenerate in an always-mounted hover overlay (keyboard/VoiceOver reachable). `StreamingBubble` matched (pulsing 6pt accent dot replaces the avatar; same flush-left flow so stream-end doesn't visibly snap styles). Transcript and input bar now share a centered 780pt reading column. Chat canvas is flat opaque `codeSurface` (no glow show-through; the Unrestricted-Mode red tint still overlays). Dead code removed with the avatars: `bubbleShape`, `bubbleBackground`, `avatar`, `userAvatar`, the `isLastInGroup` param + helper, and the `Theme.userBubble` forwarding alias (`DS.Gradient.userBubble` is now orphaned app-wide — flagged to the DS-owning session to prune).
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

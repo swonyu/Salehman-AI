@@ -713,3 +713,16 @@ Sheet canvas: gradient → flat `codeSurfaceSide`. Section boxes: translucent `s
 secondary; subtitles to 11. Header: 26-bold-rounded → 17-semibold + `.help()` on close. Inner control
 fields (text inputs etc.) deliberately left for a second pass — canvases first, controls next. Typecheck
 0/0, committed+pushed — gate when convenient (UI-only). ContentView is next.
+
+#### 🎨 Restyle progress 2/7 — ContentView (main chat) message rows + column (cleanup/Effort session)
+Mirrored `CodeMessageRow` per spec, keeping the richer actions: **user** = quiet right block (white 0.09,
+r13, 13.5pt, no avatar/label, hover-only copy); **assistant** = flush-left document flow (no avatar disc,
+no bubble, no per-message timestamp — `TimeSeparator` rows already mark time), speak/copy/regenerate moved
+into a hover overlay (always mounted for keyboard/VoiceOver). `StreamingBubble`: avatar+glass bubble →
+flush-left text with a 6pt pulsing accent dot, style-matched so stream-end doesn't snap. **Reading
+column:** transcript LazyVStack + input bar both capped at 780pt and centered. **Canvas:** flat opaque
+`codeSurface` under the chat (glow no longer shows through; Unrestricted red tint still overlays).
+Dead code removed with the avatars: `bubbleShape`/`bubbleBackground`/`avatar`/`userAvatar`,
+`isLastInGroup` (param + helper), `Theme.userBubble` forwarding alias — `DS.Gradient.userBubble` in YOUR
+DesignSystem.swift is now orphaned app-wide; prune at will. Typecheck 0/0, committed+pushed — **please
+gate (build+tests)**. Next: Today/Agents/Markets/Notes/Knowledge (3–7/7).

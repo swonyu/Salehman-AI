@@ -10,7 +10,6 @@ enum Theme {
     static let accent2 = DS.Palette.accent2
     static let bgTop = DS.Palette.bgTop
     static let bgBottom = DS.Palette.bgBottom
-    static let userBubble = DS.Gradient.userBubble
     static let brand = DS.Gradient.brand
 }
 
@@ -68,6 +67,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Flat opaque chat canvas (design language): no glow show-through,
+            // no translucent stacking — same shade as the Code tab's canvas.
+            DS.Palette.codeSurface.ignoresSafeArea()
+
             // Global red tint when Unrestricted Mode is active.
             if settings.unrestrictedTools {
                 Color.red.opacity(0.03).ignoresSafeArea()
@@ -88,6 +91,10 @@ struct ContentView: View {
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
                 inputBar
+                    // Input pill aligns to the same 780pt reading column as the
+                    // transcript (design language).
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
             }
         }
         .preferredColorScheme(.dark)
@@ -326,10 +333,8 @@ struct ContentView: View {
                                         TimeSeparator(date: msg.timestamp)
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
-                                    let isLast  = isLastInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate,
-                                                  isLastInGroup: isLast)
+                                                  onRegenerate: vm.regenerate)
                                         .padding(.top, isFirst ? 10 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -344,6 +349,11 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            // Centered reading column (design language): content
+                            // caps at 780pt; the input pill aligns to the same
+                            // column below.
+                            .frame(maxWidth: 780)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     // PROTECTED PATH: the streaming/auto-scroll triggers stay
@@ -392,13 +402,6 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
-    private func isLastInGroup(idx: Int, list: [ChatMessage]) -> Bool {
-        guard idx < list.count - 1 else { return true }
-        let curr = list[idx]; let next = list[idx + 1]
-        if curr.isUser != next.isUser { return true }
-        return next.timestamp.timeIntervalSince(curr.timestamp) > 5 * 60
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -935,10 +938,6 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
-    /// Apple-Messages convention: the avatar/tail-anchor only renders on the
-    /// LAST message of a same-sender burst. Default `true` keeps existing
-    /// callers (single-message previews, ungrouped contexts) unchanged.
-    var isLastInGroup: Bool = true
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -982,90 +981,74 @@ struct MessageBubble: View {
     //       view-layer derivation; `messages[i].text` stays unmodified, so
     //       `ChatStore` persists the canonical form.
 
+    // Claude-Code-minimal (owner directive 2026-06-11, mirrors CodeMessageRow):
+    // user = quiet right-aligned block, assistant = flush-left document flow.
+    // No avatars, no name labels, no per-message timestamps (TimeSeparator rows
+    // already mark time between bursts). Actions stay ALWAYS MOUNTED for
+    // keyboard/VoiceOver and reveal on hover only.
     private var bubbleRow: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            // Assistant side: avatar only on the LAST message of a burst.
-            // Continuations get a same-size transparent placeholder so the
-            // bubble content stays horizontally aligned across the group.
-            if message.isUser { Spacer(minLength: 48) }
-            else if isLastInGroup { avatar }
-            else { Color.clear.frame(width: 30, height: 30) }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 3) {
-                Group {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if message.isUser {
-                            Text(message.text)
-                                .font(.system(size: 14))
-                                .textSelection(.enabled)
-                                .foregroundStyle(.white)
-                        } else {
-                            MarkdownText(text: displayedText)
-                                .foregroundStyle(Color.white.opacity(0.92))
-                                .lineSpacing(2)               // calmer reading rhythm on long replies
-                        }
-                        if let path = message.imagePath {
-                            CachedImage(path: path)
-                                .frame(maxWidth: 360, maxHeight: 360)
-                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)             // ↑ from 14 — more breathing room
-                .padding(.vertical, 12)               // ↑ from 10
-                .background(bubbleBackground)
-                .clipShape(bubbleShape)               // asymmetric (tail) corners
-                .overlay(
-                    bubbleShape.stroke(
-                        Color.white.opacity(message.isUser ? 0 : 0.08),
-                        lineWidth: 1
-                    )
-                )
-                // User bubbles get a soft brand-tinted glow (Apple-Music red);
-                // assistant gets a deeper neutral shadow for depth on dark.
-                .shadow(color: message.isUser ? Theme.accent.opacity(0.28) : Color.black.opacity(0.32),
-                        radius: message.isUser ? 10 : 8,
-                        y: 4)
-                // Cap content at a comfortable reading measure (~580pt) so
-                // bubbles don't stretch edge-to-edge on a wide window. The
-                // outer Spacer(minLength: 48) handles speaker-side alignment.
-                .frame(maxWidth: 580, alignment: message.isUser ? .trailing : .leading)
-                // VoiceOver reads the bubble as one element, prefixed with the
-                // speaker so the conversation is followable without sight. The
-                // action buttons below stay separate (their own a11y labels).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(message.isUser ? "You said: \(message.text)"
-                                                    : "Assistant replied: \(displayedText)")
-
-                HStack(spacing: 10) {
-                    Text(message.timestamp, style: .time)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    if !message.isUser {
-                        actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
-                                     "Read aloud", active: speech.speakingID == message.id) {
-                            speech.toggle(message.text, id: message.id)
-                        }
-                    }
-                    // Always mounted (keyboard / VoiceOver can reach them); hover
-                    // just lifts the opacity so they recede until you point at the row.
-                    actionButton("doc.on.doc", "Copy") { copyText() }
-                    if !message.isUser, onRegenerate != nil {
-                        actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
-                            .opacity(hovering ? 1 : 0.45)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .animation(DS.Motion.fade, value: hovering)
-            }
-
-            // User side: same rule mirrored.
-            if message.isUser {
-                if isLastInGroup { userAvatar }
-                else { Color.clear.frame(width: 30, height: 30) }
-            } else { Spacer(minLength: 48) }
+        Group {
+            if message.isUser { userRow } else { assistantRow }
         }
         .onHover { hovering = $0 }
+    }
+
+    private var userRow: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            HStack {
+                Spacer(minLength: 60)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message.text)
+                        .font(.system(size: 13.5))
+                        .textSelection(.enabled)
+                        .foregroundStyle(.white)
+                    if let path = message.imagePath {
+                        CachedImage(path: path)
+                            .frame(maxWidth: 360, maxHeight: 360)
+                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 13).padding(.vertical, 8)
+                .background(Color.white.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("You said: \(message.text)")
+            }
+            actionButton("doc.on.doc", "Copy") { copyText() }
+                .opacity(hovering ? 1 : 0)
+                .animation(DS.Motion.fade, value: hovering)
+        }
+    }
+
+    private var assistantRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MarkdownText(text: displayedText)
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineSpacing(2)               // calmer reading rhythm on long replies
+            if let path = message.imagePath {
+                CachedImage(path: path)
+                    .frame(maxWidth: 360, maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 84)   // room for the hover action cluster
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Assistant replied: \(displayedText)")
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
+                actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                             "Read aloud", active: speech.speakingID == message.id) {
+                    speech.toggle(message.text, id: message.id)
+                }
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                if onRegenerate != nil {
+                    actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
+                }
+            }
+            .opacity(hovering ? 1 : 0)
+            .animation(DS.Motion.fade, value: hovering)
+        }
     }
 
     private func actionButton(_ icon: String, _ help: String, active: Bool = false,
@@ -1083,60 +1066,6 @@ struct MessageBubble: View {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
-    }
-
-    @ViewBuilder private var bubbleBackground: some View {
-        if message.isUser {
-            // Brand red→pink gradient (DS.Gradient.userBubble) — already vertical-ish
-            // via topLeading→bottomTrailing, so user bubbles already have depth.
-            Theme.userBubble
-        } else {
-            // Subtle vertical glass gradient instead of a flat 0.07 fill. Reads
-            // as a curved physical surface (lighter top, darker bottom) without
-            // breaking the dark aesthetic — the single change that makes the
-            // assistant bubble feel "real" instead of a tinted rectangle.
-            LinearGradient(
-                colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom
-            )
-        }
-    }
-
-    /// Asymmetric bubble corners. The bottom corner NEAREST the speaker's avatar
-    /// is small (6pt); the other three stay full-rounded (18pt). Reads as a
-    /// directional anchor — the Apple-Messages "tail" cue — without drawing a
-    /// custom Path. Requires `UnevenRoundedRectangle` (macOS 13+).
-    private var bubbleShape: UnevenRoundedRectangle {
-        let big: CGFloat = 18
-        let small: CGFloat = 6
-        return UnevenRoundedRectangle(
-            topLeadingRadius:     big,
-            bottomLeadingRadius:  message.isUser ? big   : small,   // assistant: tail bottom-left (toward its avatar)
-            bottomTrailingRadius: message.isUser ? small : big,     // user: tail bottom-right (toward its avatar)
-            topTrailingRadius:    big,
-            style: .continuous
-        )
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                .shadow(color: Theme.accent.opacity(0.5), radius: 6, y: 2)
-            Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
-    }
-
-    private var userAvatar: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-            Image(systemName: "person.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
     }
 }
 
@@ -1386,57 +1315,36 @@ struct StreamingBubble: View {
         text == LocalLLM.offMessage ? LocalLLM.unavailableMessage : text
     }
     var body: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    // "Alive" affordance while the answer streams in. `.pulse`
-                    // respects `accessibilityReduceMotion` automatically (SwiftUI
-                    // gates symbolEffect on the system setting).
-                    .symbolEffect(.pulse.byLayer, options: .repeating)
-            }
-            .accessibilityHidden(true)   // decorative — bubble label conveys "Assistant"
+        // Flush-left document flow, matching MessageBubble's assistant row so
+        // stream-end doesn't visibly snap styles. A small pulsing dot (not an
+        // avatar disc) is the "alive" affordance; `.pulse` respects
+        // accessibilityReduceMotion automatically.
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(Theme.accent)
+                .symbolEffect(.pulse.byLayer, options: .repeating)
+                .padding(.top, 6)
+                .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: displayedText)
                 } else {
                     // Long reply still streaming: plain text avoids the O(n) Markdown
                     // re-parse every throttle tick (what lags a fast local model). The
-                    // finalised bubble renders full Markdown the instant streaming ends.
+                    // finalised row renders full Markdown the instant streaming ends.
                     Text(displayedText)
                         .font(.system(size: 14))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineSpacing(2)               // parity with finalised bubble — no rhythm jump on stream-end
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(
-                    // Match the finalised assistant bubble so the moment streaming
-                    // ends the bubble doesn't visibly "snap" to a different style.
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Self.streamingShape)
-                .overlay(Self.streamingShape.stroke(Color.white.opacity(0.08), lineWidth: 1))
-                .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
-                .frame(maxWidth: 580, alignment: .leading)
-            Spacer(minLength: 48)   // mirror MessageBubble's right-side gap so the streaming bubble doesn't stretch
+            .foregroundStyle(Color.white.opacity(0.92))
+            .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
+            Spacer(minLength: 26)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    /// Same asymmetric corners as `MessageBubble`'s assistant variant (tail at
-    /// bottom-leading, toward the avatar).
-    private static let streamingShape = UnevenRoundedRectangle(
-        topLeadingRadius: 18, bottomLeadingRadius: 6,
-        bottomTrailingRadius: 18, topTrailingRadius: 18,
-        style: .continuous
-    )
 }
 
 // MARK: - Approval Card

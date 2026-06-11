@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 16:37 +03 · Swift files: 129 · Swift LOC: 24271_
+_Generated: 2026-06-11 16:49 +03 · Swift files: 129 · Swift LOC: 24258_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -6946,7 +6946,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (371 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (392 lines) =====
 ```swift
 import Foundation
 
@@ -7274,6 +7274,19 @@ enum OllamaClient {
     }
     @MainActor private static var didWarmup = false
 
+    // MARK: - Last-generation stats (speed visibility for the local model)
+
+    /// (model, tokens/sec) of the most recent completed local generation, with a
+    /// lock so the stream task can write while the UI reads. Display-only.
+    nonisolated(unsafe) private static var _lastStats: (model: String, tps: Double)?
+    nonisolated private static let statsLock = NSLock()
+    nonisolated static func recordStats(model: String, tokensPerSec: Double) {
+        statsLock.lock(); _lastStats = (model, tokensPerSec); statsLock.unlock()
+    }
+    nonisolated static var lastStats: (model: String, tps: Double)? {
+        statsLock.lock(); defer { statsLock.unlock() }; return _lastStats
+    }
+
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
     /// with the cumulative text after each token chunk. Returns the final
     /// text, or nil if the server/model isn't reachable.
@@ -7309,7 +7322,15 @@ enum OllamaClient {
                     accumulated += chunk
                     onUpdate(accumulated)
                 }
-                if (json["done"] as? Bool) == true { break }
+                if (json["done"] as? Bool) == true {
+                    // Final chunk carries generation stats — capture tokens/sec so the
+                    // UI can show how fast the local model actually ran.
+                    if let count = json["eval_count"] as? Int,
+                       let ns = json["eval_duration"] as? Int, ns > 0 {
+                        recordStats(model: model, tokensPerSec: Double(count) / (Double(ns) / 1e9))
+                    }
+                    break
+                }
             }
         } catch {
             // Network/stream errors — surface what we accumulated so the UI can decide.
@@ -12576,7 +12597,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1277 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1326 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12786,6 +12807,9 @@ struct CodeView: View {
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
+    @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
+    @State private var hoveredFile: URL?            // file-tree row under the pointer
+    @State private var atBottom = true              // chat scrolled to the end (hides the jump button)
     // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
     // across launches. Auto-expands when a file is selected or a run leaves diffs.
     @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
@@ -13053,8 +13077,11 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(isSel ? Color.white.opacity(0.08)
+                        : (hoveredFile == url ? Color.white.opacity(0.04) : .clear),
+                        in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
+            .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
         }
         .buttonStyle(.plain)
         .contextMenu { fileActionsMenu(url) }
@@ -13072,6 +13099,14 @@ struct CodeView: View {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
                 HStack(spacing: 12) {
+                    if let tps = lastTokPerSec {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill").font(.system(size: 8.5))
+                            Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                        .help("Speed of the last local reply")
+                    }
                     if treeCollapsed {
                         Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
                             Image(systemName: "sidebar.left").font(.system(size: 11))
@@ -13121,6 +13156,10 @@ struct CodeView: View {
                         if isRunning {
                             streamingView.id("stream")
                         }
+                        // Bottom sentinel — tracks whether the view is scrolled to the end.
+                        Color.clear.frame(height: 1).id("bottom")
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 20).padding(.vertical, 16)
                     // Centered reading column (Claude-style): long lines are hard to
@@ -13135,6 +13174,26 @@ struct CodeView: View {
                 }
                 .onChange(of: progress.streamingAnswer) { _, _ in
                     proxy.scrollTo("stream", anchor: .bottom)
+                }
+                // Floating jump-to-latest (only when scrolled up in history).
+                .overlay(alignment: .bottomTrailing) {
+                    if !atBottom && !messages.isEmpty {
+                        Button {
+                            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: 30, height: 30)
+                                .background(DS.Palette.codeSurfaceSide, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .padding(.trailing, 16).padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .help("Jump to the latest message")
+                        .accessibilityLabel("Jump to the latest message")
+                    }
                 }
             }
 
@@ -13189,6 +13248,15 @@ struct CodeView: View {
                 shortcutHint("⌘L", "Ask")
             }
             .padding(.top, 10)
+            // The 14B's home: show when the owner's own model is serving locally.
+            if let m = localServingModel {
+                HStack(spacing: 5) {
+                    Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                    Text("\(m) · local · ready")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 46)
@@ -13234,7 +13302,8 @@ struct CodeView: View {
                 .padding(.horizontal, 12).padding(.bottom, 8)
             }
         }
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.5)) }
     }
 
     @ViewBuilder
@@ -13704,6 +13773,7 @@ struct CodeView: View {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
                 showWarmupHint = false
+                lastTokPerSec = OllamaClient.lastStats?.tps   // show how fast the local model ran
                 MissionProgress.shared.finish()
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
@@ -13982,7 +14052,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1525 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1433 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13996,7 +14066,6 @@ enum Theme {
     static let accent2 = DS.Palette.accent2
     static let bgTop = DS.Palette.bgTop
     static let bgBottom = DS.Palette.bgBottom
-    static let userBubble = DS.Gradient.userBubble
     static let brand = DS.Gradient.brand
 }
 
@@ -14054,6 +14123,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Flat opaque chat canvas (design language): no glow show-through,
+            // no translucent stacking — same shade as the Code tab's canvas.
+            DS.Palette.codeSurface.ignoresSafeArea()
+
             // Global red tint when Unrestricted Mode is active.
             if settings.unrestrictedTools {
                 Color.red.opacity(0.03).ignoresSafeArea()
@@ -14074,6 +14147,10 @@ struct ContentView: View {
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
                 inputBar
+                    // Input pill aligns to the same 780pt reading column as the
+                    // transcript (design language).
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
             }
         }
         .preferredColorScheme(.dark)
@@ -14312,10 +14389,8 @@ struct ContentView: View {
                                         TimeSeparator(date: msg.timestamp)
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
-                                    let isLast  = isLastInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate,
-                                                  isLastInGroup: isLast)
+                                                  onRegenerate: vm.regenerate)
                                         .padding(.top, isFirst ? 10 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -14330,6 +14405,11 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            // Centered reading column (design language): content
+                            // caps at 780pt; the input pill aligns to the same
+                            // column below.
+                            .frame(maxWidth: 780)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     // PROTECTED PATH: the streaming/auto-scroll triggers stay
@@ -14378,13 +14458,6 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
-    private func isLastInGroup(idx: Int, list: [ChatMessage]) -> Bool {
-        guard idx < list.count - 1 else { return true }
-        let curr = list[idx]; let next = list[idx + 1]
-        if curr.isUser != next.isUser { return true }
-        return next.timestamp.timeIntervalSince(curr.timestamp) > 5 * 60
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -14921,10 +14994,6 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
-    /// Apple-Messages convention: the avatar/tail-anchor only renders on the
-    /// LAST message of a same-sender burst. Default `true` keeps existing
-    /// callers (single-message previews, ungrouped contexts) unchanged.
-    var isLastInGroup: Bool = true
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -14968,90 +15037,74 @@ struct MessageBubble: View {
     //       view-layer derivation; `messages[i].text` stays unmodified, so
     //       `ChatStore` persists the canonical form.
 
+    // Claude-Code-minimal (owner directive 2026-06-11, mirrors CodeMessageRow):
+    // user = quiet right-aligned block, assistant = flush-left document flow.
+    // No avatars, no name labels, no per-message timestamps (TimeSeparator rows
+    // already mark time between bursts). Actions stay ALWAYS MOUNTED for
+    // keyboard/VoiceOver and reveal on hover only.
     private var bubbleRow: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            // Assistant side: avatar only on the LAST message of a burst.
-            // Continuations get a same-size transparent placeholder so the
-            // bubble content stays horizontally aligned across the group.
-            if message.isUser { Spacer(minLength: 48) }
-            else if isLastInGroup { avatar }
-            else { Color.clear.frame(width: 30, height: 30) }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 3) {
-                Group {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if message.isUser {
-                            Text(message.text)
-                                .font(.system(size: 14))
-                                .textSelection(.enabled)
-                                .foregroundStyle(.white)
-                        } else {
-                            MarkdownText(text: displayedText)
-                                .foregroundStyle(Color.white.opacity(0.92))
-                                .lineSpacing(2)               // calmer reading rhythm on long replies
-                        }
-                        if let path = message.imagePath {
-                            CachedImage(path: path)
-                                .frame(maxWidth: 360, maxHeight: 360)
-                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)             // ↑ from 14 — more breathing room
-                .padding(.vertical, 12)               // ↑ from 10
-                .background(bubbleBackground)
-                .clipShape(bubbleShape)               // asymmetric (tail) corners
-                .overlay(
-                    bubbleShape.stroke(
-                        Color.white.opacity(message.isUser ? 0 : 0.08),
-                        lineWidth: 1
-                    )
-                )
-                // User bubbles get a soft brand-tinted glow (Apple-Music red);
-                // assistant gets a deeper neutral shadow for depth on dark.
-                .shadow(color: message.isUser ? Theme.accent.opacity(0.28) : Color.black.opacity(0.32),
-                        radius: message.isUser ? 10 : 8,
-                        y: 4)
-                // Cap content at a comfortable reading measure (~580pt) so
-                // bubbles don't stretch edge-to-edge on a wide window. The
-                // outer Spacer(minLength: 48) handles speaker-side alignment.
-                .frame(maxWidth: 580, alignment: message.isUser ? .trailing : .leading)
-                // VoiceOver reads the bubble as one element, prefixed with the
-                // speaker so the conversation is followable without sight. The
-                // action buttons below stay separate (their own a11y labels).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(message.isUser ? "You said: \(message.text)"
-                                                    : "Assistant replied: \(displayedText)")
-
-                HStack(spacing: 10) {
-                    Text(message.timestamp, style: .time)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    if !message.isUser {
-                        actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
-                                     "Read aloud", active: speech.speakingID == message.id) {
-                            speech.toggle(message.text, id: message.id)
-                        }
-                    }
-                    // Always mounted (keyboard / VoiceOver can reach them); hover
-                    // just lifts the opacity so they recede until you point at the row.
-                    actionButton("doc.on.doc", "Copy") { copyText() }
-                    if !message.isUser, onRegenerate != nil {
-                        actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
-                            .opacity(hovering ? 1 : 0.45)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .animation(DS.Motion.fade, value: hovering)
-            }
-
-            // User side: same rule mirrored.
-            if message.isUser {
-                if isLastInGroup { userAvatar }
-                else { Color.clear.frame(width: 30, height: 30) }
-            } else { Spacer(minLength: 48) }
+        Group {
+            if message.isUser { userRow } else { assistantRow }
         }
         .onHover { hovering = $0 }
+    }
+
+    private var userRow: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            HStack {
+                Spacer(minLength: 60)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message.text)
+                        .font(.system(size: 13.5))
+                        .textSelection(.enabled)
+                        .foregroundStyle(.white)
+                    if let path = message.imagePath {
+                        CachedImage(path: path)
+                            .frame(maxWidth: 360, maxHeight: 360)
+                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 13).padding(.vertical, 8)
+                .background(Color.white.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("You said: \(message.text)")
+            }
+            actionButton("doc.on.doc", "Copy") { copyText() }
+                .opacity(hovering ? 1 : 0)
+                .animation(DS.Motion.fade, value: hovering)
+        }
+    }
+
+    private var assistantRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MarkdownText(text: displayedText)
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineSpacing(2)               // calmer reading rhythm on long replies
+            if let path = message.imagePath {
+                CachedImage(path: path)
+                    .frame(maxWidth: 360, maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 84)   // room for the hover action cluster
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Assistant replied: \(displayedText)")
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
+                actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                             "Read aloud", active: speech.speakingID == message.id) {
+                    speech.toggle(message.text, id: message.id)
+                }
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                if onRegenerate != nil {
+                    actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
+                }
+            }
+            .opacity(hovering ? 1 : 0)
+            .animation(DS.Motion.fade, value: hovering)
+        }
     }
 
     private func actionButton(_ icon: String, _ help: String, active: Bool = false,
@@ -15069,60 +15122,6 @@ struct MessageBubble: View {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
-    }
-
-    @ViewBuilder private var bubbleBackground: some View {
-        if message.isUser {
-            // Brand red→pink gradient (DS.Gradient.userBubble) — already vertical-ish
-            // via topLeading→bottomTrailing, so user bubbles already have depth.
-            Theme.userBubble
-        } else {
-            // Subtle vertical glass gradient instead of a flat 0.07 fill. Reads
-            // as a curved physical surface (lighter top, darker bottom) without
-            // breaking the dark aesthetic — the single change that makes the
-            // assistant bubble feel "real" instead of a tinted rectangle.
-            LinearGradient(
-                colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom
-            )
-        }
-    }
-
-    /// Asymmetric bubble corners. The bottom corner NEAREST the speaker's avatar
-    /// is small (6pt); the other three stay full-rounded (18pt). Reads as a
-    /// directional anchor — the Apple-Messages "tail" cue — without drawing a
-    /// custom Path. Requires `UnevenRoundedRectangle` (macOS 13+).
-    private var bubbleShape: UnevenRoundedRectangle {
-        let big: CGFloat = 18
-        let small: CGFloat = 6
-        return UnevenRoundedRectangle(
-            topLeadingRadius:     big,
-            bottomLeadingRadius:  message.isUser ? big   : small,   // assistant: tail bottom-left (toward its avatar)
-            bottomTrailingRadius: message.isUser ? small : big,     // user: tail bottom-right (toward its avatar)
-            topTrailingRadius:    big,
-            style: .continuous
-        )
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                .shadow(color: Theme.accent.opacity(0.5), radius: 6, y: 2)
-            Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
-    }
-
-    private var userAvatar: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-            Image(systemName: "person.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
     }
 }
 
@@ -15372,57 +15371,36 @@ struct StreamingBubble: View {
         text == LocalLLM.offMessage ? LocalLLM.unavailableMessage : text
     }
     var body: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    // "Alive" affordance while the answer streams in. `.pulse`
-                    // respects `accessibilityReduceMotion` automatically (SwiftUI
-                    // gates symbolEffect on the system setting).
-                    .symbolEffect(.pulse.byLayer, options: .repeating)
-            }
-            .accessibilityHidden(true)   // decorative — bubble label conveys "Assistant"
+        // Flush-left document flow, matching MessageBubble's assistant row so
+        // stream-end doesn't visibly snap styles. A small pulsing dot (not an
+        // avatar disc) is the "alive" affordance; `.pulse` respects
+        // accessibilityReduceMotion automatically.
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(Theme.accent)
+                .symbolEffect(.pulse.byLayer, options: .repeating)
+                .padding(.top, 6)
+                .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: displayedText)
                 } else {
                     // Long reply still streaming: plain text avoids the O(n) Markdown
                     // re-parse every throttle tick (what lags a fast local model). The
-                    // finalised bubble renders full Markdown the instant streaming ends.
+                    // finalised row renders full Markdown the instant streaming ends.
                     Text(displayedText)
                         .font(.system(size: 14))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineSpacing(2)               // parity with finalised bubble — no rhythm jump on stream-end
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(
-                    // Match the finalised assistant bubble so the moment streaming
-                    // ends the bubble doesn't visibly "snap" to a different style.
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Self.streamingShape)
-                .overlay(Self.streamingShape.stroke(Color.white.opacity(0.08), lineWidth: 1))
-                .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
-                .frame(maxWidth: 580, alignment: .leading)
-            Spacer(minLength: 48)   // mirror MessageBubble's right-side gap so the streaming bubble doesn't stretch
+            .foregroundStyle(Color.white.opacity(0.92))
+            .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
+            Spacer(minLength: 26)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    /// Same asymmetric corners as `MessageBubble`'s assistant variant (tail at
-    /// bottom-leading, toward the avatar).
-    private static let streamingShape = UnevenRoundedRectangle(
-        topLeadingRadius: 18, bottomLeadingRadius: 6,
-        bottomTrailingRadius: 18, topTrailingRadius: 18,
-        style: .continuous
-    )
 }
 
 // MARK: - Approval Card
@@ -16405,7 +16383,7 @@ struct LiveTranscriptionView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarkdownText.swift (375 lines) =====
+===== FILE: Salehman AI/Views/MarkdownText.swift (384 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16666,25 +16644,34 @@ struct MarkdownText: View {
     }
 
     /// Render a parsed table as an aligned grid with a bold header row.
+    /// Cells CAP at 300pt and WRAP — a Grid otherwise sizes columns to each cell's
+    /// ideal (single-line) width, so long cells overflowed the message column and
+    /// were clipped mid-word (owner hit this). Wide tables h-scroll as the escape.
     @ViewBuilder
     static func tableView(header: [String], rows: [[String]]) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow {
-                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                    Text(inlineMarkdown(cell))
-                        .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
-                }
-            }
-            Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                        Text(inlineMarkdown(cell))
+                            .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 300, alignment: .leading)
+                    }
+                }
+                Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 300, alignment: .leading)
+                        }
                     }
                 }
             }
+            .padding(10)
         }
-        .padding(10)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
@@ -25631,7 +25618,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (715 lines) =====
+===== FILE: COORDINATION.md (728 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26348,7 +26335,20 @@ secondary; subtitles to 11. Header: 26-bold-rounded → 17-semibold + `.help()` 
 fields (text inputs etc.) deliberately left for a second pass — canvases first, controls next. Typecheck
 0/0, committed+pushed — gate when convenient (UI-only). ContentView is next.
 
-===== FILE: DEVELOPMENT_LOG.md (2203 lines) =====
+#### 🎨 Restyle progress 2/7 — ContentView (main chat) message rows + column (cleanup/Effort session)
+Mirrored `CodeMessageRow` per spec, keeping the richer actions: **user** = quiet right block (white 0.09,
+r13, 13.5pt, no avatar/label, hover-only copy); **assistant** = flush-left document flow (no avatar disc,
+no bubble, no per-message timestamp — `TimeSeparator` rows already mark time), speak/copy/regenerate moved
+into a hover overlay (always mounted for keyboard/VoiceOver). `StreamingBubble`: avatar+glass bubble →
+flush-left text with a 6pt pulsing accent dot, style-matched so stream-end doesn't snap. **Reading
+column:** transcript LazyVStack + input bar both capped at 780pt and centered. **Canvas:** flat opaque
+`codeSurface` under the chat (glow no longer shows through; Unrestricted red tint still overlays).
+Dead code removed with the avatars: `bubbleShape`/`bubbleBackground`/`avatar`/`userAvatar`,
+`isLastInGroup` (param + helper), `Theme.userBubble` forwarding alias — `DS.Gradient.userBubble` in YOUR
+DesignSystem.swift is now orphaned app-wide; prune at will. Typecheck 0/0, committed+pushed — **please
+gate (build+tests)**. Next: Today/Agents/Markets/Notes/Knowledge (3–7/7).
+
+===== FILE: DEVELOPMENT_LOG.md (2211 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27905,6 +27905,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** First slice of the owner-directive restyle ("make the whole app look like [the Code tab]"). SettingsView macro chrome: sheet canvas gradient → flat opaque `DS.Palette.codeSurfaceSide`; section content boxes translucent-`surface`-with-shadow → opaque `codeSurface` with hairline stroke only; section headers' brand-gradient capsule stripe dropped for quiet tracked-uppercase 10.5pt secondary (chrome diet), subtitles to the spec's 11pt; "Settings" header 26pt-bold-rounded → 17pt-semibold with `.help()` on the close button. Inner control surfaces deliberately deferred to a second pass (canvases first). Lane grant per board: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge are mine for this task; CodeView/MarkdownText/DesignSystem stay with the other session.
 
 **Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate delegated. Next slice: ContentView (main chat) message rows + reading column.
+
+## 2026-06-11 · Whole-app restyle 2/7 — ContentView (main chat) to the document-flow message style
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Slice 2 of the owner-directive restyle, mirroring the Code tab's `CodeMessageRow` while keeping the main chat's richer actions. `MessageBubble` rewritten: user messages are a quiet right-aligned block (white 0.09, radius 13, 13.5pt, no avatar, no label, hover-only copy); assistant replies are flush-left document flow (no avatar disc, no bubble chrome, no per-message timestamp — the existing `TimeSeparator` rows already mark time between bursts) with speak/copy/regenerate in an always-mounted hover overlay (keyboard/VoiceOver reachable). `StreamingBubble` matched (pulsing 6pt accent dot replaces the avatar; same flush-left flow so stream-end doesn't visibly snap styles). Transcript and input bar now share a centered 780pt reading column. Chat canvas is flat opaque `codeSurface` (no glow show-through; the Unrestricted-Mode red tint still overlays). Dead code removed with the avatars: `bubbleShape`, `bubbleBackground`, `avatar`, `userAvatar`, the `isLastInGroup` param + helper, and the `Theme.userBubble` forwarding alias (`DS.Gradient.userBubble` is now orphaned app-wide — flagged to the DS-owning session to prune).
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
