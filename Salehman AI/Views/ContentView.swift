@@ -24,6 +24,10 @@ struct ContentView: View {
     @State private var mission: String = ""
     /// Hover highlight in the `/`-command menu (id of the hovered row).
     @State private var hoveredChatSlash: String? = nil
+    /// Keyboard selection in the `/`-command menu (↑/↓ move it, ↵ picks it).
+    /// Clamped against the CURRENT matches at use-time; reset when typing
+    /// changes the query.
+    @State private var slashSelection = 0
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
@@ -154,6 +158,8 @@ struct ContentView: View {
             // Persist every keystroke (tiny string, no debounce needed);
             // sending clears `mission`, which clears the stored draft too.
             UserDefaults.standard.set(draft, forKey: Self.draftKey)
+            // Typing changes the slash query → selection restarts at the top.
+            slashSelection = 0
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -719,6 +725,7 @@ struct ContentView: View {
             // (Code-tab parity, same matcher rules; pinned by
             // ChatComposerLogicTests). `↵` picks the top row.
             if !chatSlashMatches.isEmpty {
+                let selected = chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)].id
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(chatSlashMatches) { cmd in
                         Button { applyChatSlash(cmd) } label: {
@@ -728,13 +735,14 @@ struct ContentView: View {
                                 Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
                                 Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
                                 Spacer(minLength: 8)
-                                if cmd.id == chatSlashMatches.first?.id {
+                                if cmd.id == selected {
                                     Text("↵").font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(.secondary.opacity(0.7))
                                 }
                             }
                             .padding(.horizontal, 11).padding(.vertical, 7)
-                            .background(hoveredChatSlash == cmd.id ? Color.white.opacity(0.06) : .clear,
+                            .background(cmd.id == selected || hoveredChatSlash == cmd.id
+                                        ? Color.white.opacity(0.06) : .clear,
                                         in: RoundedRectangle(cornerRadius: 7))
                             .contentShape(Rectangle())
                         }
@@ -764,18 +772,29 @@ struct ContentView: View {
                     .font(.system(size: 14))
                     .lineLimit(1...8)
                     .focused($inputFocused)
-                    // Enter picks the top `/`-command while the menu is open;
-                    // otherwise sends.
+                    // Enter picks the SELECTED `/`-command while the menu is
+                    // open (↑/↓ move the selection); otherwise sends.
                     .onSubmit {
-                        if let top = chatSlashMatches.first { applyChatSlash(top) }
-                        else { submit(mission) }
+                        if !chatSlashMatches.isEmpty {
+                            applyChatSlash(chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)])
+                        } else { submit(mission) }
                     }
-                    // ⌘-less power recall: ↑ in an EMPTY composer pulls back
-                    // your last message for editing/resending.
+                    // ↑: move the slash selection when the menu is open; in an
+                    // EMPTY composer, recall the last message (no conflict —
+                    // an open menu implies a non-empty composer).
                     .onKeyPress(.upArrow) {
+                        if !chatSlashMatches.isEmpty {
+                            slashSelection = max(0, min(slashSelection, chatSlashMatches.count - 1) - 1)
+                            return .handled
+                        }
                         guard mission.isEmpty,
                               let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
                         mission = last
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard !chatSlashMatches.isEmpty else { return .ignored }
+                        slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
                         return .handled
                     }
                     // Esc: stop a running generation first; otherwise dismiss a

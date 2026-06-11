@@ -1564,3 +1564,13 @@ same `regenerate`). Gallery gains a failure-row section so the state is photogra
 baselined.
 **Files:** `Views/ContentView.swift`, `Tools/QASnapshots.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — marathon slice 9: slash-menu keyboard navigation
+**What & why:** ↑/↓ now move a visible selection through the `/`-menu and ↵ picks the selected
+row (was: ↵ always took the top). Selection + hover share the same highlight; the ↵ glyph
+follows the selection; typing resets it to the top (piggybacked on the draft-persist
+`onChange`). No conflict with ↑-recall: the menu only opens on a non-empty composer, recall
+only fires on an empty one. Selection is clamped against current matches at use-time so a
+narrowing query can never index out of bounds.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).

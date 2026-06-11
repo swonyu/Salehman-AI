@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:01 +03 · Swift files: 138 · Swift LOC: 27592_
+_Generated: 2026-06-11 23:03 +03 · Swift files: 139 · Swift LOC: 27702_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14208,7 +14208,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2064 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2065 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14681,24 +14681,10 @@ struct CodeView: View {
             guard !historyLoaded else { return }
             historyLoaded = true
             Task.detached(priority: .utility) {
-                var saved = JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: [])
-                // Replies recorded BEFORE stripNarration existed still carry the
-                // fine-tune's leaked scaffold ("Thoughts on this response?", fake
-                // footnotes…). Sanitize assistant turns on load so old garbage
-                // doesn't keep resurfacing (the next save persists the clean text).
-                saved = saved.map { m in
-                    guard !m.isUser else { return m }
-                    let clean = AgentPipeline.stripNarration(m.text)
-                    guard clean != m.text else { return m }
-                    var fixed = m
-                    fixed = ChatMessage(id: m.id, text: clean, isUser: false,
-                                        timestamp: m.timestamp, imagePath: m.imagePath,
-                                        duration: m.duration)
-                    return fixed
-                }
+                let saved = Self.sanitizedHistory(
+                    JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: []))
                 if !saved.isEmpty {
-                    let restored = saved
-                    await MainActor.run { if messages.isEmpty { messages = restored } }
+                    await MainActor.run { if messages.isEmpty { messages = saved } }
                 }
             }
         }
@@ -15083,6 +15069,21 @@ struct CodeView: View {
                 .frame(maxWidth: .infinity)
         }
         .background(Color.clear)
+    }
+
+    /// Replies recorded BEFORE `stripNarration` existed still carry the fine-tune's
+    /// leaked scaffold ("Thoughts on this response?", fake footnotes…). Applied to
+    /// assistant turns whenever history loads, so old garbage doesn't resurface —
+    /// the next save then persists the cleaned text. Pure + testable.
+    nonisolated static func sanitizedHistory(_ saved: [ChatMessage]) -> [ChatMessage] {
+        saved.map { m in
+            guard !m.isUser else { return m }
+            let clean = AgentPipeline.stripNarration(m.text)
+            guard clean != m.text else { return m }
+            return ChatMessage(id: m.id, text: clean, isUser: false,
+                               timestamp: m.timestamp, imagePath: m.imagePath,
+                               duration: m.duration)
+        }
     }
 
     /// The find-in-conversation strip (⌥⌘F): query, live "n/total", ↑↓ jumps, Esc/✕ closes.
@@ -16401,7 +16402,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1833 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1852 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16429,6 +16430,10 @@ struct ContentView: View {
     @State private var mission: String = ""
     /// Hover highlight in the `/`-command menu (id of the hovered row).
     @State private var hoveredChatSlash: String? = nil
+    /// Keyboard selection in the `/`-command menu (↑/↓ move it, ↵ picks it).
+    /// Clamped against the CURRENT matches at use-time; reset when typing
+    /// changes the query.
+    @State private var slashSelection = 0
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
@@ -16559,6 +16564,8 @@ struct ContentView: View {
             // Persist every keystroke (tiny string, no debounce needed);
             // sending clears `mission`, which clears the stored draft too.
             UserDefaults.standard.set(draft, forKey: Self.draftKey)
+            // Typing changes the slash query → selection restarts at the top.
+            slashSelection = 0
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -17124,6 +17131,7 @@ struct ContentView: View {
             // (Code-tab parity, same matcher rules; pinned by
             // ChatComposerLogicTests). `↵` picks the top row.
             if !chatSlashMatches.isEmpty {
+                let selected = chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)].id
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(chatSlashMatches) { cmd in
                         Button { applyChatSlash(cmd) } label: {
@@ -17133,13 +17141,14 @@ struct ContentView: View {
                                 Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
                                 Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
                                 Spacer(minLength: 8)
-                                if cmd.id == chatSlashMatches.first?.id {
+                                if cmd.id == selected {
                                     Text("↵").font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(.secondary.opacity(0.7))
                                 }
                             }
                             .padding(.horizontal, 11).padding(.vertical, 7)
-                            .background(hoveredChatSlash == cmd.id ? Color.white.opacity(0.06) : .clear,
+                            .background(cmd.id == selected || hoveredChatSlash == cmd.id
+                                        ? Color.white.opacity(0.06) : .clear,
                                         in: RoundedRectangle(cornerRadius: 7))
                             .contentShape(Rectangle())
                         }
@@ -17169,18 +17178,29 @@ struct ContentView: View {
                     .font(.system(size: 14))
                     .lineLimit(1...8)
                     .focused($inputFocused)
-                    // Enter picks the top `/`-command while the menu is open;
-                    // otherwise sends.
+                    // Enter picks the SELECTED `/`-command while the menu is
+                    // open (↑/↓ move the selection); otherwise sends.
                     .onSubmit {
-                        if let top = chatSlashMatches.first { applyChatSlash(top) }
-                        else { submit(mission) }
+                        if !chatSlashMatches.isEmpty {
+                            applyChatSlash(chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)])
+                        } else { submit(mission) }
                     }
-                    // ⌘-less power recall: ↑ in an EMPTY composer pulls back
-                    // your last message for editing/resending.
+                    // ↑: move the slash selection when the menu is open; in an
+                    // EMPTY composer, recall the last message (no conflict —
+                    // an open menu implies a non-empty composer).
                     .onKeyPress(.upArrow) {
+                        if !chatSlashMatches.isEmpty {
+                            slashSelection = max(0, min(slashSelection, chatSlashMatches.count - 1) - 1)
+                            return .handled
+                        }
                         guard mission.isEmpty,
                               let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
                         mission = last
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard !chatSlashMatches.isEmpty else { return .ignored }
+                        slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
                         return .handled
                     }
                     // Esc: stop a running generation first; otherwise dismiss a
@@ -18491,7 +18511,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (398 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (435 lines) =====
 ```swift
 import SwiftUI
 import UniformTypeIdentifiers
@@ -18523,6 +18543,7 @@ struct KnowledgeView: View {
     @State private var pasteTitle = ""
     @State private var pasteBody = ""
     @State private var detailDoc: KnowledgeDoc?
+    @State private var docSort: KnowledgeSort = .recent
 
     var body: some View {
         ScrollView {
@@ -18639,9 +18660,25 @@ struct KnowledgeView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 30)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if docs.count > 1 {
+                        Menu {
+                            ForEach(KnowledgeSort.allCases) { s in
+                                Button { docSort = s } label: {
+                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
+                                }
+                            }
+                        } label: {
+                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                    }
+                }
                 VStack(spacing: 1) {
-                    ForEach(docs) { doc in docRow(doc) }
+                    ForEach(docSort.apply(docs)) { doc in docRow(doc) }
                 }
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -18771,6 +18808,26 @@ struct KnowledgeView: View {
         """
         answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
         asking = false
+    }
+}
+
+/// Document ordering for the Knowledge list (Chat C feature). Pure `apply` → tested.
+enum KnowledgeSort: String, CaseIterable, Identifiable {
+    case recent, name, passages
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent:   return "Recent"
+        case .name:     return "Name (A–Z)"
+        case .passages: return "Most passages"
+        }
+    }
+    func apply(_ docs: [KnowledgeDoc]) -> [KnowledgeDoc] {
+        switch self {
+        case .recent:   return docs.sorted { $0.addedAt > $1.addedAt }
+        case .name:     return docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .passages: return docs.sorted { $0.chunkCount > $1.chunkCount }
+        }
     }
 }
 
@@ -25490,6 +25547,48 @@ struct KnowledgeRAGTests {
 }
 ```
 
+===== FILE: Salehman AITests/KnowledgeSortTests.swift (38 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+/// Pins `KnowledgeSort.apply` — the document ordering behind the Knowledge list's
+/// sort menu. Pure over `[KnowledgeDoc]`.
+struct KnowledgeSortTests {
+
+    private func doc(_ name: String, passages: Int = 1, at t: Double = 0) -> KnowledgeDoc {
+        KnowledgeDoc(name: name, kind: "file", icon: "doc",
+                     addedAt: Date(timeIntervalSince1970: t), chunkCount: passages)
+    }
+    private func names(_ xs: [KnowledgeDoc]) -> [String] { xs.map(\.name) }
+
+    @Test func recentPutsNewestFirst() {
+        let xs = [doc("old", at: 100), doc("new", at: 300), doc("mid", at: 200)]
+        #expect(names(KnowledgeSort.recent.apply(xs)) == ["new", "mid", "old"])
+    }
+
+    @Test func nameSortsAlphabeticallyCaseInsensitive() {
+        let xs = [doc("Zebra"), doc("apple"), doc("Mango")]
+        #expect(names(KnowledgeSort.name.apply(xs)) == ["apple", "Mango", "Zebra"])
+    }
+
+    @Test func passagesSortsMostFirst() {
+        let xs = [doc("small", passages: 3), doc("big", passages: 99), doc("mid", passages: 31)]
+        #expect(names(KnowledgeSort.passages.apply(xs)) == ["big", "mid", "small"])
+    }
+
+    @Test func emptyAndSingleAreStable() {
+        #expect(KnowledgeSort.recent.apply([]).isEmpty)
+        #expect(names(KnowledgeSort.name.apply([doc("only")])) == ["only"])
+    }
+
+    @Test func allCasesHaveTitles() {
+        for c in KnowledgeSort.allCases { #expect(!c.title.isEmpty) }
+    }
+}
+```
+
 ===== FILE: Salehman AITests/LiveTranscriberSegmentTests.swift (73 lines) =====
 ```swift
 import Testing
@@ -27639,7 +27738,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (215 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (230 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -27787,6 +27886,21 @@ struct StripNarrationTests {
         // A reply that is ONLY meta must come back unchanged, not empty.
         let onlyMeta = "Thoughts on this response? Happy to rephrase."
         #expect(AgentPipeline.stripNarration(onlyMeta) == onlyMeta)
+    }
+
+    // History sanitization on load (CodeView) — assistant turns are cleaned,
+    // user turns are NEVER touched (a user might legitimately paste leak text).
+    @Test func historySanitizerCleansAssistantOnly() {
+        let t = Date()
+        let leak = "Hi!\n\nThoughts on this response? Happy to rephrase.\n\n  [1]: https://x"
+        let saved = [
+            ChatMessage(id: UUID(), text: leak, isUser: true,  timestamp: t),   // user: untouched
+            ChatMessage(id: UUID(), text: leak, isUser: false, timestamp: t),   // assistant: cleaned
+        ]
+        let out = CodeView.sanitizedHistory(saved)
+        #expect(out[0].text == leak)
+        #expect(out[1].text == "Hi!")
+        #expect(out[1].id == saved[1].id)   // identity survives the rewrite
     }
 }
 
@@ -30062,7 +30176,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1557 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1566 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31620,6 +31734,15 @@ welcome). Board marathon row updated with all slice SHAs. Checked streaming-mark
 candidate: already implemented with a `liveMarkdownLimit` cap — no work needed.
 **Files:** `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
 **Result:** Docs match the app again.
+
+## 2026-06-11 (night) — marathon slice 8: inline Retry on failure rows
+**What & why:** When both brains are unreachable the reply row shows the unavailable message —
+and the only recovery was the hover-only regenerate icon. Failure rows (`text ==
+LocalLLM.offMessage`) now carry an inline accent **Retry** button under the message (calls the
+same `regenerate`). Gallery gains a failure-row section so the state is photographed +
+baselined.
+**Files:** `Views/ContentView.swift`, `Tools/QASnapshots.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
