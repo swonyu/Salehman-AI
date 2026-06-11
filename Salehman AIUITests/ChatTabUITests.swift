@@ -135,6 +135,21 @@ nonisolated final class ChatTabUITests: XCTestCase {
                        "Esc should dismiss the slash menu")
     }
 
+    /// The header clock opens the Conversations (history) sheet; Done closes
+    /// it. Content-agnostic: archives may or may not exist on this machine.
+    @MainActor
+    func testHistorySheetOpensAndCloses() throws {
+        let app = launchToChat()
+        let clock = app.buttons["Conversation history"].firstMatch
+        XCTAssertTrue(clock.waitForExistence(timeout: 3), "Header should offer Conversation history")
+        clock.click()
+        XCTAssertTrue(app.staticTexts["Conversations"].waitForExistence(timeout: 3),
+                      "History sheet should open with its title")
+        app.buttons["Done"].firstMatch.click()
+        XCTAssertFalse(app.staticTexts["Conversations"].waitForExistence(timeout: 1),
+                       "Done should dismiss the history sheet")
+    }
+
     /// View ▸ Capture QA Snapshots renders every surface to qa/snapshots/*.png —
     /// the bridge that lets the screen-blind polish session SEE the app. This
     /// test both verifies the menu item and (as a side effect of running in

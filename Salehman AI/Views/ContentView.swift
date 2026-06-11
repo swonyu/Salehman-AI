@@ -300,7 +300,8 @@ struct ContentView: View {
 
             // Conversation history (archives; new chat archives, never erases)
             CircleIconButton(systemName: "clock.arrow.circlepath",
-                             help: "Conversation history") { showHistory = true }
+                             help: "Conversation history",
+                             accessibilityLabel: "Conversation history") { showHistory = true }
 
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }

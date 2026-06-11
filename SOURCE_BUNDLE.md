@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:12 +03 · Swift files: 140 · Swift LOC: 27956_
+_Generated: 2026-06-11 23:38 +03 · Swift files: 141 · Swift LOC: 28053_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -16509,7 +16509,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1976 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1977 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16813,7 +16813,8 @@ struct ContentView: View {
 
             // Conversation history (archives; new chat archives, never erases)
             CircleIconButton(systemName: "clock.arrow.circlepath",
-                             help: "Conversation history") { showHistory = true }
+                             help: "Conversation history",
+                             accessibilityLabel: "Conversation history") { showHistory = true }
 
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
@@ -20792,7 +20793,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (189 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (244 lines) =====
 ```swift
 import SwiftUI
 
@@ -20803,6 +20804,7 @@ struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
     @State private var pad: Pad = .tasks
     @State private var newText = ""
+    @State private var search = ""
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
@@ -20822,6 +20824,7 @@ struct ScratchpadView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
                 addRow
+                if store.tasks.count + store.notes.count > 5 { searchRow }
                 if pad == .tasks { tasksList } else { notesList }
                 if !aiResult.isEmpty { aiResultCard }
             }
@@ -20878,20 +20881,54 @@ struct ScratchpadView: View {
         addFocused = true
     }
 
-    /// Active tasks first, completed sunk to the bottom — each group keeps its
-    /// insertion order (stable partition, presentational only; no data mutation).
-    private var orderedTasks: [TaskItem] {
-        store.tasks.filter { !$0.done } + store.tasks.filter { $0.done }
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Search scratchpad")
+            if !search.isEmpty {
+                Button { search = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private var noMatch: some View {
+        Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
+            .font(.callout).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity).padding(.vertical, 16)
     }
 
     private var tasksList: some View {
-        Group {
+        let items = ScratchpadList.tasks(store.tasks, filter: search)
+        let done = ScratchpadList.completedCount(store.tasks)
+        return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
             } else {
-                listCard { ForEach(orderedTasks) { taskRow($0) } }
+                VStack(alignment: .leading, spacing: 8) {
+                    if done > 0 {
+                        HStack {
+                            Spacer()
+                            Button("Clear \(done) completed") { clearCompleted() }
+                                .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
+                                .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
+                        }
+                    }
+                    if items.isEmpty { noMatch } else { listCard { ForEach(items) { taskRow($0) } } }
+                }
             }
         }
+    }
+
+    private func clearCompleted() {
+        for t in store.tasks where t.done { store.deleteTask(t.id) }
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
@@ -20909,11 +20946,14 @@ struct ScratchpadView: View {
     }
 
     private var notesList: some View {
-        Group {
+        let items = ScratchpadList.notes(store.notes, filter: search)
+        return Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
+            } else if items.isEmpty {
+                noMatch
             } else {
-                listCard { ForEach(store.notes) { noteRow($0) } }
+                listCard { ForEach(items) { noteRow($0) } }
             }
         }
     }
@@ -20982,6 +21022,22 @@ struct ScratchpadView: View {
             ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
+}
+
+/// Pure list shaping for the Notes tab (Chat C feature): active tasks first with
+/// completed sunk, an optional case-insensitive text filter, and the
+/// completed-count for the "Clear completed" affordance. Pure → unit-tested.
+enum ScratchpadList {
+    static func tasks(_ all: [TaskItem], filter q: String = "") -> [TaskItem] {
+        let t = q.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = t.isEmpty ? all : all.filter { $0.title.lowercased().contains(t) }
+        return matched.filter { !$0.done } + matched.filter { $0.done }   // active first, stable
+    }
+    static func notes(_ all: [Note], filter q: String = "") -> [Note] {
+        let t = q.trimmingCharacters(in: .whitespaces).lowercased()
+        return t.isEmpty ? all : all.filter { $0.text.lowercased().contains(t) }
+    }
+    static func completedCount(_ all: [TaskItem]) -> Int { all.filter(\.done).count }
 }
 ```
 
@@ -27190,6 +27246,51 @@ struct ChatMessageCodecTests {
 }
 ```
 
+===== FILE: Salehman AITests/ScratchpadListTests.swift (41 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+/// Pins `ScratchpadList` — the pure shaping behind the Notes tab (active-first
+/// ordering, the case-insensitive filter for the new search box, and the
+/// completed-count for the "Clear completed" button).
+struct ScratchpadListTests {
+
+    private func task(_ title: String, done: Bool = false) -> TaskItem { TaskItem(title: title, done: done) }
+    private func note(_ text: String) -> Note { Note(text: text) }
+
+    @Test func tasksPutActiveBeforeDoneKeepingInsertionOrder() {
+        let xs = [task("a"), task("b", done: true), task("c"), task("d", done: true)]
+        #expect(ScratchpadList.tasks(xs).map(\.title) == ["a", "c", "b", "d"])
+    }
+
+    @Test func taskFilterIsCaseInsensitiveSubstringAndStaysActiveFirst() {
+        let xs = [task("Buy milk"), task("call MOM"), task("buy bread", done: true)]
+        #expect(ScratchpadList.tasks(xs, filter: "buy").map(\.title) == ["Buy milk", "buy bread"])
+    }
+
+    @Test func taskFilterCanMatchNothing() {
+        #expect(ScratchpadList.tasks([task("x")], filter: "zzz").isEmpty)
+    }
+
+    @Test func blankOrWhitespaceFilterReturnsAllOrdered() {
+        let xs = [task("a", done: true), task("b")]
+        #expect(ScratchpadList.tasks(xs, filter: "   ").map(\.title) == ["b", "a"])
+    }
+
+    @Test func notesFilterMatchesBodyCaseInsensitively() {
+        let xs = [note("groceries: milk"), note("meeting notes")]
+        #expect(ScratchpadList.notes(xs, filter: "MILK").map(\.text) == ["groceries: milk"])
+    }
+
+    @Test func completedCountCountsDoneOnly() {
+        #expect(ScratchpadList.completedCount([task("a", done: true), task("b"), task("c", done: true)]) == 2)
+        #expect(ScratchpadList.completedCount([]) == 0)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/SecurityHardeningTests.swift (119 lines) =====
 ```swift
 import Testing
@@ -30434,7 +30535,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1618 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1636 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32053,6 +32154,24 @@ its deterministic empty state offscreen since onAppear never fires there). Board
 with second-half slice SHAs.
 **Files:** `Tools/QASnapshots.swift`, `COORDINATION.md`; bundle regenerated.
 **Result:** Typecheck EXIT=0. SNAPSHOT_REQUEST pending for the next rebuilt cycle.
+
+## 2026-06-11 (night) — marathon slice 12: reply stats in the timing tooltip
+**What & why:** Hovering the "4.2s" pill now tells the whole story: "Generated in 4.2s ·
+213 words · 22:41". Word split runs only when the pill renders (hover/QA) — free at rest.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.
+
+## 2026-06-11 (night) — Chat C: tabs marathon cycles 3–4 (Knowledge sort + Notes search/clear)
+**Files:** `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, + `KnowledgeSortTests`, `ScratchpadListTests`.
+Commits `9b0f5da`, `13b97f7`.
+- **Feature — Knowledge document sort** (Recent / Name / Most-passages): pure `KnowledgeSort` enum + a sort Menu
+  by the doc count (now 77 docs). **5 tests**. Verified rendering.
+- **Feature — Notes search + Clear-completed**: pure `ScratchpadList` (active-first ordering + case-insensitive
+  filter + completedCount) drives the tab. Search field shown when >5 items; "Clear N completed" button when
+  done tasks exist; no-match copy. Extracted the previously-untested ordering → **6 tests**. "Clear 2 completed"
+  verified in notes.png.
+**Verified by marker:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **381 cases** (322 at marathon
+start). Pattern: pure `XxxSort`/`XxxList` enum from the view → menu in the view → unit tests. Marathon continues.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

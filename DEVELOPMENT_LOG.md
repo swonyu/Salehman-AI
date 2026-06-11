@@ -1634,3 +1634,15 @@ Commits `9b0f5da`, `13b97f7`.
   verified in notes.png.
 **Verified by marker:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **381 cases** (322 at marathon
 start). Pattern: pure `XxxSort`/`XxxList` enum from the view → menu in the view → unit tests. Marathon continues.
+
+## 2026-06-11 (night) — marathon: pictures verified (history sheet + gallery), baselines adopted, history UI flow
+**What & why:** The 23:35 rebuilt capture photographed everything: `chat_history.png` empty
+state matches the design (header bar, hairline, explainer); `chat_samples.png` shows the
+failure-row Retry, two-button user pill, four-icon assistant pill — its 8.0% baselineDiff was
+the predicted intentional drift → `ADOPT_BASELINES` planted at this verified state. Added the
+history sheet's UI flow (`testHistorySheetOpensAndCloses`, content-agnostic) + the header
+clock's accessibilityLabel it clicks. Knowledge/notes drifts in the same cycle are Chat C's
+lane (passing, unbudgeted).
+**Files:** `Views/ContentView.swift` (a11y label), `Salehman AIUITests/ChatTabUITests.swift`,
+qa request files; bundle regenerated.
+**Result:** Typecheck EXIT=0. 9 UI flows total.
