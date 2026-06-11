@@ -56,5 +56,18 @@ print()
 print(f"FAILURES: {', '.join(fails) if fails else 'none — all surfaces pass'}")
 PY
 
+# Surface regression heat-maps (QAAudit writes <name>_diff.png for anything that
+# moved >0.5% vs the adopted baseline) so the session knows exactly what changed.
+diffs=$(ls "$SNAPS"/*_diff.png 2>/dev/null || true)
+if [ -n "$diffs" ]; then
+  echo
+  echo "════════════════ REGRESSION HEAT-MAPS (vs baseline) ════════════════"
+  for d in $diffs; do echo "  ⚠ $(basename "$d") — red = pixels that moved; Read it to see what changed"; done
+else
+  echo
+  echo "(no *_diff.png — nothing moved past threshold, or no baseline adopted yet)"
+fi
+
 echo
 echo "PNGs in $SNAPS/ — Read contact_sheet.png first, then drill into any flagged surface."
+case " $* " in *" --open "*) open "$SNAPS/contact_sheet.png" 2>/dev/null || true ;; esac

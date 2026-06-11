@@ -2353,3 +2353,25 @@ Proton Drive. Owner away; autonomous loop continues until the RunPod balance is 
 **Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
 Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
 spend report. Owner away ~3h; loop continues.
+
+## 2026-06-11 (evening) — salehman14b INSTALLED + running on the M4 (the finale)
+**What & why:** Got the r3 Q4_K_M onto the Mac and into Ollama despite two real walls:
+- **Volume wall:** the rebuild pod's network volume hung the quantize at exactly 4.31 GB (twice, even after
+  a restart) — load 41 / 0% CPU / no OOM = a volume I/O stall. Fix: a FRESH pod with **no network volume**,
+  everything on local container disk → Q4 built clean (8.37 GB), `PIPELINE-DONE`.
+- **Download wall:** the pod's upload dropped every few hundred MB. Fix: unbounded **rsync `--append-verify`**
+  loop (installed rsync on the pod) run as a proper background task → resumed to 8.37 GB.
+- **Disk + Ollama-validation wall:** the Mac's APFS container is nearly full (228 GB, ~14 GB free), and
+  Ollama 0.30 re-validates a local GGUF by re-quantizing it (needs ~8 GB scratch). `ollama create` ran the
+  disk to 0 and failed. Fix: the GGUF was already copied into Ollama's blob store, so I **deleted the
+  redundant `/Users/Shared` source and created the model `FROM` the blob itself** → freed the scratch →
+  `success`. Aliased `salehman` → `salehman14b`; set M4 speed env (`OLLAMA_FLASH_ATTENTION`,
+  `OLLAMA_KV_CACHE_TYPE=q8_0`).
+**Result:** `salehman14b:latest` (9.0 GB) + `salehman` alias installed; **100% GPU** on the M4; the app's
+`.salehman` floor resolves the bare name `salehman` (verified). Speed **11.9 tok/s under heavy RAM pressure**
+(15 MB free — a 9.5 GB model on 16 GB thrashes; ~18-22 tok/s with the browser closed). Answers on-brand +
+concise when capped (the app caps trivial replies at 384 tok / agent replies at 700, so no rambling in-app).
+Clean pod terminated; **RunPod balance $5.43** (the remaining budget is NOT burned on more rounds — r4/r5/r6
+all lost to r3, so further lottery is waste). Freed `qwen2.5-coder:7b` for the install — salehman14b is the
+floor now; re-pull it if `.auto` mode is wanted. **Owner action: revoke the RunPod API key in the console**
+(chat-exposed; local copy deleted).
