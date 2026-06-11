@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:10 +03 · Swift files: 140 · Swift LOC: 27954_
+_Generated: 2026-06-11 23:12 +03 · Swift files: 140 · Swift LOC: 27956_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -16509,7 +16509,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1974 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1976 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18101,7 +18101,9 @@ struct MessageBubble: View {
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 5).padding(.trailing, 2)
-                        .help("Time to generate this reply")
+                        // Full stats on demand (the pill only renders on
+                        // hover, so the word count split is effectively free).
+                        .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
                 }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
@@ -30432,7 +30434,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1611 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1618 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32044,6 +32046,13 @@ behavior. 4 `ChatArchiveTitleTests` pin the title derivation.
 bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). Archives are additive — existing
 chat_history.json untouched; restore is plain load.
+
+## 2026-06-11 (night) — marathon: chat_history QA surface + board status (slices 7-11)
+**What & why:** The new History sheet joins the capture set (`chat_history`, 520×560 — renders
+its deterministic empty state offscreen since onAppear never fires there). Board row updated
+with second-half slice SHAs.
+**Files:** `Tools/QASnapshots.swift`, `COORDINATION.md`; bundle regenerated.
+**Result:** Typecheck EXIT=0. SNAPSHOT_REQUEST pending for the next rebuilt cycle.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

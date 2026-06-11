@@ -1588,7 +1588,9 @@ struct MessageBubble: View {
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 5).padding(.trailing, 2)
-                        .help("Time to generate this reply")
+                        // Full stats on demand (the pill only renders on
+                        // hover, so the word count split is effectively free).
+                        .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
                 }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {

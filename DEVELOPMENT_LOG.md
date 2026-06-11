@@ -1616,3 +1616,9 @@ its deterministic empty state offscreen since onAppear never fires there). Board
 with second-half slice SHAs.
 **Files:** `Tools/QASnapshots.swift`, `COORDINATION.md`; bundle regenerated.
 **Result:** Typecheck EXIT=0. SNAPSHOT_REQUEST pending for the next rebuilt cycle.
+
+## 2026-06-11 (night) — marathon slice 12: reply stats in the timing tooltip
+**What & why:** Hovering the "4.2s" pill now tells the whole story: "Generated in 4.2s ·
+213 words · 22:41". Word split runs only when the pill renders (hover/QA) — free at rest.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.
