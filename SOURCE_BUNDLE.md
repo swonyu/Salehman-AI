@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 18:09 +03 · Swift files: 132 · Swift LOC: 25225_
+_Generated: 2026-06-11 18:29 +03 · Swift files: 132 · Swift LOC: 25244_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10841,7 +10841,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QAAudit.swift (322 lines) =====
+===== FILE: Salehman AI/Tools/QAAudit.swift (335 lines) =====
 ```swift
 import AppKit
 
@@ -11081,18 +11081,28 @@ enum QAAudit {
     }
 
     /// Luma at canvas sample points: bottom corners + both mid-edges (12 px inset).
+    /// GAMMA-space on purpose: the check compares against the design tokens'
+    /// literal grey values (`Color(white: 0.125)`), not a perceptual ratio.
     private static func canvasSampleLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
         let w = rep.pixelsWide, h = rep.pixelsHigh
         let inset = 12
         let points = [(inset, h - inset), (w - inset, h - inset),
                       (inset, h / 2), (w - inset, h / 2)]
         return points.compactMap { (x, y) in
-            rep.colorAt(x: x, y: y).map { luma($0) }
+            rep.colorAt(x: x, y: y).map {
+                0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent
+            }
         }
     }
 
+    /// WCAG relative luminance — sRGB channels must be LINEARIZED first.
+    /// (v4's first run computed luma in gamma space and flagged the accent at
+    /// 2.21:1; the true linear-space ratio is ≈4.3:1. The audit was the bug.)
     private static func luma(_ c: NSColor) -> CGFloat {
-        0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        func lin(_ v: CGFloat) -> CGFloat {
+            v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
     }
 
     /// Measure each `ContrastProbe` band: scan the band's center line, take the
@@ -11125,8 +11135,11 @@ enum QAAudit {
             let extreme = abs(sorted.first! - bg) > abs(sorted.last! - bg)
                 ? sorted.first! : sorted.last!                       // farthest = glyph core
             let ratio = Double((max(bg, extreme) + 0.05) / (min(bg, extreme) + 0.05))
-            results.append(.init(name: "contrast:\(band.0)", pass: ratio >= band.4,
-                                 detail: String(format: "%.2f:1 (min %.1f:1)", ratio, band.4)))
+            let meets = ratio >= band.4
+            results.append(.init(name: "contrast:\(band.0)",
+                                 pass: band.5 ? meets : true,
+                                 detail: String(format: "%.2f:1 (min %.1f:1)%@", ratio, band.4,
+                                                band.5 ? "" : (meets ? " [advisory]" : " [ADVISORY — BELOW POLICY, token fix pending]"))))
         }
         return results
     }
@@ -11246,7 +11259,7 @@ enum QACapture {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (338 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (344 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11480,18 +11493,24 @@ enum QASnapshots {
 struct ContrastProbe: View {
     static let bandHeight: CGFloat = 56
 
-    /// (label, text style, foreground, background, minimum contrast the audit
-    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (label, text style, foreground, background, minimum contrast, enforced).
+    /// `enforced=false` = advisory: measured + reported in AUDIT.json/report
+    /// but doesn't fail the gate — used while a fix needs the other session's
+    /// lane. MainActor like the DS tokens it reads; both consumers
     /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
-    static var bands: [(String, CGFloat, Color, Color, Double)] {
+    static var bands: [(String, CGFloat, Color, Color, Double, Bool)] {
         [
-            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
-            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
-            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
-            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
-            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
-            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
-            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5, true),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0, true),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5, true),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0, true),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5, true),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0, true),
+            // v4's first run flagged this at 2.21:1 — root cause was the AUDIT
+            // computing luma in gamma space; with proper sRGB linearization the
+            // true ratio is ≈4.3:1. Enforced with correct math. (The advisory
+            // flag stays available for genuine cross-lane waits.)
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0, true),
         ]
     }
 
@@ -26597,7 +26616,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (906 lines) =====
+===== FILE: COORDINATION.md (927 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26649,6 +26668,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
+| **Claude Chat C (NEW — 2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/**`** (SKILL.md + run.sh). Read-only use of `tools/qa.sh`, `tools/QA.md`, `Tools/QASnapshots.swift`. **Edits NO Swift source — zero collision with Chat A/B.** | 2026-06-11 ~18:20 | Owner ran `/run-skill-generator` → authoring a "run/launch/screenshot the app" skill. ✅ Debug build SUCCEEDED, ✅ drove app via `qa.sh` (13/13 surfaces pass). Writing the skill + self-contained `run.sh` (build-if-needed → qa.sh). NOT touching `tools/qa.sh` (someone's uncommitted WIP) — only invoking it. | no — in progress |
 
 **🛑 Heads-up for Grok Tab A:** while verifying, the test target fails to compile because `ShellSecurityTests.swift` (your new untracked file) calls `CommandApprovalCenter.looksRisky(...)` from `#expect`'s nonisolated autoclosure, but `looksRisky` is `@MainActor`-isolated under `-default-isolation=MainActor`. The pure-substring-check version of `looksRisky` would be safe as `nonisolated static` — that's likely the right one-line fix in `CommandApprovalCenter.swift`. Not touching it; it's your lane. (My selective commit avoids pushing this red state to `main`.)
 | **Grok Tab A (tests)** | `Salehman AITests/**` (all 8 §4 suites); cross-lane compile fix claim: `Knowledge/KnowledgeStore.swift` (duplicate mmr redeclaration at ~223 — removed the later one to unblock test build; first impl at 135 is the called one) | 2026-06-06 | 5 suites enabled and passing; full AITests was red due to redecl in KnowledgeStore (unrelated to our edits but blocking verification) — claimed + removed duplicate mmr to get green. | **released** (session ended 2026-06-06; claims void — cleared in 2026-06-11 cleanup) |
@@ -27505,7 +27525,27 @@ v3's 14/14 green cycle proved the loop; v4 makes it protective:
    (e.g. YOUR code-syntax colors on the code background — recommended once you verify the highlighter),
    append to `ContrastProbe.bands`; the audit picks them up automatically.
 
-===== FILE: DEVELOPMENT_LOG.md (2339 lines) =====
+### 🔀 2026-06-11 — MAIN IS CURRENT: PR #2 merged (owner-directed)
+Owner asked to bring main up to date. PR #1 was merged by the owner this morning at 37fd1ac; everything
+since (the 14-commit afternoon wave: restyle 7 slices + passes, chat polish 1–3, 14B items 7–10, QA v1–v4,
+code-tab fixes) is now on main via **PR #2 → merge 8f64623**. Gate honesty: suite was 310/310 at 58eda68;
+the one commit after (bc2a32e) is QA-tooling-only, typecheck 0/0. **Go-forward flow:** local checkout
+STAYS on `feat/effort-grok-tooling` (you're mid-work in this tree — no branch switching under you); the
+branch now equals main, so keep committing here and one of us opens a small PR whenever a coherent chunk
+lands ("main stays current" is now the owner's expressed preference). Object here if you want a different
+flow.
+
+### 🔬 2026-06-11 — v4 first cycle: probe flagged the accent… and then the audit flagged ITSELF
+The 15:22 audit failed `contrast_probe` on "accent on canvas: 2.21:1". Before requesting a lighter
+accent-text token from your DS lane I recomputed from the token values — **the probe was the bug**: it
+computed luma in GAMMA space; WCAG requires sRGB linearization first. True ratio for accent (0.98, 0.18,
+0.29) on the 0.125 canvas ≈ **4.3:1 — passes**. Fixed: `QAAudit.luma` now linearizes (contrast checks);
+`canvasFlat` deliberately stays gamma-space (it compares literal token values, not perception). Band
+re-enforced; an `enforced:Bool` advisory flag now exists on bands for genuine cross-lane waits. No DS
+token change needed — stand down on that. SNAPSHOT_REQUEST planted; expect the next cycle ALL GREEN with
+honest numbers (white-on-accent send should read ≈3.8:1, more margin than the gamma-space 3.3).
+
+===== FILE: DEVELOPMENT_LOG.md (2355 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29142,6 +29182,22 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Fourth refinement round, turning the green loop into a protective one. (1) **`ContrastProbe`** — a new deterministic surface of 7 fixed text/surface bands (body+secondary on canvas and panel, user-block text, white-on-accent, accent-on-canvas; Arabic glyphs included); the audit scans each band's center line (median sample = background, extreme sample = glyph core) and enforces WCAG-style minimums (4.5:1 body, 3:1 secondary/accent) — the invisible-code-text class of bug found by eyes in round 1 is now caught by arithmetic every capture. (2) **Drift budgets** — deterministic galleries now FAIL `baselineDiff` beyond 2% (probe 1%) unless a baseline adoption made the change intentional; live surfaces stay informational. (3) `canvasFlat` samples mid-edges in addition to corners. (4) `qa/history.jsonl` trend trail (one line per audit) + `qa/snapshots/report.html` — an owner-facing page with badges and current/baseline/heat-map side by side. One Swift 6 isolation fix en route (DS tokens are MainActor; the probe's band table joined them).
 
 **Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
+
+## 2026-06-11 · PR #2 merged — main brought current with the afternoon wave (owner-directed)
+
+**Files:** none (remote merge) + `COORDINATION.md`
+
+**What & why:** Owner asked to "work on the main repo"; clarified intent = merge the branch into main. Discovered PR #1 had already been merged by the owner this morning (head 37fd1ac), leaving 14 afternoon commits branch-only. Opened [PR #2](https://github.com/swonyu/Salehman-AI/pull/2) (whole-app restyle, chat polish passes 1–3, 14B tool-loop hardening items 7–10, QA system v1–v4, code-tab live-QA fixes) and merged it (merge commit `8f64623`). Gate disclosure in the PR body: suite 310/310 at 58eda68; the single newer commit (bc2a32e) is QA-tooling-only with a clean typecheck. Local checkout deliberately stays on `feat/effort-grok-tooling` — the other session works this tree live; the branch equals main post-merge, and the board records the go-forward flow (commit on branch, PR per coherent chunk, main stays current).
+
+**Result:** `origin/main` = `8f64623`, fully current. Both sessions continue uninterrupted.
+
+## 2026-06-11 · QA v4.1 — the audit audited itself: WCAG linearization fix
+
+**Files:** `Salehman AI/Tools/QAAudit.swift`, `Salehman AI/Tools/QASnapshots.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The first v4 cycle failed `contrast_probe` on "accent on canvas: 2.21:1" — looked like a real readability gap requiring a lighter accent-text token (the other session's DS lane). Before filing that request, recomputed by hand from the token values and found **the probe itself was wrong**: `QAAudit.luma` computed the WCAG weighted sum on gamma-encoded sRGB channels; the spec requires linearization first. The true ratio for the brand accent on the 0.125 canvas is ≈4.3:1 — comfortably passing. Fixed `luma` with proper sRGB linearization for the contrast checks; `canvasFlat` deliberately stays gamma-space (it compares literal token grey values, not perceptual ratios — split into its own helper with a comment saying so). The accent band is re-enforced; the `enforced: Bool` advisory mechanism added during triage stays — it's the right tool for future genuinely-cross-lane waits. Stand-down posted to the other session (no DS token needed).
+
+**Result:** Typecheck 0/0. SNAPSHOT_REQUEST planted — next cycle should be all green with honest numbers (the send button's white-on-accent recomputes to ≈3.8:1, more margin than the gamma-space 3.3 suggested). A QA system that catches bugs in itself is working as designed.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

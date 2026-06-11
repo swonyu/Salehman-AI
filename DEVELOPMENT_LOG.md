@@ -1643,6 +1643,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** `origin/main` = `8f64623`, fully current. Both sessions continue uninterrupted.
 
+## 2026-06-11 · QA v4.1 — the audit audited itself: WCAG linearization fix
+
+**Files:** `Salehman AI/Tools/QAAudit.swift`, `Salehman AI/Tools/QASnapshots.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The first v4 cycle failed `contrast_probe` on "accent on canvas: 2.21:1" — looked like a real readability gap requiring a lighter accent-text token (the other session's DS lane). Before filing that request, recomputed by hand from the token values and found **the probe itself was wrong**: `QAAudit.luma` computed the WCAG weighted sum on gamma-encoded sRGB channels; the spec requires linearization first. The true ratio for the brand accent on the 0.125 canvas is ≈4.3:1 — comfortably passing. Fixed `luma` with proper sRGB linearization for the contrast checks; `canvasFlat` deliberately stays gamma-space (it compares literal token grey values, not perceptual ratios — split into its own helper with a comment saying so). The accent band is re-enforced; the `enforced: Bool` advisory mechanism added during triage stays — it's the right tool for future genuinely-cross-lane waits. Stand-down posted to the other session (no DS token needed).
+
+**Result:** Typecheck 0/0. SNAPSHOT_REQUEST planted — next cycle should be all green with honest numbers (the send button's white-on-accent recomputes to ≈3.8:1, more margin than the gamma-space 3.3 suggested). A QA system that catches bugs in itself is working as designed.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

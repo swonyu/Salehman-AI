@@ -230,18 +230,24 @@ enum QASnapshots {
 struct ContrastProbe: View {
     static let bandHeight: CGFloat = 56
 
-    /// (label, text style, foreground, background, minimum contrast the audit
-    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (label, text style, foreground, background, minimum contrast, enforced).
+    /// `enforced=false` = advisory: measured + reported in AUDIT.json/report
+    /// but doesn't fail the gate — used while a fix needs the other session's
+    /// lane. MainActor like the DS tokens it reads; both consumers
     /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
-    static var bands: [(String, CGFloat, Color, Color, Double)] {
+    static var bands: [(String, CGFloat, Color, Color, Double, Bool)] {
         [
-            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
-            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
-            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
-            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
-            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
-            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
-            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5, true),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0, true),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5, true),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0, true),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5, true),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0, true),
+            // v4's first run flagged this at 2.21:1 — root cause was the AUDIT
+            // computing luma in gamma space; with proper sRGB linearization the
+            // true ratio is ≈4.3:1. Enforced with correct math. (The advisory
+            // flag stays available for genuine cross-lane waits.)
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0, true),
         ]
     }
 

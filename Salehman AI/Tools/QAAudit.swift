@@ -236,18 +236,28 @@ enum QAAudit {
     }
 
     /// Luma at canvas sample points: bottom corners + both mid-edges (12 px inset).
+    /// GAMMA-space on purpose: the check compares against the design tokens'
+    /// literal grey values (`Color(white: 0.125)`), not a perceptual ratio.
     private static func canvasSampleLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
         let w = rep.pixelsWide, h = rep.pixelsHigh
         let inset = 12
         let points = [(inset, h - inset), (w - inset, h - inset),
                       (inset, h / 2), (w - inset, h / 2)]
         return points.compactMap { (x, y) in
-            rep.colorAt(x: x, y: y).map { luma($0) }
+            rep.colorAt(x: x, y: y).map {
+                0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent
+            }
         }
     }
 
+    /// WCAG relative luminance — sRGB channels must be LINEARIZED first.
+    /// (v4's first run computed luma in gamma space and flagged the accent at
+    /// 2.21:1; the true linear-space ratio is ≈4.3:1. The audit was the bug.)
     private static func luma(_ c: NSColor) -> CGFloat {
-        0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        func lin(_ v: CGFloat) -> CGFloat {
+            v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
     }
 
     /// Measure each `ContrastProbe` band: scan the band's center line, take the
@@ -280,8 +290,11 @@ enum QAAudit {
             let extreme = abs(sorted.first! - bg) > abs(sorted.last! - bg)
                 ? sorted.first! : sorted.last!                       // farthest = glyph core
             let ratio = Double((max(bg, extreme) + 0.05) / (min(bg, extreme) + 0.05))
-            results.append(.init(name: "contrast:\(band.0)", pass: ratio >= band.4,
-                                 detail: String(format: "%.2f:1 (min %.1f:1)", ratio, band.4)))
+            let meets = ratio >= band.4
+            results.append(.init(name: "contrast:\(band.0)",
+                                 pass: band.5 ? meets : true,
+                                 detail: String(format: "%.2f:1 (min %.1f:1)%@", ratio, band.4,
+                                                band.5 ? "" : (meets ? " [advisory]" : " [ADVISORY — BELOW POLICY, token fix pending]"))))
         }
         return results
     }
