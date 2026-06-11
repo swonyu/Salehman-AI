@@ -1692,3 +1692,11 @@ replies deliberately not archived), slash-selection clamping, balanced counter o
 no-pasteboard path, archive↔restore file lifecycle (no leak: restore deletes, prune caps).
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0.
+
+## 2026-06-12 (00:36) — Chat C: tabs marathon cycle 6 (Knowledge name-filter)
+**Files:** `Views/KnowledgeView.swift`, `KnowledgeSortTests`. Commit `efc0b0a`.
+**Feature:** `KnowledgeSort.apply` now takes an optional case-insensitive name filter (filter→sort composes);
+a "Find a document…" field appears when >10 docs (useful at 77) + a no-match state. **4 new filter tests**
+(KnowledgeSortTests now 9). Filter field verified in knowledge.png.
+**Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **389 cases**. Marathon: 6 cycles, 33 new
+tests (322→389), every tab feature test-pinned, build green throughout, no workflows.
