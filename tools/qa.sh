@@ -21,6 +21,11 @@ before=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
 [ "${1:-}" = "--adopt" ] && touch "$QA/ADOPT_BASELINES"
 touch "$QA/SNAPSHOT_REQUEST"
 echo "→ launching app to fulfill the snapshot request…"
+# STALE-BINARY TRAP: if the app is already running, `open` only foregrounds the
+# OLD process and the capture photographs yesterday's UI (burned two sessions
+# tonight). Always quit first so the capture runs the freshest binary on disk.
+osascript -e 'tell application "Salehman AI" to quit' 2>/dev/null || true
+sleep 1
 # `--qa` marks this as a QA-initiated launch — the in-app capture hooks only run
 # with it, so a pending request can never slow the owner's normal Dock launches.
 open "$APP" --args --qa

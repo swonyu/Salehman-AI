@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 
 // MARK: - Diff model
 
-struct DiffLine: Identifiable {
-    enum Kind { case same, add, remove }
+nonisolated struct DiffLine: Identifiable {
+    nonisolated enum Kind: Equatable { case same, add, remove }
     let id = UUID()
     let kind: Kind
     let text: String
@@ -26,6 +26,10 @@ final class CodeWorkspace: ObservableObject {
     @Published var fileContent: String = ""
     @Published var diff: [DiffLine] = []
     @Published var changedFiles: [URL] = []
+    /// Per-file added/removed line counts for the last run's changes — shown as
+    /// "+N −M" next to each row in the right panel's Changed-files list.
+    @Published var changeStats: [URL: DiffStat] = [:]
+    struct DiffStat: Equatable { let added: Int; let removed: Int }
 
     private var snapshots: [URL: String] = [:]
 
@@ -83,7 +87,7 @@ final class CodeWorkspace: ObservableObject {
         projectRoot = url
         Shell.workingDirectory = url          // terminal + edits now run in the project
         UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
-        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []
+        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
         Task { await reload() }
     }
 
@@ -145,20 +149,29 @@ final class CodeWorkspace: ObservableObject {
         await reload()
         let urls = files
         let before = snapshots
-        let changed = await Task.detached(priority: .utility) { () -> [URL] in
+        let (changed, stats) = await Task.detached(priority: .utility) { () -> ([URL], [URL: DiffStat]) in
             var c: [URL] = []
+            var s: [URL: DiffStat] = [:]
             for u in urls {
                 let now = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
-                if (before[u] ?? "") != now { c.append(u) }
+                let old = before[u] ?? ""
+                guard old != now else { continue }
+                c.append(u)
+                // +N −M for the panel list — same capped LCS as the diff pane,
+                // so the numbers always agree with what the pane shows.
+                let lines = CodeWorkspace.lineDiff(old: old, new: now)
+                s[u] = DiffStat(added: lines.filter { $0.kind == .add }.count,
+                                removed: lines.filter { $0.kind == .remove }.count)
             }
-            return c
+            return (c, s)
         }.value
         changedFiles = changed
+        changeStats = stats
         if let first = changed.first { select(first) }
     }
 
     /// Minimal LCS line-diff. Caps each side so a huge file can't stall the UI.
-    static func lineDiff(old: String, new: String) -> [DiffLine] {
+    nonisolated static func lineDiff(old: String, new: String) -> [DiffLine] {
         let cap = 1500
         let a = Array(old.components(separatedBy: "\n").prefix(cap))
         let b = Array(new.components(separatedBy: "\n").prefix(cap))
@@ -272,6 +285,7 @@ struct ActivityStepRow: View {
 struct ChangedFileRow: View {
     let label: String
     let isSelected: Bool
+    var stat: CodeWorkspace.DiffStat? = nil
     var onTap: () -> Void
 
     var body: some View {
@@ -284,6 +298,18 @@ struct ChangedFileRow: View {
                     .lineLimit(1).truncationMode(.head)
                     .foregroundStyle(isSelected ? .white : .secondary)
                 Spacer(minLength: 0)
+                if let stat {
+                    // "+12 −3" — git-style change magnitude at a glance.
+                    HStack(spacing: 4) {
+                        if stat.added > 0 {
+                            Text("+\(stat.added)").foregroundStyle(Color.green.opacity(0.85))
+                        }
+                        if stat.removed > 0 {
+                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                        }
+                    }
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSelected ? Color.white.opacity(0.06) : .clear,
@@ -1247,7 +1273,8 @@ struct CodeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(ws.changedFiles, id: \.self) { url in
                         ChangedFileRow(label: relativePath(url),
-                                       isSelected: ws.selectedFile == url) {
+                                       isSelected: ws.selectedFile == url,
+                                       stat: ws.changeStats[url]) {
                             ws.select(url)
                             rightPane = .diff
                         }
@@ -1882,9 +1909,12 @@ struct CodeSampleGallery: View {
                     ActivityStepRow(step: .init(name: "Verifier", icon: "checkmark.seal",
                                                 status: .pending))
                     Divider().padding(.vertical, 4)
-                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true, onTap: {})
-                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false, onTap: {})
-                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false, onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true,
+                                   stat: .init(added: 24, removed: 9), onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false,
+                                   stat: .init(added: 6, removed: 0), onTap: {})
+                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false,
+                                   stat: .init(added: 41, removed: 2), onTap: {})
                 }
                 .frame(maxWidth: 360, alignment: .leading)
                 .padding(8)

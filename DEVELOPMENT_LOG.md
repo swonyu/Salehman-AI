@@ -1477,3 +1477,19 @@ existing 6 flows (typeKey/typeText/staticTexts/waitForExistence only).
 **Files:** `Salehman AIUITests/ChatTabUITests.swift`; bundle regenerated.
 **Result:** UI-test target not compilable in this sandbox — flagged to the build-capable
 session with the standing AITests request (run `-only-testing:"Salehman AIUITests"` too).
+
+## 2026-06-12 — marathon C: per-file diff stats (+N −M) · qa.sh stale-binary fix
+**C:** the right panel's Changed-files rows now show git-style **+added −removed**
+counts (green/red, monospaced; zero-sides omitted). Computed in
+`CodeWorkspace.refreshAfterRun` off-main with the SAME capped LCS the diff pane uses,
+so list numbers always agree with the pane (`changeStats: [URL: DiffStat]`, cleared on
+project close). Swift-6: `DiffLine`/`lineDiff` marked `nonisolated` (pure data + pure
+function) so the detached stats pass can call them. Verified in pixels via the gallery
+("+24 −9" / "+6" / "+41 −2" rendered).
+**qa.sh:** fixed the STALE-BINARY TRAP at the root — if the app is already running,
+`open` only foregrounds the old process and QA photographs yesterday's UI (burned two
+sessions tonight, including my first stats capture). The runner now ALWAYS quits the
+app before launching. First fresh capture surfaced chat-B's committed gallery evolution
+(5.22% drift, eyes-verified healthy: timing pill, time separator, accent stop-disc) —
+chat_samples + code_samples baselines re-adopted.
+**Files:** `Views/CodeView.swift`, `tools/qa.sh`.
