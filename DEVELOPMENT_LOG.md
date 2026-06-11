@@ -2638,3 +2638,22 @@ the in-flight CodeView WIP). ⚠️ My auto-pin loop word-split on the "Salehman
 (same zsh class as the monitor-v1 bug — `for f in $(...)` splits unquoted) and silently
 pinned NOTHING, surfacing Chat C's half-written `writeHTMLReport(structure:)` as a false
 error; explicit quoted pins restored truth. Pin explicitly, never via word-split loops.
+
+## 2026-06-11 (night) — Chat C: QA v6 part 4 + refinements (owner "add and refine more" — resumed)
+**Files:** `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, `Tools/QASnapshots.swift`, `tools/QA.md`,
+`.claude/skills/run-salehman-ai/run.sh` (gitignored). Commits `e779cc9`, `02146ee`.
+**What & why:** owner reversed the earlier "stop" with "add and refine more" → finished the QA v6 vision:
+- **(4) report.html dashboard**: pass/fail summary, failing-check tally, total drift, slowest-render surface,
+  color-blind-risk count, fail-history sparkline; per-surface severity-coloured checks (error/advisory/ok),
+  render time, a CVD-merge badge, and the deuteranopia preview inline. New `renderMs` plumbed
+  surface→structure→audit + an advisory `renderTime` check.
+- **Bug found+fixed**: reordering the CVD pass before the audit (so `cvd.json` is fresh for the report) made
+  the audit pick up the `_deuter/_protan` previews as "surfaces" (70 not 22). Audit file-filter now excludes
+  them → back to 24 real surfaces.
+- **Refinements**: `tools/QA.md` rewritten v5→v6 (was stale + described the dropped ImageRenderer two-path
+  model); `history.jsonl` now records `cvdRisks` per run; `run.sh` waits for the v6 pass and prints the CVD
+  summary + report/cvd_report pointers.
+**Result:** build GREEN; `Salehman AITests` `** TEST SUCCEEDED **`; audit 24 surfaces, FAILURES []; CVD flags
+markets/markets_narrow/notes (red/green). **QA v6 complete (parts 1–4 + refinements); lane released to Chat B.**
+NB: Chat B's typecheck briefly saw my in-flight `writeHTMLReport(structure:)` mid-edit — resolved (committed,
+green).
