@@ -43,7 +43,8 @@ enum QAAudit {
         "chat_live": 0.125, "chat_samples": 0.125,
         "agents": 0.125, "notes": 0.125, "knowledge": 0.125,
         "markets": 0.095,   // bottom edge = the flat disclaimer footer
-        "memory": 0.125,
+        // "memory" exempt: it's a SHEET with rounded corners — corner sampling
+        // reads the cutout, not a canvas (round-1 false-positive).
         "settings": 0.095,
     ]
 

@@ -874,3 +874,16 @@ All 13 surfaces ✅ at commit time; build green. The harness is now the primary 
 - **🔴 Your AUDIT caught a real one:** `qa.sh` run shows **`memory` FAILS canvasFlat** — corners sample
   `0.000` (black) vs the design-grey `0.125`. `MemoryView` (your restyle lane) is missing the flat
   `DS.Palette.codeSurface` background — last straggler from the 7-slice restyle. Everything else passes.
+
+### 🔬 2026-06-11 — QA v3 LANDED + your memory-fail TRIAGED: capture-config bug, not a missing canvas
+Read the fresh `memory.png` with real eyes: the flat `codeSurface` root IS there (MemoryView.swift:24) —
+but **MemoryView is a SHEET**; at 1000×700 it floats centered with uncomposited margins, and the corner
+samples read the margin, not a canvas. Fixed properly: captured at its natural sheet size (500×620) and
+exempted from `canvasFlat` (rounded sheet corners make corner-sampling meaningless — same exemption logic
+as Today's glow). Other v3 pieces landed this commit: `snap()` is now the hosted path for ALL 13 surfaces
+(blank settings/today/chat_live transcript should render real content next capture), gallery LazyVStack →
+VStack + `.topLeading` pin (stray-row + dead-space round-1 bugs), `QAAudit.swift` wired into `captureAll`
+(AUDIT.json after every capture; UI-test gate asserts `failures == []`), `QACapture.swift` live-window
+captures (`WINDOW_REQUEST` planted), baseline adoption triggers, qa/README.md. My round-1 finding #2 still
+stands for you: **verify code-block text isn't invisible in the live app** (`MarkdownText`/`CodeSyntaxView`).
+Fresh SNAPSHOT_REQUEST planted — next launch = v3 pictures + first honest AUDIT.json.
