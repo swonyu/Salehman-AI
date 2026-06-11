@@ -1678,3 +1678,17 @@ QA captures (offscreen `.task` never runs) so no baseline churn. `/clear`'s blur
 copy should say so.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0.
+
+## 2026-06-12 (early) — marathon finale: adversarial self-review fixes (2 real defects)
+**What & why:** Closing sweep over all 15 marathon slices found two real bugs, both mine:
+(1) **multi-load race** — `loadingAttachment` was a Bool, so on a multi-file drop the FIRST
+finished load cleared "loading" while siblings were still reading, briefly enabling Send with
+half the files attached. Now a counter (`attachmentLoads`, computed `loadingAttachment`) —
+every load site increments/decrements, Send waits for all. (2) **restore-under-stream** —
+restoring an archive mid-generation would swap `vm.messages` underneath the running task;
+`restoreArchive` now calls `vm.stop()` first (same graceful cancel as the stop button).
+Reviewed and cleared the rest: newChat-while-running (startNewChat stops internally; partial
+replies deliberately not archived), slash-selection clamping, balanced counter on the
+no-pasteboard path, archive↔restore file lifecycle (no leak: restore deletes, prune caps).
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.

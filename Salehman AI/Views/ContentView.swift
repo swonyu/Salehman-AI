@@ -42,7 +42,12 @@ struct ContentView: View {
     /// Pending attachments (multi: each gets a chip; merged into one synthetic
     /// Attachment at submit so the send pipeline stays single-attachment).
     @State private var attachments: [Attachment] = []
-    @State private var loadingAttachment = false
+    /// In-flight attachment loads. A COUNTER, not a Bool: a multi-file drop
+    /// runs one async load per file, and the first finisher must not clear the
+    /// "loading" state while siblings are still reading (that briefly enabled
+    /// Send with half the files attached).
+    @State private var attachmentLoads = 0
+    private var loadingAttachment: Bool { attachmentLoads > 0 }
     @State private var showSettings = false
     @State private var showHistory = false
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
@@ -983,9 +988,9 @@ struct ContentView: View {
                     _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
                         guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
                         Task { @MainActor in
-                            loadingAttachment = true
+                            attachmentLoads += 1
                             attachments.append(await AttachmentLoader.load(url: url))
-                            loadingAttachment = false
+                            attachmentLoads -= 1
                         }
                     }
                 }
@@ -1028,18 +1033,18 @@ struct ContentView: View {
     @MainActor private func attachFile() async {
         let urls = AttachmentLoader.pickFiles()
         guard !urls.isEmpty else { return }
-        loadingAttachment = true
+        attachmentLoads += 1
         for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
-        loadingAttachment = false
+        attachmentLoads -= 1
         inputFocused = true
     }
 
     @MainActor private func attachImage() async {
         let urls = AttachmentLoader.pickFiles()
         guard !urls.isEmpty else { return }
-        loadingAttachment = true
+        attachmentLoads += 1
         for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
-        loadingAttachment = false
+        attachmentLoads -= 1
         inputFocused = true
     }
 
@@ -1050,9 +1055,9 @@ struct ContentView: View {
         let pb = NSPasteboard.general
         // 1) Copied file URLs (all of them — Finder multi-copy works).
         if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
-            loadingAttachment = true
+            attachmentLoads += 1
             for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
-            loadingAttachment = false; inputFocused = true; return
+            attachmentLoads -= 1; inputFocused = true; return
         }
         // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.
         if let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation,
@@ -1061,14 +1066,14 @@ struct ContentView: View {
             let tmp = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pasted-\(UUID().uuidString).png")
             try? png.write(to: tmp)
-            loadingAttachment = true
+            attachmentLoads += 1
             attachments.append(await AttachmentLoader.load(url: tmp))
-            loadingAttachment = false; inputFocused = true
+            attachmentLoads -= 1; inputFocused = true
         }
     }
 
     @MainActor private func attachLastScreenshot() async {
-        loadingAttachment = true
+        attachmentLoads += 1
         if let url = AttachmentLoader.lastScreenshot() {
             attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
@@ -1079,7 +1084,7 @@ struct ContentView: View {
                                           icon: "exclamationmark.triangle",
                                           extractedText: "Could not find a recent screenshot."))
         }
-        loadingAttachment = false
+        attachmentLoads -= 1
         inputFocused = true
     }
 
@@ -1120,6 +1125,9 @@ struct ContentView: View {
     /// archive file is removed (it IS the live conversation now — keeping it
     /// would duplicate on the next archive pass).
     private func restoreArchive(_ item: ChatStore.ArchivedChat) {
+        // Never swap the transcript under a streaming task — cancel it first
+        // (the same graceful stop the composer's stop button uses).
+        vm.stop()
         ChatStore.flushSave()
         ChatStore.archiveCurrent()
         let restored = ChatStore.loadArchive(item.id)
