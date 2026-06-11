@@ -425,6 +425,7 @@ private struct ChatSampleGallery: View {
                                                    timestamp: now.addingTimeInterval(120),
                                                    duration: 4.2),
                               onRegenerate: { _ in },
+                              onQuote: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
             }

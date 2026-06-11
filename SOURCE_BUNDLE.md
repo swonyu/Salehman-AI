@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:53 +03 · Swift files: 137 · Swift LOC: 27364_
+_Generated: 2026-06-11 22:54 +03 · Swift files: 138 · Swift LOC: 27432_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11949,7 +11949,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (467 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (468 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12378,6 +12378,7 @@ private struct ChatSampleGallery: View {
                                                    timestamp: now.addingTimeInterval(120),
                                                    duration: 4.2),
                               onRegenerate: { _ in },
+                              onQuote: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
             }
@@ -27249,6 +27250,77 @@ struct ShellSecurityTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSagePortfolioTests.swift (67 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+/// Pins the Markets Portfolio holdings store: the cost math, the input guards
+/// (a fat-fingered form submit must not store garbage), and JSON persistence.
+/// Each test uses its OWN UserDefaults suite (cleared first) so the parallel
+/// runner never races on a shared key.
+@MainActor
+struct StockSagePortfolioTests {
+
+    private func freshStore(_ tag: String) -> StockSagePortfolio {
+        let name = "test.portfolio.\(tag)"
+        UserDefaults().removePersistentDomain(forName: name)
+        let ud = UserDefaults(suiteName: name)!
+        ud.removePersistentDomain(forName: name)
+        return StockSagePortfolio(userDefaults: ud)
+    }
+
+    @Test func totalCostMultipliesSharesByBasis() {
+        #expect(PortfolioPosition(symbol: "X", shares: 10, costBasis: 5).totalCost == 50)
+    }
+
+    @Test func addUppercasesAndTrimsSymbol() {
+        let p = freshStore("trim")
+        p.add(symbol: "  aapl ", shares: 10, costBasis: 100)
+        #expect(p.positions.map(\.symbol) == ["AAPL"])
+    }
+
+    @Test func addRejectsBlankSymbolAndNonPositiveShares() {
+        let p = freshStore("reject")
+        p.add(symbol: "", shares: 10, costBasis: 100)
+        p.add(symbol: "   ", shares: 10, costBasis: 100)
+        p.add(symbol: "X", shares: 0, costBasis: 100)
+        p.add(symbol: "Y", shares: -3, costBasis: 100)
+        #expect(p.positions.isEmpty)
+    }
+
+    @Test func addAllowsZeroCostBasis() {
+        let p = freshStore("zerocost")            // a gifted/vested lot can be free
+        p.add(symbol: "GIFT", shares: 5, costBasis: 0)
+        #expect(p.positions.count == 1)
+        #expect(p.positions[0].totalCost == 0)
+    }
+
+    @Test func removeDeletesByIdAndClearEmpties() {
+        let p = freshStore("remove")
+        p.add(symbol: "A", shares: 1, costBasis: 1)
+        p.add(symbol: "B", shares: 2, costBasis: 2)
+        p.remove(p.positions[0].id)
+        #expect(p.positions.map(\.symbol) == ["B"])
+        p.clear()
+        #expect(p.positions.isEmpty)
+    }
+
+    @Test func holdingsPersistAcrossInstances() {
+        let name = "test.portfolio.persist"
+        UserDefaults().removePersistentDomain(forName: name)
+        let ud = UserDefaults(suiteName: name)!
+        ud.removePersistentDomain(forName: name)
+        StockSagePortfolio(userDefaults: ud).add(symbol: "AAPL", shares: 10, costBasis: 150)
+        let reloaded = StockSagePortfolio(userDefaults: ud)
+        #expect(reloaded.positions.map(\.symbol) == ["AAPL"])
+        #expect(reloaded.positions.first?.shares == 10)
+        #expect(reloaded.positions.first?.totalCost == 1500)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageTests.swift (154 lines) =====
 ```swift
 import Testing
@@ -29830,7 +29902,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1495 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1510 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31326,6 +31398,21 @@ app before launching. First fresh capture surfaced chat-B's committed gallery ev
 (5.22% drift, eyes-verified healthy: timing pill, time separator, accent stop-disc) —
 chat_samples + code_samples baselines re-adopted.
 **Files:** `Views/CodeView.swift`, `tools/qa.sh`.
+
+## 2026-06-11 (night) — marathon slice 5: multiple attachments
+**What & why:** The composer now takes SEVERAL files: per-file chips (individually removable,
+middle-truncated names, horizontal scroll when crowded), multi-select open panel
+(`AttachmentLoader.pickFiles`), multi-file drop (all providers, was first-only), Finder
+multi-copy paste (all URLs, was first-only). The send pipeline deliberately stays
+single-attachment: `Attachment.merged` collapses N files into one synthetic attachment at
+submit (every name + content, `––– name (kind) –––` separators) while a SINGLE file passes
+through untouched so the image-vision path keeps firing. 3 new `AttachmentMergeTests` pin that
+contract (empty→nil, single identity + vision fields, multi carries all names/bodies and never
+claims vision).
+**Files:** `Views/ContentView.swift`, `Persistence/Attachments.swift` (additive: merged +
+pickFiles), `Salehman AITests/ChatComposerLogicTests.swift`; bundle regenerated. (Thanks to
+whichever session added the missing `import Foundation` to the test file — caught pre-red.)
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned); no stale single-attachment refs (grep).
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
