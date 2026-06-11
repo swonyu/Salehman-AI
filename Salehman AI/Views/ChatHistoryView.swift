@@ -19,6 +19,9 @@ struct ChatHistoryView: View {
     /// crawl). Pre-revealed on QA launches — offscreen renders never fire
     /// onAppear, so the chat_history capture would photograph empty rows.
     @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
+    /// Archive summaries decode up to 100 JSON files — that work now runs
+    /// off-main (it was a visible hitch on sheet-open with a deep history).
+    @State private var loaded = false
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -48,7 +51,11 @@ struct ChatHistoryView: View {
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                      alignment: .bottom)
 
-            if archives.isEmpty {
+            if !loaded {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 22, weight: .semibold))
@@ -102,9 +109,12 @@ struct ChatHistoryView: View {
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
         .preferredColorScheme(.dark)
-        .onAppear {
-            archives = ChatStore.archives()
-            revealed = true   // first frame renders hidden, then rows cascade in
+        .task {
+            archives = await Task.detached(priority: .userInitiated) {
+                ChatStore.archives()
+            }.value
+            loaded = true
+            revealed = true   // rows render hidden for one frame, then cascade in
         }
     }
 

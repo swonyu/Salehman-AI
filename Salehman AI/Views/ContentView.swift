@@ -166,7 +166,18 @@ struct ContentView: View {
             Text("Save the current message as a reusable prompt.")
         }
         .onAppear {
-            if vm.messages.isEmpty { vm.messages = ChatStore.load() }
+            // History decode runs OFF-main (it's a full-file JSON decode that
+            // grows with the conversation — decoding it synchronously here was
+            // a mount hitch on ⌘2). Guarded re-check: don't clobber a
+            // conversation the user started while the load was in flight.
+            if vm.messages.isEmpty {
+                Task {
+                    let loaded = await Task.detached(priority: .userInitiated) {
+                        ChatStore.load()
+                    }.value
+                    if vm.messages.isEmpty { vm.messages = loaded }
+                }
+            }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
             // Restore an unsent draft (quitting mid-thought shouldn't eat it).
@@ -392,6 +403,7 @@ struct ContentView: View {
                                                       inputFocused = true
                                                   },
                                                   onTogglePin: { vm.togglePin($0) })
+                                        .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -1689,7 +1701,19 @@ struct ChatStats: Equatable {
 }
 
 // MARK: - Message Bubble
-struct MessageBubble: View {
+struct MessageBubble: View, Equatable {
+    /// Equality gates body re-evaluation (used via `.equatable()` at the
+    /// transcript call site): ContentView's body re-runs on EVERY keystroke /
+    /// hover flip, handing each bubble fresh closures — reflection-based
+    /// diffing can't prove them unchanged, so every settled bubble re-ran its
+    /// body (markdown-cache lookups + full tree diff × N messages) per
+    /// keystroke. Comparing just message + qaShowActions skips all of it;
+    /// speech-state updates still flow via @ObservedObject (dynamic-property
+    /// invalidation bypasses ==, by design).
+    static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+    }
+
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     /// Edit-and-resend on user rows: the view model truncates the transcript
