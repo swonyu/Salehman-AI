@@ -120,6 +120,31 @@ struct StripNarrationTests {
         let nested = "Reasoning…\nResponse:\nInterpretation: still analyzing"
         #expect(AgentPipeline.stripNarration(nested) == nested)
     }
+
+    // Trailing meta — the fine-tune appends reviewer boilerplate + fake footnotes
+    // after the real answer (caught live 2026-06-12: "Thoughts on this response?
+    // I'm happy to rephrase…" + "[1]: https://github.com/…" after a greeting).
+    @Test func cutsTrailingReviewerMetaAndFootnotes() {
+        let leak = """
+        Hi — what do you want to work on today?
+
+        ---
+
+        Thoughts on this response? I'm happy to rephrase / add more detail.
+
+          [1]: https://github.com/SalehmanAI/MLX-Studio
+        """
+        #expect(AgentPipeline.stripNarration(leak) == "Hi — what do you want to work on today?")
+    }
+    @Test func cutsSelfContinuedDialogue() {
+        let leak = "Sure, here's the plan.\nUser: hi\nSalehman AI: Hi again!"
+        #expect(AgentPipeline.stripNarration(leak) == "Sure, here's the plan.")
+    }
+    @Test func neverStripsToNothing() {
+        // A reply that is ONLY meta must come back unchanged, not empty.
+        let onlyMeta = "Thoughts on this response? Happy to rephrase."
+        #expect(AgentPipeline.stripNarration(onlyMeta) == onlyMeta)
+    }
 }
 
 // MARK: - Local-window history trim (14B num_ctx 4096 protection)

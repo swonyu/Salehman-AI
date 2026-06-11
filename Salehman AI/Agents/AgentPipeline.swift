@@ -246,17 +246,39 @@ enum AgentPipeline {
     /// Conservative: only fires when a non-empty answer follows the marker, so a normal
     /// reply that merely contains the word "Response" is untouched. Pure + testable.
     nonisolated static func stripNarration(_ text: String) -> String {
+        var out = text
+        // 1) Leading scaffold: keep only what follows the final "Response:" line.
         for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
-            if let r = text.range(of: marker, options: .backwards) {
-                let after = text[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if let r = out.range(of: marker, options: .backwards) {
+                let after = out[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
                 // Only strip if what's left is a real reply (not itself another
                 // "Interpretation:"-style scaffold, and not trivially short).
                 if after.count >= 2, !after.hasPrefix("Interpretation:"), !after.hasPrefix("You are Salehman") {
-                    return after
+                    out = after
+                    break
                 }
             }
         }
-        return text
+        // 2) Trailing meta: the fine-tune sometimes appends reviewer boilerplate
+        //    after the real answer ("Thoughts on this response? I'm happy to
+        //    rephrase…"), often behind a "---" divider, plus fake markdown
+        //    footnotes ("  [1]: https://…"). Cut from the first such marker.
+        for marker in ["Thoughts on this response", "\nUser: ", "\nSalehman AI: "] {
+            if let r = out.range(of: marker) {
+                out = String(out[..<r.lowerBound])
+            }
+        }
+        // Drop a now-dangling trailing divider and any footnote-link lines.
+        var lines = out.components(separatedBy: "\n")
+        while let last = lines.last?.trimmingCharacters(in: .whitespaces),
+              last.isEmpty || last == "---" || last == "***"
+              || last.range(of: #"^\[\d+\]:\s*\S*$"#, options: .regularExpression) != nil {
+            lines.removeLast()
+            if lines.isEmpty { break }
+        }
+        let cleaned = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Never strip down to nothing — a busted heuristic must not eat the reply.
+        return cleaned.count >= 2 ? cleaned : text
     }
 
     /// True when a draft is an error/off sentinel rather than a real answer, so

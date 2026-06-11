@@ -1415,3 +1415,17 @@ prefix) + 9 greeting boundary cases.
 bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). Tests target can't compile in my sandbox —
 build-capable session asked on the board to include AITests next run.
+
+## 2026-06-12 — marathon B: right-panel gallery coverage · stripNarration v2 (trailing meta)
+**B:** `ActivityStepRow` + `ChangedFileRow` extracted from CodeView's right panel (real
+components, not replicas) and photographed in the QA gallery in a deterministic
+"run in flight" state (done/running·tool-round/pending cards + changed-files rows with
+selection). Eyes-verified in the capture; baseline adopted.
+**stripNarration v2:** the fine-tune leaked a NEW shape live — reviewer boilerplate
+appended AFTER the answer ("Thoughts on this response? I'm happy to rephrase…", fake
+"[1]: https://…" footnotes, self-continued "User:/Salehman AI:" dialogue). The stripper
+now also truncates at those trailing markers, drops dangling dividers/footnote lines,
+and has a never-strip-to-empty floor. Both tabs are covered (chat → Orchestrator →
+AgentPipeline.run; Code → AgentPipeline.run). 6 regression tests; the AITests target is
+unblocked again — **TEST SUCCEEDED**.
+**Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.

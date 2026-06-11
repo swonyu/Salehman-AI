@@ -240,6 +240,61 @@ struct SlashMenuView: View {
     }
 }
 
+/// One agent step card in the right panel's Activity section. Extracted so the
+/// QA gallery photographs the REAL component in a deterministic running state.
+struct ActivityStepRow: View {
+    let step: MissionProgress.Step
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Self.icon(step.status)
+            Text(step.adapted ?? step.name).font(.system(size: 11.5))
+                .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.9))
+                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {
+        switch status {
+        case .pending: Image(systemName: "circle").font(.system(size: 9)).foregroundStyle(.secondary)
+        case .running: ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
+        case .done:    Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+        }
+    }
+}
+
+/// One row of the right panel's "Changed files" list. Extracted for the same
+/// reason as `ActivityStepRow` — gallery coverage of the real component.
+struct ChangedFileRow: View {
+    let label: String
+    let isSelected: Bool
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 7) {
+                Image(systemName: "plus.forwardslash.minus").font(.system(size: 9))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
+                Text(label)
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1).truncationMode(.head)
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(isSelected ? Color.white.opacity(0.06) : .clear,
+                        in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show this file's diff")
+    }
+}
+
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
     @ObservedObject private var progress = MissionProgress.shared
@@ -864,11 +919,7 @@ struct CodeView: View {
 
     @ViewBuilder
     private func stepIcon(_ status: MissionProgress.Status) -> some View {
-        switch status {
-        case .pending: Image(systemName: "circle").font(.system(size: 9)).foregroundStyle(.secondary)
-        case .running: ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
-        case .done:    Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
-        }
+        ActivityStepRow.icon(status)
     }
 
     private func codeBubble(_ msg: ChatMessage) -> some View {
@@ -1195,26 +1246,11 @@ struct CodeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(ws.changedFiles, id: \.self) { url in
-                        Button {
+                        ChangedFileRow(label: relativePath(url),
+                                       isSelected: ws.selectedFile == url) {
                             ws.select(url)
                             rightPane = .diff
-                        } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: "plus.forwardslash.minus").font(.system(size: 9))
-                                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
-                                Text(relativePath(url))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .lineLimit(1).truncationMode(.head)
-                                    .foregroundStyle(ws.selectedFile == url ? .white : .secondary)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(ws.selectedFile == url ? Color.white.opacity(0.06) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 6))
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .help("Show this file's diff")
                     }
                 }
                 .padding(.horizontal, 5).padding(.bottom, 6)
@@ -1245,16 +1281,7 @@ struct CodeView: View {
     }
 
     private func activityStepRow(_ step: MissionProgress.Step) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            stepIcon(step.status)
-            Text(step.adapted ?? step.name).font(.system(size: 11.5))
-                .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.9))
-                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 9).padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+        ActivityStepRow(step: step)
     }
 
     @ViewBuilder private var activityIdle: some View {
@@ -1845,6 +1872,23 @@ struct CodeSampleGallery: View {
                               hovered: .constant("fix"),
                               onPick: { _ in })
                     .frame(maxWidth: 520, alignment: .leading)
+            }
+            sec("Right panel — run in flight (Activity cards + changed files)") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ActivityStepRow(step: .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                                                status: .done, adapted: "Map the auth module's entry points"))
+                    ActivityStepRow(step: .init(name: "Code Surgeon", icon: "scissors",
+                                                status: .running, adapted: "Code Surgeon · tool round 3/8"))
+                    ActivityStepRow(step: .init(name: "Verifier", icon: "checkmark.seal",
+                                                status: .pending))
+                    Divider().padding(.vertical, 4)
+                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true, onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false, onTap: {})
+                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false, onTap: {})
+                }
+                .frame(maxWidth: 360, alignment: .leading)
+                .padding(8)
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10))
             }
         }
         .padding(26)
