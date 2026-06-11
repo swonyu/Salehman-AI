@@ -2213,11 +2213,16 @@ struct ApprovalCard: View {
     let onRun: () -> Void
     let onCancel: () -> Void
     let onAlways: () -> Void
+    /// Entrance choreography state; QA's offscreen renders never fire
+    /// onAppear, so captures use the pre-revealed path.
+    @State private var appeared = false
 
     var body: some View {
+        let visible = appeared || QAGeometry.enabled
         ZStack {
             Color.black.opacity(0.5).ignoresSafeArea()
                 .onTapGesture { onCancel() }
+                .opacity(visible ? 1 : 0)
 
             VStack(spacing: 0) {
                 // Top
@@ -2273,7 +2278,7 @@ struct ApprovalCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .accessibilityHint("Disables the approval prompt for all future commands")
                 }
                 .padding(.horizontal, 20)
@@ -2282,12 +2287,26 @@ struct ApprovalCard: View {
             .frame(width: 380)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
-            // Raised modal surface, deliberately a hair LIGHTER than the canvas
-            // so it reads as "lifted" over the scrim. Warm-shifted to match the
-            // Apple-Music palette (was a cold-indigo 0.10/0.11/0.16 literal).
-            .background(DS.Palette.modalBG, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            // DOUBLE-BEZEL modal (DS.Bezel tokens): the warm modalBG core keeps
+            // its "lifted over the scrim" read, now seated in the canonical
+            // shell tray with the top-lit core highlight.
+            .background(DS.Palette.modalBG,
+                        in: RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5))
+            .padding(DS.Bezel.shellPadding)
+            .background(DS.Bezel.shellFill,
+                        in: RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(DS.Bezel.shellStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+            // Entrance: settle up from 0.96 on lux — mass, not a pop.
+            .scaleEffect(visible ? 1 : 0.96)
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                guard !appeared else { return }
+                withAnimation(DS.Motion.lux) { appeared = true }
+            }
         }
     }
 }
