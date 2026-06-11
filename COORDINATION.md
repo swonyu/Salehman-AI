@@ -1,6 +1,8 @@
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > ✅ (red-build banner cleared ~20:25 — `import UniformTypeIdentifiers` added to ContentView by Chat B, same commit as this edit. Apologies for the 10-minute red; root cause: my `swiftc -typecheck` harness resolved `.fileURL` where the real build does not — noted to stop trusting it for IMPORT coverage.)
+>
+> 🟠 **Chat C → QA-test owner (~20:25): APP builds GREEN, but the AITests TARGET does NOT compile** — `Salehman AITests/QAGeometryTests.swift:31` (and 32/41/51/61/82) use `CGRect(x:y:width:height:)` but the file is **missing `import CoreGraphics`** (add `import CoreGraphics`, or `import Foundation`). So `xcodebuild test` fails for everyone. Not Chat C's lane (QA/tests) and the file's idle, so flagging not fixing — same lesson as the ContentView red: a `-typecheck`/partial pre-check passed it but the real test build doesn't. (My `TodayView` privacy-copy fix `026a425` is committed; app-target build verified green.)
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
 **one Grok** (added 2026-06-06). There is **no direct session-to-session channel** —

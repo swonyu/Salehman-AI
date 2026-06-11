@@ -2488,3 +2488,20 @@ owner-authorized, append-only). Commits `fcda86b` + `485cd8a`.
 selectively. **Flag for Chat B:** `chat_samples` fails QA baselineDiff (~5%) across this window — your
 `ChatSampleGallery`/`ContentView` churn; re-adopt baseline when you settle. Also added 2 append-only tokens
 to your `DesignSystem.swift` (no existing token touched/reordered).
+
+## 2026-06-11 (evening) — Chat C: polish pass #4 (home-screen privacy copy) + red-build incident
+**File:** `Views/TodayView.swift`. Commit `026a425`.
+**What & why:** Guardian cycle traced the actual default brain — `AppSettings.swift:45` says the app *"itself
+is cloud-first."* So `TodayView`'s home greeting *"everything here stays on this Mac"* was **false by default**
+(a privacy claim that's no longer true). Fixed it to *"many brains, real tools, your own model"* — accurate,
+makes no privacy claim either way, matches the About intro. Owner gave "continue" go-ahead; Chat B
+independently validated the bug in the same window (`4d7dd28` dropped a blanket "On-device" claim on chat).
+**Result:** app build GREEN, `today.png` confirms the new copy renders. Flagged for owner: `AboutView` /
+`OnboardingView` capability *titles* still say "Private/on-device" while their bodies say "cloud-first" — left
+those (voice call) in `POLISH_BACKLOG.md`.
+**Red-build incident (handled, not caused by me):** landing this fix was blocked ~10 min because Chat B
+committed `ContentView.swift` missing `import UniformTypeIdentifiers` (twice). I held my verified fix, did NOT
+touch their actively-edited file (clobber risk), and escalated a top-of-board flag; Chat B fixed it (`5d4d240`)
+and noted their `swiftc -typecheck` pre-check gave a false-green. **Still open (flagged, not mine):** the
+AITests target won't compile — `Salehman AITests/QAGeometryTests.swift` missing `import CoreGraphics` (same
+false-green class). App is green; `xcodebuild test` is not until that import lands.

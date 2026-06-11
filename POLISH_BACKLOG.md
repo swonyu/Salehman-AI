@@ -8,7 +8,8 @@ imply local/private-by-default:
 - **🔴 `TodayView` greeting subtitle: *"everything here stays on this Mac."*** — **unconditionally FALSE by
   default** (data leaves the Mac unless the user turns on Offline/Private Mode). A false privacy claim on the
   HOME SCREEN of a privacy-marketed app — the exact class of "UI that lies" the dev log shows you repeatedly
-  fixing. Today is Chat C's lane; **one-line fix ready on your word.**
+  fixing. Today is Chat C's lane; **✅ FIXED in `026a425`** → *"many brains, real tools, your own model"*
+  (accurate, no privacy claim either way). The About/Onboarding title items below are still open (voice call).
 - **🟠 `AboutView` capability #1 (lines 20–22):** title *"Private, on-device"* but body *"Runs cloud-first…"*
   — title contradicts its own body.
 - **🟠 `OnboardingView` page 2 (lines 22–24):** title *"Private by design"* + *"runs cloud-first…"* body.
