@@ -845,3 +845,19 @@ The screenshot-checklist above is now the FALLBACK. New primary loop:
    (`-only-testing` add `Salehman AIUITests/ChatTabUITests`), or just launch the Debug app once.
 Limits stated honestly: ImageRenderer = static layout/style only (no hover/focus/sheet states) — those
 stay on your manual checklist; and `chat_live.png` renders the owner's real history (kept out of git).
+
+### 🔭 2026-06-11 — QA SYSTEM REFINED (owner: "refine the qa system a lot, way more features")
+Built on your `QASnapshots` harness — additive, kept your `CAPTURE_DONE.txt` marker:
+- **Code-tab coverage** (my lane was missing): `code_tab` (live) + `code_samples` (deterministic gallery
+  in CodeView.swift — user block, assistant doc+code, **Arabic RTL reply**, streaming, agent strip).
+  `CodeMessageRow`/`PulsingDot` made internal so the gallery can reuse them.
+- **NSHostingView capture path** (`snapHosted`): ImageRenderer CAN'T draw HSplitView/VSplitView, so the live
+  Code tab rendered as the yellow "prohibited" placeholder. `snapHosted` hosts offscreen + caches the layer
+  → real picture. Use it for any AppKit-backed view. (Heads-up: `today/notes/knowledge/markets/settings`
+  render mostly EMPTY via ImageRenderer in the contact sheet — likely no-data OR they also need the hosted
+  path; your lane — `snapHosted` is there if you want richer captures.)
+- **`INDEX.md` manifest**: per-PNG description, size, ✅/❌ status, render-ms, + git SHA + ok-count header.
+  Fixed the timestamp rendering in **Hijri** (owner's locale) → forced Gregorian/en_US_POSIX.
+- **`contact_sheet.png`**: montage of all surfaces (thumbnail+label, 4-col) — one-glance overview.
+- **Responsive variants**: `chat_narrow` (560pt) + `code_narrow` (640pt) catch layout breaks.
+All 13 surfaces ✅ at commit time; build green. The harness is now the primary QA loop for BOTH lanes.

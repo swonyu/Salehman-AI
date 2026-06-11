@@ -1368,7 +1368,7 @@ struct CodeView: View {
 /// One conversation row, Claude-Code style: the user's message is a quiet
 /// right-aligned block; Salehman's reply flows flush-left like a document —
 /// no avatars, no name labels, copy appears on hover. Simple and elegant.
-private struct CodeMessageRow: View {
+struct CodeMessageRow: View {
     let msg: ChatMessage
     var onRegenerate: (() -> Void)? = nil
     @ObservedObject private var speech = SpeechOut.shared
@@ -1427,7 +1427,7 @@ private struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
-private struct PulsingDot: View {
+struct PulsingDot: View {
     @State private var on = false
     var body: some View {
         Circle().fill(DS.Palette.accent)
@@ -1435,5 +1435,61 @@ private struct PulsingDot: View {
             .opacity(on ? 1 : 0.35)
             .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
             .accessibilityHidden(true)
+    }
+}
+
+/// Deterministic Code-tab states for the QA snapshot harness — mirrors the chat
+/// gallery but for the Code tab's own row style. Fixed clock + content so
+/// before/after diffs are stable. Includes an Arabic reply (the 14B answers in
+/// Arabic) to catch RTL/script rendering regressions.
+struct CodeSampleGallery: View {
+    private let now = Date(timeIntervalSince1970: 1_781_200_000)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            sec("User block — right-aligned, no avatar") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "fix the off-by-one in the paginator", isUser: true, timestamp: now))
+            }
+            sec("Assistant — flush-left document, syntax-highlighted code, hover-copy") {
+                CodeMessageRow(msg: .init(id: UUID(), text: """
+                Found it in `Paginator.swift` — the loop used `<=` but pages are 0-indexed:
+
+                ```swift
+                for i in 0..<count {   // was 0...count
+                    rows.append(page[i])
+                }
+                ```
+
+                Built + ran the tests — all green. The last page no longer double-counts.
+                """, isUser: false, timestamp: now), onRegenerate: {})
+            }
+            sec("Arabic reply — RTL/script rendering (the 14B speaks Arabic)") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "تم — أضفت زر يحذف الملفات المؤقتة، وبنيت المشروع. يشتغل تمام.", isUser: false, timestamp: now))
+            }
+            sec("Streaming — pulsing dot above, plain text while long") {
+                HStack(alignment: .top, spacing: 10) {
+                    PulsingDot().padding(.top, 7)
+                    Text("Generating the refactor plan across the auth module…")
+                        .font(.system(size: 14)).foregroundStyle(Color.white.opacity(0.92))
+                }
+            }
+            sec("Agent strip — one agent, tool-round note") {
+                AgentRunView(steps: [
+                    .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                          status: .running, adapted: "Reasoning Strategist · tool round 2/8")
+                ])
+            }
+        }
+        .padding(26)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.Palette.codeSurface)
+    }
+
+    private func sec<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold)).tracking(1.1)
+                .foregroundStyle(DS.Palette.textSecondary)
+            content()
+        }
     }
 }

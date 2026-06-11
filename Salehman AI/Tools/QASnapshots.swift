@@ -54,29 +54,46 @@ enum QASnapshots {
     /// Render every main surface + the deterministic chat gallery, then write
     /// a `CAPTURE_DONE.txt` marker (timestamp + file list) so a remote session
     /// can verify completion without listing PNGs.
+    /// One captured surface, recorded for the manifest + contact sheet.
+    private struct Shot { let name: String; let desc: String; let w: Int; let h: Int; let ok: Bool; let ms: Int }
+    private static var shots: [Shot] = []
+
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        shots.removeAll()
 
-        snap(TodayView(),          "today",         CGSize(width: 1000, height: 740), in: dir)
-        snap(ContentView(),        "chat_live",     CGSize(width: 1000, height: 780), in: dir)
-        snap(ChatSampleGallery(),  "chat_samples",  CGSize(width: 820,  height: 1240), in: dir)
-        snap(AgentsView(),         "agents",        CGSize(width: 1000, height: 740), in: dir)
-        snap(ScratchpadView(),     "notes",         CGSize(width: 1000, height: 700), in: dir)
-        snap(KnowledgeView(),      "knowledge",     CGSize(width: 1000, height: 700), in: dir)
-        snap(MarketsView(),        "markets",       CGSize(width: 1000, height: 740), in: dir)
-        snap(MemoryView(),         "memory",        CGSize(width: 1000, height: 700), in: dir)
-        snap(SettingsView(),       "settings",      CGSize(width: 560,  height: 640), in: dir)
+        // ── Code tab (this session's lane) ──────────────────────────────────
+        // CodeView uses HSplitView/VSplitView (AppKit-backed) which ImageRenderer
+        // can't draw — so it goes through the NSHostingView path instead.
+        snapHosted(CodeView(),     "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
+        snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (user block, assistant doc + code, Arabic RTL, streaming, agent strip)", .init(width: 860, height: 1120), in: dir)
+        // ── Main chat (other session's lane) ────────────────────────────────
+        snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
+        // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
+        snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snapHosted(CodeView(),     "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
+        // ── Every other tab — flat-canvas restyle spot-check ────────────────
+        snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
+        snap(AgentsView(),         "agents",       "Agents tab", .init(width: 1000, height: 740), in: dir)
+        snap(ScratchpadView(),     "notes",        "Notes / scratchpad", .init(width: 1000, height: 700), in: dir)
+        snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
+        snap(MarketsView(),        "markets",      "Markets tab", .init(width: 1000, height: 740), in: dir)
+        snap(MemoryView(),         "memory",       "Memory tab", .init(width: 1000, height: 700), in: dir)
+        snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
 
-        let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?
-            .filter { $0.hasSuffix(".png") }.sorted() ?? []
-        let marker = "captured \(written.count) snapshots at \(Date())\n"
-            + written.joined(separator: "\n") + "\n"
-        try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"),
-                          atomically: true, encoding: .utf8)
+        writeManifest(in: dir)
+        buildContactSheet(in: dir)
+        // Keep the simple completion marker too (the other session's watcher reads it).
+        let names = shots.map(\.name).sorted()
+        let marker = "captured \(shots.filter(\.ok).count)/\(shots.count) snapshots at \(Date())\n"
+            + names.joined(separator: "\n") + "\n"
+        try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"), atomically: true, encoding: .utf8)
     }
 
-    private static func snap<V: View>(_ view: V, _ name: String, _ size: CGSize, in dir: URL) {
+    private static func snap<V: View>(_ view: V, _ name: String, _ desc: String, _ size: CGSize, in dir: URL) {
+        let start = Date()
         let renderer = ImageRenderer(
             content: view
                 .frame(width: size.width, height: size.height)
@@ -84,11 +101,120 @@ enum QASnapshots {
                 .tint(DS.Palette.accent)
         )
         renderer.scale = 2
-        guard let img = renderer.nsImage,
-              let tiff = img.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: dir.appendingPathComponent("\(name).png"))
+        var ok = false
+        if let img = renderer.nsImage,
+           let tiff = img.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
+        }
+        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
+                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+    }
+
+    /// Render a view that ImageRenderer can't (HSplitView/VSplitView and other
+    /// AppKit-backed content) by hosting it offscreen in an NSHostingView and
+    /// caching its layer to a bitmap. Heavier than ImageRenderer but it actually
+    /// draws split views, so the live Code tab gets a real picture.
+    private static func snapHosted<V: View>(_ view: V, _ name: String, _ desc: String, _ size: CGSize, in dir: URL) {
+        let start = Date()
+        let host = NSHostingView(rootView:
+            view.frame(width: size.width, height: size.height)
+                .preferredColorScheme(.dark)
+                .tint(DS.Palette.accent)
+        )
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        var ok = false
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            rep.size = host.bounds.size
+            host.cacheDisplay(in: host.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]) {
+                ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
+            }
+        }
+        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
+                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+    }
+
+    /// Markdown manifest: what each PNG shows, its size, render status + time, the
+    /// commit it was captured at — so the blind session reading the PNGs has full context.
+    private static func writeManifest(in dir: URL) {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")          // force Gregorian (owner's locale renders Hijri)
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let okN = shots.filter(\.ok).count
+        var md = """
+        # QA snapshots — Salehman AI
+        **\(f.string(from: Date()))** · commit `\(gitHead())` · **\(okN)/\(shots.count)** surfaces OK · \
+        see `contact_sheet.png` for a one-glance montage.
+
+        In-process `ImageRenderer` captures (no Screen-Recording permission). Static layout/style only —
+        hover/focus/sheet states stay on the manual checklist. Re-capture: View ▸ Capture QA Snapshots,
+        or `touch qa/SNAPSHOT_REQUEST` and launch.
+
+        | file | shows | size | status | render |
+        |---|---|---|---|---|
+
+        """
+        for s in shots {
+            md += "| `\(s.name).png` | \(s.desc) | \(s.w)×\(s.h) | \(s.ok ? "✅" : "❌ FAILED") | \(s.ms) ms |\n"
+        }
+        try? md.write(to: dir.appendingPathComponent("INDEX.md"), atomically: true, encoding: .utf8)
+    }
+
+    /// Montage of every captured surface (thumbnail + label) into one PNG — lets the
+    /// remote session eyeball the WHOLE app in a single image before drilling in.
+    private static func buildContactSheet(in dir: URL) {
+        let cols = 4
+        let thumbs: [(String, NSImage)] = shots.filter(\.ok).compactMap { s in
+            NSImage(contentsOf: dir.appendingPathComponent("\(s.name).png")).map { (s.name, $0) }
+        }
+        guard !thumbs.isEmpty else { return }
+        let rows = stride(from: 0, to: thumbs.count, by: cols).map { Array(thumbs[$0..<min($0+cols, thumbs.count)]) }
+        let sheet = VStack(alignment: .leading, spacing: 14) {
+            Text("Salehman AI — QA contact sheet").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, item in
+                        VStack(spacing: 5) {
+                            Image(nsImage: item.1).resizable().aspectRatio(contentMode: .fit)
+                                .frame(width: 250, height: 170)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12)))
+                            Text(item.0).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 250)
+                    }
+                }
+            }
+        }
+        .padding(20).background(DS.Palette.codeSurfaceSide)
+        let r = ImageRenderer(content: sheet.frame(width: CGFloat(cols) * 264 + 40).fixedSize()
+            .preferredColorScheme(.dark).tint(DS.Palette.accent))
+        r.scale = 1.5
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("contact_sheet.png"))
+        }
+    }
+
+    /// Best-effort short git SHA (reads `.git` directly, no shell-out).
+    private static func gitHead() -> String {
+        let g = qaDir.deletingLastPathComponent().appendingPathComponent(".git")
+        guard let head = try? String(contentsOf: g.appendingPathComponent("HEAD"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return "unknown" }
+        guard head.hasPrefix("ref: ") else { return String(head.prefix(8)) }
+        let ref = String(head.dropFirst(5))
+        if let sha = try? String(contentsOf: g.appendingPathComponent(ref), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) { return String(sha.prefix(8)) }
+        if let packed = try? String(contentsOf: g.appendingPathComponent("packed-refs"), encoding: .utf8) {
+            for l in packed.split(separator: "\n") where l.hasSuffix(ref) { return String(l.prefix(8)) }
+        }
+        return "ref:" + (ref.split(separator: "/").last.map(String.init) ?? "?")
     }
 }
 
