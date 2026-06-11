@@ -159,3 +159,25 @@ struct ChatPinTests {
         #expect(p.hasSuffix("…") && p.count <= 41)
     }
 }
+
+// MARK: - Composer length readout
+
+struct ComposerCountTests {
+
+    @Test func quietBelowTheFloor() {
+        #expect(ContentView.composerCount("just a short draft") == nil)
+        #expect(ContentView.composerCount("") == nil)
+    }
+
+    @Test func labelsAtTheFloorWithoutWarning() {
+        let draft = Array(repeating: "w", count: 120).joined(separator: " ")
+        let c = ContentView.composerCount(draft)
+        #expect(c?.label == "120 words" && c?.warn == false)
+    }
+
+    @Test func warnsAtTheBudget() {
+        let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
+        let c = ContentView.composerCount(draft)
+        #expect(c?.label == "2000 words" && c?.warn == true)
+    }
+}

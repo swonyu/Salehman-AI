@@ -679,6 +679,17 @@ struct ContentView: View {
             : String(first.prefix(max)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    /// Composer length readout: nil below the noise floor (short drafts get
+    /// no chrome), then "N words" with `warn` past the soft budget. Words
+    /// rather than characters — that's how people gauge prompts. Pure for tests.
+    nonisolated static func composerCount(_ text: String,
+                                          floor: Int = 120,
+                                          budget: Int = 2_000) -> (label: String, warn: Bool)? {
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        guard words >= floor else { return nil }
+        return ("\(words) words", words >= budget)
+    }
+
     /// Horizontal chip rail: click a chip to jump to (and center) its message.
     /// A chip whose message is search-filtered out scrolls nowhere — harmless.
     private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
@@ -957,6 +968,18 @@ struct ContentView: View {
                     .accessibilityIdentifier("chat.composer.plus")
 
                     Spacer(minLength: 0)
+
+                    // Draft-length readout — invisible until the draft is
+                    // genuinely long (zero chrome at rest), accent past the
+                    // soft budget where local-model context gets tight.
+                    if let count = Self.composerCount(mission) {
+                        Text(count.label)
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                            .help(count.warn ? "Very long message — consider splitting it or attaching a file"
+                                             : "Draft length")
+                            .accessibilityIdentifier("chat.composer.count")
+                    }
 
                     // Mic (dictation) — quiet inline icon; red while listening.
                     Button { speechIn.toggle() } label: {
