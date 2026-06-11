@@ -1454,3 +1454,17 @@ heat colours — that encodes magnitude). Agents: direct-command field gains the
 timeout — Chat B's WIP, not mine). Notes/Knowledge re-checked: already clean (textContrast 3.3:1, no failures).
 TodayView left alone (it's your uncommitted off-main-refresh WIP).
 **→ Continuing into a 3h marathon (owner): heavy refine + polish + test + new FEATURES on these tabs.**
+
+## 2026-06-11 (night) — marathon slice 3: quote-reply, Esc-everywhere, edit-resend test armor
+**What & why:** (1) **Quote** action on assistant hover pills — `> `-quotes the reply into the
+composer (pure `ContentView.quoted` helper, blank lines kept in-block so multi-paragraph quotes
+stay one quote). (2) Esc now closes the search bar (the Done button was the only way out);
+composer Esc (stop/dismiss-slash) landed in slice 1; ⌘. stop binding verified already wired in
+the App menu. Search match count already existed (earlier pass) — verified, no change. (3) Test
+armor: `ChatQuoteTests` (3 cases) + `ChatExtractForEditTests` (5 cases: truncation+returned
+text, assistant rows refused, attachment-line stripping, attachment-only refused, mid-run
+refused) — the whole new edit-resend contract is pinned.
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`; bundle
+regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). AITests run still owed by a build-capable
+session (board request standing).

@@ -340,6 +340,12 @@ struct ContentView: View {
                                                           mission = text
                                                           inputFocused = true
                                                       }
+                                                  },
+                                                  onQuote: { text in
+                                                      let q = Self.quoted(text)
+                                                      mission = mission.isEmpty ? q + "\n\n"
+                                                                                : mission + "\n" + q + "\n"
+                                                      inputFocused = true
                                                   })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -485,6 +491,11 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Find in conversation…", text: $searchQuery)
                 .textFieldStyle(.plain)
+                // Esc closes search without reaching for the Done button.
+                .onKeyPress(.escape) {
+                    withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" }
+                    return .handled
+                }
             if !searchQuery.isEmpty {
                 Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -589,6 +600,15 @@ struct ContentView: View {
                 .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
+    }
+
+    /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
+    /// (blank lines too, so multi-paragraph quotes stay one block). Pure for
+    /// tests.
+    nonisolated static func quoted(_ text: String) -> String {
+        text.components(separatedBy: "\n")
+            .map { "> " + $0 }
+            .joined(separator: "\n")
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
@@ -1234,6 +1254,8 @@ struct MessageBubble: View {
     /// Edit-and-resend on user rows: the view model truncates the transcript
     /// from this message and the composer reloads its text. nil hides the action.
     var onEdit: ((ChatMessage) -> Void)? = nil
+    /// Quote an assistant reply into the composer (`> `-prefixed). nil hides it.
+    var onQuote: ((String) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -1377,6 +1399,11 @@ struct MessageBubble: View {
                     speech.toggle(message.text, id: message.id)
                 }
                 actionButton("doc.on.doc", "Copy") { copyText() }
+                if onQuote != nil {
+                    actionButton("text.quote", "Quote in your next message") {
+                        onQuote?(displayedText)
+                    }
+                }
                 if onRegenerate != nil {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }

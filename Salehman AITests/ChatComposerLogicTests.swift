@@ -48,6 +48,71 @@ struct ChatSlashMatcherTests {
     }
 }
 
+struct ChatQuoteTests {
+
+    @Test func everyLineGetsAPrefix() {
+        #expect(ContentView.quoted("one\ntwo") == "> one\n> two")
+    }
+
+    @Test func blankLinesStayInTheBlock() {
+        // A bare ">" on blank lines keeps multi-paragraph quotes one block.
+        #expect(ContentView.quoted("a\n\nb") == "> a\n> \n> b")
+    }
+
+    @Test func singleLine() {
+        #expect(ContentView.quoted("hello") == "> hello")
+    }
+}
+
+// MARK: - extractForEdit — transcript truncation for edit-and-resend
+//
+// `@MainActor` + `.serialized`: ChatViewModel is MainActor; each case builds
+// its own VM so there's no shared state, but serialization keeps any future
+// shared-singleton drift (MissionProgress etc.) from racing.
+
+@MainActor
+@Suite(.serialized)
+struct ChatExtractForEditTests {
+
+    private func vm(_ texts: [(String, Bool)]) -> ChatViewModel {
+        let m = ChatViewModel()
+        m.messages = texts.map { ChatMessage(id: UUID(), text: $0.0, isUser: $0.1, timestamp: .now) }
+        return m
+    }
+
+    @Test func truncatesFromTheEditedTurnAndReturnsItsText() {
+        let m = vm([("first", true), ("reply 1", false), ("second", true), ("reply 2", false)])
+        let edited = m.messages[2]
+        #expect(m.extractForEdit(edited) == "second")
+        #expect(m.messages.map(\.text) == ["first", "reply 1"])
+    }
+
+    @Test func assistantMessagesAreNotEditable() {
+        let m = vm([("q", true), ("a", false)])
+        #expect(m.extractForEdit(m.messages[1]) == nil)
+        #expect(m.messages.count == 2)
+    }
+
+    @Test func attachmentLinesAreStripped() {
+        let m = vm([("look at this\n📎 report.pdf", true)])
+        #expect(m.extractForEdit(m.messages[0]) == "look at this")
+        #expect(m.messages.isEmpty)
+    }
+
+    @Test func attachmentOnlyTurnIsNotEditable() {
+        let m = vm([("📎 report.pdf", true)])
+        #expect(m.extractForEdit(m.messages[0]) == nil)
+        #expect(m.messages.count == 1)
+    }
+
+    @Test func midRunEditsAreRefused() {
+        let m = vm([("q", true)])
+        m.isRunning = true
+        #expect(m.extractForEdit(m.messages[0]) == nil)
+        m.isRunning = false
+    }
+}
+
 struct ChatGreetingBucketTests {
 
     @Test(arguments: [

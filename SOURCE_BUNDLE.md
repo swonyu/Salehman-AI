@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:42 +03 · Swift files: 136 · Swift LOC: 27011_
+_Generated: 2026-06-11 22:46 +03 · Swift files: 137 · Swift LOC: 27222_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14173,7 +14173,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1907 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1937 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14182,8 +14182,8 @@ import UniformTypeIdentifiers
 
 // MARK: - Diff model
 
-struct DiffLine: Identifiable {
-    enum Kind { case same, add, remove }
+nonisolated struct DiffLine: Identifiable {
+    nonisolated enum Kind: Equatable { case same, add, remove }
     let id = UUID()
     let kind: Kind
     let text: String
@@ -14203,6 +14203,10 @@ final class CodeWorkspace: ObservableObject {
     @Published var fileContent: String = ""
     @Published var diff: [DiffLine] = []
     @Published var changedFiles: [URL] = []
+    /// Per-file added/removed line counts for the last run's changes — shown as
+    /// "+N −M" next to each row in the right panel's Changed-files list.
+    @Published var changeStats: [URL: DiffStat] = [:]
+    struct DiffStat: Equatable { let added: Int; let removed: Int }
 
     private var snapshots: [URL: String] = [:]
 
@@ -14260,7 +14264,7 @@ final class CodeWorkspace: ObservableObject {
         projectRoot = url
         Shell.workingDirectory = url          // terminal + edits now run in the project
         UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
-        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []
+        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
         Task { await reload() }
     }
 
@@ -14322,20 +14326,29 @@ final class CodeWorkspace: ObservableObject {
         await reload()
         let urls = files
         let before = snapshots
-        let changed = await Task.detached(priority: .utility) { () -> [URL] in
+        let (changed, stats) = await Task.detached(priority: .utility) { () -> ([URL], [URL: DiffStat]) in
             var c: [URL] = []
+            var s: [URL: DiffStat] = [:]
             for u in urls {
                 let now = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
-                if (before[u] ?? "") != now { c.append(u) }
+                let old = before[u] ?? ""
+                guard old != now else { continue }
+                c.append(u)
+                // +N −M for the panel list — same capped LCS as the diff pane,
+                // so the numbers always agree with what the pane shows.
+                let lines = CodeWorkspace.lineDiff(old: old, new: now)
+                s[u] = DiffStat(added: lines.filter { $0.kind == .add }.count,
+                                removed: lines.filter { $0.kind == .remove }.count)
             }
-            return c
+            return (c, s)
         }.value
         changedFiles = changed
+        changeStats = stats
         if let first = changed.first { select(first) }
     }
 
     /// Minimal LCS line-diff. Caps each side so a huge file can't stall the UI.
-    static func lineDiff(old: String, new: String) -> [DiffLine] {
+    nonisolated static func lineDiff(old: String, new: String) -> [DiffLine] {
         let cap = 1500
         let a = Array(old.components(separatedBy: "\n").prefix(cap))
         let b = Array(new.components(separatedBy: "\n").prefix(cap))
@@ -14449,6 +14462,7 @@ struct ActivityStepRow: View {
 struct ChangedFileRow: View {
     let label: String
     let isSelected: Bool
+    var stat: CodeWorkspace.DiffStat? = nil
     var onTap: () -> Void
 
     var body: some View {
@@ -14461,6 +14475,18 @@ struct ChangedFileRow: View {
                     .lineLimit(1).truncationMode(.head)
                     .foregroundStyle(isSelected ? .white : .secondary)
                 Spacer(minLength: 0)
+                if let stat {
+                    // "+12 −3" — git-style change magnitude at a glance.
+                    HStack(spacing: 4) {
+                        if stat.added > 0 {
+                            Text("+\(stat.added)").foregroundStyle(Color.green.opacity(0.85))
+                        }
+                        if stat.removed > 0 {
+                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                        }
+                    }
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSelected ? Color.white.opacity(0.06) : .clear,
@@ -15424,7 +15450,8 @@ struct CodeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(ws.changedFiles, id: \.self) { url in
                         ChangedFileRow(label: relativePath(url),
-                                       isSelected: ws.selectedFile == url) {
+                                       isSelected: ws.selectedFile == url,
+                                       stat: ws.changeStats[url]) {
                             ws.select(url)
                             rightPane = .diff
                         }
@@ -16059,9 +16086,12 @@ struct CodeSampleGallery: View {
                     ActivityStepRow(step: .init(name: "Verifier", icon: "checkmark.seal",
                                                 status: .pending))
                     Divider().padding(.vertical, 4)
-                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true, onTap: {})
-                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false, onTap: {})
-                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false, onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true,
+                                   stat: .init(added: 24, removed: 9), onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false,
+                                   stat: .init(added: 6, removed: 0), onTap: {})
+                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false,
+                                   stat: .init(added: 41, removed: 2), onTap: {})
                 }
                 .frame(maxWidth: 360, alignment: .leading)
                 .padding(8)
@@ -16209,7 +16239,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1741 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1768 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16553,6 +16583,12 @@ struct ContentView: View {
                                                           mission = text
                                                           inputFocused = true
                                                       }
+                                                  },
+                                                  onQuote: { text in
+                                                      let q = Self.quoted(text)
+                                                      mission = mission.isEmpty ? q + "\n\n"
+                                                                                : mission + "\n" + q + "\n"
+                                                      inputFocused = true
                                                   })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -16698,6 +16734,11 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Find in conversation…", text: $searchQuery)
                 .textFieldStyle(.plain)
+                // Esc closes search without reaching for the Done button.
+                .onKeyPress(.escape) {
+                    withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" }
+                    return .handled
+                }
             if !searchQuery.isEmpty {
                 Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -16802,6 +16843,15 @@ struct ContentView: View {
                 .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
+    }
+
+    /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
+    /// (blank lines too, so multi-paragraph quotes stay one block). Pure for
+    /// tests.
+    nonisolated static func quoted(_ text: String) -> String {
+        text.components(separatedBy: "\n")
+            .map { "> " + $0 }
+            .joined(separator: "\n")
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
@@ -17447,6 +17497,8 @@ struct MessageBubble: View {
     /// Edit-and-resend on user rows: the view model truncates the transcript
     /// from this message and the composer reloads its text. nil hides the action.
     var onEdit: ((ChatMessage) -> Void)? = nil
+    /// Quote an assistant reply into the composer (`> `-prefixed). nil hides it.
+    var onQuote: ((String) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -17590,6 +17642,11 @@ struct MessageBubble: View {
                     speech.toggle(message.text, id: message.id)
                 }
                 actionButton("doc.on.doc", "Copy") { copyText() }
+                if onQuote != nil {
+                    actionButton("text.quote", "Quote in your next message") {
+                        onQuote?(displayedText)
+                    }
+                }
                 if onRegenerate != nil {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }
@@ -23193,7 +23250,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (63 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (128 lines) =====
 ```swift
 import Testing
 @testable import Salehman_AI
@@ -23242,6 +23299,71 @@ struct ChatSlashMatcherTests {
         // Once the first token is complete the input is a message, not a command.
         #expect(ChatSlashCommand.matches(for: "/copy this chat", in: fixtures).isEmpty)
         #expect(ChatSlashCommand.matches(for: "/copy\n", in: fixtures).isEmpty)
+    }
+}
+
+struct ChatQuoteTests {
+
+    @Test func everyLineGetsAPrefix() {
+        #expect(ContentView.quoted("one\ntwo") == "> one\n> two")
+    }
+
+    @Test func blankLinesStayInTheBlock() {
+        // A bare ">" on blank lines keeps multi-paragraph quotes one block.
+        #expect(ContentView.quoted("a\n\nb") == "> a\n> \n> b")
+    }
+
+    @Test func singleLine() {
+        #expect(ContentView.quoted("hello") == "> hello")
+    }
+}
+
+// MARK: - extractForEdit — transcript truncation for edit-and-resend
+//
+// `@MainActor` + `.serialized`: ChatViewModel is MainActor; each case builds
+// its own VM so there's no shared state, but serialization keeps any future
+// shared-singleton drift (MissionProgress etc.) from racing.
+
+@MainActor
+@Suite(.serialized)
+struct ChatExtractForEditTests {
+
+    private func vm(_ texts: [(String, Bool)]) -> ChatViewModel {
+        let m = ChatViewModel()
+        m.messages = texts.map { ChatMessage(id: UUID(), text: $0.0, isUser: $0.1, timestamp: .now) }
+        return m
+    }
+
+    @Test func truncatesFromTheEditedTurnAndReturnsItsText() {
+        let m = vm([("first", true), ("reply 1", false), ("second", true), ("reply 2", false)])
+        let edited = m.messages[2]
+        #expect(m.extractForEdit(edited) == "second")
+        #expect(m.messages.map(\.text) == ["first", "reply 1"])
+    }
+
+    @Test func assistantMessagesAreNotEditable() {
+        let m = vm([("q", true), ("a", false)])
+        #expect(m.extractForEdit(m.messages[1]) == nil)
+        #expect(m.messages.count == 2)
+    }
+
+    @Test func attachmentLinesAreStripped() {
+        let m = vm([("look at this\n📎 report.pdf", true)])
+        #expect(m.extractForEdit(m.messages[0]) == "look at this")
+        #expect(m.messages.isEmpty)
+    }
+
+    @Test func attachmentOnlyTurnIsNotEditable() {
+        let m = vm([("📎 report.pdf", true)])
+        #expect(m.extractForEdit(m.messages[0]) == nil)
+        #expect(m.messages.count == 1)
+    }
+
+    @Test func midRunEditsAreRefused() {
+        let m = vm([("q", true)])
+        m.isRunning = true
+        #expect(m.extractForEdit(m.messages[0]) == nil)
+        m.isRunning = false
     }
 }
 
@@ -26892,6 +27014,99 @@ struct ShellSecurityTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageSignalEngineTests.swift (89 lines) =====
+```swift
+import Testing
+@testable import Salehman_AI
+
+/// Pins `StockSageSignalEngine.generateSignal` — the pure price→recommendation
+/// map behind the Markets tab. The thresholds are a product contract (the
+/// briefing service + the watchlist badges read off them), so a future
+/// "obvious cleanup" of the if-ladder can't silently move a band.
+///   |Δ| > 6%  → strong buy/sell · |Δ| > 2.5% → buy/sell · else hold(0.65)
+///   confidence = min(|Δ|/8, 0.92) for non-hold.
+struct StockSageSignalEngineTests {
+
+    private func sig(_ cur: Double, _ prev: Double) -> StockSageSignal {
+        StockSageSignalEngine.generateSignal(symbol: "T", currentPrice: cur, previousPrice: prev)
+    }
+
+    // MARK: Bands (clear of the fp boundary)
+
+    @Test func bigGainIsStrongBuy() {
+        let s = sig(107, 100)                          // +7%
+        #expect(s.recommendation == .strongBuy)
+        #expect(s.reason == "Very strong upward momentum")
+    }
+    @Test func bigDropIsStrongSell() {
+        let s = sig(92, 100)                           // -8%
+        #expect(s.recommendation == .strongSell)
+        #expect(s.reason == "Sharp selling pressure")
+    }
+    @Test func midGainIsBuy() {
+        let s = sig(104, 100)                          // +4%
+        #expect(s.recommendation == .buy)
+        #expect(s.reason == "Positive momentum building")
+    }
+    @Test func midDropIsSell() {
+        let s = sig(96, 100)                           // -4%
+        #expect(s.recommendation == .sell)
+        #expect(s.reason == "Downward pressure detected")
+    }
+    @Test func smallMoveIsHold() {
+        let s = sig(101, 100)                          // +1%
+        #expect(s.recommendation == .hold)
+        #expect(s.reason == "Price consolidating")
+    }
+    @Test func flatIsHold() {
+        #expect(sig(100, 100).recommendation == .hold)
+    }
+
+    // MARK: Boundaries (just on each side — the `>` is strict)
+
+    @Test func justAboveStrongThresholdIsStrong() {
+        #expect(sig(106.5, 100).recommendation == .strongBuy)   // +6.5%
+    }
+    @Test func justBelowStrongThresholdIsBuy() {
+        #expect(sig(105.5, 100).recommendation == .buy)         // +5.5%
+    }
+    @Test func justAboveBuyThresholdIsBuy() {
+        #expect(sig(102.6, 100).recommendation == .buy)         // +2.6%
+    }
+    @Test func justBelowBuyThresholdIsHold() {
+        #expect(sig(102.4, 100).recommendation == .hold)        // +2.4%
+    }
+
+    // MARK: Confidence
+
+    @Test func confidenceScalesWithMagnitude() {
+        #expect(abs(sig(104, 100).confidence - 0.5) < 1e-9)     // 4/8
+    }
+    @Test func confidenceCapsAt092() {
+        #expect(abs(sig(120, 100).confidence - 0.92) < 1e-9)    // 20/8 → capped
+    }
+    @Test func holdConfidenceIsFlat065() {
+        #expect(abs(sig(101, 100).confidence - 0.65) < 1e-9)
+    }
+
+    // MARK: Edge — no divide-by-zero on a missing previous price
+
+    @Test func zeroPreviousPriceIsHoldNotCrash() {
+        let s = sig(100, 0)
+        #expect(s.recommendation == .hold)
+        #expect(abs(s.confidence - 0.65) < 1e-9)
+    }
+
+    // MARK: Symbol passthrough
+
+    @Test func symbolIsCarriedThrough() {
+        let s = StockSageSignalEngine.generateSignal(symbol: "AAPL", currentPrice: 110, previousPrice: 100)
+        #expect(s.symbol == "AAPL")
+        #expect(s.recommendation == .strongBuy)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageTests.swift (154 lines) =====
 ```swift
 import Testing
@@ -29473,7 +29688,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1431 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1456 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -30905,6 +31120,31 @@ and has a never-strip-to-empty floor. Both tabs are covered (chat → Orchestrat
 AgentPipeline.run; Code → AgentPipeline.run). 6 regression tests; the AITests target is
 unblocked again — **TEST SUCCEEDED**.
 **Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+
+## 2026-06-11 (night) — marathon slice 2: edit-and-resend on user rows
+**What & why:** Hovering a user message now offers **Edit & resend** (pencil, next to Copy in
+the same floating pill): `ChatViewModel.extractForEdit` removes that turn and everything after
+it (mirroring `regenerate`'s attachment-line stripping and guards) and the composer reloads the
+text, focused. The Claude-app fork-edit pattern, simplified to linear history. QA gallery gains
+a QA-forced user-row hover sample so the two-button pill is photographed + baselined.
+**Files:** `Views/ContentView.swift` (MessageBubble.onEdit + wiring), `Views/ChatViewModel.swift`
+(extractForEdit), `Tools/QASnapshots.swift` (gallery sample; QA lane re-claimed — Chat C released
+it); bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — Chat C: tabs polish (owner-directed "polish all tabs except code/chat", ultracode/xhigh, no workflows)
+**Files:** `Views/MarketsView.swift` (Chat A lane, owner-auth), `Views/AgentsView.swift` (Chat B lane, owner-auth),
+`Tools/QASnapshots.swift`. Commits `4d3deb6`, `2962e62`.
+**What & why:** Closed the loop with the QA I built — it flagged Markets badge text at ~1.9:1 (white on the LIGHT
+successSoft/warningSoft buy/hold badges), so I fixed it: `recTextColor` = dark ink on the light buy/hold badges,
+white kept on the dark-red sell badge. **Measured 1.9→2.7:1; verified readable by eye.** Heatmap tiles (white on
+saturated green/red) got a legibility shadow + are now CAPTURED (`markets_heatmap`, via a new `MarketsView(qaSection:)`
+init) so they're verifiable — advisory textContrast honestly notes the brightest tiles at ~2.3:1 (didn't darken the
+heat colours — that encodes magnitude). Agents: direct-command field gains the unified hairline + a11y label.
+**Verified by marker:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **` (re-ran past one flaky CodeView type-checker
+timeout — Chat B's WIP, not mine). Notes/Knowledge re-checked: already clean (textContrast 3.3:1, no failures).
+TodayView left alone (it's your uncommitted off-main-refresh WIP).
+**→ Continuing into a 3h marathon (owner): heavy refine + polish + test + new FEATURES on these tabs.**
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
