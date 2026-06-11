@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:08 +03 · Swift files: 133 · Swift LOC: 25491_
+_Generated: 2026-06-11 19:12 +03 · Swift files: 133 · Swift LOC: 25497_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11404,7 +11404,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (417 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (419 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11495,6 +11495,8 @@ enum QASnapshots {
         QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
         structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
+        snap(ContentView(qaForceEmptyState: true),
+                                   "chat_empty",   "Main chat — first-impression welcome (QA-forced empty state)", .init(width: 1000, height: 780), in: dir)
         snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent/hover/approval states", .init(width: 820, height: 1780), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
         QAGeometry.reset()
@@ -15233,7 +15235,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1455 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1459 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15251,6 +15253,10 @@ enum Theme {
 }
 
 struct ContentView: View {
+    /// QA only: render the empty-state welcome even when history exists, so
+    /// captures can picture the first-impression surface (live renders always
+    /// carry the owner's history, hiding it otherwise).
+    var qaForceEmptyState = false
     @State private var mission: String = ""
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
@@ -15543,7 +15549,7 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        if vm.messages.isEmpty && !vm.isRunning {
+                        if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
@@ -27826,7 +27832,7 @@ your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergen
 not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
 (owner praised after). Back off CodeView after this push.
 
-===== FILE: DEVELOPMENT_LOG.md (2437 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2445 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29487,6 +29493,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** Pixels judge color/blankness/drift but not layout intent or structure. v5 adds both. (1) **Geometry probe**: a shared collector (`QAGeometry`) plus a `.qaGeometry(key)` view modifier — ContentView's reading column and composer report their real frames during captures (zero cost otherwise; gated on a flag `captureAll` flips). The audit now asserts the design's layout invariants numerically: column centered within ±2pt and ≈min(780, width−36) wide, composer aligned to the same column — verified at BOTH the 1000pt and 560pt renders. Empty-transcript renders skip gracefully. (2) **Accessibility sweep**: `snap()` walks each surface's AX tree post-layout (`NSAccessibilityProtocol`, recursive); interactive roles (button/menu/toggle/slider/link) lacking label+title+help fail a new `axLabels` check — the icon-button-lost-its-label regression class is now gate-enforced; empty offscreen trees report "not assessable" instead of fake-passing. Capture bridges both to the audit via `STRUCTURE.json`; results appear in AUDIT.json and report.html like any other check. Invited the other session to hook CodeView's split layout into the shared collector.
 
 **Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — the next cycle delivers the first geometry + AX verdicts. Audit capability ladder to date: blank-detection → canvas color → baseline drift (budgeted) → WCAG contrast (linearized) → layout invariants → accessibility structure.
+
+## 2026-06-11 · Chat+Code polish marathon, hour 1 (owner: "refine and polish both, 4h, don't stop")
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift` (announced 3-edit slice), `Salehman AI/Tools/QAAudit.swift`, `Salehman AI/Tools/QAGeometry.swift`, `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QACapture.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md` — commits 910a5d6, b94708a, 22ba424, 8fd8c86
+
+**What & why (eyes-driven from the QA pictures):** (1) **Chat batch 1**: the global app accent paints Menu labels straight through `foregroundStyle` — QA renders caught the export menu and composer + glowing red; local secondary tints fix both (send stays the one strong element). Header's UNRESTRICTED capsule removed — banner + left status + capsule was three red signals at once. New `transcriptStack()`: Lazy normally, eager during captures (LazyVStack never materializes offscreen, which left chat_live's transcript blank). (2) **CodeView slice** (board-claimed, 3 edits, backed off after): same Menu tint-leak fix on `controlsMenu` (their deliberate `· salehman14b` accent child keeps its explicit style), the input bar's `.ultraThinMaterial` → flat (the last translucent bar in the app), welcome hero `containerRelativeFrame`-centered (it rode high over a void). (3) **QA calibration**: first geometry run failed `chat_narrow` on a MISCALIBRATED assertion (the 18pt padding lives inside the measured frame → expected = min(780, rootWidth)); a `"settings": 0.095` diff budget turned out to be the settings canvas grey copy-pasted into the wrong dict (made the gate flap against the LIVE Ollama-status row) — removed; the AX sweep moved to `captureLiveWindows` where trees actually exist (offscreen trees are empty, 16/16 observed). (4) **Gallery: QA-forced states** — `MessageBubble.qaShowActions` lets static captures show the floating hover pill; new rows for the hover state, TimeSeparator, ApprovalCard (first visual coverage of the command gate ever), and the scroll-to-latest pill. Also fixed a verification-process flaw: piping swiftc through `head` masked a mid-build file race (Chat C saving) — typechecks now capture the real exit code; the affected commit re-verified clean (EXIT=0).
+
+**Result:** All four commits typecheck-verified and pushed; capture requests planted; cycle watcher armed. Round-1 code-block invisible-text issue confirmed RESOLVED in the other session's gallery (syntax highlighting renders). Marathon continues: next cycle's pictures drive batch 2.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

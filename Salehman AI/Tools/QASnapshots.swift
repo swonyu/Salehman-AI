@@ -87,6 +87,8 @@ enum QASnapshots {
         QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
         structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
+        snap(ContentView(qaForceEmptyState: true),
+                                   "chat_empty",   "Main chat — first-impression welcome (QA-forced empty state)", .init(width: 1000, height: 780), in: dir)
         snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent/hover/approval states", .init(width: 820, height: 1780), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
         QAGeometry.reset()

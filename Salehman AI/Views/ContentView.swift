@@ -14,6 +14,10 @@ enum Theme {
 }
 
 struct ContentView: View {
+    /// QA only: render the empty-state welcome even when history exists, so
+    /// captures can picture the first-impression surface (live renders always
+    /// carry the owner's history, hiding it otherwise).
+    var qaForceEmptyState = false
     @State private var mission: String = ""
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
@@ -306,7 +310,7 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        if vm.messages.isEmpty && !vm.isRunning {
+                        if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
