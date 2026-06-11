@@ -1709,7 +1709,14 @@ struct MessageBubble: View, Equatable {
     /// body (markdown-cache lookups + full tree diff × N messages) per
     /// keystroke. Comparing just message + qaShowActions skips all of it;
     /// speech-state updates still flow via @ObservedObject (dynamic-property
-    /// invalidation bypasses ==, by design).
+    /// invalidation bypasses ==, by design — SpeechOut publishes only
+    /// speakingID, twice per read-aloud, so the bypass is cheap).
+    ///
+    /// ⚠️ MAINTENANCE (verified failure mode, Airbnb eng. blog): if you ADD a
+    /// stored property that affects rendering, you MUST add it here — a stale
+    /// == silently freezes that property's UI. Closures stay excluded (that's
+    /// the point); `.equatable()` at the call site is REQUIRED, conformance
+    /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
     static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
         lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
     }
