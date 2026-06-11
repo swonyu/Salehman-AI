@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 01:59 +03 · Swift files: 148 · Swift LOC: 29710_
+_Generated: 2026-06-12 02:06 +03 · Swift files: 150 · Swift LOC: 30278_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -3498,6 +3498,314 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
+===== FILE: Salehman AI/LLM/BrainRouting.swift (304 lines) =====
+```swift
+import Foundation
+
+// MARK: - Brain routing plan (pure seam)
+//
+// CODEBASE_REVIEW R1: the single biggest maintainability hazard was that WHO
+// can answer (gating), WHO is in each roster (membership), and in WHAT order
+// were re-implemented across 11 sites in LocalLLM (`generate` /
+// `generateStreaming` / `chat` cascades, `currentBrain`, `anyBrainReachable`,
+// the freeAuto / freeAuto-tools / freeCoding / cloudCoding / ensemble
+// rosters) — and the drift class was producing real bugs (the Offline-Mode
+// cloud leak fixed alongside this file; the ensemble/DeepSeek mismatch noted
+// below). This file is now the ONLY place routing decisions live. The
+// LocalLLM call sites keep their per-provider execution quirks (which client
+// call, which system prompt, stream-then-chat fallback) but consume the plan
+// for every decision. Pure — no syscalls, no network — hermetically pinned by
+// `BrainRoutingDispatchTests`.
+
+/// The ten cloud chat providers the router can pin or roster. Raw values are
+/// stable display-ish names used by the freeAuto cooldown bookkeeping.
+nonisolated enum CloudProvider: String, CaseIterable, Sendable {
+    case anthropic = "Claude"
+    case grok = "Grok"
+    case gemini = "Gemini"
+    case groq = "Groq"
+    case mistral = "Mistral"
+    case cerebras = "Cerebras"
+    case deepSeek = "DeepSeek"
+    case openAI = "OpenAI"
+    case copilot = "Copilot"
+    case openRouter = "OpenRouter"
+
+    /// FREE tiers in the canonical race order — the ONLY providers `.freeAuto`
+    /// may contact (this mode never spends; paid brains are excluded by
+    /// construction, not by remembering to skip them at each site).
+    static let freeTier: [CloudProvider] = [.groq, .cerebras, .gemini, .mistral, .openRouter]
+
+    /// The free OpenAI-compatible providers that can run the TOOL loop
+    /// (Gemini is free but not OpenAI-compat, so it can't run tools).
+    static let freeToolCapable: [CloudProvider] = [.groq, .cerebras, .mistral, .openRouter]
+
+    /// FreeCoding RACE order (parallel; DeepSeek opted in by the owner).
+    static let codingRace: [CloudProvider] = [.deepSeek, .openRouter, .groq, .cerebras, .mistral]
+
+    /// Sequential coder-loop order shared by freeCodingReply / cloudCoding —
+    /// quality+speed order (DeepSeek smartest → Cerebras/Groq blazing →
+    /// OpenRouter → Mistral).
+    static let coderLoop: [CloudProvider] = [.deepSeek, .cerebras, .groq, .openRouter, .mistral]
+
+    /// Ensemble fan-out membership, in output order. ⚠️ Documented drift,
+    /// PRESERVED on purpose: DeepSeek is counted by `anyBrainReachable` but
+    /// was never added to the ensemble roster (so a DeepSeek-only setup reads
+    /// "reachable" yet fans out to nothing). Flagged to the owner — adding
+    /// `.deepSeek` here is the one-line fix if wanted.
+    static let ensembleRoster: [CloudProvider] = [.anthropic, .grok, .gemini, .groq,
+                                                  .mistral, .cerebras, .openAI,
+                                                  .openRouter, .copilot]
+
+    var isFree: Bool { Self.freeTier.contains(self) }
+
+    /// The BrainPreference pin this provider answers to.
+    var pin: BrainPreference {
+        switch self {
+        case .anthropic:  return .claudeHaiku
+        case .grok:       return .grok
+        case .gemini:     return .gemini
+        case .groq:       return .groq
+        case .mistral:    return .mistral
+        case .cerebras:   return .cerebras
+        case .deepSeek:   return .deepSeek
+        case .openAI:     return .codex
+        case .copilot:    return .copilot
+        case .openRouter: return .openRouter
+        }
+    }
+
+    /// Reverse map: the provider a pinned cloud preference dispatches to
+    /// (nil for local pins, engines, and orchestration modes).
+    static func provider(for pref: BrainPreference) -> CloudProvider? {
+        allCases.first { $0.pin == pref }
+    }
+
+    /// The `LocalLLM.Brain` case this provider reports as.
+    var brain: LocalLLM.Brain {
+        switch self {
+        case .anthropic:  return .claudeHaiku
+        case .grok:       return .grok
+        case .gemini:     return .gemini
+        case .groq:       return .groq
+        case .mistral:    return .mistral
+        case .cerebras:   return .cerebras
+        case .deepSeek:   return .deepSeek
+        case .openAI:     return .codex
+        case .copilot:    return .copilot
+        case .openRouter: return .openRouter
+        }
+    }
+
+    /// Live "has a key / is authed" check — THE one place the ten per-client
+    /// key checks live (was copy-pasted in anyBrainReachable, currentBrain,
+    /// every roster builder, and the Settings grid).
+    var isConfiguredNow: Bool {
+        switch self {
+        case .anthropic:  return AnthropicClient.isConfigured
+        case .grok:       return GrokClient.hasKey()
+        case .gemini:     return GeminiClient.hasKey()
+        case .groq:       return GroqClient.shared.hasKey()
+        case .mistral:    return MistralClient.shared.hasKey()
+        case .cerebras:   return CerebrasClient.shared.hasKey()
+        case .deepSeek:   return DeepSeekClient.shared.hasKey()
+        case .openAI:     return OpenAIClient.hasKey()
+        case .copilot:    return CopilotClient.isAuthed()
+        case .openRouter: return OpenRouterClient.shared.hasKey()
+        }
+    }
+
+    /// Snapshot of every configured provider (10 sync Keychain/auth checks).
+    static func configuredNow() -> Set<CloudProvider> {
+        Set(allCases.filter(\.isConfiguredNow))
+    }
+
+    /// The shared OpenAI-compatible client for tool-loop execution, where one
+    /// exists (Anthropic / Gemini / Copilot use bespoke clients → nil).
+    var compatClient: OpenAICompatibleClient? {
+        switch self {
+        case .groq:       return GroqClient.shared
+        case .mistral:    return MistralClient.shared
+        case .cerebras:   return CerebrasClient.shared
+        case .deepSeek:   return DeepSeekClient.shared
+        case .openAI:     return OpenAIClient.shared
+        case .openRouter: return OpenRouterClient.shared
+        case .anthropic, .gemini, .copilot, .grok: return nil
+        }
+    }
+}
+
+/// Immutable snapshot of every signal a routing decision can depend on.
+/// Tests construct it directly (pure, no keys, no network); production uses
+/// `live()` which probes lazily per-preference, mirroring the old
+/// `currentBrain` (e.g. no Ollama HTTP probe when a cloud brain is pinned —
+/// BrainStatus polls this every 10s).
+nonisolated struct BrainRouteConfig: Sendable {
+    var pref: BrainPreference
+    var offlineOnly = false
+    var configured: Set<CloudProvider> = []
+    var ollamaReady = false          // server up + a coder model pulled
+    var salehmanCloudReady = false   // SalehmanEngine.hasAnyCloud
+    var mlxReady = false
+    var ollamaHasCustomModel = false
+    var unslothConfigured = false
+    var vllmConfigured = false
+
+    /// Live snapshot. Async probes run only when the pinned preference's
+    /// reachability rule actually consults them.
+    static func live() async -> BrainRouteConfig {
+        let pref = AppSettings.brainPreferenceCurrent
+        var c = BrainRouteConfig(pref: pref, offlineOnly: AppSettings.isOfflineOnly)
+        c.configured = CloudProvider.configuredNow()
+        c.unslothConfigured = UnslothStudio.isConfigured
+        c.vllmConfigured = VLLM.isConfigured
+        c.salehmanCloudReady = SalehmanEngine.hasAnyCloud
+        switch pref {
+        case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
+            c.ollamaReady = await LocalLLM.ollamaReady()
+        case .salehman:
+            // Same short-circuit order as the old currentBrain: the cloud
+            // check is free; the MLX/custom-model probes only run without it.
+            if !c.salehmanCloudReady {
+                c.mlxReady = await MLXSalehmanEngine.shared.isReady
+                if !c.mlxReady {
+                    c.ollamaHasCustomModel = await OllamaClient.hasCustomModel()
+                }
+            }
+        default:
+            break
+        }
+        return c
+    }
+}
+
+/// THE routing plan. Every function is pure over a `BrainRouteConfig` (or the
+/// pin alone, for dispatch). If a routing rule changes, change it HERE and
+/// pin it in `BrainRoutingDispatchTests` — the LocalLLM sites only execute.
+nonisolated enum BrainRouting {
+
+    // MARK: Dispatch (the single pinned target for generate / streaming / chat)
+
+    enum Dispatch: Equatable, Sendable {
+        case mode(BrainPreference)   // .freeAuto / .freeCoding / .cloudCoding / .ensemble
+        case cloud(CloudProvider)    // a pinned cloud brain (strict — no fallback)
+        case salehman                // the cloud-first engine with a local floor
+        case unslothStudio           // explicit endpoint pin
+        case vllm                    // explicit endpoint pin
+        case localTier               // .auto / .ollama → Ollama
+        case unavailable             // offline-gated cloud pin → offMessage
+    }
+
+    /// Exactly one target per preference — the cascades of pin-gates this
+    /// replaces were single-dispatch ladders in disguise. Offline Mode is the
+    /// stronger constraint and hard-gates the ten cloud pins here (the fix
+    /// for the Offline leak: `currentBrain` always documented this contract,
+    /// but the generate/streaming/chat cascades never enforced it, so direct
+    /// callers leaked HTTP — and money, via paid pins — while "offline").
+    /// Orchestration modes pass through: they gate their own rosters.
+    /// `.salehman` passes through: the engine gates its own chain (and its
+    /// local floor must keep answering offline). Endpoint pins pass through
+    /// unchanged — `currentBrain` documents them as untouched by Offline
+    /// Mode (open owner question for REMOTE endpoints, flagged in the log).
+    static func dispatch(pref: BrainPreference, offlineOnly: Bool) -> Dispatch {
+        switch pref {
+        case .freeAuto, .freeCoding, .cloudCoding, .ensemble:
+            return .mode(pref)
+        case .auto, .ollama:
+            return .localTier
+        case .salehman:
+            return .salehman
+        case .unslothStudio:
+            return .unslothStudio
+        case .vllm:
+            return .vllm
+        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
+             .deepSeek, .codex, .copilot, .openRouter:
+            guard let p = CloudProvider.provider(for: pref) else { return .unavailable }
+            return offlineOnly ? .unavailable : .cloud(p)
+        }
+    }
+
+    // MARK: Rosters (execution membership — offline empties every cloud roster)
+
+    /// Free·Auto race roster. Offline → empty (the local backstop is the
+    /// mode's own job); paid providers excluded by construction.
+    static func freeAutoRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
+        c.offlineOnly ? [] : CloudProvider.freeTier.filter { c.configured.contains($0) }
+    }
+
+    /// Free·Auto TOOL-loop roster (Unrestricted Mode): the free
+    /// OpenAI-compatible providers only.
+    static func freeAutoToolRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
+        c.offlineOnly ? [] : CloudProvider.freeToolCapable.filter { c.configured.contains($0) }
+    }
+
+    /// FreeCoding RACE roster (parallel; includes DeepSeek).
+    static func codingRaceRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
+        c.offlineOnly ? [] : CloudProvider.codingRace.filter { c.configured.contains($0) }
+    }
+
+    /// Sequential coder-loop roster (freeCodingReply / cloudCoding paths).
+    static func coderLoopRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
+        c.offlineOnly ? [] : CloudProvider.coderLoop.filter { c.configured.contains($0) }
+    }
+
+    /// Ensemble cloud fan-out membership (local inclusion is the call site's
+    /// RAM-guard decision). Offline → empty (ensemble runs local-only).
+    static func ensembleCloudRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
+        c.offlineOnly ? [] : CloudProvider.ensembleRoster.filter { c.configured.contains($0) }
+    }
+
+    // MARK: Reachability (the pure currentBrain)
+
+    /// True iff at least one brain (local or any keyed cloud) can answer.
+    /// NOTE: deliberately ignores Offline Mode, exactly like the function it
+    /// replaces — ensemble stays "reachable" offline and runs local-only.
+    static func anyBrainReachable(_ c: BrainRouteConfig) -> Bool {
+        c.ollamaReady || !c.configured.isEmpty
+    }
+
+    /// The pure `currentBrain` switch. Offline hard-gates the ten cloud pins
+    /// to `.none`; local pins, engines, and orchestration modes apply their
+    /// own rules (verbatim from the old implementation).
+    static func reachableBrain(_ c: BrainRouteConfig) -> LocalLLM.Brain {
+        if c.offlineOnly, CloudProvider.provider(for: c.pref) != nil { return .none }
+
+        switch c.pref {
+        case .ollama, .auto:
+            return c.ollamaReady ? .ollamaCoder : .none
+        case .salehman:
+            if c.salehmanCloudReady { return .salehman }
+            if c.mlxReady { return .salehman }
+            if c.ollamaHasCustomModel { return .salehman }
+            return .none
+        case .unslothStudio:
+            return c.unslothConfigured ? .unslothStudio : .none
+        case .vllm:
+            return c.vllmConfigured ? .vllm : .none
+        case .ensemble:
+            return anyBrainReachable(c) ? .ensemble : .none
+        case .freeAuto:
+            // Reachability ignores Offline Mode (the roster empties instead,
+            // leaving the local backstop) — verbatim old behavior.
+            if CloudProvider.freeTier.contains(where: { c.configured.contains($0) }) { return .freeAuto }
+            return c.ollamaReady ? .freeAuto : .none
+        case .freeCoding:
+            if CloudProvider.codingRace.contains(where: { c.configured.contains($0) }) { return .freeCoding }
+            return c.ollamaReady ? .freeCoding : .none
+        case .cloudCoding:
+            // Cloud-ONLY: offline or keyless → .none (no local fallback).
+            if c.offlineOnly { return .none }
+            return CloudProvider.coderLoop.contains(where: { c.configured.contains($0) }) ? .cloudCoding : .none
+        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
+             .deepSeek, .codex, .copilot, .openRouter:
+            guard let p = CloudProvider.provider(for: c.pref) else { return .none }
+            return c.configured.contains(p) ? p.brain : .none
+        }
+    }
+}
+```
+
 ===== FILE: Salehman AI/LLM/BrainStatus.swift (120 lines) =====
 ```swift
 import SwiftUI
@@ -5301,7 +5609,7 @@ enum LocalLLM {
     /// hoisted out of `currentBrain` because three call sites use it. Uses
     /// `activeCodeModel()` so the user can have 7B *or* 14B *or* 32B and the
     /// app picks whichever is actually pulled — not just the sweet-spot 7B.
-    nonisolated private static func ollamaReady() async -> Bool {
+    nonisolated static func ollamaReady() async -> Bool {
         guard await OllamaClient.isUp() else { return false }
         return await OllamaClient.activeCodeModel() != nil
     }
@@ -14431,12 +14739,63 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2332 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2446 lines) =====
 ```swift
 import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import Vision
+
+// MARK: - Screenshot attach (/shot)
+
+/// Finds the user's most recent screenshot and extracts its TEXT on-device
+/// (Vision OCR) — the local 14B has no image input, but error dialogs, terminal
+/// output, and UI text in a screenshot become perfectly good context as text.
+enum ScreenshotGrabber {
+    /// Where macOS saves screenshots (`com.apple.screencapture location` is the
+    /// authority — this owner moved theirs to ~/Pictures/Screenshots; Desktop is
+    /// the fallback).
+    nonisolated static func screenshotsDirectory() -> URL {
+        if let loc = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"),
+           !loc.isEmpty {
+            let url = URL(fileURLWithPath: (loc as NSString).expandingTildeInPath, isDirectory: true)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+    }
+
+    /// Newest image file in `dir` (by modification date). Injectable for tests.
+    nonisolated static func latestScreenshot(in dir: URL) -> URL? {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles])) ?? []
+        return files
+            .filter { exts.contains($0.pathExtension.lowercased()) }
+            .max { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return da < db
+            }
+    }
+
+    /// On-device OCR (accurate mode). Returns recognized lines top-to-bottom,
+    /// empty string when nothing is legible.
+    nonisolated static func ocr(_ url: URL) -> String {
+        guard let img = NSImage(contentsOf: url) else { return "" }
+        var rect = CGRect.zero
+        guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return "" }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: cg)
+        try? handler.perform([request])
+        return (request.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
+    }
+}
 
 // MARK: - Diff model
 
@@ -15531,6 +15890,7 @@ struct CodeView: View {
         .init(id: "refactor", icon: "wand.and.stars",       blurb: "Refactor for clarity",    kind: .template("Refactor this for clarity and simplicity, keeping behaviour identical:\n\n")),
         .init(id: "review",   icon: "magnifyingglass",      blurb: "Review for issues",       kind: .template("Review this for bugs, edge cases, and improvements:\n\n")),
         .init(id: "docs",     icon: "doc.text",             blurb: "Add documentation",       kind: .template("Write clear doc comments for this:\n\n")),
+        .init(id: "shot",     icon: "camera.viewfinder",    blurb: "Attach your latest screenshot (on-device OCR)", kind: .action("shot")),
         .init(id: "clear",    icon: "square.and.pencil",    blurb: "Start a new chat",        kind: .action("clear")),
         .init(id: "copy",     icon: "doc.on.doc",           blurb: "Copy chat as Markdown",   kind: .action("copy")),
     ]
@@ -15552,6 +15912,7 @@ struct CodeView: View {
         case .action(let a):
             input = ""
             switch a {
+            case "shot": attachLatestScreenshot()
             case "clear": if !isRunning { withAnimation { messages.removeAll() } }
             case "copy":
                 let md = messages
@@ -15760,16 +16121,42 @@ struct CodeView: View {
     private var inputBar: some View {
         VStack(spacing: 6) {
             if let att = attachedFile {
-                HStack(spacing: 6) {
-                    Image(systemName: "paperclip").font(.system(size: 10))
+                HStack(spacing: 7) {
+                    // Screenshots show a real thumbnail in a machined micro-tile;
+                    // other files keep the paperclip.
+                    if ["png", "jpg", "jpeg", "heic"].contains(att.pathExtension.lowercased()),
+                       let thumb = NSImage(contentsOf: att) {
+                        Image(nsImage: thumb)
+                            .resizable().aspectRatio(contentMode: .fill)
+                            .frame(width: 26, height: 18)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    } else {
+                        Image(systemName: "paperclip").font(.system(size: 10))
+                    }
                     Text(att.lastPathComponent).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                    Button { attachedFile = nil; attachedText = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
+                    if attachedText.hasPrefix("[Text recognized") {
+                        Text("OCR").font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(DS.Palette.accent)
+                            .padding(.horizontal, 5).padding(.vertical, 1.5)
+                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1))
+                    }
+                    Button { attachedFile = nil; attachedText = "" } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .frame(width: 16, height: 16)
+                            .background(Color.white.opacity(0.08), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(LuxPressStyle())
                     Spacer()
                 }
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 5)
+                .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             // Slash-command menu — appears above the composer while typing `/…`.
             // `↵` picks the top row; clicking a row runs it. Templates pre-fill the
@@ -15807,6 +16194,12 @@ struct CodeView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Attach a file as context")
                         .accessibilityLabel("Attach a file as context")
+                    Button { attachLatestScreenshot() } label: {
+                        Image(systemName: "camera.viewfinder").font(.system(size: 13))
+                    }
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
+                    .help("Attach your latest screenshot — its text is read on-device (OCR) so the model can use it")
+                    .accessibilityLabel("Attach your latest screenshot")
                     Spacer()
                     Button {
                         // Explicit body, not `action: isRunning ? stop : send`: unifying
@@ -16034,6 +16427,35 @@ struct CodeView: View {
             }
         }
         .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// `/shot` and the camera button: grab the newest screenshot, OCR it
+    /// off-main, and attach the recognized TEXT (the local model has no image
+    /// input — its words are the useful part).
+    private func attachLatestScreenshot() {
+        guard let shot = ScreenshotGrabber.latestScreenshot(in: ScreenshotGrabber.screenshotsDirectory()) else {
+            attachedFile = nil
+            attachedText = ""
+            input = ""
+            withAnimation(Self.lux) {
+                messages.append(ChatMessage(id: UUID(),
+                    text: "No screenshots found in \(ScreenshotGrabber.screenshotsDirectory().path).",
+                    isUser: false, timestamp: Date()))
+            }
+            return
+        }
+        attachedFile = shot
+        attachedText = "(reading screenshot…)"
+        Task.detached(priority: .userInitiated) {
+            let text = ScreenshotGrabber.ocr(shot)
+            await MainActor.run {
+                guard attachedFile == shot else { return }   // user swapped attachments meanwhile
+                attachedText = text.isEmpty
+                    ? "[Screenshot \(shot.lastPathComponent) — no legible text found by OCR]"
+                    : "[Text recognized on-device from screenshot \(shot.lastPathComponent)]\n\(text)"
+                inputFocused = true
+            }
+        }
     }
 
     /// "12s" / "2m 05s" — the Activity header's run clock.
@@ -16892,7 +17314,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2263 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2325 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17847,7 +18269,9 @@ struct ContentView: View {
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .frame(maxWidth: 520, alignment: .leading)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(.scale(scale: 0.97, anchor: .bottom)
+                    .combined(with: .opacity)
+                    .combined(with: .move(edge: .bottom)))
                 .accessibilityIdentifier("chat.composer.slashmenu")
             }
 
@@ -18027,6 +18451,9 @@ struct ContentView: View {
         // Flat — the input row sits directly on the chat canvas.
         .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
+        // Drives the slash-menu island's enter/exit transition (lux). Bound to
+        // the EMPTY flip only — row updates while typing stay instant.
+        .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
     }
 
     private func attachmentChip(icon: String, title: String,
@@ -18278,7 +18705,7 @@ struct ScrollToLatestButton: View {
             // the transcript, so it still reads as actionable.
             .background(DS.Palette.accent, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .accessibilityLabel(unreadCount > 0
             ? "\(unreadCount) new \(unreadCount == 1 ? "message" : "messages"), scroll to latest"
             : "Scroll to latest")
@@ -18687,15 +19114,72 @@ struct MessageBubble: View {
         .onHover { hovering = $0 }
     }
 
-    private var userRow: some View {
-        HStack {
-            Spacer(minLength: 60)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message.text)
+    /// Splits a composed message into the leading markdown quote block (the
+    /// `> `-prefixed lines quote-reply inserts) and the body beneath it.
+    /// nil when the text doesn't OPEN with a quote. Pure for tests.
+    nonisolated static func splitLeadingQuote(_ text: String) -> (quote: String, body: String)? {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.first?.hasPrefix(">") == true else { return nil }
+        var quote: [String] = [], rest: [String] = []
+        var inQuote = true
+        for line in lines {
+            if inQuote, line.hasPrefix(">") {
+                quote.append(String(line.dropFirst(line.hasPrefix("> ") ? 2 : 1)))
+            } else {
+                inQuote = false
+                rest.append(line)
+            }
+        }
+        let q = quote.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return nil }
+        return (q, rest.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Quoted reply rendered as a real quote block (accent rail + dimmed text)
+    /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
+    private func quoteCard(_ quote: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(DS.Palette.accent.opacity(0.55))
+                .frame(width: 2)
+            Text(quote)
+                .font(.system(size: 12))
+                .lineSpacing(1.2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(6)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(Color.white.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// User text, split into quote card + body when the message opens with a
+    /// quote. Extracted subview (type-checker budget discipline).
+    @ViewBuilder private var userTextBlock: some View {
+        if let split = Self.splitLeadingQuote(message.text) {
+            quoteCard(split.quote)
+            if !split.body.isEmpty {
+                Text(split.body)
                     .font(.system(size: 13.5))
                     .lineSpacing(1.5)
                     .textSelection(.enabled)
                     .foregroundStyle(.white)
+            }
+        } else {
+            Text(message.text)
+                .font(.system(size: 13.5))
+                .lineSpacing(1.5)
+                .textSelection(.enabled)
+                .foregroundStyle(.white)
+        }
+    }
+
+    private var userRow: some View {
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                userTextBlock
                 if let path = message.imagePath {
                     CachedImage(path: path)
                         .frame(maxWidth: 360, maxHeight: 360)
@@ -25075,7 +25559,7 @@ struct ChatGreetingBucketTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (275 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (298 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -25270,6 +25754,29 @@ struct TranscriptCadenceTests {
         #expect(!ContentView.isFirstInGroup(idx: 1, list: list))   // same sender, 1 min
         #expect(ContentView.isFirstInGroup(idx: 2, list: list))    // sender flip
         #expect(ContentView.isFirstInGroup(idx: 3, list: list))    // 8 min > 5 min
+    }
+}
+
+// MARK: - Quote-block split (user rows)
+
+struct QuoteSplitTests {
+
+    @Test func plainTextHasNoQuote() {
+        #expect(MessageBubble.splitLeadingQuote("just text") == nil)
+        #expect(MessageBubble.splitLeadingQuote("mid > quote") == nil)
+    }
+
+    @Test func quoteThenBodySplits() {
+        let s = MessageBubble.splitLeadingQuote("> a\n> b\n\nreply text")
+        #expect(s?.quote == "a\nb")
+        #expect(s?.body == "reply text")
+    }
+
+    @Test func bareAngleAndQuoteOnlyWork() {
+        let tight = MessageBubble.splitLeadingQuote(">tight\nbody")
+        #expect(tight?.quote == "tight" && tight?.body == "body")
+        let only = MessageBubble.splitLeadingQuote("> alone")
+        #expect(only?.quote == "alone" && only?.body == "")
     }
 }
 
@@ -28815,6 +29322,75 @@ struct ScratchpadListTests {
 }
 ```
 
+===== FILE: Salehman AITests/ScreenshotGrabberTests.swift (65 lines) =====
+```swift
+import Testing
+import Foundation
+import AppKit
+@testable import Salehman_AI
+
+// /shot — pins both halves of the screenshot-attach feature: the newest-image
+// picker (injectable directory) and the on-device OCR (a programmatically
+// rendered PNG with known text must come back recognizable). Temp-dir only.
+struct ScreenshotGrabberTests {
+    private func tempDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shot-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func writePNG(text: String, to url: URL) throws {
+        let size = NSSize(width: 480, height: 120)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        (text as NSString).draw(at: NSPoint(x: 24, y: 40), withAttributes: [
+            .font: NSFont.systemFont(ofSize: 32, weight: .semibold),
+            .foregroundColor: NSColor.black,
+        ])
+        img.unlockFocus()
+        var rect = CGRect(origin: .zero, size: size)
+        let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil)!
+        let rep = NSBitmapImageRep(cgImage: cg)
+        try rep.representation(using: .png, properties: [:])!.write(to: url)
+    }
+
+    @Test func picksTheNewestImage() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let old = dir.appendingPathComponent("old.png")
+        let new = dir.appendingPathComponent("new.png")
+        try writePNG(text: "old", to: old)
+        try writePNG(text: "new", to: new)
+        // Make the mtimes unambiguous regardless of write timing.
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: old.path)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: new.path)
+        // Compare names, not URLs: the enumerator returns /private/var/… while
+        // temporaryDirectory hands out /var/… (same file, symlinked prefix).
+        #expect(ScreenshotGrabber.latestScreenshot(in: dir)?.lastPathComponent == "new.png")
+    }
+
+    @Test func ignoresNonImages() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try "not an image".write(to: dir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        #expect(ScreenshotGrabber.latestScreenshot(in: dir) == nil)
+    }
+
+    @Test func ocrReadsRenderedText() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let shot = dir.appendingPathComponent("shot.png")
+        try writePNG(text: "SALEHMAN OCR 42", to: shot)
+        let text = ScreenshotGrabber.ocr(shot)
+        #expect(text.localizedCaseInsensitiveContains("SALEHMAN"))
+        #expect(text.contains("42"))
+    }
+}
+```
+
 ===== FILE: Salehman AITests/SecurityHardeningTests.swift (119 lines) =====
 ```swift
 import Testing
@@ -31177,7 +31753,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (121 lines) =====
+===== FILE: COORDINATION.md (123 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31251,7 +31827,9 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **effort/grok session — CHAT MARATHON 2 (2026-06-12 01:20–02:0x, stretch 1)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, `Views/ChatHistoryView.swift`, NEW `Salehman AITests/ChatTranscriptLogicTests.swift` | 01:20 | ✅ **Stretch 1 DONE — 8 slices, 30 new tests:** ①`07380e5` exporter v2 (title rule/date range/attachment filenames/stats footer) ②`e511ef0` /stats conversation summary ③`2e3d661` pinned messages (context-menu + jump-chip rail; `Bool?` keeps old archives decoding, test-pinned) ④`1600677` composer word counter ⑤⑥`2531fc0` self-review fixes (pluralizer, single-msg range; killed dbl-click-quote — fights word-selection) + History-sheet title filter ⑦⑧`f168cf3` smart export filenames + cadence rules regression-locked. Every slice: full-target swiftc typecheck EXIT 0 (xcodebuild sandbox-blocked for this session). **🙏 BUILD REQUEST stands: one canonical build + `AITests` run** (expect 30 green in ChatTranscriptLogicTests + 5 in CodeGitStatusTests). Dev-logged 06-12; SOURCE_BUNDLE regenerated. Marathon resumes on next owner prompt. | **released** |
 | **Chat B (this session, owner-confirmed) — chat design parity (2026-06-12 ~02:1x)** | `Views/ContentView.swift`, `DesignSystem/DesignSystem.swift` (**APPEND-ONLY: new `DS.Motion.lux` token** — re-read before your next DS edit) | 02:1x | ✅ DONE `ac2732b` — owner invoked /high-end-visual-design: chat composer now wears the Code tab's DOUBLE-BEZEL (concentric 14+4, top-lit hairline, accent ring on outer tray), stock easeOut/easeInOut → `DS.Motion.lux`/`fade`, welcome gets the Code-style 16pt fade-up entrance (QA pre-reveal guarded). Typecheck EXIT 0. **`qa/SNAPSHOT_REQUEST` planted — whoever runs the next capture: chat_empty/chat_live baselineDiff is INTENTIONAL (bezel+hairline); please re-adopt after eyes-verify, or I will when pictures land.** | **released** |
 | **Chat B — design round 2 + timeout fix (2026-06-12 ~02:3x)** | `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `DesignSystem/DesignSystem.swift` (**APPEND-ONLY: new `PressableStyle`**) | 02:3x | ✅ DONE `3a8b525` — choreography per /high-end-visual-design: `DS.PressableStyle` press physics on send/stop/mic/pills/chips/Restore, magnetic hover lift on welcome pills (1.04 + hairline brighten, lux), staggered mask reveal on History rows (40ms/row cap 8, `--qa` pre-reveal). **Also split the composer controls row** (Chat D's :946 timeout flag — banner updated, awaiting their real-build confirm). Typecheck EXIT 0. | **released** |
+| **Chat B — design round 3 (2026-06-12 ~02:5x)** | `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift` | 02:5x | ✅ DONE `48eb618` — quote-reply now renders as a REAL quote block in user rows (pure `splitLeadingQuote` parser +3 tests = 33 total; accent rail card + body; `userTextBlock` extracted per budget discipline), slash-menu island scale-entrance on a dedicated lux driver (empty-flip only), scroll pill press physics. Typecheck EXIT 0. **Standing: AITests run still owed; SNAPSHOT_REQUEST still planted — chat_empty/chat_live/chat_history/chat_samples drift will be INTENTIONAL.** | **released** |
 | **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. **✅ SLICE 1 DONE + RELEASED (~02:1x):** seam+tests `446ffd8`, locale fix `3efc758` (staged as a single-hunk patch — your uncommitted hover WIP in ContentView untouched), bundle `e114d6c`. **Final verification: full `Salehman AITests` `** TEST SUCCEEDED **` (455 passed) + app build green + QA `settings` passes (0.33%).** FYI Chat A: `code_samples` baselineDiff 8.83% in the 01:4x capture = your committed design pass needing re-adopt (eyes-verify + `--adopt` on your next cycle). SettingsView + SettingsBrainReadyTests lanes are free again — `Views/SettingsBrainReadiness.swift` is the new pure seam (readiness rules live THERE now; re-read before editing brainReady). | **released** |
+| **Claude Chat D — slice 2: R1 brain-routing seam (2026-06-12 ~02:3x)** | `LLM/LocalLLM.swift` (Chat B lane — owner-directed, Chat B inactive; also old void Grok Tab B claim), NEW `LLM/BrainRouting.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift` (enabling the last blocked suite). **NOT touching** the cloud client files themselves (R3 out of scope), AgentPipeline, BrainAdapter.swift (additive shim stays as-is). | now | **CODEBASE_REVIEW R1 (staged): extract the routing PLAN as a pure seam.** The generate/generateStreaming/chat ladders + freeAuto/freeCoding/cloudCoding/ensemble rosters re-implement the same pin/key/offline gating 8+ ways (the drift class behind the review's confirmed bugs). Plan = pure functions over a `BrainRouteConfig` snapshot (one source of truth, hermetically testable → un-disables `BrainRoutingDispatchTests` with the .auto-never-cloud + offline + free-roster invariants); execution sites keep their exact per-provider quirks (behavior-preserving, verified by full AITests + app build + QA capture per sub-step). No red windows: additive file first, ladders rewired one at a time, build between each. **SCOPE +1 FILE (~02:4x): `LLM/SalehmanEngine.swift`** — the deep-read found **2 real bugs**: (1) 🔴 **Offline-Mode leak** (same class as the fixed WebTools leak): the pinned-cloud cascades in generate/generateStreaming/chat have NO `isOfflineOnly` gate (only `currentBrain` + the orchestration modes gate), so direct callers (Settings ping, StockSage, title gen) hit real cloud HTTP under Offline Mode — and a pinned `.salehman` walks its whole cloud chain incl. the PAID DeepSeek backstop (`SalehmanEngine.generate*` never checks offline). FIXING both layers (dispatch gate + engine gate, loopback-only endpoints offline, matching `generateOnDevice`'s rule) — this is the intended contract per `currentBrain`'s own doc + the disabled test's name. (2) 🟠 **ensemble/deepSeek drift**: `anyBrainReachable` counts DeepSeek but `generateEnsemble`'s roster omits it → DeepSeek-only user sees ensemble 'reachable' but the fan-out is empty. NOT fixing (visible behavior change) — flagged for owner. Unsloth/vLLM REMOTE endpoints under Offline Mode left as-is (currentBrain documents them untouched) — flagged as an open question. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -32237,7 +32815,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1947 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1949 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -33574,6 +34152,8 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Verification:** full-target swiftc typecheck EXIT 0. Visual: `qa/SNAPSHOT_REQUEST` planted — next QA-armed launch captures the new composer/welcome; **expect intentional baselineDiff on `chat_empty`/`chat_live`** (bezel + hairline) → re-adopt baselines after eyes-verify.
 
 **Round 2 (`3a8b525`) — choreography + type-checker fix:** (1) **`DS.PressableStyle`** (append-only): bare 0.97 press-scale on the press curve for custom-chromed controls — wired to send/stop/mic, welcome suggestion pills, pinned chips, History Restore. (2) **Magnetic hover** on welcome pills (1.04 lift + hairline 0.10→0.22, lux curve; GPU-safe: transform + stroke only). (3) **Staggered mask reveal** on History-sheet rows (40 ms/row, capped at 8 steps, lux; `--qa` pre-reveal so the `chat_history` capture isn't blank). (4) **Composer controls row SPLIT** into `composerCountBadge`/`micButton`/`sendOrStopButton` — Chat D measured the REAL build tripping the Swift 6 type-checker timeout at this row (`:946`, agentSteps-class; swiftc harness can't reproduce — known gap); banner updated, awaiting their real-build confirmation. Typecheck EXIT 0.
+
+**Round 3 (`48eb618`) — content typography + last micro-interactions:** (1) **Quote-reply renders as a real quote block** in user rows — `MessageBubble.splitLeadingQuote` pure parser (leading `> `-lines → quote, remainder → body; bare `>` accepted; +3 tests, now 33 in `ChatTranscriptLogicTests`) feeding a `quoteCard` (2pt accent rail, 12pt dimmed text, white-0.05 wash, r8 continuous) + body text; `userTextBlock` extracted per type-checker budget discipline. Previously a quoted reply showed raw `"> "` prose. (2) **Slash-menu island entrance** — scale-from-0.97 (bottom anchor) + opacity + move, with a dedicated lux animation driver bound ONLY to the menu's empty-flip (rows updating while typing stay instant; the menu previously had a transition but no intentional driver, so its reveal rode whatever transaction was around). (3) **Scroll-to-latest pill** gets `PressableStyle`. Typecheck EXIT 0. Three design rounds complete: structure (bezel) → choreography (press/stagger/hover) → content typography (quotes) — variance mandate honored.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
