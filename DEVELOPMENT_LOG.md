@@ -2084,3 +2084,49 @@ local fallback" (app is cloud-first by default; same honesty fix applied app-wid
 the about baseline (targeted `cp`). Full capture `24/24 surfaces OK`; the `FAILURES: chat_history` flag is
 Chat B's surface (CVD/contrast), not mine. Commit `23cc98b`.
 **Files:** `Salehman AI/Views/AboutView.swift`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:0x) — Chat C: SESSION STOP (owner "STOP AND LOG EVERYTHING") + deep-research capture
+**Owner directive:** stop the high-end-visual marathon and log everything. Marathon halted, no further
+wakeups scheduled. All code work this session is already committed + logged; this entry preserves the
+three inline deep-research reports (run inline/solo per the absolute no-Workflow rule) and their open
+to-dos so they aren't lost.
+
+**This session's shipped work (all committed + individually logged above):**
+- Cycle 7: `MemoryStoreFactsTests` — 16 cases (extractFacts patterns + remember dedup/trim). `3d7e8a1`.
+- Swift 6.2 concurrency audit → `MemoryStore.recall`/`cosine` marked `nonisolated` (heavy NLEmbedding+cosine
+  scan was MainActor-pinned, called sync at `AgentPipeline.swift:458`). `458e4c5`.
+- Cycle 8: `MemorySort` (newest/oldest/A–Z + filter) wired into the Memory sheet + 7 tests. `60d7934`.
+- Onboarding high-end visual pass (ambient glow, eyebrow, dimensional tile, hover CTA, entrance). `da3630d`.
+- **Grey backdrop** (owner request "today should be grey"): `DS.Palette.bgTop`/`bgBottom`/`modalBG` warm-red
+  → neutral grey + `BackgroundView` glows red→white; accent kept red #FA2E4A. Cross-lane (DS=Chat B,
+  BackgroundView=Chat A), board-flagged. `ff065ec`.
+- Refined the `run-salehman-ai` skill (24 surfaces, CVD pass, backdrop+DB-lock gotchas). `9e58716` (skill is gitignored).
+- AboutView high-end pass + honest copy (de-staled "on-device"→"cloud-first"). `23cc98b`.
+
+**Deep-research #1 — Swift 6 strict concurrency + SwiftUI macOS (findings):** project confirmed on
+`SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` + `SWIFT_APPROACHABLE_CONCURRENCY=YES` (Swift 6.0). `nonisolated async`
+⇒ `nonisolated(nonsending)` (runs on caller); use `@concurrent` to offload heavy work. Observation `@Observable`
+only invalidates on read properties. ACTIONED: recall/cosine nonisolated (above). OPEN: offload the
+`AgentPipeline.swift:458` recall call site (`Task.detached`/`@concurrent`) — Chat A's lane, flagged.
+
+**Deep-research #2 — high-end macOS visual design (open to-dos):**
+1. Soften primary text `Color.white`→~0.94 (#F0F0F0) to cut glare (DS-level, Chat B's lane — flag, don't do unasked).
+2. Widen surface-elevation step to ~5–8% luminance (codeSurface vs codeSurfaceSide currently ~3%).
+3. Extend hover-lift (scale 1.03 + glow, `.smooth`) from Onboarding/About to Today/Markets cards + Knowledge/Notes rows.
+4. Codify a ~1.2 type scale (13–15pt base, ~6 steps) in DesignSystem to stop `.system(size:)` drift across sessions.
+5. (macOS 26+) Liquid Glass on chrome only, `if #available` gated, Regular variant, under-glassed.
+Premium values: button press 0.92/0.18s, hover 1.03/0.22s, spring response 0.3 snappy/0.55/0.9, damping 0.5/0.75/0.95.
+Dark-mode: no pure black/white, elevation by luminance not shadow, desaturate accents on dark, WCAG 4.5:1.
+
+**Deep-research #3 — shipping / local LLM / icon / agent UX (open to-dos):**
+1. Plan DIRECT distribution (Developer ID + notarized DMG + Sparkle) — App Store sandbox blocks the shell/Ollama
+   tool layer. Pipeline: Hardened Runtime, `notarytool`+`stapler`, NEVER `codesign --deep` (sign inside-out),
+   Sparkle EdDSA-signed appcast, `CFBundleVersion` must increment. (notarytool accepts .dmg/.zip/.pkg.)
+2. Graduated tool-approval friction — auto-allow read/search, reserve the safety card for shell/destructive/spend
+   (biggest UX win; currently approves every tool equally). Touches ToolPolicy/Agents (Chat A lane) — coordinate.
+3. Recommend Ollama 0.19+ (MLX backend, +57% prefill/+93% decode, needs ≥32GB); surface measured tok/s; default 4-bit.
+4. (macOS 26+) Icon Composer 2-layer icon (sparkles glyph + tile), bold/simple, don't bake effects; AppIcon fallback.
+App is already well-aligned with 2026 agent-UX (named agents, Memory sheet, Restore Checkpoint, .auto routing).
+
+**Result:** session stopped cleanly; tracked working tree clean (all source committed); research preserved.
+**Files:** `DEVELOPMENT_LOG.md`.
