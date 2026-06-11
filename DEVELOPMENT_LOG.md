@@ -1622,3 +1622,15 @@ with second-half slice SHAs.
 213 words · 22:41". Word split runs only when the pill renders (hover/QA) — free at rest.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0.
+
+## 2026-06-11 (night) — Chat C: tabs marathon cycles 3–4 (Knowledge sort + Notes search/clear)
+**Files:** `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, + `KnowledgeSortTests`, `ScratchpadListTests`.
+Commits `9b0f5da`, `13b97f7`.
+- **Feature — Knowledge document sort** (Recent / Name / Most-passages): pure `KnowledgeSort` enum + a sort Menu
+  by the doc count (now 77 docs). **5 tests**. Verified rendering.
+- **Feature — Notes search + Clear-completed**: pure `ScratchpadList` (active-first ordering + case-insensitive
+  filter + completedCount) drives the tab. Search field shown when >5 items; "Clear N completed" button when
+  done tasks exist; no-match copy. Extracted the previously-untested ordering → **6 tests**. "Clear 2 completed"
+  verified in notes.png.
+**Verified by marker:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **381 cases** (322 at marathon
+start). Pattern: pure `XxxSort`/`XxxList` enum from the view → menu in the view → unit tests. Marathon continues.
