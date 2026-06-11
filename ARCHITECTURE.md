@@ -50,6 +50,7 @@ Salehman AI/
 │   ├── UnslothStudio.swift          # Local OpenAI-compat server brain
 │   ├── VLLM.swift                   # Local vLLM server brain
 │   ├── BrainAdapter.swift           # Adapter protocol (+ Ollama/Anthropic adapters)
+│   ├── BrainRouting.swift           # THE routing plan (R1 seam): dispatch + rosters + offline rules, pure & tested
 │   ├── MemoryManager.swift          # RAM/thermal awareness (actor)
 │   └── KeychainStore.swift          # Secure API key storage
 │

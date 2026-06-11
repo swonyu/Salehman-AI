@@ -2009,3 +2009,54 @@ does NOT show in `today.png` — verify via `onboarding.png` (draws `bgVertical`
 capture; (2) `database is locked` build error = concurrent multi-session build → retry. `.claude/` is
 gitignored so the skill is local-only (not committed); logging for traceability.
 **Files:** `.claude/skills/run-salehman-ai/SKILL.md` (gitignored), `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:0x) — Chat D slice 2: R1 brain-routing seam + Offline-Mode leak FIX + last suite enabled
+**Who:** Chat D. **What & why:**
+- **CODEBASE_REVIEW R1 (the top refactor):** routing decisions (gating, roster
+  membership, order, offline rules) were re-implemented across **11 sites** in
+  `LocalLLM` — the drift class behind multiple confirmed bugs. NEW
+  `LLM/BrainRouting.swift` is now the ONLY place they live: `CloudProvider`
+  (ten providers; free/coding/ensemble roster constants; the ten key checks;
+  model/client maps), `BrainRouteConfig` (pure snapshot; `.live()` keeps
+  currentBrain's per-pref probe laziness), `BrainRouting.dispatch` (exactly one
+  target per pref) + roster builders + `reachableBrain`/`anyBrainReachable`.
+  The `generate`/`generateStreaming`/`chat` cascades each became one `switch`
+  over the dispatch with per-provider execution helpers (`cloudOneShot`/
+  `cloudStream`/`cloudConversational`); `currentBrain` is a thin caller;
+  every roster site consumes the plan. The 13 `*Allowed` gates deleted.
+- **🔴 FIXED — Offline-Mode cloud leak** (same class as the fixed WebTools
+  leak): the three cascades had NO `isOfflineOnly` gate, so a pinned cloud
+  brain still made real HTTP calls from direct callers (Settings ping,
+  StockSage briefings, title gen) under Offline Mode — and a pinned
+  `.salehman` walked its whole cloud chain **including the PAID DeepSeek
+  backstop**, while `SalehmanEngine.generate/generateStream/generateWithTools`
+  never checked offline at all. Fixed at BOTH layers: `dispatch` hard-gates
+  the ten cloud pins → `.unavailable` (the contract `currentBrain` always
+  documented), and SalehmanEngine now skips cloud chains offline with
+  endpoint engines qualifying only on loopback (the `generateOnDevice` rule).
+  Regression-pinned in tests.
+- **`BrainRoutingDispatchTests` ENABLED** — the LAST of the 8 review suites
+  (all 8 now active): 5 tests pin single-dispatch/no-fallthrough + the
+  pin↔provider bijection, `.auto`/`.ollama` never-cloud (even with every key
+  configured), the offline hard-gate + all-rosters-empty-offline, freeAuto
+  free-only membership/order, and documented roster sets.
+- **🟠 FOUND, NOT fixed (owner call): ensemble/DeepSeek drift** —
+  `anyBrainReachable` counts DeepSeek but the ensemble fan-out roster never
+  included it → a DeepSeek-only setup reads "reachable" with an empty
+  fan-out. Preserved verbatim (visible behavior change to fix), documented in
+  `CloudProvider.ensembleRoster` + pinned by a test; one-line opt-in when
+  wanted. **Open question:** Unsloth/vLLM REMOTE (non-loopback) endpoint pins
+  are still untouched by Offline Mode (matches currentBrain's documented
+  contract) — flag if that should tighten.
+- Docs: PROJECT_CONTEXT (LocalLLM row + new BrainRouting row + §4 all-8 note),
+  ARCHITECTURE tree. One test-side lesson re-learned: `#expect(xs.allSatisfy(\.p))`
+  macro-expands to a throwing call — use a closure (same as the QAGeometry fix).
+**Verified (by measurement):** app `** BUILD SUCCEEDED **` after EVERY rewire
+step (additive file → currentBrain/rosters → ladders → engine gates — no red
+windows); full `Salehman AITests` **`** TEST SUCCEEDED **` (466 passed**, incl.
+the 5 new routing tests); QA capture post-rebuild: `settings` 0.33% / `today`
+0.00% stable (the `chat_*` drifts + `chat_history` failure render Chat A's
+just-committed design choreography — their baseline re-adopt, flagged).
+**Files:** `Salehman AI/LLM/BrainRouting.swift` (new), `Salehman AI/LLM/LocalLLM.swift`,
+`Salehman AI/LLM/SalehmanEngine.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift`,
+`PROJECT_CONTEXT.md`, `ARCHITECTURE.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.

@@ -52,18 +52,27 @@ enum SalehmanEngine {
     static func generate(prompt: String,
                          userPrompt: String? = nil,
                          maxTokens: Int? = nil) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: Salehman answers from this Mac ONLY — endpoint engines
+        // qualify only on loopback URLs (the `generateOnDevice` rule), the
+        // cloud chain + standalone keys are skipped entirely, and the
+        // MLX/Ollama floor below still answers. (This was the Offline leak:
+        // a pinned .salehman walked the whole cloud chain — including the
+        // PAID DeepSeek backstop — while "offline".)
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? prompt) {
-            if let r = await tryCloud(entry.client, model: entry.model, prompt: prompt) { return r }
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? prompt) {
+                if let r = await tryCloud(entry.client, model: entry.model, prompt: prompt) { return r }
+            }
+            // Then the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI /
+            // Claude) — not in the curated free chain — so ANY configured cloud key
+            // makes Salehman work on the cloud, not just the six free coders.
+            if let r = await tryStandaloneClouds(prompt: prompt) { return r }
         }
-        // Then the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI /
-        // Claude) — not in the curated free chain — so ANY configured cloud key
-        // makes Salehman work on the cloud, not just the six free coders.
-        if let r = await tryStandaloneClouds(prompt: prompt) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: prompt, maxTokens: maxTokens ?? 1024) { return r }
@@ -80,16 +89,21 @@ enum SalehmanEngine {
                                userPrompt: String? = nil,
                                maxTokens: Int? = nil,
                                onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: local-only (loopback endpoints + the MLX/Ollama floor)
+        // — same gate as `generate`, streamed.
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? prompt) {
-            if let r = await tryCloudStream(entry.client, model: entry.model, prompt: prompt, onUpdate: onUpdate) { return r }
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? prompt) {
+                if let r = await tryCloudStream(entry.client, model: entry.model, prompt: prompt, onUpdate: onUpdate) { return r }
+            }
+            // Owner's standalone cloud keys (Gemini / Grok / OpenAI / Claude), streamed.
+            if let r = await tryStandaloneCloudsStream(prompt: prompt, onUpdate: onUpdate) { return r }
         }
-        // Owner's standalone cloud keys (Gemini / Grok / OpenAI / Claude), streamed.
-        if let r = await tryStandaloneCloudsStream(prompt: prompt, onUpdate: onUpdate) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generateStream(prompt: prompt, maxTokens: maxTokens ?? 1024, onUpdate: onUpdate) { return r }
@@ -105,26 +119,31 @@ enum SalehmanEngine {
     /// falls back to plain chat on the same brain, then the chain rolls on. The
     /// local floor keeps tools too (`ollamaReply`).
     static func generateWithTools(message: String, userPrompt: String? = nil) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: local-only (loopback endpoints + the MLX/Ollama floor)
+        // — same gate as `generate`, with tools.
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? message) {
-            guard entry.client.hasKey() else { continue }
-            let model = entry.model ?? entry.client.defaultModel
-            if let r = await LocalLLM.chatOpenAICompatWithTools(client: entry.client,
-                                                                model: model,
-                                                                message: message,
-                                                                systemPrompt: SalehmanPersona.activeSystemPrompt) {
-                return r
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? message) {
+                guard entry.client.hasKey() else { continue }
+                let model = entry.model ?? entry.client.defaultModel
+                if let r = await LocalLLM.chatOpenAICompatWithTools(client: entry.client,
+                                                                    model: model,
+                                                                    message: message,
+                                                                    systemPrompt: SalehmanPersona.activeSystemPrompt) {
+                    return r
+                }
+                // Tools unsupported by this model → plain chat before moving on.
+                if let r = await tryCloud(entry.client, model: entry.model, prompt: message) { return r }
             }
-            // Tools unsupported by this model → plain chat before moving on.
-            if let r = await tryCloud(entry.client, model: entry.model, prompt: message) { return r }
+            // Owner's standalone cloud keys (plain chat — these clients don't share the
+            // OpenAI-compat tool loop; a real answer still beats the local floor).
+            if let r = await tryStandaloneClouds(prompt: message) { return r }
         }
-        // Owner's standalone cloud keys (plain chat — these clients don't share the
-        // OpenAI-compat tool loop; a real answer still beats the local floor).
-        if let r = await tryStandaloneClouds(prompt: message) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: message) { return r }

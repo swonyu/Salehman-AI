@@ -139,113 +139,21 @@ enum LocalLLM {
     /// Returning `.none` short-circuits the pipeline with the canonical
     /// "no brain reachable" message instead of silently using the other side.
     static func currentBrain() async -> Brain {
-        let pref = AppSettings.brainPreferenceCurrent
-
-        // Offline Mode hard-gates every cloud pref to `.none` so the UI shows a
-        // clear "Offline is on" hint instead of silently degrading. Local pins
-        // (`.ollama`, `.auto`) and the orchestration modes (`.ensemble`,
-        // `.freeAuto`) stay reachable — they gate their own cloud roster.
-        if AppSettings.isOfflineOnly {
-            switch pref {
-            case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .deepSeek, .codex, .copilot, .openRouter:
-                return .none
-            default:
-                break
-            }
-        }
-
-        switch pref {
-        // Local tier (Ollama): a pinned local brain that's down dead-ends to
-        // `.none` with a clear hint. (Cloud pins below stay strict.)
-        case .ollama:
-            if await ollamaReady() { return .ollamaCoder }
-            return .none
-
-        case .salehman:
-            // Salehman is CLOUD-FIRST now: reachable if ANY cloud engine is set
-            // (a hosted endpoint or any free/paid key) — so he works with NO local
-            // model installed — else the on-device engines for offline use. The
-            // persona is the brand; the engine underneath is internal.
-            if SalehmanEngine.hasAnyCloud { return .salehman }
-            if await MLXSalehmanEngine.shared.isReady { return .salehman }
-            if await OllamaClient.hasCustomModel() { return .salehman }
-            return .none
-
-        case .unslothStudio:
-            // Local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM
-            // Studio / llama.cpp). We do NOT probe the URL here — that would
-            // burn an HTTP request every 10s during `BrainStatus` polling. The
-            // "configured" check (endpoint URL is non-empty) is enough for the
-            // header dot; a real call will surface unreachability later.
-            return UnslothStudio.isConfigured ? .unslothStudio : .none
-
-        case .vllm:
-            // Same rationale as Unsloth Studio: don't probe the URL here (would
-            // burn an HTTP call every 10s while BrainStatus polls). "Configured"
-            // (endpoint set) is enough for the dot; a real call surfaces failure.
-            return VLLM.isConfigured ? .vllm : .none
-
-        // Cloud brains: "reachable" simply means the user has entered a key.
-        // We never probe the network here — that would burn an HTTP request
-        // every 10s while BrainStatus polls.
-        case .claudeHaiku: return AnthropicClient.isConfigured ? .claudeHaiku : .none
-        case .grok:        return GrokClient.hasKey()          ? .grok        : .none
-        case .gemini:      return GeminiClient.hasKey()        ? .gemini      : .none
-        case .groq:        return GroqClient.shared.hasKey()   ? .groq        : .none
-        case .mistral:     return MistralClient.shared.hasKey()  ? .mistral    : .none
-        case .cerebras:    return CerebrasClient.shared.hasKey() ? .cerebras   : .none
-        case .deepSeek:    return DeepSeekClient.shared.hasKey() ? .deepSeek   : .none
-        case .codex:       return OpenAIClient.hasKey()         ? .codex       : .none
-        case .copilot:     return CopilotClient.isAuthed()      ? .copilot     : .none
-        case .openRouter:  return OpenRouterClient.shared.hasKey() ? .openRouter : .none
-
-        case .auto:
-            // `.auto` stays strictly local-first: we never silently spend on
-            // a cloud API. The user has to explicitly pin a cloud brain to
-            // leave the Mac.
-            if await ollamaReady() { return .ollamaCoder }
-            return .none
-
-        case .ensemble:
-            // "All brains" is reachable iff *any* single brain is. The actual
-            // fan-out happens in `generateEnsemble`; here we only decide
-            // whether to short-circuit with the off-message.
-            return await anyBrainReachable() ? .ensemble : .none
-
-        case .freeAuto:
-            // Reachable iff a *free* brain or a local brain can answer (paid
-            // brains don't count — this mode never spends). The parallel race +
-            // local backstop happens in `generateFreeAuto`.
-            if GroqClient.shared.hasKey() || CerebrasClient.shared.hasKey()
-                || GeminiClient.hasKey() || MistralClient.shared.hasKey()
-                || OpenRouterClient.shared.hasKey() { return .freeAuto }
-            if await ollamaReady() { return .freeAuto }
-            return .none
-
-        case .freeCoding:
-            // Same reachability shape as Free·Auto, plus DeepSeek (the owner opted
-            // it into this coding loop). Reachable iff any coder brain can answer.
-            if DeepSeekClient.shared.hasKey() || GroqClient.shared.hasKey()
-                || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
-                || OpenRouterClient.shared.hasKey() { return .freeCoding }
-            if await ollamaReady() { return .freeCoding }
-            return .none
-
-        case .cloudCoding:
-            // Cloud-ONLY: reachable iff a cloud coder key is saved (no local
-            // fallback). `cloudCodingReachable()` also respects Offline Mode.
-            return cloudCodingReachable() ? .cloudCoding : .none
-        }
+        // The reachability RULES (offline hard-gate on cloud pins, per-pin key
+        // checks, roster membership, the .auto local-first invariant) live in
+        // `BrainRouting.reachableBrain` — pure, pinned by
+        // BrainRoutingDispatchTests. `BrainRouteConfig.live()` keeps the old
+        // per-preference probe laziness (no Ollama HTTP probe for a pinned
+        // cloud brain — BrainStatus polls this every 10s).
+        let config = await BrainRouteConfig.live()
+        return BrainRouting.reachableBrain(config)
     }
 
     /// True iff at least one brain (local or any keyed cloud) can answer.
     /// Used by ensemble mode to decide between fanning out and the off-message.
     nonisolated static func anyBrainReachable() async -> Bool {
         if await ollamaReady() { return true }
-        return AnthropicClient.isConfigured || GrokClient.hasKey() || GeminiClient.hasKey()
-            || GroqClient.shared.hasKey() || MistralClient.shared.hasKey()
-            || CerebrasClient.shared.hasKey() || OpenAIClient.hasKey() || CopilotClient.isAuthed()
-            || OpenRouterClient.shared.hasKey() || DeepSeekClient.shared.hasKey()
+        return !CloudProvider.configuredNow().isEmpty
     }
 
     /// True when the user picked the "All Brains at Once" preference.
@@ -338,37 +246,25 @@ enum LocalLLM {
         let now = Date()
 
         typealias Thunk = @Sendable () async -> String?
+        // Membership, order, and the Offline-Mode gate come from BrainRouting
+        // (offline → empty roster, so only the local backstop below remains —
+        // the stronger constraint). Execution stays here: each free brain runs
+        // its plain `chat` on the user-selected model; Gemini is the one free
+        // brain without the shared OpenAI-compat client.
         var roster: [(name: String, run: Thunk)] = []
-        if GroqClient.shared.hasKey() {
-            let model = AppSettings.groqModelCurrent
-            roster.append(("Groq", { await GroqClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if CerebrasClient.shared.hasKey() {
-            let model = AppSettings.cerebrasModelCurrent
-            roster.append(("Cerebras", { await CerebrasClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if GeminiClient.hasKey() {
-            let model = AppSettings.geminiModelCurrent
-            roster.append(("Gemini", { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if MistralClient.shared.hasKey() {
-            let model = AppSettings.mistralModelCurrent
-            roster.append(("Mistral", { await MistralClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if OpenRouterClient.shared.hasKey() {
-            let model = AppSettings.openRouterModelCurrent
-            roster.append(("OpenRouter", { await OpenRouterClient.shared.chat(prompt: prompt, system: sys, model: model) }))
+        for p in BrainRouting.freeAutoRoster(routeConfigNow()) {
+            guard let model = p.selectedModel else { continue }
+            if p == .gemini {
+                roster.append((p.rawValue, { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
+            } else if let client = p.compatClient {
+                roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
+            }
         }
 
         // Skip brains that failed within the cooldown window — don't waste a
         // round-trip on a known-bad key; they auto-retry once the window lapses.
-        // Offline Mode is the STRONGER constraint: an empty active set forces the
-        // function straight to the local backstop (Apple → Ollama), so no cloud
-        // brain is even attempted regardless of keys / cooldown state.
         let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = AppSettings.isOfflineOnly
-            ? []
-            : roster.filter { !cooling.contains($0.name) }
+        let active = roster.filter { !cooling.contains($0.name) }
 
         // Race the active free cloud brains; first usable reply wins, cancel the
         // rest. Record per-brain failures/successes so the cooldown adapts.
@@ -412,21 +308,15 @@ enum LocalLLM {
         // 1) Local, free, tool-capable.
         if await ollamaReady(), let reply = await ollamaReply(message) { return reply }
         // 2) Free cloud OpenAI-compatible brains — first one the user configured.
-        //    Tool-capable via `chatOpenAICompatWithTools`. Skipped under Offline
-        //    Mode (the stronger constraint), matching `generateFreeAuto`.
-        if !AppSettings.isOfflineOnly {
-            let free: [(client: OpenAICompatibleClient, model: String)] = [
-                (GroqClient.shared,       AppSettings.groqModelCurrent),
-                (CerebrasClient.shared,   AppSettings.cerebrasModelCurrent),
-                (MistralClient.shared,    AppSettings.mistralModelCurrent),
-                (OpenRouterClient.shared, AppSettings.openRouterModelCurrent),
-            ]
-            for entry in free where entry.client.hasKey() {
-                if let reply = await chatOpenAICompatWithTools(client: entry.client,
-                                                              model: entry.model,
-                                                              message: message) {
-                    return reply
-                }
+        //    Tool-capable via `chatOpenAICompatWithTools`. Membership/order +
+        //    the Offline-Mode skip (the stronger constraint) come from
+        //    BrainRouting; Gemini is excluded there (free, but no compat tools).
+        for p in BrainRouting.freeAutoToolRoster(routeConfigNow()) {
+            guard let client = p.compatClient, let model = p.selectedModel else { continue }
+            if let reply = await chatOpenAICompatWithTools(client: client,
+                                                          model: model,
+                                                          message: message) {
+                return reply
             }
         }
         // 3) Nothing tool-capable worked → the original fast race (no tools).
@@ -475,30 +365,18 @@ enum LocalLLM {
         let now = Date()
 
         typealias Thunk = @Sendable () async -> String?
+        // Membership, order (DeepSeek opted in by the owner), and the
+        // Offline-Mode gate come from BrainRouting; each entry races its
+        // strongest CODING model via `freeCoderModel`.
         var roster: [(name: String, run: Thunk)] = []
-        if DeepSeekClient.shared.hasKey() {
-            let model = freeCoderModel(DeepSeekClient.allModels, default: DeepSeekClient.defaultModel)
-            roster.append(("DeepSeek", { await DeepSeekClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if OpenRouterClient.shared.hasKey() {
-            let model = freeCoderModel(OpenRouterClient.allModels, default: OpenRouterClient.defaultModel)
-            roster.append(("OpenRouter", { await OpenRouterClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if GroqClient.shared.hasKey() {
-            let model = freeCoderModel(GroqClient.allModels, default: GroqClient.defaultModel)
-            roster.append(("Groq", { await GroqClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if CerebrasClient.shared.hasKey() {
-            let model = freeCoderModel(CerebrasClient.allModels, default: CerebrasClient.defaultModel)
-            roster.append(("Cerebras", { await CerebrasClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        if MistralClient.shared.hasKey() {
-            let model = freeCoderModel(MistralClient.allModels, default: MistralClient.defaultModel)
-            roster.append(("Mistral", { await MistralClient.shared.chat(prompt: prompt, system: sys, model: model) }))
+        for p in BrainRouting.codingRaceRoster(routeConfigNow()) {
+            guard let client = p.compatClient, let models = p.coderModels else { continue }
+            let model = freeCoderModel(models.all, default: models.def)
+            roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
         }
 
         let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = AppSettings.isOfflineOnly ? [] : roster.filter { !cooling.contains($0.name) }
+        let active = roster.filter { !cooling.contains($0.name) }
 
         if !active.isEmpty {
             let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
@@ -539,20 +417,12 @@ enum LocalLLM {
         // smarts + speed: DeepSeek (the owner's elite pick) → Cerebras / Groq
         // (blazing ~2000 tok/s, strong gpt-oss-120b) → OpenRouter → Mistral. Each
         // runs the tool loop so it can build / run / test. Skipped under Offline Mode.
-        if !AppSettings.isOfflineOnly {
-            let coders: [(client: OpenAICompatibleClient, models: [String], def: String)] = [
-                (DeepSeekClient.shared,   DeepSeekClient.allModels,   DeepSeekClient.defaultModel),
-                (CerebrasClient.shared,   CerebrasClient.allModels,   CerebrasClient.defaultModel),
-                (GroqClient.shared,       GroqClient.allModels,       GroqClient.defaultModel),
-                (OpenRouterClient.shared, OpenRouterClient.allModels, OpenRouterClient.defaultModel),
-                (MistralClient.shared,    MistralClient.allModels,    MistralClient.defaultModel),
-            ]
-            for entry in coders where entry.client.hasKey() {
-                let model = freeCoderModel(entry.models, default: entry.def)
-                if let reply = await chatOpenAICompatWithTools(client: entry.client, model: model,
-                                                              message: message, systemPrompt: sys) {
-                    return reply
-                }
+        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
+            guard let client = p.compatClient, let models = p.coderModels else { continue }
+            let model = freeCoderModel(models.all, default: models.def)
+            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
+                                                          message: message, systemPrompt: sys) {
+                return reply
             }
         }
         // LOCAL FALLBACK — only when no cloud coder answered (or Offline Mode is on):
@@ -565,26 +435,22 @@ enum LocalLLM {
 
     // MARK: - Cloud Coding (cloud-only "best coders" loop — no local, no lag)
 
-    /// The best cloud coders, in quality+speed order. Single source of truth for
-    /// both the race (`generateCloudCoding`) and the tool loop (`cloudCodingReply`)
-    /// so they can never drift. DeepSeek leads (smartest coder), then the blazing
-    /// gpt-oss-120b on Cerebras/Groq, then OpenRouter's free qwen3-coder, then
-    /// Mistral's codestral. `freeCoderModel` picks each brain's coding model.
-    nonisolated static func cloudCoderRoster() -> [(client: OpenAICompatibleClient, models: [String], def: String)] {
-        [
-            (DeepSeekClient.shared,   DeepSeekClient.allModels,   DeepSeekClient.defaultModel),
-            (CerebrasClient.shared,   CerebrasClient.allModels,   CerebrasClient.defaultModel),
-            (GroqClient.shared,       GroqClient.allModels,       GroqClient.defaultModel),
-            (OpenRouterClient.shared, OpenRouterClient.allModels, OpenRouterClient.defaultModel),
-            (MistralClient.shared,    MistralClient.allModels,    MistralClient.defaultModel),
-        ]
+    /// Sync snapshot of the routing inputs the roster builders need (pins +
+    /// offline + the ten key checks). The async probes (Ollama/MLX) stay out —
+    /// roster membership never consults them.
+    nonisolated private static func routeConfigNow() -> BrainRouteConfig {
+        BrainRouteConfig(pref: AppSettings.brainPreferenceCurrent,
+                         offlineOnly: AppSettings.isOfflineOnly,
+                         configured: CloudProvider.configuredNow())
     }
 
     /// True iff any cloud coder is configured AND we're not offline — i.e. Cloud
     /// Coding can actually answer. No local fallback, so this is the honest gate.
+    /// (The coder roster itself — membership + order — lives in
+    /// `CloudProvider.coderLoop`, shared with freeCodingReply / cloudCoding.)
     nonisolated static func cloudCodingReachable() -> Bool {
         guard !AppSettings.isOfflineOnly else { return false }
-        return cloudCoderRoster().contains { $0.client.hasKey() }
+        return CloudProvider.coderLoop.contains { $0.isConfiguredNow }
     }
 
     /// Cloud Coding RACE (no tools): race every configured cloud coder in parallel
@@ -599,9 +465,9 @@ enum LocalLLM {
 
         typealias Thunk = @Sendable () async -> String?
         var roster: [(name: String, run: Thunk)] = []
-        for entry in cloudCoderRoster() where entry.client.hasKey() {
-            let client = entry.client
-            let model = freeCoderModel(entry.models, default: entry.def)
+        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
+            guard let client = p.compatClient, let models = p.coderModels else { continue }
+            let model = freeCoderModel(models.all, default: models.def)
             roster.append((client.displayName, { await client.chat(prompt: prompt, system: sys, model: model) }))
         }
         guard !roster.isEmpty else { return offMessage }
@@ -636,9 +502,10 @@ enum LocalLLM {
     static func cloudCodingReply(_ message: String) async -> String {
         guard !AppSettings.isOfflineOnly else { return offMessage }
         let sys = applyUnrestricted(freeCodingSystem)
-        for entry in cloudCoderRoster() where entry.client.hasKey() {
-            let model = freeCoderModel(entry.models, default: entry.def)
-            if let reply = await chatOpenAICompatWithTools(client: entry.client, model: model,
+        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
+            guard let client = p.compatClient, let models = p.coderModels else { continue }
+            let model = freeCoderModel(models.all, default: models.def)
+            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
                                                           message: message, systemPrompt: sys) {
                 return reply
             }
@@ -652,7 +519,7 @@ enum LocalLLM {
     /// hoisted out of `currentBrain` because three call sites use it. Uses
     /// `activeCodeModel()` so the user can have 7B *or* 14B *or* 32B and the
     /// app picks whichever is actually pulled — not just the sweet-spot 7B.
-    nonisolated private static func ollamaReady() async -> Bool {
+    nonisolated static func ollamaReady() async -> Bool {
         guard await OllamaClient.isUp() else { return false }
         return await OllamaClient.activeCodeModel() != nil
     }
@@ -758,43 +625,30 @@ enum LocalLLM {
         if let m = ollamaModel, includeLocal {
             roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
         }
-        // Offline Mode skips ALL cloud brains so ensemble runs LOCAL-only (Ollama,
-        // already appended above). Auto-scales — when the next cloud brain is
-        // added, this single gate covers it.
-        if !AppSettings.isOfflineOnly {
-            if AnthropicClient.isConfigured {
+        // Cloud membership + the Offline-Mode gate (ensemble runs LOCAL-only
+        // offline) come from BrainRouting.ensembleCloudRoster — including the
+        // documented DeepSeek exclusion. Labels/calls stay per-provider here.
+        for p in BrainRouting.ensembleCloudRoster(routeConfigNow()) {
+            switch p {
+            case .anthropic:
                 roster.append(("Claude Haiku", { await AnthropicClient.chat(prompt: prompt, system: sys) }))
-            }
-            if GrokClient.hasKey() {
+            case .grok:
                 let model = AppSettings.grokModelCurrent
                 roster.append(("xAI \(model)", { await GrokClient.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if GeminiClient.hasKey() {
+            case .gemini:
                 let model = AppSettings.geminiModelCurrent
                 roster.append(("Google \(model)", { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if GroqClient.shared.hasKey() {
-                let model = AppSettings.groqModelCurrent
-                roster.append(("Groq \(model)", { await GroqClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if MistralClient.shared.hasKey() {
-                let model = AppSettings.mistralModelCurrent
-                roster.append(("Mistral \(model)", { await MistralClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if CerebrasClient.shared.hasKey() {
-                let model = AppSettings.cerebrasModelCurrent
-                roster.append(("Cerebras \(model)", { await CerebrasClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if OpenAIClient.hasKey() {
+            case .openAI:
                 let model = AppSettings.openAIModelCurrent
                 roster.append(("OpenAI \(model)", { await OpenAIClient.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if OpenRouterClient.shared.hasKey() {
-                let model = AppSettings.openRouterModelCurrent
-                roster.append(("OpenRouter \(model)", { await OpenRouterClient.shared.chat(prompt: prompt, system: sys, model: model) }))
-            }
-            if CopilotClient.isAuthed() {
+            case .copilot:
                 roster.append(("GitHub Copilot", { await CopilotClient.chat(prompt: prompt, system: sys) }))
+            case .groq, .mistral, .cerebras, .openRouter:
+                if let client = p.compatClient, let model = p.selectedModel {
+                    roster.append(("\(p.rawValue) \(model)", { await client.chat(prompt: prompt, system: sys, model: model) }))
+                }
+            case .deepSeek:
+                break   // never in the ensemble roster (see CloudProvider.ensembleRoster)
             }
         }
 
@@ -1499,33 +1353,10 @@ enum LocalLLM {
         return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem)
     }
 
-    // Brain-gate predicates. Each cloud brain is *only* tried when the user
-    // explicitly pins it — we never silently spend on a cloud API.
-    //
-    // The local tier (Ollama) is free and on-device. `isLocalPref` opens the
-    // tier for `.auto` and the `.ollama` pin.
-    nonisolated private static var isLocalPref: Bool {
-        pref == .auto || pref == .ollama
-    }
-    /// The user's own model is pinned — route EXCLUSIVELY to it (no fallback).
-    nonisolated private static var salehmanAllowed: Bool { pref == .salehman }
-    /// Unsloth Studio (or any local OpenAI-compatible server) is pinned — route
-    /// exclusively to it, no silent fallback to Ollama. Same discipline as
-    /// `.salehman`: an explicit pin means "this engine or nothing."
-    nonisolated private static var unslothStudioAllowed: Bool { pref == .unslothStudio }
-    /// vLLM (local OpenAI-compatible server) is pinned — route exclusively to it,
-    /// no silent fallback. Same discipline as `.unslothStudio`.
-    nonisolated private static var vllmAllowed: Bool { pref == .vllm }
-    nonisolated private static var claudeAllowed:   Bool { pref == .claudeHaiku }
-    nonisolated private static var grokAllowed:     Bool { pref == .grok }
-    nonisolated private static var geminiAllowed:   Bool { pref == .gemini }
-    nonisolated private static var groqAllowed:     Bool { pref == .groq }
-    nonisolated private static var mistralAllowed:  Bool { pref == .mistral }
-    nonisolated private static var cerebrasAllowed: Bool { pref == .cerebras }
-    nonisolated private static var deepSeekAllowed: Bool { pref == .deepSeek }
-    nonisolated private static var codexAllowed:    Bool { pref == .codex }
-    nonisolated private static var copilotAllowed:  Bool { pref == .copilot }
-    nonisolated private static var openRouterAllowed: Bool { pref == .openRouter }
+    // The per-brain pin gates ("each cloud brain is only tried when the user
+    // explicitly pins it — we never silently spend on a cloud API") moved to
+    // `BrainRouting.dispatch`: one switch, one source of truth, pinned by
+    // BrainRoutingDispatchTests. The ladders below consume the dispatch.
 
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
@@ -1539,84 +1370,73 @@ enum LocalLLM {
         // Anthropic, auto-cached server-side by Grok/OpenAI (we put it first);
         // folded into the prompt for every other brain. nil → unchanged behaviour.
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
-        // Ensemble must be a first-class branch here, not only in AgentPipeline:
-        // direct callers (the Settings health-check, StockSage briefings, title
-        // generation) reach the model layer through `generate`, and without this
-        // they'd fall through every single-brain gate to `offMessage` — which is
-        // exactly why the Settings "Is All Brains at Once working?" probe falsely
-        // reported "Not working" while ensemble chat worked fine via the pipeline.
-        if isFreeAutoMode { return await generateFreeAuto(prompt) }
-        if isFreeCodingMode { return await generateFreeCoding(prompt) }
-        if isCloudCodingMode { return await generateCloudCoding(prompt) }
-        if isEnsembleMode { return await generateEnsemble(prompt) }
-        if claudeAllowed, let reply = await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix) { return reply }
-        if grokAllowed,
-           let reply = await GrokClient.chat(prompt: prompt,
-                                             model: AppSettings.grokModelCurrent) {
-            return reply
-        }
-        if geminiAllowed,
-           let reply = await GeminiClient.chat(prompt: prompt,
-                                               model: AppSettings.geminiModelCurrent) {
-            return reply
-        }
-        if groqAllowed,
-           let reply = await GroqClient.shared.chat(prompt: prompt,
-                                                    model: AppSettings.groqModelCurrent) {
-            return reply
-        }
-        if mistralAllowed,
-           let reply = await MistralClient.shared.chat(prompt: prompt,
-                                                       model: AppSettings.mistralModelCurrent) {
-            return reply
-        }
-        if cerebrasAllowed,
-           let reply = await CerebrasClient.shared.chat(prompt: prompt,
-                                                        model: AppSettings.cerebrasModelCurrent) {
-            return reply
-        }
-        if deepSeekAllowed,
-           let reply = await DeepSeekClient.shared.chat(prompt: prompt,
-                                                        model: AppSettings.deepSeekModelCurrent) {
-            return reply
-        }
-        if codexAllowed,
-           let reply = await OpenAIClient.chat(prompt: prompt,
-                                               model: AppSettings.openAIModelCurrent) {
-            return reply
-        }
-        if openRouterAllowed,
-           let reply = await OpenRouterClient.shared.chat(prompt: prompt,
-                                                          model: AppSettings.openRouterModelCurrent) {
-            return reply
-        }
-        if copilotAllowed, let reply = await CopilotClient.chat(prompt: prompt) { return reply }
-        // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
-        // NVIDIA → free frontier/120B tiers → DeepSeek paid backstop → local
-        // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
-        if salehmanAllowed {
+        // The pinned target comes from BrainRouting.dispatch — ONE source of
+        // truth for gating (the old cascade of pin-gates was a single-dispatch
+        // ladder in disguise). Notable rules enforced there:
+        //   • the orchestration modes are first-class (direct callers — the
+        //     Settings health-check, StockSage briefings, title generation —
+        //     reach the model layer through here; this fixed the old falsely-
+        //     "Not working" ensemble probe bug);
+        //   • Offline Mode hard-gates the ten cloud pins → `.unavailable`
+        //     (the Offline-leak fix: `currentBrain` always documented this
+        //     contract, but this cascade never enforced it).
+        switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
+        case .mode(.freeAuto):    return await generateFreeAuto(prompt)
+        case .mode(.freeCoding):  return await generateFreeCoding(prompt)
+        case .mode(.cloudCoding): return await generateCloudCoding(prompt)
+        case .mode(.ensemble):    return await generateEnsemble(prompt)
+        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
+        case .cloud(let p):
+            // Pinned cloud brain — strict, no silent fallback (nil reply →
+            // sentinel, exactly like the old fall-through-to-nothing).
+            if let reply = await cloudOneShot(p, prompt: prompt, rawPrompt: rawPrompt,
+                                              cachePrefix: cachePrefix) { return reply }
+            return offMessage
+        case .salehman:
+            // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
+            // NVIDIA → free frontier/120B tiers → DeepSeek paid backstop → local
+            // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
             return offMessage
-        }
-        // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin,
-        // no silent fallback. The endpoint URL is the only configuration.
-        if unslothStudioAllowed {
+        case .unslothStudio:
+            // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin,
+            // no silent fallback. The endpoint URL is the only configuration.
             if let reply = await UnslothStudio.chat(prompt: prompt) { return reply }
             return offMessage
-        }
-        // vLLM — explicit pin, no silent fallback (same discipline as Unsloth Studio).
-        if vllmAllowed {
+        case .vllm:
+            // vLLM — explicit pin, no silent fallback (same discipline as Unsloth Studio).
             if let reply = await VLLM.chat(prompt: prompt) { return reply }
             return offMessage
-        }
-        // Local tier (Ollama): free & on-device, so they
-        // fall back to each other; Ollama-first only when the user pinned it.
-        if isLocalPref {
+        case .localTier:
+            // Local tier (Ollama): free & on-device.
             if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+            return offMessage
+        case .unavailable:
+            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+            return offMessage
         }
-        return offMessage
+    }
+
+    /// One pinned cloud brain's `generate` execution: plain chat on the
+    /// user-selected model. Claude receives the un-folded prompt + cachePrefix
+    /// (its client caches the prefix as a `cache_control` block); every other
+    /// brain gets the folded prompt. Gating/membership come from BrainRouting.
+    private static func cloudOneShot(_ p: CloudProvider, prompt: String,
+                                     rawPrompt: String, cachePrefix: String?) async -> String? {
+        switch p {
+        case .anthropic:  return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
+        case .copilot:    return await CopilotClient.chat(prompt: prompt)
+        case .grok:       return await GrokClient.chat(prompt: prompt, model: AppSettings.grokModelCurrent)
+        case .gemini:     return await GeminiClient.chat(prompt: prompt, model: AppSettings.geminiModelCurrent)
+        case .openAI:     return await OpenAIClient.chat(prompt: prompt, model: AppSettings.openAIModelCurrent)
+        case .groq:       return await GroqClient.shared.chat(prompt: prompt, model: AppSettings.groqModelCurrent)
+        case .mistral:    return await MistralClient.shared.chat(prompt: prompt, model: AppSettings.mistralModelCurrent)
+        case .cerebras:   return await CerebrasClient.shared.chat(prompt: prompt, model: AppSettings.cerebrasModelCurrent)
+        case .deepSeek:   return await DeepSeekClient.shared.chat(prompt: prompt, model: AppSettings.deepSeekModelCurrent)
+        case .openRouter: return await OpenRouterClient.shared.chat(prompt: prompt, model: AppSettings.openRouterModelCurrent)
+        }
     }
 
     /// **On-device-only** one-shot generation. Runs EXCLUSIVELY the local tier
@@ -1662,244 +1482,195 @@ enum LocalLLM {
         // prefix server-side — both benefit because we put it FIRST. Every other
         // brain just gets it folded into the prompt (full context, no caching).
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
-        // Ensemble can't token-stream — it fans out to N brains and joins their
-        // replies into one labeled document. Deliver that combined result in a
-        // single `onUpdate` so the streaming bubble shows it, then return it.
-        if isFreeAutoMode {
+        // Same single-dispatch plan as `generate` (BrainRouting.dispatch) —
+        // including the Offline-Mode hard-gate on cloud pins. The orchestration
+        // modes can't token-stream (they join N replies into one document), so
+        // each delivers its combined answer in a single `onUpdate`.
+        //
+        // On any failure exit we return the sentinel so equality-check callers
+        // (`synthesize`, etc.) still fire, but we DO NOT push it into
+        // `onUpdate` — that would paint the streaming UI with the sentinel
+        // even while another agent (e.g. the non-streaming `LocalLLM.chat`
+        // path used by the Reasoning Strategist) is happily producing a real
+        // reply. The display layer transforms the sentinel into the
+        // context-aware `unavailableMessage` at render time.
+        switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
+        case .mode(.freeAuto):
             // Race the free brains; deliver the single winning answer in one
             // update (the race joins to one reply — there's nothing to stream).
             let answer = await generateFreeAuto(prompt)
             onUpdate(answer)
             return answer
-        }
-        if isFreeCodingMode {
-            // Like Free·Auto: the loop joins to one reply — nothing to token-stream,
-            // so deliver the winning answer in a single update.
+        case .mode(.freeCoding):
             let answer = await generateFreeCoding(prompt)
             onUpdate(answer)
             return answer
-        }
-        if isCloudCodingMode {
+        case .mode(.cloudCoding):
             let answer = await generateCloudCoding(prompt)
             onUpdate(answer)
             return answer
-        }
-        if isEnsembleMode {
+        case .mode(.ensemble):
             let combined = await generateEnsemble(prompt)
             onUpdate(combined)
             return combined
-        }
-        if claudeAllowed {
-            if let r = await AnthropicClient.chatStream(prompt: rawPrompt, cachePrefix: cachePrefix, onUpdate: onUpdate) { return r }
-            if let r = await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix) { return r }
-        }
-        if grokAllowed {
-            if let r = await GrokClient.chatStream(prompt: prompt,
-                                                   model: AppSettings.grokModelCurrent,
-                                                   onUpdate: onUpdate) { return r }
-            if let r = await GrokClient.chat(prompt: prompt,
-                                             model: AppSettings.grokModelCurrent) { return r }
-        }
-        if geminiAllowed {
-            if let r = await GeminiClient.chatStream(prompt: prompt,
-                                                     model: AppSettings.geminiModelCurrent,
-                                                     onUpdate: onUpdate) { return r }
-            if let r = await GeminiClient.chat(prompt: prompt,
-                                               model: AppSettings.geminiModelCurrent) { return r }
-        }
-        if groqAllowed {
-            if let r = await GroqClient.shared.chatStream(prompt: prompt,
-                                                          model: AppSettings.groqModelCurrent,
-                                                          onUpdate: onUpdate) { return r }
-            if let r = await GroqClient.shared.chat(prompt: prompt,
-                                                    model: AppSettings.groqModelCurrent) { return r }
-        }
-        if mistralAllowed {
-            if let r = await MistralClient.shared.chatStream(prompt: prompt,
-                                                             model: AppSettings.mistralModelCurrent,
-                                                             onUpdate: onUpdate) { return r }
-            if let r = await MistralClient.shared.chat(prompt: prompt,
-                                                       model: AppSettings.mistralModelCurrent) { return r }
-        }
-        if cerebrasAllowed {
-            if let r = await CerebrasClient.shared.chatStream(prompt: prompt,
-                                                              model: AppSettings.cerebrasModelCurrent,
-                                                              onUpdate: onUpdate) { return r }
-            if let r = await CerebrasClient.shared.chat(prompt: prompt,
-                                                        model: AppSettings.cerebrasModelCurrent) { return r }
-        }
-        if deepSeekAllowed {
-            if let r = await DeepSeekClient.shared.chatStream(prompt: prompt,
-                                                              model: AppSettings.deepSeekModelCurrent,
-                                                              onUpdate: onUpdate) { return r }
-            if let r = await DeepSeekClient.shared.chat(prompt: prompt,
-                                                        model: AppSettings.deepSeekModelCurrent) { return r }
-        }
-        if codexAllowed {
-            if let r = await OpenAIClient.chatStream(prompt: prompt,
-                                                     model: AppSettings.openAIModelCurrent,
-                                                     onUpdate: onUpdate) { return r }
-            if let r = await OpenAIClient.chat(prompt: prompt,
-                                               model: AppSettings.openAIModelCurrent) { return r }
-        }
-        if openRouterAllowed {
-            if let r = await OpenRouterClient.shared.chatStream(prompt: prompt,
-                                                               model: AppSettings.openRouterModelCurrent,
-                                                               onUpdate: onUpdate) { return r }
-            if let r = await OpenRouterClient.shared.chat(prompt: prompt,
-                                                          model: AppSettings.openRouterModelCurrent) { return r }
-        }
-        if copilotAllowed {
-            if let r = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
-            if let r = await CopilotClient.chat(prompt: prompt) { return r }
-        }
-        // Salehman streaming — CLOUD-FIRST via the shared engine (streams from the
-        // cloud brain; falls back to local MLX/Ollama streaming when offline).
-        if salehmanAllowed {
+        case .mode:
+            return offMessage   // unreachable: dispatch emits only the 4 modes
+        case .cloud(let p):
+            if let reply = await cloudStream(p, prompt: prompt, rawPrompt: rawPrompt,
+                                             cachePrefix: cachePrefix, onUpdate: onUpdate) { return reply }
+            return offMessage
+        case .salehman:
+            // Salehman streaming — CLOUD-FIRST via the shared engine (streams from the
+            // cloud brain; falls back to local MLX/Ollama streaming when offline).
             if let reply = await SalehmanEngine.generateStream(prompt: prompt,
                                                                maxTokens: maxTokens,
                                                                onUpdate: onUpdate) {
                 return reply
             }
             return offMessage
-        }
-        // Unsloth Studio (or any local OpenAI-compatible server) — explicit
-        // pin; tries streaming first, then falls back to the same brain's
-        // non-streaming chat before declaring it dead (same discipline the
-        // cloud SSE paths above use).
-        if unslothStudioAllowed {
+        case .unslothStudio:
+            // Explicit pin; stream first, then the same brain's non-streaming
+            // chat before declaring it dead (same discipline as the SSE paths).
             if let r = await UnslothStudio.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
             if let r = await UnslothStudio.chat(prompt: prompt) { return r }
             return offMessage
-        }
-        // vLLM — explicit pin: stream first, then non-streaming fallback, same as above.
-        if vllmAllowed {
+        case .vllm:
             if let r = await VLLM.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
             if let r = await VLLM.chat(prompt: prompt) { return r }
             return offMessage
-        }
-        // Local tier — Ollama streaming.
-        if isLocalPref {
+        case .localTier:
+            // Local tier — Ollama streaming.
             if let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem, onUpdate: onUpdate) {
                 return reply
             }
+            return offMessage
+        case .unavailable:
+            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+            return offMessage
         }
-        // EVERY pinned brain failed. Return the sentinel so equality-check
-        // callers (`synthesize`, etc.) still fire, but DO NOT push it into
-        // `onUpdate` — that would paint the streaming UI with the
-        // sentinel even while another agent (e.g. the non-streaming
-        // `LocalLLM.chat` path used by the Reasoning Strategist) is
-        // happily producing a real reply. The display layer transforms the
-        // sentinel into the context-aware `unavailableMessage` at render time.
-        return offMessage
+    }
+
+    /// One pinned cloud brain's streaming execution: the brain's SSE
+    /// `chatStream` first, then the SAME brain's non-streaming `chat` before
+    /// declaring it dead — one bad SSE chunk doesn't make a working brain look
+    /// unreachable. Claude keeps its raw-prompt + cachePrefix handling.
+    private static func cloudStream(_ p: CloudProvider, prompt: String, rawPrompt: String,
+                                    cachePrefix: String?,
+                                    onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
+        switch p {
+        case .anthropic:
+            if let r = await AnthropicClient.chatStream(prompt: rawPrompt, cachePrefix: cachePrefix, onUpdate: onUpdate) { return r }
+            return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
+        case .copilot:
+            if let r = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
+            return await CopilotClient.chat(prompt: prompt)
+        case .grok:
+            let m = AppSettings.grokModelCurrent
+            if let r = await GrokClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await GrokClient.chat(prompt: prompt, model: m)
+        case .gemini:
+            let m = AppSettings.geminiModelCurrent
+            if let r = await GeminiClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await GeminiClient.chat(prompt: prompt, model: m)
+        case .openAI:
+            let m = AppSettings.openAIModelCurrent
+            if let r = await OpenAIClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await OpenAIClient.chat(prompt: prompt, model: m)
+        case .groq:
+            let m = AppSettings.groqModelCurrent
+            if let r = await GroqClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await GroqClient.shared.chat(prompt: prompt, model: m)
+        case .mistral:
+            let m = AppSettings.mistralModelCurrent
+            if let r = await MistralClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await MistralClient.shared.chat(prompt: prompt, model: m)
+        case .cerebras:
+            let m = AppSettings.cerebrasModelCurrent
+            if let r = await CerebrasClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await CerebrasClient.shared.chat(prompt: prompt, model: m)
+        case .deepSeek:
+            let m = AppSettings.deepSeekModelCurrent
+            if let r = await DeepSeekClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await DeepSeekClient.shared.chat(prompt: prompt, model: m)
+        case .openRouter:
+            let m = AppSettings.openRouterModelCurrent
+            if let r = await OpenRouterClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
+            return await OpenRouterClient.shared.chat(prompt: prompt, model: m)
+        }
     }
 
     /// Multi-turn chat that remembers prior messages. Routes through the
     /// tool-enabled Ollama/cloud loop;
     /// otherwise falls back to Ollama qwen-coder *without* tools.
     static func chat(_ message: String) async -> String {
-        if isFreeAutoMode { return await generateFreeAuto(message) }
-        if isFreeCodingMode { return await freeCodingReply(message) }
-        if isCloudCodingMode { return await cloudCodingReply(message) }
-        if isEnsembleMode { return await generateEnsemble(message) }
-        if claudeAllowed {
-            // Claude Haiku (cloud), single-turn, no local tools.
-            if let reply = await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
-                return reply
-            }
+        // Same single-dispatch plan (BrainRouting.dispatch), including the
+        // Offline-Mode hard-gate on cloud pins. Chat-shape specifics live in
+        // `cloudConversational`: the OpenAI-compatible brains run the TOOL
+        // loop first (so a pinned cloud brain can drive the terminal), the
+        // bespoke clients run plain chat.
+        switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
+        case .mode(.freeAuto):    return await generateFreeAuto(message)
+        case .mode(.freeCoding):  return await freeCodingReply(message)
+        case .mode(.cloudCoding): return await cloudCodingReply(message)
+        case .mode(.ensemble):    return await generateEnsemble(message)
+        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
+        case .cloud(let p):
+            if let reply = await cloudConversational(p, message: message) { return reply }
             return offMessage
-        }
-        if grokAllowed {
-            if let reply = await GrokClient.chat(prompt: message,
-                                                 system: Self.cloudSystemPrompt,
-                                                 model: AppSettings.grokModelCurrent) {
-                return reply
-            }
-            return offMessage
-        }
-        if geminiAllowed {
-            if let reply = await GeminiClient.chat(prompt: message,
-                                                   system: Self.cloudSystemPrompt,
-                                                   model: AppSettings.geminiModelCurrent) {
-                return reply
-            }
-            return offMessage
-        }
-        if groqAllowed {
-            // Tool-calling first (so the cloud brain can run the terminal),
-            // falling back to plain chat if the tool turn errors out.
-            let m = AppSettings.groqModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: GroqClient.shared, model: m, message: message) { return reply }
-            if let reply = await GroqClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if mistralAllowed {
-            let m = AppSettings.mistralModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: MistralClient.shared, model: m, message: message) { return reply }
-            if let reply = await MistralClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if cerebrasAllowed {
-            let m = AppSettings.cerebrasModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: CerebrasClient.shared, model: m, message: message) { return reply }
-            if let reply = await CerebrasClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if deepSeekAllowed {
-            let m = AppSettings.deepSeekModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: DeepSeekClient.shared, model: m, message: message) { return reply }
-            if let reply = await DeepSeekClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if codexAllowed {
-            let m = AppSettings.openAIModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: OpenAIClient.shared, model: m, message: message) { return reply }
-            if let reply = await OpenAIClient.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if openRouterAllowed {
-            let m = AppSettings.openRouterModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: OpenRouterClient.shared, model: m, message: message) { return reply }
-            if let reply = await OpenRouterClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if copilotAllowed {
-            if let reply = await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
-                return reply
-            }
-            return offMessage
-        }
-        // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
-        // brain can run the terminal / web through the OpenAI `tools` field, and
-        // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
-        // engine the leader uses. No further fallback.
-        if salehmanAllowed {
+        case .salehman:
+            // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
+            // brain can run the terminal / web through the OpenAI `tools` field, and
+            // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
+            // engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generateWithTools(message: message, userPrompt: message) {
                 return reply
             }
             return offMessage
-        }
-        // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin.
-        // Tool-calling first via its OpenAI-compatible `tools` field, so the
-        // Studio model can run the terminal; plain chat if the server doesn't
-        // support tools or the tool turn errors out.
-        if unslothStudioAllowed {
+        case .unslothStudio:
+            // Explicit pin. Tool-calling first via its OpenAI-compatible `tools`
+            // field, so the Studio model can run the terminal; plain chat if the
+            // server doesn't support tools or the tool turn errors out.
             if let reply = await UnslothStudio.chatWithTools(message) { return reply }
             if let reply = await UnslothStudio.chat(prompt: message, system: Self.cloudSystemPrompt) { return reply }
             return offMessage
-        }
-        // vLLM — explicit pin; tool-calling first, plain chat fallback (same as Unsloth Studio).
-        if vllmAllowed {
+        case .vllm:
             if let reply = await VLLM.chatWithTools(message) { return reply }
             if let reply = await VLLM.chat(prompt: message, system: Self.cloudSystemPrompt) { return reply }
             return offMessage
-        }
-        // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
-        if isLocalPref {
+        case .localTier:
+            // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
+        case .unavailable:
+            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+            return offMessage
         }
-        return offMessage
+    }
+
+    /// One pinned cloud brain's conversational execution. The six
+    /// OpenAI-compatible brains try the tool loop first (terminal / web),
+    /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
+    /// are plain chat only (no shared tool loop).
+    private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
+        switch p {
+        case .anthropic:
+            // Claude Haiku (cloud), single-turn, no local tools.
+            return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
+        case .grok:
+            return await GrokClient.chat(prompt: message,
+                                         system: Self.cloudSystemPrompt,
+                                         model: AppSettings.grokModelCurrent)
+        case .gemini:
+            return await GeminiClient.chat(prompt: message,
+                                           system: Self.cloudSystemPrompt,
+                                           model: AppSettings.geminiModelCurrent)
+        case .copilot:
+            return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
+        case .groq, .mistral, .cerebras, .deepSeek, .openAI, .openRouter:
+            guard let client = p.compatClient, let m = p.selectedModel else { return nil }
+            if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
+            return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
+        }
     }
 
 

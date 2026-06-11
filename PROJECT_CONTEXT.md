@@ -70,7 +70,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `LLM/` — the brain layer (Chat B's lane)
 | File | Purpose |
 |---|---|
-| `LocalLLM.swift` | **The brain router** (~1500 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
+| `LocalLLM.swift` | **The brain router** (~1500 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-provider EXECUTION lives here in `cloudOneShot`/`cloudStream`/`cloudConversational`); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
+| `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `CloudProvider` (the ten providers + free/coding/ensemble roster constants + key checks + model/client maps), `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref), `BrainRouting` (`dispatch` — exactly one target per pref, **Offline Mode hard-gates the ten cloud pins**; roster builders — offline empties every cloud roster; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
 | `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
 | `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
@@ -244,7 +245,7 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
 - `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
 - `SettingsBrainReadyTests` — now ACTIVE (2026-06-12, Chat D): the brainReady extract landed as `Views/SettingsBrainReadiness.swift`; 7 tests pin the readiness rules (`.auto` local-only, `.freeAuto` never-spends, `.salehman` cloud-first), the active-brain probe overlap rules, the ping verdict, and the no-leak key subtitle.
-- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests` — waits for the BrainAdapter registry.
+- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (incl. the preserved ensemble/DeepSeek drift). All 8 review suites are now enabled.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
