@@ -2405,3 +2405,26 @@ Clean pod terminated; **RunPod balance $5.43** (the remaining budget is NOT burn
 all lost to r3, so further lottery is waste). Freed `qwen2.5-coder:7b` for the install — salehman14b is the
 floor now; re-pull it if `.auto` mode is wanted. **Owner action: revoke the RunPod API key in the console**
 (chat-exposed; local copy deleted).
+
+## 2026-06-11 (evening) — Chat C: autonomous polish pass #1 (secondary view surfaces)
+**Files:** `Views/KnowledgeView.swift`, `Views/TodayView.swift`, `Views/ScratchpadView.swift`,
+`Views/MemoryView.swift`. Commit `1bcd7ae`.
+**What & why:** Owner away 4h → "polish and refine." Chat C took a zero-collision lane (secondary surfaces
+the active Code/Chat/LLM/Markets sessions aren't on) and used the QA screenshot harness as eyes. Drove a
+read→screenshot→audit→fix→re-screenshot loop. An audit subagent + my own reads confirmed the app is already
+well-built (no missing a11y labels, no dead code, no empty-state gaps), so this pass is **safe consistency
+refinement only**, no aesthetic churn:
+- **KnowledgeView**: the main ask-field was the only one of four text-fields missing the `surfaceStroke`
+  hairline the others (DocDetail, Memory search, Notes add) carry — added it. Header subtitle `.lineLimit(1)`
+  to kill a narrow-width collision risk with the Add-file buttons.
+- **TodayView**: StatTile title `.lineLimit(1)` (overflow guard for longer values/locales); icon-chip
+  `cornerRadius: 10` → `DS.Radius.icon` (==10, neutral token adoption).
+- **ScratchpadView**: add-task field gets the matching `surfaceStroke` hairline.
+- **MemoryView**: "Forget everything" raw `.red` → `DS.Palette.danger` (==.red, semantic token).
+**Result:** build `** BUILD SUCCEEDED **`; `Salehman AITests` `** TEST SUCCEEDED **`; QA capture 14/14, my
+4 surfaces all within their baseline budget (knowledge Δ0.58% ok, notes/today/memory ≈0). Committed
+selectively (4 files; left the active session's `CodeView.swift` WIP untouched).
+**Verified ShortcutsView is accurate** (⌘1–7 + Conversation/General groups all match `AppTab` order +
+`Salehman_AIApp` bindings — no drift). **Flagged 2 audit regressions in Chat B's lane** (not mine — see
+COORDINATION): `chat_narrow` geo (column 560pt vs ≈524 expected) + `settings` baselineDiff 0.34%.
+Curated owner-decision backlog of the bigger (aesthetic) refinements written to `POLISH_BACKLOG.md`.
