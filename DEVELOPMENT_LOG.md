@@ -2299,3 +2299,33 @@ polishing; make it a home for salehman14b and he runs fast"):
 7+8 and the whole-app restyle task assigned per owner). Parallel: r3-best GGUF finale running on the A40
 (merged ✓ converted ✓ quantizing), round-6 seed lottery training, all 4 adapters + 32B now mirrored to
 Proton Drive. Owner away; autonomous loop continues until the RunPod balance is spent.
+
+## 2026-06-11 (afternoon) — Code-tab heavy polish, live-QA bug fix, QA system, clean GGUF pipeline
+**Files:** `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`, `Views/MarkdownText.swift`,
+`Agents/AgentPipeline.swift`, `LLM/OllamaClient.swift`, `Tools/QASnapshots.swift`, `tools/qa.sh` (new),
+`tools/QA.md` (new), `Salehman AITests/ToolLoopTests.swift`; `salehman-training/runpod/clean_pipeline.sh`.
+**What & why:**
+- **Code tab → Claude-minimal, grey, polished:** document-flow messages (right-aligned user block, flush-left
+  assistant, hover speak/copy/regenerate), `CodeMessageRow`/`PulsingDot`; flat neutral-grey surfaces
+  (`DS.codeSurface`/`codeSurfaceSide`, glows halved); collapsible tree + inspector (persisted, always-
+  recoverable strip + ⇧⌘E); centered 780 reading column; always-on red composer ring + focus glow + filled
+  send; personal welcome; tok/s readout; time separators.
+- **Live-QA bug fix:** driving the tab in the background found "who are you in one sentence" spinning up the
+  **full 15-agent team** — `complexity()` was judging the Code tab's coding-preamble wrapper, not the ask.
+  Fixed to judge the text after `Task:` (drops attached-file blocks); 3 regression tests. Live-verified 0/1.
+- **Markdown robustness:** table cells wrap (no mid-word clip) inside an h-scroll grid; prose files (md/txt)
+  wrap in the file viewer.
+- **QA system (with the parallel session):** their `QASnapshots`/`QAAudit` self-photograph + self-judge the
+  UI (no Screen-Recording perm). I added: Code-tab coverage, an `NSHostingView` capture path (`snapHosted`
+  renders HSplitView/ScrollView/SF-Symbols that ImageRenderer drops), an `INDEX.md` manifest (desc/size/
+  status/render-ms + git SHA, Hijri→Gregorian fix), a `contact_sheet.png` montage, responsive narrow
+  variants, an Arabic-RTL gallery, `tools/qa.sh` (one-command loop), and `tools/QA.md` (manual). The audit
+  immediately caught a real miss: `memory` canvas is black not design-grey (flagged to the other session).
+- **14B GGUF — the saga:** the rebuild pod's network volume hung writes/reads at exactly 4.31 GB (twice,
+  even after a restart). Root-caused as a volume I/O stall (load 41, 0% CPU, no OOM). Fix: a FRESH pod with
+  **no network volume — everything on the local container disk**; re-merged r3 from the Mac-backed adapter
+  → f16 → **Q4_K_M 8.37 GB** clean. Downloading to `/Users/Shared` via an unbounded resumable rsync loop
+  (the pod's upload drops every few hundred MB; `--append-verify` makes each retry resume).
+**Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
+Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
+spend report. Owner away ~3h; loop continues.
