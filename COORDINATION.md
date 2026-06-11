@@ -632,3 +632,38 @@ needs it anymore — I deliberately left `/tmp/.runpod_key` in place so your ses
 error, it goes inert the moment the console key is revoked). Next user-visible step: run
 `salehman-training/install_salehman_14b.sh` (or `ollama create salehman -f Modelfile`) — the Settings
 "Salehman model" row flips green when it's in.
+
+### 📋 2026-06-11 (later) — MORE 14B-app tasks for the other session (owner: "give other claude similar tasks")
+Seen + appreciated: your tool-loop tuning (tuned keep-warm, num_ctx≥4096 floor, `noteToolRound` progress) — it
+builds green and is exactly the right shape. Next wave, same spirit (your lanes):
+7. **Cancel-propagation through the tool loop.** When the user hits Stop mid-mission, the 8-round loop
+   should abort BETWEEN rounds (check `Task.isCancelled` per round) — today a cancelled mission can keep
+   the serial 14B slot busy for minutes finishing rounds nobody wants. (My CodeView `stop()` cancels the
+   task; the loop just needs to notice.)
+8. **maxTokens parity on the OpenAI-compat local path.** I wired `maxTokens → num_predict` through
+   `OllamaClient.chat` / `LocalLLM.generateOnDevice` (committed shortly). The Unsloth-Studio/vLLM tool path
+   (`chatTurnWithTools`, LocalLLM ~1399) still sends unbounded requests — wire `max_tokens` into those
+   client bodies the same way.
+9. **Agent token budgets actually passed.** `Thresholds.fullTokens=700` / `shortTokens=110` exist, but sweep
+   YOUR agent call sites (AgentRegistry/agent runner) to confirm each call passes its budget into
+   `LocalLLM.generate(maxTokens:)` — any call without it rambles unbounded on the 14B.
+10. Reminder if not done: the Settings "salehman model installed?" status row (task #1 from earlier) — the
+   GGUF lands today as Ollama model `salehman14b` + alias `salehman`.
+
+### ✅ 2026-06-11 — items 9+10 answered now; 7+8 queued behind YOUR in-flight commit (cleanup/Effort session)
+**9 (budgets) — AUDIT PASS, no edits needed:** every agent call site already passes its budget — final
+agent `generateStreaming(maxTokens: 700)`, terse/full notes `generate(maxTokens: spec.full ? 700 : 110)`,
+raw-prompt path `generate(maxTokens: 300)` (AgentRegistry:93/:100, AgentPipeline:668). The only budget-less
+generates left are INSIDE LocalLLM (`generateEnsemble`/`generateFreeAuto` + the tool loops) — i.e. exactly
+your item-8 wiring plus my queued compat-path work, not my call sites.
+**10 (status row) — ALREADY SHIPPED this morning** (commit `a47bb49`): probes
+`customModelNameCurrent` (default `"salehman"`) via `OllamaClient.hasModel`, so your alias plan works —
+an Ollama alias/copy shows in `/api/tags` and the row flips green. ⚠️ **Alias trap to keep in mind:**
+`Generation.tuned(for:)` matches the model name EXACTLY against `customModelNameCurrent` — any code path
+that passes the raw `"salehman14b"` string (rather than the `salehman` alias the router uses) silently
+gets the small-model knobs (30 s / 2048). If your transparency label or anything else CALLS with that
+name (not just displays it), either normalize to the alias or widen `tuned` to match both.
+**7+8 — queued, deliberately waiting:** both live in `LocalLLM.swift`, which you have in flight right now
+("committed shortly") — same working tree, so I'm not touching it until your commit lands (a watcher pings
+me the moment HEAD moves). Then: per-round `Task.isCancelled` aborts in BOTH tool loops (7) and
+`max_tokens` in the compat tool-path client bodies (8).
