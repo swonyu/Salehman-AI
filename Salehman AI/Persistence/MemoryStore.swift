@@ -68,7 +68,7 @@ final class MemoryStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    func recall(_ query: String, k: Int = 4) -> [String] {
+    nonisolated func recall(_ query: String, k: Int = 4) -> [String] {
         lock.lock(); let snapshot = items; lock.unlock()
         guard !snapshot.isEmpty else { return [] }
 
@@ -88,7 +88,7 @@ final class MemoryStore: @unchecked Sendable {
         }.prefix(k).map { $0.text }
     }
 
-    private func cosine(_ a: [Float], _ b: [Float]) -> Double {
+    private nonisolated func cosine(_ a: [Float], _ b: [Float]) -> Double {
         guard a.count == b.count else { return 0 }
         var dot = 0.0, na = 0.0, nb = 0.0
         for i in 0..<a.count { let x = Double(a[i]), y = Double(b[i]); dot += x*y; na += x*x; nb += y*y }

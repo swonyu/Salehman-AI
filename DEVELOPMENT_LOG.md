@@ -1784,3 +1784,22 @@ desktop tool):**
 **Verified:** build green; QA all surfaces pass; eyebrow + bezel composer confirmed in
 capture pixels.
 **Files:** `Views/CodeView.swift`, `design/**`.
+
+## 2026-06-12 (~01:1x) — Chat C: Swift 6.2 concurrency-isolation audit → MemoryStore.recall off-main fix
+**What & why:** Owner-requested deep-research on Swift 6 strict concurrency + SwiftUI macOS, then a
+codebase audit of the 3 to-dos it surfaced. Findings: (1) build settings confirm BOTH
+`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` (all 6 configs,
+Swift 6.0 mode) — unmarked types are MainActor-isolated; `nonisolated async` is `nonisolated(nonsending)`.
+(2) Under that default, `MemoryStore` (lock-based `@unchecked Sendable`) had `remember`/`embed`/`autoExtract`/
+`extractFacts`/`persist` correctly `nonisolated`, but **`recall` and `cosine` were missed** → silently pinned
+to MainActor. `recall` is the heavy path (NLEmbedding + cosine over every stored memory), called
+**synchronously at `AgentPipeline.swift:458`** → ran on the main thread. Marked both `nonisolated` (lock-safe;
+identical to the sibling pattern; no longer main-pinned). (3) No live Codable-conformance trap: every
+`Codable` type is a `struct` (several explicitly `Sendable`/`nonisolated`) and the app builds — empirical proof.
+**FLAGGED for Chat A (not edited — their lane):** to move recall fully off-main, offload the
+`AgentPipeline.swift:458` call site (`Task.detached`/`@concurrent`).
+**Result:** MemoryStore change compiles clean (whole-module: **0 MemoryStore errors**). Full
+`** TEST SUCCEEDED **` marker currently BLOCKED by an UNRELATED red — `CodeView.swift:895-899` `welcomeAppeared`
+not in scope (Chat B's active CodeView WIP, landed red after my 01:00 green). Flagged on COORDINATION board;
+not fixing (not my lane). Will reconfirm green once CodeView compiles.
+**Files:** `Salehman AI/Persistence/MemoryStore.swift`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
