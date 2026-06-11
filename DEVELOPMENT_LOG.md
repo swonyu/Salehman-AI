@@ -1983,3 +1983,17 @@ injected dir + mtimes, non-images ignored, OCR reads a rendered "SALEHMAN OCR 42
 PNG) — TEST SUCCEEDED. One test-only trap fixed: the enumerator returns
 /private/var/… for /var/… temp paths, so the picker test compares names, not URLs.
 **Files:** `Views/CodeView.swift`, `Salehman AITests/ScreenshotGrabberTests.swift`.
+
+## 2026-06-12 (~02:1x) — Chat C: refined the run-salehman-ai skill (re-verified driver)
+**What & why:** `/run-skill-generator` re-invoked; per its step-0 ("refine, don't rewrite") the
+`.claude/skills/run-salehman-ai/` skill already exists + works, so I re-ran the driver and updated
+stale claims + added gotchas learned this session. Driver verified: fresh `24/24 surfaces OK` capture
+(02:13:29), `SNAPSHOT_REQUEST` consumed. SKILL.md edits: surface count 14→24; documented the new
+colour-vision (CVD) pass (`*_deuter`/`*_protan` + `cvd_report.html`); honest `FAILURES:` line (e.g.
+`code_samples` trips a CVD merge — flag, not crash); test count ~310→~405; "private on-device" →
+"cloud-first with local fallback" (honesty). **Two new high-value gotchas:** (1) captures render each
+surface in ISOLATION with NO shared `BackgroundView`, so a global backdrop/theme change (the grey-bg work)
+does NOT show in `today.png` — verify via `onboarding.png` (draws `bgVertical`) or the live-window
+capture; (2) `database is locked` build error = concurrent multi-session build → retry. `.claude/` is
+gitignored so the skill is local-only (not committed); logging for traceability.
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md` (gitignored), `DEVELOPMENT_LOG.md`.
