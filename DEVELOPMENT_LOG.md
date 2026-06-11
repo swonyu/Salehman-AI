@@ -1587,6 +1587,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
 
+## 2026-06-11 · Chat-tab heavy polish pass 1 — Claude composer, floating actions, reading rhythm
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner directive ("POLISH THE CHAT TAB HEAVILY", away 3 h). (1) **Composer rebuilt to the Claude text-over-controls layout** the other session just shipped in CodeView (cross-tab consistency): one flat rounded container — TextField on top (grows 1…8 lines), controls row beneath with a single + menu that now carries BOTH attachments and saved prompts (replacing two separate 40 pt circles), a quiet inline mic, and a 26 pt solid-accent send (red stop while generating). (2) **Assistant hover actions float** on their own small panel pill instead of reserving 84 pt of trailing layout — replies get the full reading measure back, and the pill stays readable over any text. (3) **Reading rhythm**: 10 pt within a same-sender burst / 24 pt between speakers (was 4/14); user blocks cap at a 480 pt wrap measure; entry motion calmed (8 pt rise, blur 4, was 14/6). (4) Chrome diet leftovers: header thinking-glyph gradient → solid accent; UNRESTRICTED label 15-rounded → 12.5; `AgentRunView` lost its avatar disc and moved to the `codeSurfaceSide` panel (live N/M counter kept — it's progress, not chrome); `ConfirmationChip` dot lost its blur halo.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

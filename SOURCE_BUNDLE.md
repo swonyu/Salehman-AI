@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 17:11 +03 · Swift files: 129 · Swift LOC: 24319_
+_Generated: 2026-06-11 17:18 +03 · Swift files: 129 · Swift LOC: 24335_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14141,7 +14141,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1393 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1409 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14315,7 +14315,7 @@ struct ContentView: View {
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Color.red)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
@@ -14324,12 +14324,7 @@ struct ContentView: View {
                     // brain name stays available on hover and to VoiceOver.
                     Image(systemName: brainStatus.symbol)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(
-                            vm.isRunning
-                                ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                                               startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(brainStatus.dotColor)
-                        )
+                        .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
@@ -14466,11 +14461,11 @@ struct ContentView: View {
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
-                            // Tight 4pt default gap: grouped same-sender vm.messages
-                                // stay snug; first-in-group bubbles add +10 top
-                                // padding to land at the normal 14pt gap between
-                                // groups (see `isFirstInGroup`).
-                            LazyVStack(spacing: 4) {
+                            // Reading rhythm: 10pt within a same-sender burst,
+                            // +14 leading a new burst (= 24 between speakers) —
+                            // document-flow replies need more air than the old
+                            // bubble stacks did.
+                            LazyVStack(spacing: 10) {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -14480,7 +14475,7 @@ struct ContentView: View {
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
                                                   onRegenerate: vm.regenerate)
-                                        .padding(.top, isFirst ? 10 : 0)
+                                        .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
                                 // Bottom sentinel: 1pt invisible view that
@@ -14621,106 +14616,120 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
-            HStack(spacing: 10) {
-                // Attach menu (+)
-                Menu {
-                    Button { Task { await attachFile() } } label: {
-                        Label("Attach file…", systemImage: "doc")
-                    }
-                    Button { Task { await attachImage() } } label: {
-                        Label("Attach image", systemImage: "photo")
-                    }
-                    Button { Task { await attachLastScreenshot() } } label: {
-                        Label("Send last screenshot", systemImage: "camera.viewfinder")
-                    }
-                    Button { Task { await pasteImage() } } label: {
-                        Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.09), in: Circle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Attach a file, image, or your last screenshot")
-                .accessibilityLabel("Attach a file, image, or screenshot")
+            // ONE unified composer, Claude layout (matches the Code tab's
+            // owner-approved pattern): the text field rides ON TOP, a quiet
+            // controls row sits beneath — + menu (attachments AND prompts,
+            // halving the old left-side chrome), then mic and send at the
+            // trailing edge.
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...8)
+                    .focused($inputFocused)
+                    .onSubmit { submit(mission) }
+                    .padding(.horizontal, 4)
 
-                // Prompt library
-                Menu {
-                    if library.prompts.isEmpty {
-                        Text("No saved prompts yet")
-                    } else {
-                        Section("Insert a prompt") {
+                HStack(spacing: 8) {
+                    Menu {
+                        Section("Attach") {
+                            Button { Task { await attachFile() } } label: {
+                                Label("Attach file…", systemImage: "doc")
+                            }
+                            Button { Task { await attachImage() } } label: {
+                                Label("Attach image", systemImage: "photo")
+                            }
+                            Button { Task { await attachLastScreenshot() } } label: {
+                                Label("Send last screenshot", systemImage: "camera.viewfinder")
+                            }
+                            Button { Task { await pasteImage() } } label: {
+                                Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                            }
+                        }
+                        Section("Prompts") {
                             ForEach(library.prompts) { p in
                                 Button(p.title) { insertPrompt(p.text) }
                             }
+                            Button {
+                                newPromptTitle = ""
+                                savingPrompt = true
+                            } label: { Label("Save current as prompt…", systemImage: "plus") }
+                                .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
                     }
-                    Divider()
-                    Button {
-                        newPromptTitle = ""
-                        savingPrompt = true
-                    } label: { Label("Save current as prompt…", systemImage: "plus") }
-                        .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } label: {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.09), in: Circle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Insert or save a reusable prompt")
-                .accessibilityLabel("Insert or save a reusable prompt")
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 26)
+                    .help("Attach files/images or insert a saved prompt")
+                    .accessibilityLabel("Attach files, images, or insert a saved prompt")
 
-                HStack(spacing: 8) {
-                    Image(systemName: "text.bubble")
-                        .foregroundStyle(inputFocused ? Theme.accent : .secondary)
-                        .animation(DS.Motion.fade, value: inputFocused)
-                    TextField("Message Salehman AI…", text: $mission, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...6)
-                        .focused($inputFocused)
-                        .onSubmit { submit(mission) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                // Quiet flat pill (design language). Focus = a solid accent
-                // hairline — visible on the flat canvas without glow chrome.
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
-                                lineWidth: inputFocused ? 1.5 : 1)
-                )
-                .animation(DS.Motion.smooth, value: inputFocused)
+                    Spacer(minLength: 0)
 
-                // Mic (dictation)
-                CircleIconButton(systemName: speechIn.isListening ? "mic.fill" : "mic",
-                                 size: 40, iconSize: 16,
-                                 tint: speechIn.isListening ? .red : .white,
-                                 ring: speechIn.isListening ? .red : nil,
-                                 help: "Dictate with your voice") { speechIn.toggle() }
+                    // Mic (dictation) — quiet inline icon; red while listening.
+                    Button { speechIn.toggle() } label: {
+                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dictate with your voice")
+                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
 
-                // Stop while generating, otherwise Send
-                if vm.isRunning {
-                    CircleIconButton(systemName: "stop.fill", size: 40, iconSize: 15,
-                                     tint: .red, ring: .red,
-                                     help: "Stop generating (⌘.)") { vm.stop() }
+                    // Stop while generating, otherwise Send — the composer's
+                    // one strong-color element (solid accent when sendable).
+                    if vm.isRunning {
+                        Button { vm.stop() } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 26, height: 26)
+                                .background(Color.red.opacity(0.85), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop generating (⌘.)")
+                        .accessibilityLabel("Stop generating")
                         .transition(.scale.combined(with: .opacity))
-                } else {
-                    CircleIconButton(systemName: "arrow.up", size: 40, iconSize: 16,
-                                     tint: .white, filled: canSend, disabled: !canSend,
-                                     help: "Send") { submit(mission) }
+                    } else {
+                        Button { submit(mission) } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(canSend ? .white : .secondary)
+                                .frame(width: 26, height: 26)
+                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
+                                            in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                        .help("Send")
+                        .accessibilityLabel("Send")
                         .transition(.scale.combined(with: .opacity))
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            // Quiet flat composer (design language). Focus = a solid accent
+            // hairline — visible on the flat canvas without glow chrome.
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                            lineWidth: inputFocused ? 1.5 : 1)
+            )
+            .animation(DS.Motion.smooth, value: inputFocused)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -14851,10 +14860,7 @@ private struct ConfirmationChip: View {
             withAnimation(DS.Motion.smooth) { enabled.toggle() }
         } label: {
             HStack(spacing: 7) {
-                ZStack {
-                    Circle().fill(dotColor).frame(width: 7, height: 7)
-                    Circle().fill(dotColor.opacity(0.35)).frame(width: 13, height: 13).blur(radius: 3)
-                }
+                Circle().fill(dotColor).frame(width: 7, height: 7)
                 Text(enabled ? "Confirm" : "Auto-run")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -15086,8 +15092,9 @@ struct MessageBubble: View {
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
-            .blur(radius: appeared ? 0 : 6)
-            .offset(y: appeared ? 0 : 14)
+            // 8pt rise (was 14): present, not theatrical.
+            .blur(radius: appeared ? 0 : 4)
+            .offset(y: appeared ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -15131,6 +15138,7 @@ struct MessageBubble: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(message.text)
                         .font(.system(size: 13.5))
+                        .lineSpacing(1.5)
                         .textSelection(.enabled)
                         .foregroundStyle(.white)
                     if let path = message.imagePath {
@@ -15139,9 +15147,12 @@ struct MessageBubble: View {
                             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                     }
                 }
-                .padding(.horizontal, 13).padding(.vertical, 8)
+                .padding(.horizontal, 13).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09),
                             in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                // Comfortable wrap measure — long pastes shouldn't span the
+                // full 780 column just because they're the user's.
+                .frame(maxWidth: 480, alignment: .trailing)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("You said: \(message.text)")
             }
@@ -15163,11 +15174,12 @@ struct MessageBubble: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 84)   // room for the hover action cluster
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Assistant replied: \(displayedText)")
+        // Floating action pill: no layout reservation (text keeps the full
+        // measure), readable over any content thanks to its own flat panel.
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
                     speech.toggle(message.text, id: message.id)
@@ -15177,6 +15189,12 @@ struct MessageBubble: View {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }
             }
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .offset(y: -4)
             .opacity(hovering ? 1 : 0)
             .animation(DS.Motion.fade, value: hovering)
         }
@@ -15186,8 +15204,10 @@ struct MessageBubble: View {
                               _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .foregroundStyle(active ? Theme.accent : .secondary)
+                .frame(width: 22, height: 22)        // comfortable hit target
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -15344,30 +15364,26 @@ struct AgentRunView: View {
     private var doneCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+        // Flush-left flat panel (no avatar disc — design language). The N/M
+        // counter stays: it's live progress, not decorative chrome.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Agent team working")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(doneCount)/\(steps.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("Agent team working")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("\(doneCount)/\(steps.count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(steps) { step in
-                        AgentRow(step: step)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    AgentRow(step: step)
                 }
             }
-            .padding(14)
-            .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
+        .padding(14)
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -25679,7 +25695,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (781 lines) =====
+===== FILE: COORDINATION.md (793 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26462,7 +26478,19 @@ capsule →white-0.07, brand-tile glow dropped), **BottomShortcutBar** (flat), *
 (pure landing). CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. Typecheck 0/0
 (CodeView pinned). Committed+pushed — gate together with pass 2 when you run it.
 
-===== FILE: DEVELOPMENT_LOG.md (2261 lines) =====
+#### 🎨 CHAT-TAB HEAVY POLISH pass 1 (owner: "POLISH THE CHAT TAB HEAVILY", gone 3h) — cleanup/Effort session
+Saw your 8e8b8d2 Claude-composer in CodeView — adopted the SAME text-over-controls layout in the main
+chat for cross-tab consistency: one flat composer (r16), TextField on top (1…8 lines), controls row
+beneath — a single + menu now carries BOTH attachments and saved prompts (was two 40pt circles), quiet
+inline mic, and a 26pt solid-accent send / red stop. Other pass-1 changes: assistant hover actions are a
+FLOATING panel pill (no more 84pt layout reservation — full text measure restored); user blocks cap at
+480pt wrap measure; transcript rhythm 10/24 (burst/speaker); entry motion calmed (8pt rise, blur 4);
+header thinking-glyph gradient → solid accent; UNRESTRICTED label de-headlined (15 rounded → 12.5);
+`AgentRunView` avatar disc dropped + panel to `codeSurfaceSide` (kept the live N/M counter);
+`ConfirmationChip` dot halo-blur removed. Typecheck 0/0. Committed+pushed — gate when ready. Pass 2
+incoming: empty-state + welcome polish, then a detail sweep.
+
+===== FILE: DEVELOPMENT_LOG.md (2269 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -28051,6 +28079,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 **What & why:** The owner directive was "the whole app"; the secondary views still wore the old glass and clashed against the new flat language. Swept: TabSwitcherBar (persistent header — bar to flat `codeSurfaceSide`, tab-pills capsule to white-0.07, brand-tile accent glow dropped), BottomShortcutBar (flat), MemoryView + LiveTranscriptionView (flat `codeSurface` canvases; Memory's cards to panel shade, its field to a white-0.09 pill), VoiceModeView (flat canvas — but the pulsing phase orb and its glow KEPT, it's the mode's functional centerpiece), AboutView (capabilities card opaque; landing canvas + icon glow kept). OnboardingView untouched (pure landing surface, glow allowed by spec); CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. All beyond the enumerated lane grant but inside its spirit and outside the other session's exclusions — declared on the board.
 
 **Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
+
+## 2026-06-11 · Chat-tab heavy polish pass 1 — Claude composer, floating actions, reading rhythm
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner directive ("POLISH THE CHAT TAB HEAVILY", away 3 h). (1) **Composer rebuilt to the Claude text-over-controls layout** the other session just shipped in CodeView (cross-tab consistency): one flat rounded container — TextField on top (grows 1…8 lines), controls row beneath with a single + menu that now carries BOTH attachments and saved prompts (replacing two separate 40 pt circles), a quiet inline mic, and a 26 pt solid-accent send (red stop while generating). (2) **Assistant hover actions float** on their own small panel pill instead of reserving 84 pt of trailing layout — replies get the full reading measure back, and the pill stays readable over any text. (3) **Reading rhythm**: 10 pt within a same-sender burst / 24 pt between speakers (was 4/14); user blocks cap at a 480 pt wrap measure; entry motion calmed (8 pt rise, blur 4, was 14/6). (4) Chrome diet leftovers: header thinking-glyph gradient → solid accent; UNRESTRICTED label 15-rounded → 12.5; `AgentRunView` lost its avatar disc and moved to the `codeSurfaceSide` panel (live N/M counter kept — it's progress, not chrome); `ConfirmationChip` dot lost its blur halo.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

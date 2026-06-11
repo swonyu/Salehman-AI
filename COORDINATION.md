@@ -779,3 +779,15 @@ capsule →white-0.07, brand-tile glow dropped), **BottomShortcutBar** (flat), *
 **AboutView** (capabilities card opaque; landing canvas + icon glow kept), **Onboarding** untouched
 (pure landing). CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. Typecheck 0/0
 (CodeView pinned). Committed+pushed — gate together with pass 2 when you run it.
+
+#### 🎨 CHAT-TAB HEAVY POLISH pass 1 (owner: "POLISH THE CHAT TAB HEAVILY", gone 3h) — cleanup/Effort session
+Saw your 8e8b8d2 Claude-composer in CodeView — adopted the SAME text-over-controls layout in the main
+chat for cross-tab consistency: one flat composer (r16), TextField on top (1…8 lines), controls row
+beneath — a single + menu now carries BOTH attachments and saved prompts (was two 40pt circles), quiet
+inline mic, and a 26pt solid-accent send / red stop. Other pass-1 changes: assistant hover actions are a
+FLOATING panel pill (no more 84pt layout reservation — full text measure restored); user blocks cap at
+480pt wrap measure; transcript rhythm 10/24 (burst/speaker); entry motion calmed (8pt rise, blur 4);
+header thinking-glyph gradient → solid accent; UNRESTRICTED label de-headlined (15 rounded → 12.5);
+`AgentRunView` avatar disc dropped + panel to `codeSurfaceSide` (kept the live N/M counter);
+`ConfirmationChip` dot halo-blur removed. Typecheck 0/0. Committed+pushed — gate when ready. Pass 2
+incoming: empty-state + welcome polish, then a detail sweep.

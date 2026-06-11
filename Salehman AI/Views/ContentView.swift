@@ -471,109 +471,116 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
-            // ONE unified pill: + menu, text, mic, send — all inside (the old
-            // row was five separate 40pt controls; this is the single "input
-            // pill" the design language asks for, and the + menu now carries
-            // both attachments and prompts, halving the left-side chrome).
-            HStack(alignment: .bottom, spacing: 8) {
-                Menu {
-                    Section("Attach") {
-                        Button { Task { await attachFile() } } label: {
-                            Label("Attach file…", systemImage: "doc")
-                        }
-                        Button { Task { await attachImage() } } label: {
-                            Label("Attach image", systemImage: "photo")
-                        }
-                        Button { Task { await attachLastScreenshot() } } label: {
-                            Label("Send last screenshot", systemImage: "camera.viewfinder")
-                        }
-                        Button { Task { await pasteImage() } } label: {
-                            Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
-                        }
-                    }
-                    Section("Prompts") {
-                        ForEach(library.prompts) { p in
-                            Button(p.title) { insertPrompt(p.text) }
-                        }
-                        Button {
-                            newPromptTitle = ""
-                            savingPrompt = true
-                        } label: { Label("Save current as prompt…", systemImage: "plus") }
-                            .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 28)
-                .help("Attach files/images or insert a saved prompt")
-                .accessibilityLabel("Attach files, images, or insert a saved prompt")
-
+            // ONE unified composer, Claude layout (matches the Code tab's
+            // owner-approved pattern): the text field rides ON TOP, a quiet
+            // controls row sits beneath — + menu (attachments AND prompts,
+            // halving the old left-side chrome), then mic and send at the
+            // trailing edge.
+            VStack(alignment: .leading, spacing: 6) {
                 TextField("Message Salehman AI…", text: $mission, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
-                    .lineLimit(1...6)
+                    .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { submit(mission) }
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 4)
 
-                // Mic (dictation) — quiet inline icon; red while listening.
-                Button { speechIn.toggle() } label: {
-                    Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(speechIn.isListening ? .red : .secondary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Dictate with your voice")
-                .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
-
-                // Stop while generating, otherwise Send — the pill's one
-                // strong-color element (solid accent when sendable).
-                if vm.isRunning {
-                    Button { vm.stop() } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Color.red.opacity(0.85), in: Circle())
+                HStack(spacing: 8) {
+                    Menu {
+                        Section("Attach") {
+                            Button { Task { await attachFile() } } label: {
+                                Label("Attach file…", systemImage: "doc")
+                            }
+                            Button { Task { await attachImage() } } label: {
+                                Label("Attach image", systemImage: "photo")
+                            }
+                            Button { Task { await attachLastScreenshot() } } label: {
+                                Label("Send last screenshot", systemImage: "camera.viewfinder")
+                            }
+                            Button { Task { await pasteImage() } } label: {
+                                Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                            }
+                        }
+                        Section("Prompts") {
+                            ForEach(library.prompts) { p in
+                                Button(p.title) { insertPrompt(p.text) }
+                            }
+                            Button {
+                                newPromptTitle = ""
+                                savingPrompt = true
+                            } label: { Label("Save current as prompt…", systemImage: "plus") }
+                                .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color.white.opacity(0.07), in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
-                    .help("Stop generating (⌘.)")
-                    .accessibilityLabel("Stop generating")
-                    .transition(.scale.combined(with: .opacity))
-                } else {
-                    Button { submit(mission) } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(canSend ? .white : .secondary)
-                            .frame(width: 28, height: 28)
-                            .background(canSend ? AnyShapeStyle(DS.Palette.accent)
-                                                : AnyShapeStyle(Color.white.opacity(0.08)),
-                                        in: Circle())
-                            .contentShape(Circle())
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 26)
+                    .help("Attach files/images or insert a saved prompt")
+                    .accessibilityLabel("Attach files, images, or insert a saved prompt")
+
+                    Spacer(minLength: 0)
+
+                    // Mic (dictation) — quiet inline icon; red while listening.
+                    Button { speechIn.toggle() } label: {
+                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canSend)
-                    .help("Send")
-                    .accessibilityLabel("Send")
-                    .transition(.scale.combined(with: .opacity))
+                    .help("Dictate with your voice")
+                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+
+                    // Stop while generating, otherwise Send — the composer's
+                    // one strong-color element (solid accent when sendable).
+                    if vm.isRunning {
+                        Button { vm.stop() } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 26, height: 26)
+                                .background(Color.red.opacity(0.85), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop generating (⌘.)")
+                        .accessibilityLabel("Stop generating")
+                        .transition(.scale.combined(with: .opacity))
+                    } else {
+                        Button { submit(mission) } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(canSend ? .white : .secondary)
+                                .frame(width: 26, height: 26)
+                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
+                                            in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                        .help("Send")
+                        .accessibilityLabel("Send")
+                        .transition(.scale.combined(with: .opacity))
+                    }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            // Quiet flat pill (design language). Focus = a solid accent
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            // Quiet flat composer (design language). Focus = a solid accent
             // hairline — visible on the flat canvas without glow chrome.
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
                             lineWidth: inputFocused ? 1.5 : 1)
             )
@@ -708,10 +715,7 @@ private struct ConfirmationChip: View {
             withAnimation(DS.Motion.smooth) { enabled.toggle() }
         } label: {
             HStack(spacing: 7) {
-                ZStack {
-                    Circle().fill(dotColor).frame(width: 7, height: 7)
-                    Circle().fill(dotColor.opacity(0.35)).frame(width: 13, height: 13).blur(radius: 3)
-                }
+                Circle().fill(dotColor).frame(width: 7, height: 7)
                 Text(enabled ? "Confirm" : "Auto-run")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -1215,30 +1219,26 @@ struct AgentRunView: View {
     private var doneCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+        // Flush-left flat panel (no avatar disc — design language). The N/M
+        // counter stays: it's live progress, not decorative chrome.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Agent team working")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(doneCount)/\(steps.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("Agent team working")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("\(doneCount)/\(steps.count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(steps) { step in
-                        AgentRow(step: step)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    AgentRow(step: step)
                 }
             }
-            .padding(14)
-            .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
+        .padding(14)
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
