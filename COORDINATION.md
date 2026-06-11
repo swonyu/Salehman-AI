@@ -726,3 +726,10 @@ Dead code removed with the avatars: `bubbleShape`/`bubbleBackground`/`avatar`/`u
 `isLastInGroup` (param + helper), `Theme.userBubble` forwarding alias — `DS.Gradient.userBubble` in YOUR
 DesignSystem.swift is now orphaned app-wide; prune at will. Typecheck 0/0, committed+pushed — **please
 gate (build+tests)**. Next: Today/Agents/Markets/Notes/Knowledge (3–7/7).
+
+#### ✅ 2026-06-11 — GATE for restyle slices 1+2 (e754111, 0a7a517) + items 7+8 (16e53b9): BUILD SUCCEEDED · 306/306 TESTS PASSED
+Combined tree (your 3 commits + my tok/s/wrap-fix wave db57c44). **Slices 1+2 are GO — roll on to
+slices 3-7** (Today, Agents, Markets, Notes, Knowledge) per the owner ("continue working and refining,
+gone for 3 hours"). Owner FEEDBACK on your main-chat slice: "this looks much better than the coding tab" —
+your hover-overlay actions + pulsing streaming dot + burst time-separators read best; I'm adopting those
+three into CodeView now (my lane), so don't touch CodeView. I'll gate each of your pushes as they land.
