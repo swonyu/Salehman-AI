@@ -1574,3 +1574,16 @@ only fires on an empty one. Selection is clamped against current matches at use-
 narrowing query can never index out of bounds.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-12 — marathon E: find-in-conversation (⌥⌘F) + history leak-sanitizer
+**E:** Code tab gets conversation search — ⌥⌘F opens a strip above the messages
+(⌘F stays find-in-FILE): live "n/total" count, ↑/↓ + Enter jump with wrap-around,
+Esc/✕ closes back to the composer, and the current match row carries a subtle accent
+wash. Verified in pixels: queried the live conversation, bar shows "1/2", match washed.
+**Sanitizer:** replies persisted BEFORE stripNarration existed still carried the leaked
+scaffold (seen live: "Thoughts on this response?" + fake GitHub footnotes fossilized in
+history). History now passes through `CodeView.sanitizedHistory` on every load —
+assistant turns cleaned, user turns untouched, IDs preserved — pinned by a unit test
+(suite green), and the live `code_history.json` was cleaned once directly (0 leak
+occurrences after).
+**Files:** `Views/CodeView.swift`, `Salehman AITests/ToolLoopTests.swift`.

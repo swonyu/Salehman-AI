@@ -370,6 +370,22 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
+    // the message history with a subtle wash on the current match.
+    @State private var convoSearching = false
+    @State private var convoQuery = ""
+    @State private var convoMatchIndex = 0
+    @FocusState private var convoSearchFocused: Bool
+
+    private var convoMatches: [UUID] {
+        let q = convoQuery.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return [] }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
+    }
+    private var currentConvoMatch: UUID? {
+        guard convoSearching, !convoMatches.isEmpty else { return nil }
+        return convoMatches[min(convoMatchIndex, convoMatches.count - 1)]
+    }
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
     @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
     @State private var hoveredFile: URL?            // file-tree row under the pointer
@@ -453,7 +469,8 @@ struct CodeView: View {
             guard !historyLoaded else { return }
             historyLoaded = true
             Task.detached(priority: .utility) {
-                let saved = JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: [])
+                let saved = Self.sanitizedHistory(
+                    JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: []))
                 if !saved.isEmpty {
                     await MainActor.run { if messages.isEmpty { messages = saved } }
                 }
@@ -494,6 +511,11 @@ struct CodeView: View {
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                 Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("") {
+                    withAnimation(.easeOut(duration: 0.12)) { convoSearching = true }
+                    convoSearchFocused = true
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -761,6 +783,8 @@ struct CodeView: View {
             }
 
             ScrollViewReader { proxy in
+              VStack(spacing: 0) {
+                if convoSearching { convoSearchBar(proxy) }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
@@ -774,6 +798,9 @@ struct CodeView: View {
                                     .padding(.vertical, 2)
                             }
                             codeBubble(msg)
+                                .background(currentConvoMatch == msg.id
+                                            ? DS.Palette.accent.opacity(0.08) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
                                 .id(msg.id)
                         }
                         if isRunning {
@@ -819,6 +846,7 @@ struct CodeView: View {
                         .accessibilityLabel("Jump to the latest message")
                     }
                 }
+              }
             }
 
             // Same centered 780 reading column as the messages — so the composer lines
@@ -829,6 +857,67 @@ struct CodeView: View {
                 .frame(maxWidth: .infinity)
         }
         .background(Color.clear)
+    }
+
+    /// Replies recorded BEFORE `stripNarration` existed still carry the fine-tune's
+    /// leaked scaffold ("Thoughts on this response?", fake footnotes…). Applied to
+    /// assistant turns whenever history loads, so old garbage doesn't resurface —
+    /// the next save then persists the cleaned text. Pure + testable.
+    nonisolated static func sanitizedHistory(_ saved: [ChatMessage]) -> [ChatMessage] {
+        saved.map { m in
+            guard !m.isUser else { return m }
+            let clean = AgentPipeline.stripNarration(m.text)
+            guard clean != m.text else { return m }
+            return ChatMessage(id: m.id, text: clean, isUser: false,
+                               timestamp: m.timestamp, imagePath: m.imagePath,
+                               duration: m.duration)
+        }
+    }
+
+    /// The find-in-conversation strip (⌥⌘F): query, live "n/total", ↑↓ jumps, Esc/✕ closes.
+    private func convoSearchBar(_ proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+            TextField("Find in conversation…", text: $convoQuery)
+                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .focused($convoSearchFocused)
+                .onSubmit { jumpToMatch(convoMatchIndex + 1, proxy) }
+                .onKeyPress(.escape) { closeConvoSearch(); return .handled }
+            if !convoMatches.isEmpty {
+                Text("\(min(convoMatchIndex, convoMatches.count - 1) + 1)/\(convoMatches.count)")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if convoQuery.count >= 2 {
+                Text("0 results").font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+            }
+            Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(DS.Palette.codeSurfaceSide)
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
+        .onChange(of: convoQuery) { _, _ in
+            convoMatchIndex = 0
+            if let first = convoMatches.first { withAnimation { proxy.scrollTo(first, anchor: .center) } }
+        }
+    }
+
+    private func jumpToMatch(_ index: Int, _ proxy: ScrollViewProxy) {
+        guard !convoMatches.isEmpty else { return }
+        let n = convoMatches.count
+        convoMatchIndex = ((index % n) + n) % n   // wrap both directions
+        withAnimation { proxy.scrollTo(convoMatches[convoMatchIndex], anchor: .center) }
+    }
+
+    private func closeConvoSearch() {
+        withAnimation(.easeOut(duration: 0.12)) { convoSearching = false }
+        convoQuery = ""; convoMatchIndex = 0
+        inputFocused = true
     }
 
     // MARK: - Slash commands (type `/` in the composer)

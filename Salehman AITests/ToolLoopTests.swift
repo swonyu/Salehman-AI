@@ -145,6 +145,21 @@ struct StripNarrationTests {
         let onlyMeta = "Thoughts on this response? Happy to rephrase."
         #expect(AgentPipeline.stripNarration(onlyMeta) == onlyMeta)
     }
+
+    // History sanitization on load (CodeView) — assistant turns are cleaned,
+    // user turns are NEVER touched (a user might legitimately paste leak text).
+    @Test func historySanitizerCleansAssistantOnly() {
+        let t = Date()
+        let leak = "Hi!\n\nThoughts on this response? Happy to rephrase.\n\n  [1]: https://x"
+        let saved = [
+            ChatMessage(id: UUID(), text: leak, isUser: true,  timestamp: t),   // user: untouched
+            ChatMessage(id: UUID(), text: leak, isUser: false, timestamp: t),   // assistant: cleaned
+        ]
+        let out = CodeView.sanitizedHistory(saved)
+        #expect(out[0].text == leak)
+        #expect(out[1].text == "Hi!")
+        #expect(out[1].id == saved[1].id)   // identity survives the rewrite
+    }
 }
 
 // MARK: - Local-window history trim (14B num_ctx 4096 protection)
