@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 22:54 +03 · Swift files: 138 · Swift LOC: 27432_
+_Generated: 2026-06-11 22:57 +03 · Swift files: 138 · Swift LOC: 27553_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14201,7 +14201,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1976 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2044 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14575,6 +14575,22 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
+    // the message history with a subtle wash on the current match.
+    @State private var convoSearching = false
+    @State private var convoQuery = ""
+    @State private var convoMatchIndex = 0
+    @FocusState private var convoSearchFocused: Bool
+
+    private var convoMatches: [UUID] {
+        let q = convoQuery.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return [] }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
+    }
+    private var currentConvoMatch: UUID? {
+        guard convoSearching, !convoMatches.isEmpty else { return nil }
+        return convoMatches[min(convoMatchIndex, convoMatches.count - 1)]
+    }
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
     @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
     @State private var hoveredFile: URL?            // file-tree row under the pointer
@@ -14966,6 +14982,8 @@ struct CodeView: View {
             }
 
             ScrollViewReader { proxy in
+              VStack(spacing: 0) {
+                if convoSearching { convoSearchBar(proxy) }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
@@ -14979,6 +14997,9 @@ struct CodeView: View {
                                     .padding(.vertical, 2)
                             }
                             codeBubble(msg)
+                                .background(currentConvoMatch == msg.id
+                                            ? DS.Palette.accent.opacity(0.08) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
                                 .id(msg.id)
                         }
                         if isRunning {
@@ -15024,6 +15045,7 @@ struct CodeView: View {
                         .accessibilityLabel("Jump to the latest message")
                     }
                 }
+              }
             }
 
             // Same centered 780 reading column as the messages — so the composer lines
@@ -15034,6 +15056,52 @@ struct CodeView: View {
                 .frame(maxWidth: .infinity)
         }
         .background(Color.clear)
+    }
+
+    /// The find-in-conversation strip (⌥⌘F): query, live "n/total", ↑↓ jumps, Esc/✕ closes.
+    private func convoSearchBar(_ proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+            TextField("Find in conversation…", text: $convoQuery)
+                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .focused($convoSearchFocused)
+                .onSubmit { jumpToMatch(convoMatchIndex + 1, proxy) }
+                .onKeyPress(.escape) { closeConvoSearch(); return .handled }
+            if !convoMatches.isEmpty {
+                Text("\(min(convoMatchIndex, convoMatches.count - 1) + 1)/\(convoMatches.count)")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if convoQuery.count >= 2 {
+                Text("0 results").font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+            }
+            Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(DS.Palette.codeSurfaceSide)
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
+        .onChange(of: convoQuery) { _, _ in
+            convoMatchIndex = 0
+            if let first = convoMatches.first { withAnimation { proxy.scrollTo(first, anchor: .center) } }
+        }
+    }
+
+    private func jumpToMatch(_ index: Int, _ proxy: ScrollViewProxy) {
+        guard !convoMatches.isEmpty else { return }
+        let n = convoMatches.count
+        convoMatchIndex = ((index % n) + n) % n   // wrap both directions
+        withAnimation { proxy.scrollTo(convoMatches[convoMatchIndex], anchor: .center) }
+    }
+
+    private func closeConvoSearch() {
+        withAnimation(.easeOut(duration: 0.12)) { convoSearching = false }
+        convoQuery = ""; convoMatchIndex = 0
+        inputFocused = true
     }
 
     // MARK: - Slash commands (type `/` in the composer)
@@ -16306,7 +16374,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1788 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1821 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16329,6 +16397,8 @@ struct ContentView: View {
     /// captures can picture the first-impression surface (live renders always
     /// carry the owner's history, hiding it otherwise).
     var qaForceEmptyState = false
+    /// Unsent-draft persistence key (restored on appear, written per keystroke).
+    private static let draftKey = "chat.composerDraft"
     @State private var mission: String = ""
     /// Hover highlight in the `/`-command menu (id of the hovered row).
     @State private var hoveredChatSlash: String? = nil
@@ -16453,6 +16523,15 @@ struct ContentView: View {
             if vm.messages.isEmpty { vm.messages = ChatStore.load() }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
+            // Restore an unsent draft (quitting mid-thought shouldn't eat it).
+            if mission.isEmpty {
+                mission = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
+            }
+        }
+        .onChange(of: mission) { _, draft in
+            // Persist every keystroke (tiny string, no debounce needed);
+            // sending clears `mission`, which clears the stored draft too.
+            UserDefaults.standard.set(draft, forKey: Self.draftKey)
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -16962,8 +17041,20 @@ struct ContentView: View {
               blurb: "Open live voice mode",
               kind: .action("voice")),
     ]
+    /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
+    /// the prompt body. Builtins win id collisions; duplicate slugs keep the
+    /// first prompt (ForEach needs unique ids); unsluggable titles are skipped.
+    private var promptSlashCommands: [ChatSlashCommand] {
+        var seen = Set(Self.chatSlashCommands.map(\.id))
+        return library.prompts.compactMap { p in
+            let s = ChatSlashCommand.slug(p.title)
+            guard !s.isEmpty, seen.insert(s).inserted else { return nil }
+            return ChatSlashCommand(id: s, icon: "text.book.closed",
+                                    blurb: "Saved prompt", kind: .template(p.text))
+        }
+    }
     private var chatSlashMatches: [ChatSlashCommand] {
-        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands)
+        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands + promptSlashCommands)
     }
     private func applyChatSlash(_ cmd: ChatSlashCommand) {
         switch cmd.kind {
@@ -18094,6 +18185,16 @@ struct ChatSlashCommand: Identifiable {
         guard input.hasPrefix("/"), !input.contains(" "), !input.contains("\n") else { return [] }
         let q = input.dropFirst().lowercased()
         return commands.filter { q.isEmpty || $0.id.hasPrefix(q) }
+    }
+
+    /// Slug a saved-prompt title into a slash trigger: lowercased, spaces →
+    /// dashes, everything else non-alphanumeric dropped ("Fix my Code!" →
+    /// "fix-my-code"). Empty result = title unusable as a trigger. Pure for
+    /// tests.
+    nonisolated static func slug(_ title: String) -> String {
+        String(title.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" })
     }
 }
 ```
@@ -23389,7 +23490,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (166 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (186 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -23439,6 +23540,26 @@ struct ChatSlashMatcherTests {
         // Once the first token is complete the input is a message, not a command.
         #expect(ChatSlashCommand.matches(for: "/copy this chat", in: fixtures).isEmpty)
         #expect(ChatSlashCommand.matches(for: "/copy\n", in: fixtures).isEmpty)
+    }
+}
+
+struct ChatSlashSlugTests {
+
+    @Test func spacesBecomeDashesAndCaseDrops() {
+        #expect(ChatSlashCommand.slug("Fix my Code") == "fix-my-code")
+    }
+
+    @Test func symbolsAreDropped() {
+        #expect(ChatSlashCommand.slug("Fix my Code!") == "fix-my-code")
+        #expect(ChatSlashCommand.slug("Re: plan (v2)") == "re-plan-v2")
+    }
+
+    @Test func symbolOnlyTitlesAreUnusable() {
+        #expect(ChatSlashCommand.slug("!!!") == "")
+    }
+
+    @Test func numbersSurvive() {
+        #expect(ChatSlashCommand.slug("Q4 2026 review") == "q4-2026-review")
     }
 }
 
@@ -29902,7 +30023,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1510 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1536 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -31413,6 +31534,32 @@ claims vision).
 pickFiles), `Salehman AITests/ChatComposerLogicTests.swift`; bundle regenerated. (Thanks to
 whichever session added the missing `import Foundation` to the test file — caught pre-red.)
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned); no stale single-attachment refs (grep).
+
+## 2026-06-11 (night) — Chat C: tabs marathon (owner "heavily refine/polish/test + features, 3h") — cycles 1–2
+**Files:** `Views/MarketsView.swift`, `Tests/MarketSortTests`, `Tests/StockSagePortfolioTests`,
+`Tests/ChatComposerLogicTests` (import fix). Commits `81af460`, `16a4694` (+ test-unblock).
+- **Feature — Markets watchlist sort** (Default / Top gainers / Strongest signal / A–Z): new pure `MarketSort`
+  enum + a compact sort Menu above the watchlist. "Strongest signal" ranks strong>buy/sell>hold, tie-break by
+  move magnitude. **8 `MarketSortTests`** pin the comparator; sort control verified in `markets.png`.
+- **Tests — StockSagePortfolio** (the untested P&L gap): cost math, add() input guards, remove/clear, JSON
+  persistence — 6 hermetic tests (unique UserDefaults suite each).
+- **Unblocked the suite:** `ChatComposerLogicTests` was committed-red (UUID without `import Foundation`) — 3rd
+  missing-import-class miss after QAGeometryTests. Added the import (idle Chat B test file). Re-read.
+- **Lessons (ultracode bar):** check for EXISTING tests before writing a suite (my first signal-engine file
+  duplicated `StockSageSignalEngineTests` → deleted); verify by the `** TEST SUCCEEDED **` MARKER, not a
+  background `$?` (which is a trailing grep's).
+**Result:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` **355 cases** (was ~322). Marathon continues.
+
+## 2026-06-12 — marathon D: recent-projects quick-switcher
+**What:** the tree header's "Open Folder" is now a split Menu — click = open panel
+(unchanged, ⇧⌘O), chevron = the last 6 project folders (MRU, existing-on-disk only,
+one click to switch via the new `CodeWorkspace.openProject(at:)`, which is the panel
+path minus the panel). MRU updates on open/restore (`noteRecent`), persists in
+`code_recentProjects`.
+**Verified:** build green; QA all surfaces pass; behavioral proof — after the capture
+cycle rendered CodeView, `~/Library/Preferences/SA.Salehman-AI.plist` holds
+`code_recentProjects: ["/Users/saleh/Desktop/Salehman AI"]` (init→noteRecent ran).
+**Files:** `Views/CodeView.swift`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

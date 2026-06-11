@@ -49,6 +49,26 @@ struct ChatSlashMatcherTests {
     }
 }
 
+struct ChatSlashSlugTests {
+
+    @Test func spacesBecomeDashesAndCaseDrops() {
+        #expect(ChatSlashCommand.slug("Fix my Code") == "fix-my-code")
+    }
+
+    @Test func symbolsAreDropped() {
+        #expect(ChatSlashCommand.slug("Fix my Code!") == "fix-my-code")
+        #expect(ChatSlashCommand.slug("Re: plan (v2)") == "re-plan-v2")
+    }
+
+    @Test func symbolOnlyTitlesAreUnusable() {
+        #expect(ChatSlashCommand.slug("!!!") == "")
+    }
+
+    @Test func numbersSurvive() {
+        #expect(ChatSlashCommand.slug("Q4 2026 review") == "q4-2026-review")
+    }
+}
+
 struct ChatQuoteTests {
 
     @Test func everyLineGetsAPrefix() {

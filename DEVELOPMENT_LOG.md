@@ -1534,3 +1534,15 @@ path minus the panel). MRU updates on open/restore (`noteRecent`), persists in
 cycle rendered CodeView, `~/Library/Preferences/SA.Salehman-AI.plist` holds
 `code_recentProjects: ["/Users/saleh/Desktop/Salehman AI"]` (init→noteRecent ran).
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-11 (night) — marathon slice 6: saved prompts join the / menu + drafts survive relaunch
+**What & why:** (1) Every `PromptLibrary` prompt is now a slash command — `/fix-my-code` inserts
+its body (titles slugged via pure `ChatSlashCommand.slug`: lowercase, spaces→dashes, symbols
+dropped; builtins win id collisions, duplicate slugs keep the first, unsluggable titles
+skipped). Saved prompts were menu-only before; now they're keyboard-reachable. (2) Composer
+drafts persist (`chat.composerDraft` per keystroke, restored on appear when empty) — quitting
+mid-thought no longer eats the draft; sending clears it naturally. 4 slug tests added.
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`; bundle
+regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). No test touches the draft key (parallel-
+UserDefaults rule respected).

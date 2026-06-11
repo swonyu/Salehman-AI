@@ -19,6 +19,8 @@ struct ContentView: View {
     /// captures can picture the first-impression surface (live renders always
     /// carry the owner's history, hiding it otherwise).
     var qaForceEmptyState = false
+    /// Unsent-draft persistence key (restored on appear, written per keystroke).
+    private static let draftKey = "chat.composerDraft"
     @State private var mission: String = ""
     /// Hover highlight in the `/`-command menu (id of the hovered row).
     @State private var hoveredChatSlash: String? = nil
@@ -143,6 +145,15 @@ struct ContentView: View {
             if vm.messages.isEmpty { vm.messages = ChatStore.load() }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
+            // Restore an unsent draft (quitting mid-thought shouldn't eat it).
+            if mission.isEmpty {
+                mission = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
+            }
+        }
+        .onChange(of: mission) { _, draft in
+            // Persist every keystroke (tiny string, no debounce needed);
+            // sending clears `mission`, which clears the stored draft too.
+            UserDefaults.standard.set(draft, forKey: Self.draftKey)
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -652,8 +663,20 @@ struct ContentView: View {
               blurb: "Open live voice mode",
               kind: .action("voice")),
     ]
+    /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
+    /// the prompt body. Builtins win id collisions; duplicate slugs keep the
+    /// first prompt (ForEach needs unique ids); unsluggable titles are skipped.
+    private var promptSlashCommands: [ChatSlashCommand] {
+        var seen = Set(Self.chatSlashCommands.map(\.id))
+        return library.prompts.compactMap { p in
+            let s = ChatSlashCommand.slug(p.title)
+            guard !s.isEmpty, seen.insert(s).inserted else { return nil }
+            return ChatSlashCommand(id: s, icon: "text.book.closed",
+                                    blurb: "Saved prompt", kind: .template(p.text))
+        }
+    }
     private var chatSlashMatches: [ChatSlashCommand] {
-        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands)
+        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands + promptSlashCommands)
     }
     private func applyChatSlash(_ cmd: ChatSlashCommand) {
         switch cmd.kind {
@@ -1784,5 +1807,15 @@ struct ChatSlashCommand: Identifiable {
         guard input.hasPrefix("/"), !input.contains(" "), !input.contains("\n") else { return [] }
         let q = input.dropFirst().lowercased()
         return commands.filter { q.isEmpty || $0.id.hasPrefix(q) }
+    }
+
+    /// Slug a saved-prompt title into a slash trigger: lowercased, spaces →
+    /// dashes, everything else non-alphanumeric dropped ("Fix my Code!" →
+    /// "fix-my-code"). Empty result = title unusable as a trigger. Pure for
+    /// tests.
+    nonisolated static func slug(_ title: String) -> String {
+        String(title.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" })
     }
 }
