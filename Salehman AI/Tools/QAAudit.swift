@@ -305,6 +305,25 @@ enum QAAudit {
             html += "<div class=\"failsum warn\">⬣ Red/green merges on <b>\(cvdFlagged.joined(separator: ", "))</b> — color-blind users can't tell these apart by colour. Previews: <a href=\"cvd_report.html\">cvd_report.html</a></div>"
         }
 
+        // Accessibility rollup (v6.1): consolidate every a11y signal — CVD merges,
+        // low-contrast text, unlabeled controls, tiny tap targets — per surface so
+        // the real issues are unmissable in one place.
+        var a11y: [(String, String)] = []
+        for r in report.results {
+            var fs: [String] = []
+            if cvdFail.contains(r.snapshot) { fs.append("red/green-only") }
+            for c in r.checks {
+                if c.name == "textContrast", c.detail.contains("<3:1") { fs.append("low-contrast text") }
+                if c.name == "axLabels", !c.pass { fs.append("unlabeled control") }
+                if c.name == "tapTargets", !c.pass { fs.append("tiny target") }
+            }
+            if !fs.isEmpty { a11y.append((r.snapshot, fs.joined(separator: ", "))) }
+        }
+        if !a11y.isEmpty {
+            let items = a11y.map { "<b>\($0.0)</b>: \($0.1)" }.joined(separator: " · ")
+            html += "<div class=\"failsum warn\">♿ Accessibility findings (advisory) — \(items)</div>"
+        }
+
         for r in report.results {
             let rms = structure[r.snapshot]?.renderMs ?? 0
             let cvdBadge = cvdFail.contains(r.snapshot) ? "<span class=\"badge warn\">⬣ CVD merge</span>" : ""
