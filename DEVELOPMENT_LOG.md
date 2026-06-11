@@ -1913,3 +1913,15 @@ eyebrow idiom (10pt, 1.4 tracking).
 **Verified:** build green; gallery drift 8.83% eyes-verified = the intended user-tile
 bevel; baseline adopted; all other surfaces pass.
 **Files:** `Views/CodeView.swift`.
+
+## 2026-06-12 — marathon L: design pass 4 — completionist sweep + responsive integrity
+**What:** the last untreated chrome joins the language — inspector empty state (FILES &
+DIFFS eyebrow capsule + beveled icon disc), press physics on the Review capsule and
+both edge-rail reopen buttons. **Responsive integrity verified**: the 640pt narrow
+capture holds every treatment (eyebrow, island pills, bezel composer + ring, rails) with
+no clipping or overflow.
+**Coverage note:** the design language now reaches 100% of the Code tab's chrome —
+every surface is a tray, core, rail, or eyebrow; all interaction compresses; all motion
+shares the lux curve. Further passes here hit diminishing returns; the language is
+ready to extend to other tabs (coordinate with Chat C, who holds them).
+**Files:** `Views/CodeView.swift`.

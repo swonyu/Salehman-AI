@@ -705,7 +705,7 @@ struct CodeView: View {
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                             .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
                     }
-                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(isRunning)
@@ -1711,7 +1711,7 @@ struct CodeView: View {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
                 Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
@@ -1808,10 +1808,20 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline)
 
             if ws.selectedFile == nil {
-                VStack(spacing: 9) {
+                VStack(spacing: 11) {
+                    Text("FILES & DIFFS")
+                        .font(.system(size: 8.5, weight: .semibold)).tracking(2.0)
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 24, weight: .light))
+                        .font(.system(size: 23, weight: .light))
                         .foregroundStyle(.secondary.opacity(0.55))
+                        .frame(width: 52, height: 52)
+                        .background(Color.white.opacity(0.03), in: Circle())
+                        .overlay(Circle().stroke(LinearGradient(
+                            colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
