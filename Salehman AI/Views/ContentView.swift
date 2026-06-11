@@ -558,6 +558,13 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // The chat viewport starts 46pt lower than the Code tab's (header row
+        // 45pt + divider 1pt; Code has no header), so a plain viewport-center
+        // sits visibly LOWER than Code's welcome (owner: "its not centered").
+        // Centering content+46pt of bottom padding lifts the block by 23pt —
+        // both welcomes land at the same optical height. Padding, not offset:
+        // short windows keep clean scrolling with no clipped top.
+        .padding(.bottom, 46)
         // Fill the scroll viewport and center, exactly like CodeView.welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
         .task { localModelReady = await OllamaClient.hasCustomModel() }

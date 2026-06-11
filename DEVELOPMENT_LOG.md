@@ -2623,3 +2623,18 @@ posted to the board: that CodeView WIP trips the Swift 6 type-checker timeout at
 `agentSteps` (~line 1115) under `swiftc -typecheck` — flagged early so it doesn't land red.
 Captures: SNAPSHOT_REQUEST + pending ADOPT_BASELINES will photograph + re-baseline the new
 welcome next cycle; I eyes-verify when it lands.
+
+## 2026-06-11 (night) — owner: "its not centered" — welcome optical-height parity with the Code tab
+**What & why:** Owner screenshot showed the new chat welcome sitting lower than the Code
+tab's. Cause: both welcomes center inside their own ScrollView viewport, but chat's viewport
+starts 46pt lower (45pt header row + 1pt divider; the Code tab has NO header), so
+"centered" landed the chat block at ~35% of window height vs Code's ~32%. Fix: 46pt of
+scrollable bottom padding INSIDE the `containerRelativeFrame` — centering content+padding
+lifts the block 23pt to the Code tab's optical height. Padding, not `.offset`, so short
+windows scroll cleanly with nothing clipped.
+**Files:** `Salehman AI/Views/ContentView.swift`; `SOURCE_BUNDLE.md` regenerated.
+**Result:** Typecheck EXIT=0 (pinned to HEAD: Chat C's QAAudit/QAGeometry/QASnapshots WIP +
+the in-flight CodeView WIP). ⚠️ My auto-pin loop word-split on the "Salehman AI" space
+(same zsh class as the monitor-v1 bug — `for f in $(...)` splits unquoted) and silently
+pinned NOTHING, surfacing Chat C's half-written `writeHTMLReport(structure:)` as a false
+error; explicit quoted pins restored truth. Pin explicitly, never via word-split loops.
