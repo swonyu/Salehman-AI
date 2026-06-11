@@ -15,6 +15,10 @@ struct ChatHistoryView: View {
     @State private var archives: [ChatStore.ArchivedChat] = []
     @State private var hoveredRow: URL? = nil
     @State private var query = ""
+    /// Staggered row reveal on open (capped at 8 steps so deep lists don't
+    /// crawl). Pre-revealed on QA launches — offscreen renders never fire
+    /// onAppear, so the chat_history capture would photograph empty rows.
+    @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -80,8 +84,14 @@ struct ChatHistoryView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(shown) { item in
+                            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
                                 row(item)
+                                    // Staggered mask reveal — each row fades up
+                                    // 40ms after the one above (lux curve).
+                                    .opacity(revealed ? 1 : 0)
+                                    .offset(y: revealed ? 0 : 12)
+                                    .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                               value: revealed)
                                 Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
                             }
                         }
@@ -92,7 +102,10 @@ struct ChatHistoryView: View {
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
         .preferredColorScheme(.dark)
-        .onAppear { archives = ChatStore.archives() }
+        .onAppear {
+            archives = ChatStore.archives()
+            revealed = true   // first frame renders hidden, then rows cascade in
+        }
     }
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
@@ -107,7 +120,7 @@ struct ChatHistoryView: View {
             }
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
                 .help("Replace the current conversation with this one (the current one is archived first)")

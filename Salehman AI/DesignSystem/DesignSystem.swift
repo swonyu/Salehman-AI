@@ -208,6 +208,18 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Bare press physics for controls that carry their OWN chrome (capsule pills,
+/// chips, icon buttons): 0.97 settle while pressed, press-curve release — the
+/// `.plain` style with a body. No fill/font opinions, so existing chrome is
+/// untouched. APPEND-ONLY addition (Chat B, 2026-06-12).
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
+            .animation(DS.Motion.press, value: c.isPressed)
+    }
+}
+
 // MARK: - Bezel
 struct Bezel<Content: View>: View {
     var outerRadius: CGFloat = DS.Bezel.outerRadius

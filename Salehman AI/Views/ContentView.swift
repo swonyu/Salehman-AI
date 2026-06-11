@@ -56,6 +56,7 @@ struct ContentView: View {
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -603,10 +604,16 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(Color.white.opacity(
+                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
+                    // Magnetic hover (GPU-safe: transform + hairline only).
+                    .scaleEffect(hoveredSuggestion == s.title ? 1.04 : 1)
+                    .animation(DS.Motion.lux, value: hoveredSuggestion)
+                    .onHover { hoveredSuggestion = $0 ? s.title
+                               : (hoveredSuggestion == s.title ? nil : hoveredSuggestion) }
                 }
             }
             .padding(.top, 6)
@@ -683,6 +690,71 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Composer controls-row pieces (extracted for type-checker budget)
+    /// Draft-length readout — invisible until the draft is genuinely long
+    /// (zero chrome at rest), accent past the soft budget.
+    @ViewBuilder private var composerCountBadge: some View {
+        if let count = Self.composerCount(mission) {
+            Text(count.label)
+                .font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .help(count.warn ? "Very long message — consider splitting it or attaching a file"
+                                 : "Draft length")
+                .accessibilityIdentifier("chat.composer.count")
+        }
+    }
+
+    /// Mic (dictation) — quiet inline icon; red while listening.
+    private var micButton: some View {
+        Button { speechIn.toggle() } label: {
+            Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .help("Dictate with your voice")
+        .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+        .accessibilityIdentifier("chat.composer.mic")
+    }
+
+    /// Stop while generating, otherwise Send — the composer's one strong-color
+    /// element (solid accent when sendable).
+    @ViewBuilder private var sendOrStopButton: some View {
+        if vm.isRunning {
+            Button { vm.stop() } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(DS.Palette.accent.opacity(0.85), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .help("Stop generating (⌘.)")
+            .accessibilityLabel("Stop generating")
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            Button { submit(mission) } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(canSend ? .white : .secondary)
+                    .frame(width: 26, height: 26)
+                    .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                        : AnyShapeStyle(Color.white.opacity(0.08)),
+                                in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .disabled(!canSend)
+            .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
+            .accessibilityLabel("Send")
+            .accessibilityIdentifier("chat.composer.send")
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
+
     // MARK: Pinned messages
     private var pinnedMessages: [ChatMessage] { vm.messages.filter { $0.pinned == true } }
 
@@ -724,7 +796,7 @@ struct ContentView: View {
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Color.white.opacity(0.06), in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .help(m.text)
                     .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
                 }
@@ -984,64 +1056,13 @@ struct ContentView: View {
 
                     Spacer(minLength: 0)
 
-                    // Draft-length readout — invisible until the draft is
-                    // genuinely long (zero chrome at rest), accent past the
-                    // soft budget where local-model context gets tight.
-                    if let count = Self.composerCount(mission) {
-                        Text(count.label)
-                            .font(.system(size: 10.5).monospacedDigit())
-                            .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
-                            .help(count.warn ? "Very long message — consider splitting it or attaching a file"
-                                             : "Draft length")
-                            .accessibilityIdentifier("chat.composer.count")
-                    }
-
-                    // Mic (dictation) — quiet inline icon; red while listening.
-                    Button { speechIn.toggle() } label: {
-                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
-                            .frame(width: 26, height: 26)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Dictate with your voice")
-                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
-                    .accessibilityIdentifier("chat.composer.mic")
-
-                    // Stop while generating, otherwise Send — the composer's
-                    // one strong-color element (solid accent when sendable).
-                    if vm.isRunning {
-                        Button { vm.stop() } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 26, height: 26)
-                                .background(DS.Palette.accent.opacity(0.85), in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Stop generating (⌘.)")
-                        .accessibilityLabel("Stop generating")
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        Button { submit(mission) } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(canSend ? .white : .secondary)
-                                .frame(width: 26, height: 26)
-                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
-                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
-                                            in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!canSend)
-                        .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
-                        .accessibilityLabel("Send")
-                        .accessibilityIdentifier("chat.composer.send")
-                        .transition(.scale.combined(with: .opacity))
-                    }
+                    // Count badge, mic, and send/stop are EXTRACTED subviews —
+                    // Chat D measured the real build tripping the Swift 6
+                    // type-checker timeout on this row's single expression
+                    // (bare swiftc doesn't reproduce it — known harness gap).
+                    composerCountBadge
+                    micButton
+                    sendOrStopButton
                 }
             }
             .padding(.horizontal, 12)
