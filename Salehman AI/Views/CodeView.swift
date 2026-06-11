@@ -226,6 +226,9 @@ struct CodeView: View {
     // across launches. Auto-expands when a file is selected or a run leaves diffs.
     @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
     @AppStorage("code_treeCollapsed") private var treeCollapsed = false
+    // The right sidebar: Activity (what Salehman is doing) on top + Files & Diffs at
+    // the bottom. Closable to a slim strip; auto-opens when a file/diff appears.
+    @AppStorage("code_rightPanelCollapsed") private var rightPanelCollapsed = false
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -261,21 +264,18 @@ struct CodeView: View {
                     treeReopenStrip
                 }
 
-                VSplitView {
-                    chatPane
-                        .frame(minHeight: 220)
-                    // Collapsible: the inspector used to be pinned at minHeight 160 —
-                    // permanently eating half the tab even when empty ("I can't even
-                    // minimize it"). Collapsed = a slim reopen bar; auto-expands when
-                    // a file is selected or a run produces diffs.
-                    if inspectorCollapsed {
-                        inspectorReopenBar
-                    } else {
-                        inspectorPane
-                            .frame(minHeight: 160)
-                    }
+                chatPane
+                    .frame(minWidth: 420)
+
+                // Right sidebar — Activity (live agent steps) on top, the Files & Diffs
+                // inspector at the bottom. Closable to a slim strip; auto-opens when a
+                // file is selected or a run produces diffs.
+                if !rightPanelCollapsed {
+                    rightPanel
+                        .frame(minWidth: 280, idealWidth: 360, maxWidth: 480)
+                } else {
+                    rightReopenStrip
                 }
-                .frame(minWidth: 420)
             }
             // Opaque flat surface (covers the app's glow blobs) — the Code tab
             // reads like a clean editor, not a mood piece. Neutral GREY, no red cast.
@@ -295,8 +295,16 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
-        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…).
-        .onChange(of: ws.selectedFile) { _, sel in revealInTree(sel) }
+        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…),
+        // and pop the right panel open so the file/diff is actually visible.
+        .onChange(of: ws.selectedFile) { _, sel in
+            revealInTree(sel)
+            if sel != nil { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+        }
+        // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
+        .onChange(of: ws.changedFiles) { _, files in
+            if !files.isEmpty { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+        }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
             Group {
@@ -416,7 +424,7 @@ struct CodeView: View {
                                 FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
                                     ws.select(url)
                                     rightPane = ws.changedFiles.contains(url) ? .diff : .file
-                                    inspectorCollapsed = false
+                                    rightPanelCollapsed = false
                                 }
                             }
                         }
@@ -477,7 +485,7 @@ struct CodeView: View {
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
-            inspectorCollapsed = false   // user asked to see a file — bring the pane back
+            rightPanelCollapsed = false   // user asked to see a file — bring the panel back
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon.symbol)
@@ -621,7 +629,12 @@ struct CodeView: View {
                 }
             }
 
+            // Same centered 780 reading column as the messages — so the composer lines
+            // up under the conversation instead of stretching full-width (which read as
+            // "off-centre" on a wide window).
             inputBar
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
         }
         .background(Color.clear)
     }
@@ -1062,6 +1075,113 @@ struct CodeView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
+    // MARK: Right sidebar — Activity (top) + Files & Diffs (bottom), closable
+
+    /// The whole right panel: a header with a close button, an Activity feed of the
+    /// live agent steps, and the Files & Diffs inspector below it (resizable split).
+    private var rightPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
+                    .foregroundStyle(DS.Palette.accent)
+                Text("Activity").font(.system(size: 12, weight: .semibold))
+                if isRunning && !progress.steps.isEmpty {
+                    Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true } } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Close this panel").accessibilityLabel("Close the activity panel")
+            }
+            .padding(.horizontal, 10).frame(height: 34)
+            Divider().overlay(DS.Palette.hairline.opacity(0.5))
+            VSplitView {
+                activitySection.frame(minHeight: 90)
+                inspectorPane.frame(minHeight: 150)
+            }
+        }
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// The Activity feed: live agent steps as cards while running, a friendly idle
+    /// state otherwise. (Row + idle extracted into helpers so the type-checker can
+    /// handle the body in reasonable time.)
+    @ViewBuilder private var activitySection: some View {
+        if isRunning && !progress.steps.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(progress.steps) { activityStepRow($0) }
+                }
+                .padding(10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DS.Palette.codeSurfaceSide)
+        } else {
+            activityIdle
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(DS.Palette.codeSurfaceSide)
+        }
+    }
+
+    private func activityStepRow(_ step: MissionProgress.Step) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            stepIcon(step.status)
+            Text(step.adapted ?? step.name).font(.system(size: 11.5))
+                .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.9))
+                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder private var activityIdle: some View {
+        VStack(spacing: 8) {
+            Image(systemName: isRunning ? "ellipsis.circle" : "checkmark.circle")
+                .font(.system(size: 22, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
+            Text(isRunning ? "Working…" : "No activity yet")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            if !isRunning {
+                Text("Run a task and the steps appear here.")
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(16)
+    }
+
+    /// Slim right-edge strip shown while the panel is closed — one click reopens it.
+    private var rightReopenStrip: some View {
+        VStack(spacing: 14) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+                Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
+            if !ws.changedFiles.isEmpty {
+                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
+                        .frame(width: 24, height: 22).contentShape(Rectangle())
+                        .overlay(alignment: .topTrailing) {
+                            Circle().fill(DS.Palette.accent).frame(width: 5, height: 5).offset(x: 1, y: -1)
+                        }
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent.opacity(0.85))
+                .help("\(ws.changedFiles.count) changed file\(ws.changedFiles.count == 1 ? "" : "s")")
+                .accessibilityLabel("\(ws.changedFiles.count) changed files")
+            }
+            Spacer()
+        }
+        .padding(.top, 10).frame(width: 26).frame(maxHeight: .infinity)
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
@@ -1126,14 +1246,14 @@ struct CodeView: View {
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = true }
+                    withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true }
                 } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                    Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Hide this panel (it comes back when a run has diffs)")
-                .accessibilityLabel("Hide the files and diffs panel")
+                .help("Close the panel (it comes back when a run has diffs)")
+                .accessibilityLabel("Close the activity and files panel")
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
@@ -1364,7 +1484,7 @@ struct CodeView: View {
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
             await MainActor.run {
-                if !ws.changedFiles.isEmpty { rightPane = .diff; inspectorCollapsed = false }
+                if !ws.changedFiles.isEmpty { rightPane = .diff; rightPanelCollapsed = false }
             }
         }
     }
