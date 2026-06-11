@@ -29,6 +29,7 @@ struct KnowledgeView: View {
     @State private var pasteBody = ""
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
+    @State private var docFilter = ""
 
     var body: some View {
         ScrollView {
@@ -144,6 +145,7 @@ struct KnowledgeView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 30)
         } else {
+            let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
@@ -162,13 +164,38 @@ struct KnowledgeView: View {
                         .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
                     }
                 }
-                VStack(spacing: 1) {
-                    ForEach(docSort.apply(docs)) { doc in docRow(doc) }
+                if docs.count > 10 { docFilterRow }
+                if shown.isEmpty {
+                    Text("No documents match “\(docFilter)”.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 20)
+                } else {
+                    VStack(spacing: 1) {
+                        ForEach(shown) { doc in docRow(doc) }
+                    }
+                    .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
         }
+    }
+
+    private var docFilterRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Find a document…", text: $docFilter)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Find a document")
+            if !docFilter.isEmpty {
+                Button { docFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
@@ -307,11 +334,13 @@ enum KnowledgeSort: String, CaseIterable, Identifiable {
         case .passages: return "Most passages"
         }
     }
-    func apply(_ docs: [KnowledgeDoc]) -> [KnowledgeDoc] {
+    func apply(_ docs: [KnowledgeDoc], filter q: String = "") -> [KnowledgeDoc] {
+        let needle = q.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = needle.isEmpty ? docs : docs.filter { $0.name.lowercased().contains(needle) }
         switch self {
-        case .recent:   return docs.sorted { $0.addedAt > $1.addedAt }
-        case .name:     return docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .passages: return docs.sorted { $0.chunkCount > $1.chunkCount }
+        case .recent:   return matched.sorted { $0.addedAt > $1.addedAt }
+        case .name:     return matched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .passages: return matched.sorted { $0.chunkCount > $1.chunkCount }
         }
     }
 }

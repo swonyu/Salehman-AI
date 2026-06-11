@@ -35,4 +35,19 @@ struct KnowledgeSortTests {
     @Test func allCasesHaveTitles() {
         for c in KnowledgeSort.allCases { #expect(!c.title.isEmpty) }
     }
+
+    @Test func filterMatchesNameSubstringCaseInsensitive() {
+        let xs = [doc("Quarterly Report"), doc("meeting notes"), doc("report draft")]
+        #expect(names(KnowledgeSort.name.apply(xs, filter: "report")) == ["Quarterly Report", "report draft"])
+    }
+
+    @Test func filterThenSortComposes() {
+        let xs = [doc("alpha report", passages: 5), doc("beta report", passages: 50), doc("gamma memo", passages: 99)]
+        #expect(names(KnowledgeSort.passages.apply(xs, filter: "report")) == ["beta report", "alpha report"])
+    }
+
+    @Test func filterCanMatchNothingAndBlankReturnsAll() {
+        #expect(KnowledgeSort.recent.apply([doc("x")], filter: "zzz").isEmpty)
+        #expect(KnowledgeSort.name.apply([doc("a"), doc("b")], filter: "  ").count == 2)
+    }
 }
