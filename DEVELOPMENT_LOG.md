@@ -2599,3 +2599,27 @@ each step:
 - **(4) report.html upgrade — NOT done** (owner said "stop polishing" mid-task). `report.html` + `history.jsonl`
   unchanged.
 **Result:** build + audit GREEN throughout (22/22, FAILURES []). All committed. **QA lane released to Chat B.**
+
+## 2026-06-11 (night) — owner: "make it look similar to this tab" — chat welcome rebuilt to the Code tab's composition
+**What & why:** Owner sent a Code-tab screenshot and asked the Chat tab to match. The chat
+empty state was the last big divergence; it now mirrors `CodeView.welcome` 1:1 (same tokens,
+copied values): flat 60pt disc hero (accent-0.12 fill, accent-0.22 ring, accent glyph,
+soft accent-0.16 shadow) replaces the 130pt twin-halo "breathing" orb (`EmptyStateLogo`
+struct deleted); 19pt bold title (was 28pt); 12.5pt muted explainer capped at 400pt; the
+2×2 bento of `SuggestionCard`s → ONE row of 3 capsule starter pills (white-0.06 fill,
+white-0.10 ring, accent icons — wallpaper suggestion dropped, weakest of the four;
+`SuggestionCard` in DesignSystem is now unused but left in place, it's Chat C's read-only
+zone); shortcut chips unchanged; the old `Eyebrow` capsule is replaced by the Code tab's
+status-line slot ("Offline only" / "Your 14B · local · ready" — honesty preserved, chrome
+gone); welcome vertically centered via `containerRelativeFrame` like Code (top-60 padding
+removed). ALSO: the chat-only UNRESTRICTED banner strip retired for top-parity — commands
+run unrestricted from BOTH tabs, so a chat-only strip was never the real guard; the pulsing
+header indicator stays as the persistent signal, now clickable (opens Settings) with the
+full warning in its tooltip. Disable lives in Settings.
+**Files:** `Salehman AI/Views/ContentView.swift`; `SOURCE_BUNDLE.md` regenerated.
+**Result:** Typecheck EXIT=0 with Chat C's QA WIP **and** the other session's NEW in-flight
+`CodeView.swift` WIP (138 insertions, appeared mid-verify) pinned to HEAD. ⚠️ Heads-up
+posted to the board: that CodeView WIP trips the Swift 6 type-checker timeout at
+`agentSteps` (~line 1115) under `swiftc -typecheck` — flagged early so it doesn't land red.
+Captures: SNAPSHOT_REQUEST + pending ADOPT_BASELINES will photograph + re-baseline the new
+welcome next cycle; I eyes-verify when it lands.

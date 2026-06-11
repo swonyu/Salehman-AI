@@ -92,10 +92,11 @@ struct ContentView: View {
             // parity with the Code tab.
 
             VStack(spacing: 0) {
-                // Warning banner appears above the normal header when active.
-                if settings.unrestrictedTools {
-                    unrestrictedBanner
-                }
+                // No warning strip above the header (Code-tab parity — its top
+                // is clean, and commands run unrestricted from BOTH tabs, so a
+                // chat-only banner was never the real guard). The persistent
+                // mode signal is the pulsing header indicator; its tooltip
+                // carries the warning and clicking it opens Settings.
                 // No-cloud-key notice: the selected brain is silently on the slow
                 // local fallback (or unavailable). Tap "Add key" → Settings.
                 if LocalLLM.lacksCloudKey && !dismissedCloudHint {
@@ -189,9 +190,13 @@ struct ContentView: View {
                             .frame(width: 7, height: 7)
                             .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
                     }
-                    Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(DS.Palette.accent)
+                    Button { app.showSettingsRequested = true } label: {
+                        Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unrestricted Mode — runs commands without asking; catastrophic commands are still blocked. Click to manage in Settings.")
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
                     // AI status shown as a per-brain GLYPH, not a text label: the
@@ -288,32 +293,9 @@ struct ContentView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
-    // Prominent warning banner for Unrestricted Mode. Design language: a flat
-    // accent-tinted panel with a hairline — the accent marks the icon and the
-    // Disable action; the sentence itself stays near-white so it's actually
-    // readable (red-on-red caption text measured worst on the contrast probe).
-    private var unrestrictedBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(DS.Palette.accent)
-            Text("UNRESTRICTED MODE ACTIVE — the assistant runs commands without asking. Catastrophic commands are still blocked. Use with caution.")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.85))
-            Spacer()
-            Button("Disable") { settings.unrestrictedTools = false }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .tint(DS.Palette.accent)
-                .font(.caption)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 5)
-        .background(DS.Palette.accent.opacity(0.13))
-        .overlay(alignment: .bottom) {
-            DS.Palette.accent.opacity(0.25).frame(height: 1)
-        }
-    }
+    // (The full-width Unrestricted warning banner was retired for Code-tab
+    // parity — see the note in `body`. Disable lives in Settings; the header
+    // indicator's tooltip carries the warning copy.)
 
     // MARK: Conversation
     private var filteredMessages: [ChatMessage] {
@@ -330,7 +312,6 @@ struct ContentView: View {
                     ScrollView {
                         if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
-                                .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
                             // Reading rhythm: 10pt within a same-sender burst,
@@ -519,58 +500,66 @@ struct ContentView: View {
     }
 
     // MARK: Empty state
+    // Composition mirrors the Code tab's welcome 1:1 (owner: "make it look
+    // similar to this tab") — flat 60pt disc hero (no glow halos), 19pt title,
+    // short muted explainer, ONE row of capsule starter pills, shortcut chips,
+    // then an honest status line in the Code tab's "model · local · ready"
+    // slot. Same vertical centering. Token values are copied from
+    // CodeView.welcome — if you change one side, change the other.
     private var emptyState: some View {
-        VStack(spacing: 26) {
-            // Hero logo — twin glow halos with a slow "breathing" scale on the
-            // brand tile. The landing moment keeps its glow (design language
-            // allows it on landing surfaces); everything else stays flat.
-            EmptyStateLogo()
-
-            VStack(spacing: 10) {
-                // Live, HONEST eyebrow (the blanket "On-device" claim was false
-                // for a cloud-first brain — same inaccuracy class the other
-                // session flagged on Today's greeting): say "offline only" when
-                // that mode is on, "your 14B is live" when the fine-tune is
-                // actually pulled (same probe as the Settings row), else just
-                // the name.
-                Eyebrow(text: settings.offlineOnly
-                        ? "Salehman AI · Offline only"
-                        : (localModelReady ? "Salehman AI · your 14B is live"
-                                           : "Salehman AI"))
-                Text(greetingLine)
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                Text("Ask me anything, or let me run things on your Mac.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            // 2×2 Bento of rich SuggestionCards.
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)],
-                      spacing: 12) {
-                ForEach(suggestions, id: \.self) { s in
-                    SuggestionCard(icon: s.icon, title: s.title, subtitle: s.subtitle) {
-                        submit(s.prompt)
+        VStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(DS.Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(DS.Palette.accent.opacity(0.12), in: Circle())
+                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+            Text(greetingLine)
+                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+            Text("Ask me anything, or let me run things on your Mac — inspect it, find files, check storage, tidy things up.")
+                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(suggestions.prefix(3), id: \.self) { s in
+                    Button { submit(s.prompt) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: s.icon).font(.system(size: 10.5))
+                                .foregroundStyle(DS.Palette.accent)
+                            Text(s.title).font(.system(size: 11.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.white.opacity(0.88))
                 }
             }
-            .frame(maxWidth: 600)
-            .padding(.top, 4)
-
-            // Keyboard affordances, Code-tab style — the welcome teaches the
-            // three moves you'd actually reach for first.
+            .padding(.top, 6)
             HStack(spacing: 16) {
                 welcomeShortcutHint("⌘N", "New chat")
                 welcomeShortcutHint("⌘F", "Find")
                 welcomeShortcutHint("⌘J", "Voice")
             }
-            .padding(.top, 8)
+            .padding(.top, 10)
+            // Honest status, Code-tab position (replaces the old eyebrow
+            // capsule — the Code welcome has no eyebrow): offline mode wins,
+            // else the live fine-tune when it's actually pulled.
+            if settings.offlineOnly || localModelReady {
+                HStack(spacing: 5) {
+                    Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                    Text(settings.offlineOnly ? "Offline only" : "Your 14B · local · ready")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.bottom, 40)
+        // Fill the scroll viewport and center, exactly like CodeView.welcome.
+        .containerRelativeFrame(.vertical, alignment: .center)
         .task { localModelReady = await OllamaClient.hasCustomModel() }
     }
 
@@ -1405,35 +1394,9 @@ private struct BrainStatusDot: View {
     }
 }
 
-/// Empty-state hero logo with a slow "breathing" scale on the brand tile.
-/// Extracted into its own subview so the animation `@State` is scoped to the
-/// empty state and doesn't survive once the user starts chatting.
-private struct EmptyStateLogo: View {
-    @State private var breathing = false
-
-    var body: some View {
-        ZStack {
-            Circle().fill(Theme.accent.opacity(0.18))
-                .frame(width: 130, height: 130).blur(radius: 40)
-            Circle().fill(Theme.accent2.opacity(0.16))
-                .frame(width: 110, height: 110).blur(radius: 36)
-                .offset(x: 18, y: 8)
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 72, height: 72)
-                    .shadow(color: Theme.accent.opacity(0.55), radius: 22, y: 8)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .scaleEffect(breathing ? 1.045 : 1.0)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 3.5).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
-    }
-}
+// (EmptyStateLogo — the 130pt twin-halo breathing orb — was deleted when the
+// chat welcome adopted the Code tab's flat 60pt disc hero. The disc is inline
+// in `emptyState`; it has no animation state, so no subview is needed.)
 
 // MARK: - Agent Run View (live multi-agent progress)
 struct AgentRunView: View {
