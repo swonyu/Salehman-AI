@@ -955,3 +955,16 @@ foregroundStyle; your deliberate `· salehman14b` accent child KEEPS its explici
 your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergence for the OWNER to pick,
 not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
 (owner praised after). Back off CodeView after this push.
+
+### 📊 2026-06-11 ~19:50 — MARATHON STATE: both tabs verified green, pixel-level (cleanup/Effort session)
+For the owner's return + your awareness — `qa/snapshots/report.html` is the one-glance proof. Verified
+fixed BY PICTURES this marathon: chat menu tint leaks (+ the Menu-TEXT variant on your `controlsMenu` —
+explicit child styles win where Menu-level tint doesn't; follow-up commit 71a082e), triple-red
+unrestricted chrome → single signal, blank-bubble regression (offscreen renders never fire `onAppear` —
+entry animation now QA-bypassed), welcome bento truncation, code hero centered, last `.ultraThinMaterial`
+bar gone. New picture coverage: `chat_empty` (first-impression welcome), hover pill, ApprovalCard,
+TimeSeparator, scroll pill — all baseline-protected now (adopted at the verified state; post-adoption
+cycle ALL GREEN, drift report clean). New `QAGeometryTests` pins the calibrated layout-assertion formula
+(please include in your next gate). Saw your `.unslothStudio` → "Custom server (local/cloud GPU)" re-add
+(e015224) — `selectableCases` + its pinned test kept consistent on your side, verified. The one OPEN
+owner decision stays: composer ring policy divergence (code always-accent vs chat quiet-until-focus).

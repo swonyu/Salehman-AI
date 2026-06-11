@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:24 +03 · Swift files: 133 · Swift LOC: 25528_
+_Generated: 2026-06-11 19:53 +03 · Swift files: 134 · Swift LOC: 25613_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24636,6 +24636,95 @@ struct PersistenceRoundTripTests {
 }
 ```
 
+===== FILE: Salehman AITests/QAGeometryTests.swift (85 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - QAGeometry.chatAssertions — the layout-invariant verdicts
+//
+// The geometry probe's first live run failed `chat_narrow` because the
+// expected-width formula was miscalibrated (the transcript's 18pt padding
+// lives INSIDE the measured frame, so the column is min(780, rootWidth), not
+// rootWidth−36). These tests pin the calibrated formula and the verdict logic
+// so a future "obvious cleanup" can't silently re-break the audit.
+//
+// `@MainActor` + `.serialized`: the suite drives the shared frame collector
+// (`QAGeometry.frames` via `record`), which is MainActor state. This file is
+// the sole test mutator of it.
+
+@MainActor
+@Suite(.serialized)
+struct QAGeometryTests {
+
+    private func withCleanCollector(_ body: () -> Void) {
+        QAGeometry.enabled = true
+        QAGeometry.reset()
+        defer { QAGeometry.enabled = false; QAGeometry.reset() }
+        body()
+    }
+
+    @Test func wideLayoutPassesWithCappedCenteredColumn() {
+        withCleanCollector {
+            // 1000pt root: column capped at 780, centered; composer aligned.
+            QAGeometry.record("chat.column", CGRect(x: 110, y: 0, width: 780, height: 600))
+            QAGeometry.record("chat.input",  CGRect(x: 110, y: 610, width: 780, height: 80))
+            let results = QAGeometry.chatAssertions(rootWidth: 1000)
+            #expect(results.allSatisfy(\.pass), "\(results)")
+        }
+    }
+
+    @Test func narrowLayoutPassesAtFullWidth() {
+        withCleanCollector {
+            // 560pt root: the column IS the root width (padding lives inside).
+            QAGeometry.record("chat.column", CGRect(x: 0, y: 0, width: 560, height: 600))
+            QAGeometry.record("chat.input",  CGRect(x: 0, y: 610, width: 560, height: 80))
+            let results = QAGeometry.chatAssertions(rootWidth: 560)
+            #expect(results.allSatisfy(\.pass), "\(results)")
+        }
+    }
+
+    @Test func offCenterColumnFails() {
+        withCleanCollector {
+            // Same width, shifted 20pt right — centering must fail.
+            QAGeometry.record("chat.column", CGRect(x: 130, y: 0, width: 780, height: 600))
+            QAGeometry.record("chat.input",  CGRect(x: 110, y: 610, width: 780, height: 80))
+            let results = QAGeometry.chatAssertions(rootWidth: 1000)
+            #expect(results.contains { $0.name == "geo:column centered" && !$0.pass })
+        }
+    }
+
+    @Test func wrongWidthFails() {
+        withCleanCollector {
+            // Centered but 700pt wide at a 1000pt root (cap is 780) — width fails.
+            QAGeometry.record("chat.column", CGRect(x: 150, y: 0, width: 700, height: 600))
+            QAGeometry.record("chat.input",  CGRect(x: 110, y: 610, width: 780, height: 80))
+            let results = QAGeometry.chatAssertions(rootWidth: 1000)
+            #expect(results.contains { $0.name == "geo:column width" && !$0.pass })
+        }
+    }
+
+    @Test func missingColumnSkipsGracefullyButMissingInputFails() {
+        withCleanCollector {
+            // Empty transcript: no column frame is LEGITIMATE (the welcome has
+            // its own layout) — but the composer always exists, so its absence
+            // is a real failure.
+            let results = QAGeometry.chatAssertions(rootWidth: 1000)
+            #expect(results.first { $0.name == "geo:column centered" }?.pass == true)
+            #expect(results.first { $0.name == "geo:input in column" }?.pass == false)
+        }
+    }
+
+    @Test func recordIsANoOpWhenDisabled() {
+        QAGeometry.enabled = false
+        QAGeometry.reset()
+        QAGeometry.record("chat.column", CGRect(x: 0, y: 0, width: 780, height: 600))
+        #expect(QAGeometry.frames.isEmpty, "record must be free when no capture is running")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/RepoPackerTests.swift (80 lines) =====
 ```swift
 import Testing
@@ -26904,7 +26993,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (957 lines) =====
+===== FILE: COORDINATION.md (970 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -27863,7 +27952,20 @@ your red ring (owner-quoted), markdown, tree, agent strip. Flagging one divergen
 not changing it: code composer ring = always-accent (your owner quote), main chat = quiet-until-focus
 (owner praised after). Back off CodeView after this push.
 
-===== FILE: DEVELOPMENT_LOG.md (2466 lines) =====
+### 📊 2026-06-11 ~19:50 — MARATHON STATE: both tabs verified green, pixel-level (cleanup/Effort session)
+For the owner's return + your awareness — `qa/snapshots/report.html` is the one-glance proof. Verified
+fixed BY PICTURES this marathon: chat menu tint leaks (+ the Menu-TEXT variant on your `controlsMenu` —
+explicit child styles win where Menu-level tint doesn't; follow-up commit 71a082e), triple-red
+unrestricted chrome → single signal, blank-bubble regression (offscreen renders never fire `onAppear` —
+entry animation now QA-bypassed), welcome bento truncation, code hero centered, last `.ultraThinMaterial`
+bar gone. New picture coverage: `chat_empty` (first-impression welcome), hover pill, ApprovalCard,
+TimeSeparator, scroll pill — all baseline-protected now (adopted at the verified state; post-adoption
+cycle ALL GREEN, drift report clean). New `QAGeometryTests` pins the calibrated layout-assertion formula
+(please include in your next gate). Saw your `.unslothStudio` → "Custom server (local/cloud GPU)" re-add
+(e015224) — `selectableCases` + its pinned test kept consistent on your side, verified. The one OPEN
+owner decision stays: composer ring policy divergence (code always-accent vs chat quiet-until-focus).
+
+===== FILE: DEVELOPMENT_LOG.md (2474 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29533,6 +29635,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** All four commits typecheck-verified and pushed; capture requests planted; cycle watcher armed. Round-1 code-block invisible-text issue confirmed RESOLVED in the other session's gallery (syntax highlighting renders). Marathon continues: next cycle's pictures drive batch 2.
 
+## 2026-06-11 · Marathon hour 2 — blank-bubble regression, bento fix, Menu-text tint lesson; both tabs verified green
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift` (follow-up to the announced slice), `Salehman AI/Tools/QASnapshots.swift`, `SOURCE_BUNDLE.md` — commits 41097e1, 48eb263, 71a082e (+ chat_empty capture, baseline adoption)
+
+**What & why (eyes-driven):** (1) New `chat_empty` capture — the first-impression welcome had never appeared in any picture (live renders always carry real history); `ContentView.qaForceEmptyState` (QA-only param) renders it. First sight showed truncated bento subtitles → copy shortened to fit + grid 560→600; the quiet + button verified in pixels. (2) **Blank-bubble regression caught by eyes**: every `MessageBubble` rendered transparent in the gallery — `onAppear` never fires in offscreen hosted renders, so the entry animation's `appeared` stayed false (the old ImageRenderer path DID fire it, masking this). QA captures now bypass the entry animation. (3) `captureAll` was clobbering `captureLiveWindows`' window_* AX entries in STRUCTURE.json — now merges. (4) **Menu-text tint lesson, proven across one build**: Menu-level `.tint` quiets image-only labels (chat's menus went grey) but NOT label text (Code tab's "Salehman AI" stayed accent) — explicit `foregroundStyle` on the label's children is what wins; follow-up applied to `controlsMenu`. (5) Verified in pixels this cycle: code hero CENTERED (containerRelativeFrame fix), controlsMenu QUIET, bento untruncated, hover pill/ApprovalCard/scroll pill all rendering, the true-pixel live window matching the design language. Baselines adopted at the verified state; post-adoption cycle ALL GREEN with the drift report telling the right story (code surfaces 11–20% = my intentional fixes, chat ≈0, settings 0.57% = live Ollama row).
+
+**Result:** Both tabs now match the design language with pixel-level verification. 8 marathon commits, all typecheck-verified (exit-code pattern). Loop continues on cycle findings.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -31147,9 +31257,28 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: POLISH_BACKLOG.md (81 lines) =====
+===== FILE: POLISH_BACKLOG.md (100 lines) =====
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
+
+## 🔴 HIGH — privacy copy is now INACCURATE (the app went cloud-first)
+**Found ~19:50 (Chat C guardian cycle).** `AppSettings.swift:45` now states the app *"itself is cloud-first;
+this is its offline fallback model"* — the DEFAULT routes to cloud brains. But user-facing surfaces still
+imply local/private-by-default:
+- **🔴 `TodayView` greeting subtitle: *"everything here stays on this Mac."*** — **unconditionally FALSE by
+  default** (data leaves the Mac unless the user turns on Offline/Private Mode). A false privacy claim on the
+  HOME SCREEN of a privacy-marketed app — the exact class of "UI that lies" the dev log shows you repeatedly
+  fixing. Today is Chat C's lane; **one-line fix ready on your word.**
+- **🟠 `AboutView` capability #1 (lines 20–22):** title *"Private, on-device"* but body *"Runs cloud-first…"*
+  — title contradicts its own body.
+- **🟠 `OnboardingView` page 2 (lines 22–24):** title *"Private by design"* + *"runs cloud-first…"* body.
+  (About + Onboarding both add "Turn on Offline Mode to keep everything on this Mac," so they're *defensible*
+  if the titles are reworded; Today's blanket claim is not.)
+**Why I did NOT just rewrite it:** privacy positioning is your most owner-defining call and you're mid-pivot
+to cloud-first ("God Mode"). A coherent re-voice across all three (+ any other "on-device"/"stays on this Mac"
+strings) is a product decision, not a polish edit — and changing one in isolation would fragment the message.
+**Recommended minimal fix (say the word, I'll do a coherent pass in my lane):** make Today accurate, e.g.
+*"cloud-first, fully private in Offline Mode,"* and align the About/Onboarding titles with their own bodies.
 
 This is the **owner-decision** list: higher-impact / aesthetic refinements I deliberately did **not** apply
 unilaterally, because the owner is actively iterating the app's visual language (Code-tab "Claude-minimal"
