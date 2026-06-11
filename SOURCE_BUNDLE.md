@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:08 +03 · Swift files: 140 · Swift LOC: 27950_
+_Generated: 2026-06-11 23:10 +03 · Swift files: 140 · Swift LOC: 27954_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11949,7 +11949,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (475 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (479 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12065,6 +12065,10 @@ enum QASnapshots {
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
+        // History sheet renders its EMPTY state offscreen (onAppear never
+        // fires, so the archive list never loads) — deterministic by accident,
+        // and exactly the first-impression surface worth baselining.
+        snap(ChatHistoryView(onRestore: { _ in }), "chat_history", "Conversation-history sheet (empty state)", .init(width: 520, height: 560), in: dir)
         snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
         // ── Readability probe — every text-style/surface pairing the design
         // language uses, in fixed bands the audit measures for CONTRAST (the
@@ -29443,7 +29447,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 |-------------|-----------------------------|-------|----------------------------|-----------|
 | Codex CLI | Build unblock: moved untracked non-app artifacts out of synchronized `Salehman AI/` app source root; docs touched `COORDINATION.md`, `DEVELOPMENT_LOG.md` | 2026-06-08 | Duplicate Xcode build inputs fixed; build + `Salehman AITests` green. | **released** |
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
-| **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Shipped so far: ✅1 slash commands `38c38a8` ✅2 edit-and-resend `a32c411` ✅3 quote-reply + Esc `5cdc39a` ✅4 slash UI tests `eb5e00d` ✅5 multi-attachments `edfa32e` (merge-at-submit — pipeline untouched) ✅6 prompt-slash + draft persistence `490891f` + gallery quote sample `85ffa4b`. 18 new unit tests in `ChatComposerLogicTests` (thanks for the `import Foundation` catch, whoever built it) + 2 UI flows. PROJECT_CONTEXT chat rows refreshed. ADOPT_BASELINES+SNAPSHOT_REQUEST pending for the post-slice state. **Build-capable session: please run AITests + Salehman AIUITests when convenient.** | no — IN PROGRESS |
+| **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Shipped so far: ✅1 slash commands `38c38a8` ✅2 edit-and-resend `a32c411` ✅3 quote-reply + Esc `5cdc39a` ✅4 slash UI tests `eb5e00d` ✅5 multi-attachments `edfa32e` (merge-at-submit — pipeline untouched) ✅6 prompt-slash + draft persistence `490891f` + gallery quote sample `85ffa4b`. 18 new unit tests in `ChatComposerLogicTests` (thanks for the `import Foundation` catch, whoever built it) + 2 UI flows. PROJECT_CONTEXT chat rows refreshed. Second half: ✅7 PROJECT_CONTEXT sync `fd65594` ✅8 inline Retry on failure rows `4a2621a` ✅9 slash ↑/↓ keyboard nav `5fb2deb` ✅10 right-click context menus `da25c59` ✅11 **CONVERSATION HISTORY** `50fd398` (new chat ARCHIVES to `chats/*.json`, NEW `Views/ChatHistoryView.swift` sheet + header clock + `/history`, restore is symmetric-archive) + `chat_history` QA surface. Now 26 unit tests in `ChatComposerLogicTests` + 8 UI flows. chat_samples will trip baselineDiff on next rebuilt capture (failure-row + quote-pill gallery sections = intentional) — I'll eyes-verify + adopt. **Build-capable session: please run AITests + Salehman AIUITests when convenient.** | no — IN PROGRESS |
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
@@ -30428,7 +30432,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1596 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1611 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32025,6 +32029,21 @@ Edit & Resend; assistant rows: Copy, Quote in Composer, Read Aloud/Stop Speaking
 Hover affordances are invisible until discovered; right-click is the macOS-native first reach.
 **Files:** `Views/ContentView.swift`; bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned).
+
+## 2026-06-11 (night) — marathon slice 11: CONVERSATION HISTORY (new chat archives, never erases)
+**What & why:** The app held exactly ONE conversation — ⌘N erased it forever. Now: `newChat`
+flushes the save debounce and snapshots the conversation into
+`Application Support/SalehmanAI/chats/chat_<ms>.json` (same `[ChatMessage]` coding as the live
+file). NEW `ChatHistoryView` sheet (header clock icon, or `/history`): archived conversations
+newest-activity-first (title = first user line via pure `ChatStore.archiveTitle`, date ·
+message count), per-row **Restore** (symmetric — current conversation is archived first, the
+restored file removed since it becomes live) and delete. Empty state explains the ⌘N-archives
+behavior. 4 `ChatArchiveTitleTests` pin the title derivation.
+**Files:** `Views/ContentView.swift` (ChatStore archive API + wiring + header icon + sheet +
+/history), NEW `Views/ChatHistoryView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`;
+bundle regenerated.
+**Result:** Typecheck EXIT=0 (CodeView WIP pinned). Archives are additive — existing
+chat_history.json untouched; restore is plain load.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

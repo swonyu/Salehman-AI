@@ -1609,3 +1609,10 @@ behavior. 4 `ChatArchiveTitleTests` pin the title derivation.
 bundle regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). Archives are additive — existing
 chat_history.json untouched; restore is plain load.
+
+## 2026-06-11 (night) — marathon: chat_history QA surface + board status (slices 7-11)
+**What & why:** The new History sheet joins the capture set (`chat_history`, 520×560 — renders
+its deterministic empty state offscreen since onAppear never fires there). Board row updated
+with second-half slice SHAs.
+**Files:** `Tools/QASnapshots.swift`, `COORDINATION.md`; bundle regenerated.
+**Result:** Typecheck EXIT=0. SNAPSHOT_REQUEST pending for the next rebuilt cycle.

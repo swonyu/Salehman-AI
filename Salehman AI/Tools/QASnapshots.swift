@@ -112,6 +112,10 @@ enum QASnapshots {
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
+        // History sheet renders its EMPTY state offscreen (onAppear never
+        // fires, so the archive list never loads) — deterministic by accident,
+        // and exactly the first-impression surface worth baselining.
+        snap(ChatHistoryView(onRestore: { _ in }), "chat_history", "Conversation-history sheet (empty state)", .init(width: 520, height: 560), in: dir)
         snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
         // ── Readability probe — every text-style/surface pairing the design
         // language uses, in fixed bands the audit measures for CONTRAST (the
