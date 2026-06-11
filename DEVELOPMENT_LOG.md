@@ -1379,3 +1379,14 @@ pixels: Settings opens from Today (re-pulse), chat mounts on ⌘2, QA loop green
 --qa, all audit surfaces pass.
 **Files:** Views/RootView.swift, Views/TodayView.swift, Tools/QASnapshots.swift,
 Tools/QACapture.swift, tools/qa.sh.
+
+## 2026-06-11 (night) — centering VERIFIED in pixels; baselines adopted; stale board banner cleared
+**What & why:** The 22:07 capture (first rebuilt binary) closes the owner's "its not centered":
+welcome block center measures **342 vs full-tab center 342.5** — the 55pt compensation lands the
+invariant exactly (my earlier y≈188 disc prediction mis-assumed content height; the invariant is
+the spec, and it holds). `chat_live` canvasFlat now reads 0.094 neutral in-audit (tint fix
+confirmed); audit failures `[]`; chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this
+verified state. Also annotated two stale board items (QAGeometryTests CoreGraphics banner —
+fixed in `0abed68`; closed my build-request/centering thread on my row).
+**Files:** `COORDINATION.md`, qa request files (gitignored).
+**Result:** Owner-reported color + centering issues both verified fixed by measurement.
