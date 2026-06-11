@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 20:51 +03 · Swift files: 134 · Swift LOC: 25778_
+_Generated: 2026-06-11 21:08 +03 · Swift files: 135 · Swift LOC: 26052_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (753 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (775 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -291,6 +291,7 @@ enum AgentPipeline {
             if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
                 reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
             }
+            reply = stripNarration(reply)
             if !isErrorReply(reply) {
                 await ConversationStore.shared.add(role: "User", text: mission)
                 await ConversationStore.shared.add(role: "Salehman AI", text: reply)
@@ -315,7 +316,7 @@ enum AgentPipeline {
             }
         }
 
-        let finalAnswer = await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+        let finalAnswer = stripNarration(await SalehmanLeader.finalize(userPrompt: mission, draft: draft))
 
         // Record the turn HERE — the single chokepoint every mode funnels through —
         // so the short-circuit modes (which `return` before the multi-agent team's
@@ -326,6 +327,27 @@ enum AgentPipeline {
             await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
         }
         return finalAnswer
+    }
+
+    /// Strip the local fine-tune's "think out loud" scaffold. The Q3 model sometimes
+    /// emits a block of meta-reasoning ("You are Salehman AI…", "Interpretation:…",
+    /// "The most likely reading is…") and then puts the ACTUAL reply after a final
+    /// "Response:" line. When that shape is present, keep only what follows the last
+    /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
+    /// Conservative: only fires when a non-empty answer follows the marker, so a normal
+    /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    nonisolated static func stripNarration(_ text: String) -> String {
+        for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
+            if let r = text.range(of: marker, options: .backwards) {
+                let after = text[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                // Only strip if what's left is a real reply (not itself another
+                // "Interpretation:"-style scaffold, and not trivially short).
+                if after.count >= 2, !after.hasPrefix("Interpretation:"), !after.hasPrefix("You are Salehman") {
+                    return after
+                }
+            }
+        }
+        return text
     }
 
     /// True when a draft is an error/off sentinel rather than a real answer, so
@@ -11319,6 +11341,223 @@ enum QACapture {
 }
 ```
 
+===== FILE: Salehman AI/Tools/QAColorVision.swift (213 lines) =====
+```swift
+import AppKit
+
+/// **Color-vision QA (CVD)** — the pixel/contrast checks verify text *legibility*,
+/// but say nothing about whether the app's *semantic colors* survive color
+/// blindness. Salehman leans on red/green a lot (Markets buy/sell badges, the
+/// success/danger tokens, status dots), and red-green deficiency is the most
+/// common form (~8% of men). This pass:
+///
+///  1. Simulates **deuteranopia** + **protanopia** on every captured surface
+///     (Machado et al. 2009 matrices, applied in LINEAR RGB) → `<name>_deuter.png`
+///     / `<name>_protan.png` previews to eyeball.
+///  2. Extracts each surface's vivid colors and **flags any originally-distinct
+///     pair that collapses to look the same** under simulation — e.g. a green
+///     "Strong Buy" pill and a red "Sell" pill becoming indistinguishable. That's
+///     the actual failure mode, caught by arithmetic, not just a preview.
+///
+/// Writes `qa/snapshots/cvd.json` (machine) + `cvd_report.html` (human). Advisory
+/// by design — it does NOT gate the build (a flagged merge wants a human call on
+/// whether an icon/label already disambiguates), but `merges` is there to promote
+/// to the gate later. Run from `QASnapshots.captureAll` after the audit.
+@MainActor
+enum QAColorVision {
+
+    // Machado et al. (2009), severity 1.0 — applied to LINEARIZED sRGB.
+    private static let deuteranopia: [[Double]] = [
+        [0.367322, 0.860646, -0.227968],
+        [0.280085, 0.672501,  0.047413],
+        [-0.011820, 0.042940, 0.968881],
+    ]
+    private static let protanopia: [[Double]] = [
+        [0.152286, 1.052583, -0.204868],
+        [0.114503, 0.786281,  0.099216],
+        [-0.003882, -0.048116, 1.051998],
+    ]
+
+    struct Merge: Codable { let a: String; let b: String; let origDist: Int; let cvdDist: Int; let type: String }
+    struct SurfaceCVD: Codable { let surface: String; let vivid: [String]; let merges: [Merge]; let pass: Bool }
+    struct Report: Codable { let generatedAt: String; let surfaces: [SurfaceCVD]; let flagged: [String] }
+
+    static func run(snapshotsDir dir: URL) {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasSuffix(".png") }
+            .filter { n in !["_diff.png", "_deuter.png", "_protan.png"].contains(where: n.hasSuffix)
+                          && n != "contact_sheet.png" }
+            .sorted()
+
+        var surfaces: [SurfaceCVD] = []
+        var flagged: [String] = []
+
+        for file in names {
+            let name = String(file.dropLast(4))
+            guard let src = canonical(at: dir.appendingPathComponent(file), maxDim: 520) else { continue }
+
+            // Previews (write the simulated images next to the originals).
+            if let d = simulate(src, deuteranopia) { try? png(d)?.write(to: dir.appendingPathComponent("\(name)_deuter.png")) }
+            if let p = simulate(src, protanopia)  { try? png(p)?.write(to: dir.appendingPathComponent("\(name)_protan.png")) }
+
+            // Merge check on the surface's vivid colors (deuteranopia — the common case).
+            let vivid = vividColors(src, topK: 6)
+            var merges: [Merge] = []
+            for i in 0..<vivid.count {
+                for j in (i + 1)..<vivid.count {
+                    let (ca, cb) = (vivid[i], vivid[j])
+                    let orig = redmean(ca, cb)
+                    guard orig >= 120 else { continue }                 // originally clearly distinct
+                    let cvd = redmean(simColor(ca, deuteranopia), simColor(cb, deuteranopia))
+                    if cvd <= 45 {                                       // …but converge under deuteranopia
+                        merges.append(.init(a: hex(ca), b: hex(cb),
+                                            origDist: Int(orig), cvdDist: Int(cvd), type: "deuteranopia"))
+                    }
+                }
+            }
+            let pass = merges.isEmpty
+            if !pass { flagged.append(name) }
+            surfaces.append(.init(surface: name, vivid: vivid.map(hex), merges: merges, pass: pass))
+        }
+
+        let report = Report(generatedAt: ISO8601DateFormatter().string(from: Date()),
+                            surfaces: surfaces, flagged: flagged.sorted())
+        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? enc.encode(report) { try? data.write(to: dir.appendingPathComponent("cvd.json")) }
+        writeHTML(report, in: dir)
+    }
+
+    // MARK: - Simulation
+
+    /// Apply a CVD matrix in linear-RGB space to every pixel of a copy.
+    private static func simulate(_ src: NSBitmapImageRep, _ m: [[Double]]) -> NSBitmapImageRep? {
+        guard let out = src.copy() as? NSBitmapImageRep, let px = out.bitmapData else { return nil }
+        let w = out.pixelsWide, h = out.pixelsHigh, spp = out.samplesPerPixel, row = out.bytesPerRow
+        guard spp >= 3 else { return nil }
+        for y in 0..<h {
+            for x in 0..<w {
+                let o = y * row + x * spp
+                let r = lin(Double(px[o]) / 255), g = lin(Double(px[o + 1]) / 255), b = lin(Double(px[o + 2]) / 255)
+                px[o]     = enc8(m[0][0] * r + m[0][1] * g + m[0][2] * b)
+                px[o + 1] = enc8(m[1][0] * r + m[1][1] * g + m[1][2] * b)
+                px[o + 2] = enc8(m[2][0] * r + m[2][1] * g + m[2][2] * b)
+            }
+        }
+        return out
+    }
+
+    /// Simulate a single sRGB color (0–255 components) through a CVD matrix.
+    private static func simColor(_ c: (Int, Int, Int), _ m: [[Double]]) -> (Int, Int, Int) {
+        let r = lin(Double(c.0) / 255), g = lin(Double(c.1) / 255), b = lin(Double(c.2) / 255)
+        return (Int(enc8(m[0][0] * r + m[0][1] * g + m[0][2] * b)),
+                Int(enc8(m[1][0] * r + m[1][1] * g + m[1][2] * b)),
+                Int(enc8(m[2][0] * r + m[2][1] * g + m[2][2] * b)))
+    }
+
+    // MARK: - Vivid-color extraction
+
+    /// Top-K most frequent *saturated* colors (coarsely quantized), ignoring the
+    /// near-grey UI chrome that dominates by area.
+    private static func vividColors(_ rep: NSBitmapImageRep, topK: Int) -> [(Int, Int, Int)] {
+        guard let px = rep.bitmapData else { return [] }
+        let w = rep.pixelsWide, h = rep.pixelsHigh, spp = rep.samplesPerPixel, row = rep.bytesPerRow
+        guard spp >= 3 else { return [] }
+        // Group into coarse buckets, but accumulate the REAL pixel values so we
+        // return each cluster's true average color — not a lossy bucket center.
+        var acc: [Int: (n: Int, r: Int, g: Int, b: Int)] = [:]
+        let step = max(1, min(w, h) / 200)
+        var y = 0
+        while y < h {
+            var x = 0
+            while x < w {
+                let o = y * row + x * spp
+                let r = Int(px[o]), g = Int(px[o + 1]), b = Int(px[o + 2])
+                let mx = max(r, g, b), mn = min(r, g, b)
+                // saturated, not too dark/blown-out → a real semantic color
+                if mx > 50, mx < 245, mx - mn > 70 {
+                    let key = ((r >> 5) << 10) | ((g >> 5) << 5) | (b >> 5)   // 8³ coarse buckets
+                    let a = acc[key] ?? (0, 0, 0, 0)
+                    acc[key] = (a.n + 1, a.r + r, a.g + g, a.b + b)
+                }
+                x += step
+            }
+            y += step
+        }
+        return acc.sorted { $0.value.n > $1.value.n }.prefix(topK).map { _, a in
+            (a.r / a.n, a.g / a.n, a.b / a.n)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private static func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+    private static func enc8(_ v: Double) -> UInt8 {
+        let c = max(0, min(1, v))
+        let s = c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055
+        return UInt8(max(0, min(255, (s * 255).rounded())))
+    }
+    /// Perceptual-ish color distance (Thiadmer Riemersma "redmean"), 0…~765.
+    private static func redmean(_ a: (Int, Int, Int), _ b: (Int, Int, Int)) -> Double {
+        let rm = Double(a.0 + b.0) / 2
+        let dr = Double(a.0 - b.0), dg = Double(a.1 - b.1), db = Double(a.2 - b.2)
+        return (((2 + rm / 256) * dr * dr) + 4 * dg * dg + ((2 + (255 - rm) / 256) * db * db)).squareRoot()
+    }
+    private static func hex(_ c: (Int, Int, Int)) -> String { String(format: "#%02X%02X%02X", c.0, c.1, c.2) }
+    private static func png(_ rep: NSBitmapImageRep) -> Data? { rep.representation(using: .png, properties: [:]) }
+
+    /// Load a PNG and redraw it into a canonical 8-bit RGBA bitmap (so
+    /// `bitmapData` has a known layout), optionally downscaled for speed.
+    private static func canonical(at url: URL, maxDim: Int) -> NSBitmapImageRep? {
+        guard let data = try? Data(contentsOf: url), let src = NSBitmapImageRep(data: data) else { return nil }
+        let longest = max(src.pixelsWide, src.pixelsHigh)
+        let scale = min(1.0, Double(maxDim) / Double(max(1, longest)))
+        let w = max(1, Int(Double(src.pixelsWide) * scale)), h = max(1, Int(Double(src.pixelsHigh) * scale))
+        guard let dst = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: w * 4, bitsPerPixel: 32) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: dst)
+        src.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+        NSGraphicsContext.restoreGraphicsState()
+        return dst
+    }
+
+    private static func writeHTML(_ report: Report, in dir: URL) {
+        var html = """
+        <!doctype html><meta charset="utf-8"><title>Salehman AI — color-vision QA</title>
+        <style>
+        body{background:#1b1b1b;color:#eee;font:14px -apple-system,sans-serif;margin:24px}
+        h1{font-size:18px}.ok{color:#5dd167}.bad{color:#ff7b5d}
+        .card{background:#252525;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin:14px 0}
+        .imgs{display:flex;gap:10px;flex-wrap:wrap}.imgs figure{margin:0}
+        .imgs img{max-width:300px;border:1px solid #444;border-radius:6px}
+        figcaption{font-size:11px;color:#999;margin-top:4px}
+        .sw{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid #555;vertical-align:middle;margin:0 2px}
+        .merge{color:#ff7b5d;font-size:12px}
+        </style>
+        <h1>Color-vision QA — \(report.generatedAt) ·
+        <span class="\(report.flagged.isEmpty ? "ok" : "bad")">\(report.flagged.isEmpty ? "no red/green merges detected" : "\(report.flagged.count) surface(s) with a merge: \(report.flagged.joined(separator: ", "))")</span></h1>
+        <p style="color:#999;font-size:12px">Each row: original · deuteranopia · protanopia. A "merge" = two
+        normally-distinct colors that look the same to a red-green-deficient viewer (verify an icon/label
+        disambiguates).</p>
+        """
+        for s in report.surfaces {
+            html += "<div class=\"card\"><b>\(s.surface)</b> <span class=\"\(s.pass ? "ok" : "bad")\">\(s.pass ? "✓" : "✗ merge")</span><br>"
+            html += "<small>vivid: " + s.vivid.map { "<span class=\"sw\" style=\"background:\($0)\"></span>\($0)" }.joined(separator: " ") + "</small>"
+            for m in s.merges {
+                html += "<div class=\"merge\">⚠︎ <span class=\"sw\" style=\"background:\(m.a)\"></span>\(m.a) &amp; <span class=\"sw\" style=\"background:\(m.b)\"></span>\(m.b) merge under \(m.type) (orig Δ\(m.origDist) → Δ\(m.cvdDist))</div>"
+            }
+            html += "<div class=\"imgs\">"
+            html += "<figure><img src=\"\(s.surface).png\"><figcaption>original</figcaption></figure>"
+            html += "<figure><img src=\"\(s.surface)_deuter.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>deuteranopia</figcaption></figure>"
+            html += "<figure><img src=\"\(s.surface)_protan.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>protanopia</figcaption></figure>"
+            html += "</div></div>"
+        }
+        try? html.write(to: dir.appendingPathComponent("cvd_report.html"), atomically: true, encoding: .utf8)
+    }
+}
+```
+
 ===== FILE: Salehman AI/Tools/QAGeometry.swift (89 lines) =====
 ```swift
 import SwiftUI
@@ -11412,7 +11651,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (429 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (433 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11553,6 +11792,10 @@ enum QASnapshots {
         // diff + heat-maps). The UI-test gate asserts failures == [].
         QAAudit.run(snapshotsDir: dir,
                     baselinesDir: qaDir.appendingPathComponent("baselines"))
+
+        // Color-vision pass (Chat C, QA v6): deuteranopia/protanopia previews +
+        // red-green "merge" detection over each surface's vivid colors.
+        QAColorVision.run(snapshotsDir: dir)
     }
 
     /// ONE render path: host the view offscreen in an `NSHostingView` and cache
@@ -15266,7 +15509,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1621 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1631 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15356,10 +15599,10 @@ struct ContentView: View {
             // no translucent stacking — same shade as the Code tab's canvas.
             DS.Palette.codeSurface.ignoresSafeArea()
 
-            // Global red tint when Unrestricted Mode is active.
-            if settings.unrestrictedTools {
-                Color.red.opacity(0.03).ignoresSafeArea()
-            }
+            // Unrestricted Mode is signalled by the banner + header indicator
+            // ONLY — never by tinting the canvas. A full-canvas wash (even 3%)
+            // shifts every neutral grey warm and visibly breaks the color
+            // parity with the Code tab.
 
             VStack(spacing: 0) {
                 // Warning banner appears above the normal header when active.
@@ -15445,20 +15688,23 @@ struct ContentView: View {
                 // while running (was a flat off-brand purple dot — the most
                 // visible "AI is working" affordance in the chrome).
                 if settings.unrestrictedTools {
-                    // Red pulsing halo for Unrestricted Mode (alive / "always on" signal)
+                    // Pulsing halo for Unrestricted Mode (alive / "always on"
+                    // signal). Brand accent, NOT system red — system red is
+                    // orange-leaning and clashes with the crimson everywhere
+                    // else on the screen.
                     ZStack {
-                        Circle().fill(Color.red.opacity(0.4))
+                        Circle().fill(DS.Palette.accent.opacity(0.4))
                             .frame(width: 22, height: 22)
                             .blur(radius: 5)
                             .scaleEffect(unrestrictedPulse ? 1.45 : 1.0)
                             .opacity(unrestrictedPulse ? 0.6 : 0.4)
-                        Circle().fill(Color.red)
+                        Circle().fill(DS.Palette.accent)
                             .frame(width: 7, height: 7)
-                            .shadow(color: Color.red.opacity(0.6), radius: 3)
+                            .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(DS.Palette.accent)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
                     // AI status shown as a per-brain GLYPH, not a text label: the
@@ -15555,24 +15801,31 @@ struct ContentView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
-    // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
+    // Prominent warning banner for Unrestricted Mode. Design language: a flat
+    // accent-tinted panel with a hairline — the accent marks the icon and the
+    // Disable action; the sentence itself stays near-white so it's actually
+    // readable (red-on-red caption text measured worst on the contrast probe).
     private var unrestrictedBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(DS.Palette.accent)
             Text("UNRESTRICTED MODE ACTIVE — the assistant runs commands without asking. Catastrophic commands are still blocked. Use with caution.")
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.85))
             Spacer()
             Button("Disable") { settings.unrestrictedTools = false }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .tint(.red)
+                .tint(DS.Palette.accent)
                 .font(.caption)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 5)
-        .background(Color.red.opacity(0.12))
-        .foregroundStyle(Color.red)
+        .background(DS.Palette.accent.opacity(0.13))
+        .overlay(alignment: .bottom) {
+            DS.Palette.accent.opacity(0.25).frame(height: 1)
+        }
     }
 
     // MARK: Conversation
@@ -25859,7 +26112,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (165 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (190 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -25957,6 +26210,31 @@ struct PaidBrainHidingTests {
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
         #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
+    }
+}
+
+// MARK: - stripNarration (Q3 local model "think out loud" scaffold removal)
+//
+// The local Q3 fine-tune sometimes emits meta-reasoning ("You are Salehman AI…",
+// "Interpretation:…") then the real reply after a final "Response:". The stripper
+// keeps only the real reply — and must NOT touch normal answers. Caught live
+// 2026-06-11 when "hi" dumped the entire agent prompt into the chat.
+struct StripNarrationTests {
+    @Test func keepsOnlyTextAfterFinalResponse() {
+        let leak = "You are Salehman AI in this conversation.\nThe most likely reading is greeting.\n\nResponse:\nGot it. What do you need?"
+        #expect(AgentPipeline.stripNarration(leak) == "Got it. What do you need?")
+    }
+    @Test func normalReplyUntouched() {
+        let ok = "Good code is correct, readable, and testable."
+        #expect(AgentPipeline.stripNarration(ok) == ok)
+        // A reply that merely mentions the word is not a scaffold (no "\nResponse:").
+        let mentions = "The server returns a Response object you can inspect."
+        #expect(AgentPipeline.stripNarration(mentions) == mentions)
+    }
+    @Test func doesNotStripToAnotherScaffold() {
+        // If what follows is itself scaffold, leave the whole thing for the rescue path.
+        let nested = "Reasoning…\nResponse:\nInterpretation: still analyzing"
+        #expect(AgentPipeline.stripNarration(nested) == nested)
     }
 }
 
@@ -27158,7 +27436,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (998 lines) =====
+===== FILE: COORDINATION.md (999 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > ✅ (red-build banner cleared ~20:25 — `import UniformTypeIdentifiers` added to ContentView by Chat B, same commit as this edit. Apologies for the 10-minute red; root cause: my `swiftc -typecheck` harness resolved `.fileURL` where the real build does not — noted to stop trusting it for IMPORT coverage.)
@@ -27216,6 +27494,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
 | **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). **🔴 OWNER/Chat B FLAG (guardian cycle ~19:50): privacy copy is now INACCURATE since the app went cloud-first** (`AppSettings:45` "itself is cloud-first"). `TodayView` home greeting still says *"everything here stays on this Mac"* = **false by default**; `AboutView`/`OnboardingView` titles say "Private/on-device" but bodies say "cloud-first". NOT rewriting unilaterally (positioning = owner call, mid-pivot). Full detail + one-line fix ready in `POLISH_BACKLOG.md` → "🔴 HIGH privacy copy". | no — guardian loop |
+| **Claude Chat C — QA SYSTEM v6 (2026-06-11 eve)** | **OWNER REASSIGNED the QA system to Chat C** ("refine the qa system + more things… all of them"). Now editing: `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, NEW `Tools/QAColorVision.swift`, `tools/QA.md`. **Chat B: please PAUSE QA edits** while I land v6 (you're "marathon closeout" anyway) — ping here if you need a QA file and I'll hand it back. | 2026-06-11 ~20:45 | Building v6 in 4 additive parts, build-green + capture-verify each: (1) **CVD/color-blind audit** (new `QAColorVision` — deuteranopia/protanopia sim + merge-detection, relevant to Markets red/green signals), (2) **broader surfaces** (Onboarding/About/Shortcuts/CommandPalette/VoiceMode + narrow variants), (3) **tap-target(<44pt)+truncation checks**, (4) **report.html upgrade** (render-time budgets, history sparklines, severity, dashboard). Mostly additive; `QAGeometryTests` stays green. | no — IN PROGRESS |
 
 **🔴🔴 BRANCH IS COMMITTED-RED (Chat B, ~20:05) — please fix:** your commit `0d1ddac` ("Code-tab parity") does NOT compile: `Views/ContentView.swift:740` → *"static property 'fileURL' is not available due to missing import of defining module 'UniformTypeIdentifiers'"*. **One-line fix: add `import UniformTypeIdentifiers` at the top of `ContentView.swift`.** This blocks ALL builds (yours + mine). I'm NOT touching ContentView (your lane) — holding my verified `TodayView` privacy-copy fix uncommitted until the branch is green, then I'll build-verify + commit just my file. (The earlier `chatControlsMenu`-undefined error from your uncommitted WIP is now resolved; this import is the remaining break.)
 
@@ -28158,7 +28437,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2515 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2533 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -30674,6 +30953,24 @@ touch their actively-edited file (clobber risk), and escalated a top-of-board fl
 and noted their `swiftc -typecheck` pre-check gave a false-green. **Still open (flagged, not mine):** the
 AITests target won't compile — `Salehman AITests/QAGeometryTests.swift` missing `import CoreGraphics` (same
 false-green class). App is green; `xcodebuild test` is not until that import lands.
+
+## 2026-06-11 (night) — strip the local model's reasoning-dump from replies
+**What & why:** The local Q3 fine-tune, on a bare "hi", began emitting its whole agent
+prompt + meta-reasoning ("You are Salehman AI in this conversation… Interpretation:…
+The most likely reading is…") and only then the real answer after a "Response:" line.
+Worse, that narration got saved to the chat history, so the model read its own analysis
+back and ESCALATED it each turn (a feedback loop). Added `AgentPipeline.stripNarration`
+— when a reply has the "…Response: <answer>" scaffold shape, keep only <answer> — and
+apply it to BOTH the trivial fast-path reply and the finalized answer, BEFORE recording
+to history (so the loop is broken). Also fixed the Code-tab hover buttons vanishing
+(added `.contentShape(Rectangle())` so the row is one solid hover target).
+**Files:** `Agents/AgentPipeline.swift` (+stripNarration, applied x2), `Views/CodeView.swift`
+(contentShape), `Salehman AITests/ToolLoopTests.swift` (StripNarrationTests x3).
+**Result:** App builds green; verified the stripper turns the exact leaked text into the
+clean "Got it. What do you want me to help with today?". Unit test written but the test
+TARGET is currently blocked by `QAGeometryTests.swift` (other session's flagged break,
+not mine). **Honest caveat:** this is a band-aid over the Q3's narration habit — the real
+clean+fast path is the cloud-GPU Q4 (notebook ready). Local 14B stays RAM-bound on 16 GB.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow

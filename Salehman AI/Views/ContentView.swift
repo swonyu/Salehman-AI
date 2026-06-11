@@ -86,10 +86,10 @@ struct ContentView: View {
             // no translucent stacking — same shade as the Code tab's canvas.
             DS.Palette.codeSurface.ignoresSafeArea()
 
-            // Global red tint when Unrestricted Mode is active.
-            if settings.unrestrictedTools {
-                Color.red.opacity(0.03).ignoresSafeArea()
-            }
+            // Unrestricted Mode is signalled by the banner + header indicator
+            // ONLY — never by tinting the canvas. A full-canvas wash (even 3%)
+            // shifts every neutral grey warm and visibly breaks the color
+            // parity with the Code tab.
 
             VStack(spacing: 0) {
                 // Warning banner appears above the normal header when active.
@@ -175,20 +175,23 @@ struct ContentView: View {
                 // while running (was a flat off-brand purple dot — the most
                 // visible "AI is working" affordance in the chrome).
                 if settings.unrestrictedTools {
-                    // Red pulsing halo for Unrestricted Mode (alive / "always on" signal)
+                    // Pulsing halo for Unrestricted Mode (alive / "always on"
+                    // signal). Brand accent, NOT system red — system red is
+                    // orange-leaning and clashes with the crimson everywhere
+                    // else on the screen.
                     ZStack {
-                        Circle().fill(Color.red.opacity(0.4))
+                        Circle().fill(DS.Palette.accent.opacity(0.4))
                             .frame(width: 22, height: 22)
                             .blur(radius: 5)
                             .scaleEffect(unrestrictedPulse ? 1.45 : 1.0)
                             .opacity(unrestrictedPulse ? 0.6 : 0.4)
-                        Circle().fill(Color.red)
+                        Circle().fill(DS.Palette.accent)
                             .frame(width: 7, height: 7)
-                            .shadow(color: Color.red.opacity(0.6), radius: 3)
+                            .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(DS.Palette.accent)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
                     // AI status shown as a per-brain GLYPH, not a text label: the
@@ -285,24 +288,31 @@ struct ContentView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
-    // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
+    // Prominent warning banner for Unrestricted Mode. Design language: a flat
+    // accent-tinted panel with a hairline — the accent marks the icon and the
+    // Disable action; the sentence itself stays near-white so it's actually
+    // readable (red-on-red caption text measured worst on the contrast probe).
     private var unrestrictedBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(DS.Palette.accent)
             Text("UNRESTRICTED MODE ACTIVE — the assistant runs commands without asking. Catastrophic commands are still blocked. Use with caution.")
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.85))
             Spacer()
             Button("Disable") { settings.unrestrictedTools = false }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .tint(.red)
+                .tint(DS.Palette.accent)
                 .font(.caption)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 5)
-        .background(Color.red.opacity(0.12))
-        .foregroundStyle(Color.red)
+        .background(DS.Palette.accent.opacity(0.13))
+        .overlay(alignment: .bottom) {
+            DS.Palette.accent.opacity(0.25).frame(height: 1)
+        }
     }
 
     // MARK: Conversation

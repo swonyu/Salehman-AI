@@ -2531,3 +2531,25 @@ clean "Got it. What do you want me to help with today?". Unit test written but t
 TARGET is currently blocked by `QAGeometryTests.swift` (other session's flagged break,
 not mine). **Honest caveat:** this is a band-aid over the Q3's narration habit — the real
 clean+fast path is the cloud-GPU Q4 (notebook ready). Local 14B stays RAM-bound on 16 GB.
+
+## 2026-06-11 (night) — owner: "please fix the colors" — kill the Unrestricted canvas tint + unify the reds
+**What & why:** Owner reported the colors looked wrong. Diagnosis from the 20:57 QA cycle's
+pixels: with Unrestricted Mode active (owner's standing default), the Chat tab composited
+`Color.red.opacity(0.03)` over the ENTIRE canvas — neutral `rgb(24,24,24)` became
+`rgb(31,24,25)`, a visible warm/pink cast on every pixel (the Code tab has no wash, so the
+two tabs no longer matched; audit corroborated: chat_live canvasFlat read 0.100 vs the
+neutral 0.094). On top of that, the banner + header indicator used system `Color.red`
+(orange-leaning) which clashes with the brand crimson `DS.Palette.accent` used everywhere
+else. Fixes (all `Views/ContentView.swift`, my lane): (1) removed the canvas wash — the
+mode is signalled by the banner + pulsing header indicator only, never by tinting the
+canvas; (2) header halo/dot/label: system red → `DS.Palette.accent`; (3) banner restyled to
+the design language — flat `accent.opacity(0.13)` panel + 1pt accent hairline below,
+icon + Disable button in accent, sentence in white-0.85 (hand-computed contrast ≈11.7:1 vs
+the old red-on-red ≈4.2:1). Copy unchanged.
+**Files:** `Salehman AI/Views/ContentView.swift`; `SOURCE_BUNDLE.md` regenerated.
+**Result:** Full-tree `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`, Chat C's
+in-flight QA files pinned to HEAD) **EXIT=0, zero output**. Expected QA fallout on next
+capture: chat_empty/chat_live/contact_sheet baselineDiff notes (canvas un-tints to neutral
+24/24/24 — intentional change, re-adopt baselines after eyes-verify); chat_samples
+untouched (gallery never had the wash). Code-tab drifts this cycle (11.6%/19.6%) eyeballed:
+geometric (welcome vertical centering), not color — no action.
