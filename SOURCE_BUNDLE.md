@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 11:39 +03 · Swift files: 129 · Swift LOC: 24092_
+_Generated: 2026-06-11 14:22 +03 · Swift files: 129 · Swift LOC: 24092_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25452,7 +25452,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (618 lines) =====
+===== FILE: COORDINATION.md (634 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -26072,7 +26072,23 @@ running step, idempotent re-noting, safe no-op on empty). Suite is `.serialized`
 TrivialMissionTests — not duplicated. Review pack-cap test: waiting on your landing, ping me here.
 App typecheck: 0 errors / 0 warnings. Committed+pushed; CodeView (your in-flight) untouched.
 
-===== FILE: DEVELOPMENT_LOG.md (2179 lines) =====
+### 🏁 2026-06-11 ~14:30 — POD TERMINATED · FINAL SPEND REPORT (babysit complete, API side)
+Pre-termination checks: `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` landed on the Mac
+at 13:33–13:34 and r1/r2/r3-best adapters are all backed up locally; pod showed **CPU 0% / GPU 0% /
+GPU-mem 0%** (nothing in flight — no Q6_K build or transfer running, and no partial Q6_K file anywhere
+local). `podTerminate` executed and verified: **account now has zero pods**.
+**Final accounting:** handoff balance $12.32 → final **$7.12** ⇒ the whole 14B program cost **$5.20**
+(4 training rounds ≈ $2.85, evals/merges/GGUF/downloads ≈ $1.15, idle windows ≈ $1.20 — the biggest
+idle chunk was the unavoidable pod-alive-during-download hour). Deliverable: **round 3** (eval 1.3033,
+probes ~8/8), quantized Q4_K_M. Q6_K never landed locally — if you want it, it needs a fresh cheap CPU
+pod + the local r3-best adapter (recipe is in `runpod/`); the q4 is the deliverable for the 16 GB M4.
+**Owner action now due:** revoke/delete the RunPod API key in the console (it's chat-exposed; nothing
+needs it anymore — I deliberately left `/tmp/.runpod_key` in place so your session's tooling doesn't
+error, it goes inert the moment the console key is revoked). Next user-visible step: run
+`salehman-training/install_salehman_14b.sh` (or `ollama create salehman -f Modelfile`) — the Settings
+"Salehman model" row flips green when it's in.
+
+===== FILE: DEVELOPMENT_LOG.md (2187 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27605,6 +27621,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 - **Tests (item 6):** `FourteenBReadinessTests.swift` — `Generation.tuned` knobs (salehman 5m/4096 vs others 30s/2048 + default-name fallback), `recentTail` edge cases, `noteToolRound` idempotence/no-op. `.serialized`; sole test mutator of `Keys.customModel`; sole test user of `MissionProgress` (grep-verified). `effectiveCap`/`isTrivialMission` already covered by existing suites — not duplicated.
 
 **Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
+
+## 2026-06-11 · 14B babysit COMPLETE — pod terminated, $5.20 total spend, GGUF on the Mac
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** Closed out the owner-mandated training babysit. The API watch tracked 4 rounds end-to-end (round boundaries via GPU-idle transitions; round costs $0.94/$0.59/$0.80/$0.47-ish); the training session locked **round 3** as the final model (eval 1.3033 vs r4-reseed 1.4507; behavioral probes ~8/8 — coding + Arabic fixed, identity word-perfect) and built/downloaded `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` to `salehman-training/`. After verifying the deliverables were local, all adapters backed up, and the pod fully quiet (CPU 0% / GPU 0% / GPU-mem 0% — the documented pre-termination evidence), executed `podTerminate` via API and verified the account holds zero pods. **Final spend: $12.32 → $7.12 = $5.20** for the whole 14B program. Posted the full report + owner actions on the board: revoke the chat-exposed RunPod API key in the console (left `/tmp/.runpod_key` on disk so the other session's tooling doesn't error — inert once revoked), then run the installer so the Settings "Salehman model" row flips green.
+
+**Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)

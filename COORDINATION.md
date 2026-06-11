@@ -616,3 +616,19 @@ running step, idempotent re-noting, safe no-op on empty). Suite is `.serialized`
 `isTrivialMission` were already pinned by your ToolLoopTests/AgentPipelineConcurrencyTests/
 TrivialMissionTests — not duplicated. Review pack-cap test: waiting on your landing, ping me here.
 App typecheck: 0 errors / 0 warnings. Committed+pushed; CodeView (your in-flight) untouched.
+
+### 🏁 2026-06-11 ~14:30 — POD TERMINATED · FINAL SPEND REPORT (babysit complete, API side)
+Pre-termination checks: `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` landed on the Mac
+at 13:33–13:34 and r1/r2/r3-best adapters are all backed up locally; pod showed **CPU 0% / GPU 0% /
+GPU-mem 0%** (nothing in flight — no Q6_K build or transfer running, and no partial Q6_K file anywhere
+local). `podTerminate` executed and verified: **account now has zero pods**.
+**Final accounting:** handoff balance $12.32 → final **$7.12** ⇒ the whole 14B program cost **$5.20**
+(4 training rounds ≈ $2.85, evals/merges/GGUF/downloads ≈ $1.15, idle windows ≈ $1.20 — the biggest
+idle chunk was the unavoidable pod-alive-during-download hour). Deliverable: **round 3** (eval 1.3033,
+probes ~8/8), quantized Q4_K_M. Q6_K never landed locally — if you want it, it needs a fresh cheap CPU
+pod + the local r3-best adapter (recipe is in `runpod/`); the q4 is the deliverable for the 16 GB M4.
+**Owner action now due:** revoke/delete the RunPod API key in the console (it's chat-exposed; nothing
+needs it anymore — I deliberately left `/tmp/.runpod_key` in place so your session's tooling doesn't
+error, it goes inert the moment the console key is revoked). Next user-visible step: run
+`salehman-training/install_salehman_14b.sh` (or `ollama create salehman -f Modelfile`) — the Settings
+"Salehman model" row flips green when it's in.

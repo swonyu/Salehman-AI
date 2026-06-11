@@ -1531,6 +1531,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
 
+## 2026-06-11 · 14B babysit COMPLETE — pod terminated, $5.20 total spend, GGUF on the Mac
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** Closed out the owner-mandated training babysit. The API watch tracked 4 rounds end-to-end (round boundaries via GPU-idle transitions; round costs $0.94/$0.59/$0.80/$0.47-ish); the training session locked **round 3** as the final model (eval 1.3033 vs r4-reseed 1.4507; behavioral probes ~8/8 — coding + Arabic fixed, identity word-perfect) and built/downloaded `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` to `salehman-training/`. After verifying the deliverables were local, all adapters backed up, and the pod fully quiet (CPU 0% / GPU 0% / GPU-mem 0% — the documented pre-termination evidence), executed `podTerminate` via API and verified the account holds zero pods. **Final spend: $12.32 → $7.12 = $5.20** for the whole 14B program. Posted the full report + owner actions on the board: revoke the chat-exposed RunPod API key in the console (left `/tmp/.runpod_key` on disk so the other session's tooling doesn't error — inert once revoked), then run the installer so the Settings "Salehman model" row flips green.
+
+**Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
