@@ -1646,3 +1646,11 @@ lane (passing, unbudgeted).
 **Files:** `Views/ContentView.swift` (a11y label), `Salehman AIUITests/ChatTabUITests.swift`,
 qa request files; bundle regenerated.
 **Result:** Typecheck EXIT=0. 9 UI flows total.
+
+## 2026-06-12 (00:05) — Chat C: tabs marathon cycle 5 (Agents grid filter)
+**Files:** `Views/AgentsView.swift` (Chat B lane, owner-auth), `AgentFilterTests`. Commit `3c2346e`.
+**Feature:** filter the ~15-agent grid — new pure `AgentFilter.matching` (case-insensitive name OR role) + a
+"Filter agents…" field above the grid + a no-match state. **5 tests.** Filter field verified in agents.png.
+**Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **387 cases**. All 4 in-scope tabs now have
+a new feature (Markets sort, Knowledge sort, Notes search/clear, Agents filter) + heavy tests (29 new since
+marathon start, 322→387). Next: sheet polish (Memory/Onboarding/About/Shortcuts) or more tab tests.
