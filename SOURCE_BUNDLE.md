@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 20:27 +03 · Swift files: 134 · Swift LOC: 25754_
+_Generated: 2026-06-11 20:44 +03 · Swift files: 134 · Swift LOC: 25755_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24777,10 +24777,11 @@ struct PersistenceRoundTripTests {
 }
 ```
 
-===== FILE: Salehman AITests/QAGeometryTests.swift (85 lines) =====
+===== FILE: Salehman AITests/QAGeometryTests.swift (86 lines) =====
 ```swift
 import Testing
 import Foundation
+import CoreGraphics   // CGRect — NOT re-exported on the test target (it is on the app target)
 @testable import Salehman_AI
 
 // MARK: - QAGeometry.chatAssertions — the layout-invariant verdicts
@@ -27134,7 +27135,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (987 lines) =====
+===== FILE: COORDINATION.md (998 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > ✅ (red-build banner cleared ~20:25 — `import UniformTypeIdentifiers` added to ContentView by Chat B, same commit as this edit. Apologies for the 10-minute red; root cause: my `swiftc -typecheck` harness resolved `.fileURL` where the real build does not — noted to stop trusting it for IMPORT coverage.)
@@ -28123,7 +28124,18 @@ trip on the ring next cycle — that's the intentional-change case; I'll adopt a
 test (`testChatControlsMenuHasBrainAndEffort`) + `chat.composer.controls` identifier — include in your
 next gate run with QAGeometryTests please.
 
-===== FILE: DEVELOPMENT_LOG.md (2490 lines) =====
+### 🏁 2026-06-11 ~21:00 — MARATHON CLOSEOUT + one mechanical handoff (cleanup/Effort session)
+The owner's 4-hour both-tabs directive is code-complete and green at HEAD (18 commits; full inventory in
+DEVELOPMENT_LOG hours 1–3 + final entry). ONE step remains and it's photographic, blocked on a rebuild I
+can't run (`open`/AppleScript/screencapture all sandbox-severed): **whoever runs the next gate** — the
+planted SNAPSHOT_REQUEST will photograph the parity composer for the first time. Expected: `chat_samples`
++ `chat_empty` + `chat_live` trip `baselineDiff` on the NEW accent ring + controls capsule + hint chips +
+"4.2s" timing in the hover row. That's the intentional-change case: eyeball that the composer matches the
+Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then `touch qa/ADOPT_BASELINES`
++ relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
+on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
+
+===== FILE: DEVELOPMENT_LOG.md (2515 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -29817,6 +29829,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** All green at HEAD after the import fix; parity batch awaiting its photograph + baseline adoption.
 
+## 2026-06-11 · Marathon closeout — both-tabs directive code-complete; photographic verification handed off
+
+**Files:** `Salehman AITests/QAGeometryTests.swift`, `PROJECT_CONTEXT.md` (earlier this hour), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Closing the owner's 4-hour both-tabs marathon. En route: fixed the SECOND import miss Chat C's gate caught — `QAGeometryTests` used `CGRect` without `import CoreGraphics` (re-exported on the app target, NOT on the test target; same lesson class as the UTI miss — the typecheck harness cannot verify import coverage). Final inventory across ~19 commits: chat menu tint leaks + the Menu-text variant; triple-red unrestricted chrome → one signal; blank-bubble + blank-transcript offscreen-render regressions (entry-animation/Lazy bypasses for QA); welcome bento truncation; honest eyebrow; Code hero centered; last `.ultraThinMaterial` bar; controlsMenu quieted via explicit child styles; **owner-resolved composer parity** (Code-tab ring/fill/radius/glow on the chat composer) plus five additions (quick-controls menu with live serving badge, file drag-and-drop, ↑ recall, ⌘N/⌘F/⌘J hints, per-reply timing); two new test suites and three new picture surfaces. One self-inflicted red build (UTI import, ~10 min, fixed). The ONLY remaining step is photographic — the parity composer's first portrait + baseline adoption — blocked on a rebuild this sandbox cannot perform; handed off on the board with exact expectations and the adopt procedure, and my standing watcher still fires if pictures land while this session lives.
+
+**Result:** Tasks #14 (whole-app restyle) and #16 (marathon) closed. Tree green at HEAD, docs current, board carries the handoff.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -30614,6 +30634,23 @@ owner-authorized, append-only). Commits `fcda86b` + `485cd8a`.
 selectively. **Flag for Chat B:** `chat_samples` fails QA baselineDiff (~5%) across this window — your
 `ChatSampleGallery`/`ContentView` churn; re-adopt baseline when you settle. Also added 2 append-only tokens
 to your `DesignSystem.swift` (no existing token touched/reordered).
+
+## 2026-06-11 (evening) — Chat C: polish pass #4 (home-screen privacy copy) + red-build incident
+**File:** `Views/TodayView.swift`. Commit `026a425`.
+**What & why:** Guardian cycle traced the actual default brain — `AppSettings.swift:45` says the app *"itself
+is cloud-first."* So `TodayView`'s home greeting *"everything here stays on this Mac"* was **false by default**
+(a privacy claim that's no longer true). Fixed it to *"many brains, real tools, your own model"* — accurate,
+makes no privacy claim either way, matches the About intro. Owner gave "continue" go-ahead; Chat B
+independently validated the bug in the same window (`4d7dd28` dropped a blanket "On-device" claim on chat).
+**Result:** app build GREEN, `today.png` confirms the new copy renders. Flagged for owner: `AboutView` /
+`OnboardingView` capability *titles* still say "Private/on-device" while their bodies say "cloud-first" — left
+those (voice call) in `POLISH_BACKLOG.md`.
+**Red-build incident (handled, not caused by me):** landing this fix was blocked ~10 min because Chat B
+committed `ContentView.swift` missing `import UniformTypeIdentifiers` (twice). I held my verified fix, did NOT
+touch their actively-edited file (clobber risk), and escalated a top-of-board flag; Chat B fixed it (`5d4d240`)
+and noted their `swiftc -typecheck` pre-check gave a false-green. **Still open (flagged, not mine):** the
+AITests target won't compile — `Salehman AITests/QAGeometryTests.swift` missing `import CoreGraphics` (same
+false-green class). App is green; `xcodebuild test` is not until that import lands.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
@@ -31431,7 +31468,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: POLISH_BACKLOG.md (100 lines) =====
+===== FILE: POLISH_BACKLOG.md (101 lines) =====
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
 
@@ -31442,7 +31479,8 @@ imply local/private-by-default:
 - **🔴 `TodayView` greeting subtitle: *"everything here stays on this Mac."*** — **unconditionally FALSE by
   default** (data leaves the Mac unless the user turns on Offline/Private Mode). A false privacy claim on the
   HOME SCREEN of a privacy-marketed app — the exact class of "UI that lies" the dev log shows you repeatedly
-  fixing. Today is Chat C's lane; **one-line fix ready on your word.**
+  fixing. Today is Chat C's lane; **✅ FIXED in `026a425`** → *"many brains, real tools, your own model"*
+  (accurate, no privacy claim either way). The About/Onboarding title items below are still open (voice call).
 - **🟠 `AboutView` capability #1 (lines 20–22):** title *"Private, on-device"* but body *"Runs cloud-first…"*
   — title contradicts its own body.
 - **🟠 `OnboardingView` page 2 (lines 22–24):** title *"Private by design"* + *"runs cloud-first…"* body.

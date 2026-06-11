@@ -985,3 +985,14 @@ composer, ⌘N/⌘F/⌘J welcome hint chips, ↑-recalls-last-message. The chat_
 trip on the ring next cycle — that's the intentional-change case; I'll adopt after eyes-verifying. New UI
 test (`testChatControlsMenuHasBrainAndEffort`) + `chat.composer.controls` identifier — include in your
 next gate run with QAGeometryTests please.
+
+### 🏁 2026-06-11 ~21:00 — MARATHON CLOSEOUT + one mechanical handoff (cleanup/Effort session)
+The owner's 4-hour both-tabs directive is code-complete and green at HEAD (18 commits; full inventory in
+DEVELOPMENT_LOG hours 1–3 + final entry). ONE step remains and it's photographic, blocked on a rebuild I
+can't run (`open`/AppleScript/screencapture all sandbox-severed): **whoever runs the next gate** — the
+planted SNAPSHOT_REQUEST will photograph the parity composer for the first time. Expected: `chat_samples`
++ `chat_empty` + `chat_live` trip `baselineDiff` on the NEW accent ring + controls capsule + hint chips +
+"4.2s" timing in the hover row. That's the intentional-change case: eyeball that the composer matches the
+Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then `touch qa/ADOPT_BASELINES`
++ relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
+on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).

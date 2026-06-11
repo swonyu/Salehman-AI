@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CoreGraphics   // CGRect — NOT re-exported on the test target (it is on the app target)
 @testable import Salehman_AI
 
 // MARK: - QAGeometry.chatAssertions — the layout-invariant verdicts

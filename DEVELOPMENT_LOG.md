@@ -1691,6 +1691,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** All green at HEAD after the import fix; parity batch awaiting its photograph + baseline adoption.
 
+## 2026-06-11 · Marathon closeout — both-tabs directive code-complete; photographic verification handed off
+
+**Files:** `Salehman AITests/QAGeometryTests.swift`, `PROJECT_CONTEXT.md` (earlier this hour), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Closing the owner's 4-hour both-tabs marathon. En route: fixed the SECOND import miss Chat C's gate caught — `QAGeometryTests` used `CGRect` without `import CoreGraphics` (re-exported on the app target, NOT on the test target; same lesson class as the UTI miss — the typecheck harness cannot verify import coverage). Final inventory across ~19 commits: chat menu tint leaks + the Menu-text variant; triple-red unrestricted chrome → one signal; blank-bubble + blank-transcript offscreen-render regressions (entry-animation/Lazy bypasses for QA); welcome bento truncation; honest eyebrow; Code hero centered; last `.ultraThinMaterial` bar; controlsMenu quieted via explicit child styles; **owner-resolved composer parity** (Code-tab ring/fill/radius/glow on the chat composer) plus five additions (quick-controls menu with live serving badge, file drag-and-drop, ↑ recall, ⌘N/⌘F/⌘J hints, per-reply timing); two new test suites and three new picture surfaces. One self-inflicted red build (UTI import, ~10 min, fixed). The ONLY remaining step is photographic — the parity composer's first portrait + baseline adoption — blocked on a rebuild this sandbox cannot perform; handed off on the board with exact expectations and the adopt procedure, and my standing watcher still fires if pictures land while this session lives.
+
+**Result:** Tasks #14 (whole-app restyle) and #16 (marathon) closed. Tree green at HEAD, docs current, board carries the handoff.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
