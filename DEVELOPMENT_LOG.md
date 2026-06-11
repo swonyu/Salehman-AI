@@ -1635,6 +1635,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
 
+## 2026-06-11 · PR #2 merged — main brought current with the afternoon wave (owner-directed)
+
+**Files:** none (remote merge) + `COORDINATION.md`
+
+**What & why:** Owner asked to "work on the main repo"; clarified intent = merge the branch into main. Discovered PR #1 had already been merged by the owner this morning (head 37fd1ac), leaving 14 afternoon commits branch-only. Opened [PR #2](https://github.com/swonyu/Salehman-AI/pull/2) (whole-app restyle, chat polish passes 1–3, 14B tool-loop hardening items 7–10, QA system v1–v4, code-tab live-QA fixes) and merged it (merge commit `8f64623`). Gate disclosure in the PR body: suite 310/310 at 58eda68; the single newer commit (bc2a32e) is QA-tooling-only with a clean typecheck. Local checkout deliberately stays on `feat/effort-grok-tooling` — the other session works this tree live; the branch equals main post-merge, and the board records the go-forward flow (commit on branch, PR per coherent chunk, main stays current).
+
+**Result:** `origin/main` = `8f64623`, fully current. Both sessions continue uninterrupted.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
