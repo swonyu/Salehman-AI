@@ -60,6 +60,7 @@ enum QACapture {
                 var s = QASurfaceStructure()
                 s.axInteractive = ax.interactive
                 s.axUnlabeled = ax.unlabeled
+                s.axTargets = ax.targets
                 axMerge[name] = s
             }
         }

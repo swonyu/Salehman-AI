@@ -86,4 +86,7 @@ struct QASurfaceStructure: Codable {
     var geo: [QAGeometry.Assertion] = []
     var axInteractive: Int = 0
     var axUnlabeled: [String] = []
+    /// min(width,height) in pt of each interactive element's frame — for the
+    /// tap-target-size check. Empty when the AX tree is empty offscreen.
+    var axTargets: [Double] = []
 }

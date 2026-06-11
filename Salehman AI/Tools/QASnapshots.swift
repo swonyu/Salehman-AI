@@ -186,15 +186,17 @@ enum QASnapshots {
         let ax = axScan(host)
         structure[name, default: .init()].axInteractive = ax.interactive
         structure[name, default: .init()].axUnlabeled = ax.unlabeled
+        structure[name, default: .init()].axTargets = ax.targets
         shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
                           ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
     }
 
     /// Recursive accessibility-tree walk. Interactive roles must carry a label,
     /// title, or help text — VoiceOver users get nothing otherwise.
-    static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String]) {
+    static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String], targets: [Double]) {
         var interactive = 0
         var unlabeled: [String] = []
+        var targets: [Double] = []
         let interactiveRoles: Set<NSAccessibility.Role> = [
             .button, .popUpButton, .menuButton, .checkBox, .radioButton, .slider, .link,
         ]
@@ -209,11 +211,13 @@ enum QASnapshots {
                 if label.isEmpty && title.isEmpty && help.isEmpty {
                     unlabeled.append(role.rawValue)
                 }
+                let f = ax.accessibilityFrame()
+                if f.width > 0, f.height > 0 { targets.append(Double(min(f.width, f.height))) }
             }
             for child in ax.accessibilityChildren() ?? [] { walk(child, depth: depth + 1) }
         }
         walk(root, depth: 0)
-        return (interactive, unlabeled)
+        return (interactive, unlabeled, targets)
     }
 
     /// Markdown manifest: what each PNG shows, its size, render status + time, the

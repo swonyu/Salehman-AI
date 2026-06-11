@@ -115,6 +115,13 @@ enum QAAudit {
                 let ok = measured.allSatisfy { abs($0 - target) <= 0.035 }
                 checks.append(.init(name: "canvasFlat", pass: ok,
                                     detail: "target \(target), samples \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
+                // edgeClear (v6) — scan the FULL left/right edge columns, not just
+                // the 4 canvasFlat points: catches content overflowing or clipping
+                // at the frame edge anywhere down the side (the truncation class).
+                let edge = edgeDeviation(rep, target: target)
+                checks.append(.init(name: "edgeClear", pass: edge <= 0.06,
+                                    detail: String(format: "%.1f%% of side-edge pixels off-canvas%@", edge * 100,
+                                                   edge > 0.06 ? " — content reaching the frame edge?" : "")))
             }
 
             // contrast — the readability probe's bands, measured for real.
@@ -137,6 +144,16 @@ enum QAAudit {
                                         detail: s.axUnlabeled.isEmpty
                                             ? "\(s.axInteractive) interactive elements, all labeled"
                                             : "\(s.axUnlabeled.count)/\(s.axInteractive) UNLABELED: \(s.axUnlabeled.prefix(5).joined(separator: ", "))"))
+                }
+                // tapTargets (v6) — interactive elements too small to click reliably.
+                // Only assessable when the live-window AX tree is present (offscreen
+                // hosts expose no AX frames), so it skips silently otherwise.
+                if !s.axTargets.isEmpty {
+                    let tiny = s.axTargets.filter { $0 < 12 }
+                    checks.append(.init(name: "tapTargets", pass: tiny.isEmpty,
+                                        detail: tiny.isEmpty
+                                            ? "\(s.axTargets.count) targets, smallest \(String(format: "%.0f", s.axTargets.min() ?? 0))pt"
+                                            : "\(tiny.count) target(s) <12pt — too small to click reliably"))
                 }
             }
 
@@ -274,6 +291,29 @@ enum QAAudit {
                 0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent
             }
         }
+    }
+
+    /// Fraction of pixels in the outer left+right edge columns whose luma is OFF
+    /// the canvas target — a full-height version of `canvasSampleLuma`'s 4 points,
+    /// so a clip/overflow anywhere down the side is caught. Skips the top eighth
+    /// (headers/banners legitimately use the panel shade up there).
+    private static func edgeDeviation(_ rep: NSBitmapImageRep, target: CGFloat) -> Double {
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard w > 6, h > 8 else { return 0 }
+        let cols = [1, 2, w - 3, w - 2]
+        var off = 0, total = 0
+        var y = h / 8
+        while y < h - 2 {
+            for x in cols {
+                if let c = rep.colorAt(x: x, y: y) {
+                    let l = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+                    total += 1
+                    if abs(l - target) > 0.05 { off += 1 }
+                }
+            }
+            y += 2
+        }
+        return total == 0 ? 0 : Double(off) / Double(total)
     }
 
     /// WCAG relative luminance — sRGB channels must be LINEARIZED first.
