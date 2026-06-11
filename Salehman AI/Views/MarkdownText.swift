@@ -15,11 +15,20 @@ struct MarkdownText: View {
                 case .code(let language, let code):
                     CodeBlock(language: language, code: code)
                 case .text(let body):
-                    // Render block-by-block so `##` headings and `- `/`1.` lists
-                    // read as real structure instead of literal "##"/"-" text.
+                    // Render block-by-block so `##` headings, `- `/`1.` lists, and
+                    // `| a | b |` tables read as real structure instead of literal text.
                     VStack(alignment: .leading, spacing: 5) {
-                        ForEach(Array(body.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
-                            MarkdownText.lineView(raw)
+                        ForEach(Array(MarkdownText.blocks(for: body).enumerated()), id: \.offset) { _, block in
+                            switch block {
+                            case .table(let header, let rows):
+                                MarkdownText.tableView(header: header, rows: rows)
+                            case .lines(let chunk):
+                                VStack(alignment: .leading, spacing: 5) {
+                                    ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
+                                        MarkdownText.lineView(raw)
+                                    }
+                                }
+                            }
                         }
                     }
                     .textSelection(.enabled)
@@ -191,12 +200,121 @@ struct MarkdownText: View {
               afterDot < s.endIndex, s[afterDot] == " " else { return nil }
         return (String(numPart) + ".", String(s[s.index(after: afterDot)...]))
     }
+
+    // MARK: Tables
+
+    /// A parsed block within a text segment: a GFM table, or a run of plain lines
+    /// (rendered line-by-line by `lineView`, preserving all existing behaviour).
+    enum Block {
+        case table(header: [String], rows: [[String]])
+        case lines(String)
+    }
+
+    /// Split a text body into table blocks + plain-line runs. A table is a `|…|`
+    /// row immediately followed by a `|---|` separator, then zero+ `|…|` rows.
+    static func blocks(for body: String) -> [Block] {
+        let lines = body.components(separatedBy: "\n")
+        var blocks: [Block] = []
+        var lineBuf: [String] = []
+        func flush() {
+            if !lineBuf.isEmpty { blocks.append(.lines(lineBuf.joined(separator: "\n"))); lineBuf.removeAll() }
+        }
+        var i = 0
+        while i < lines.count {
+            if isTableRow(lines[i]), i + 1 < lines.count, isTableSeparator(lines[i + 1]) {
+                flush()
+                let header = tableCells(lines[i])
+                var rows: [[String]] = []
+                i += 2
+                while i < lines.count, isTableRow(lines[i]) { rows.append(tableCells(lines[i])); i += 1 }
+                blocks.append(.table(header: header, rows: rows))
+            } else {
+                lineBuf.append(lines[i]); i += 1
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    private static func isTableRow(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return t.hasPrefix("|") && t.dropFirst().contains("|")
+    }
+    /// A `|---|:--:|` separator line: every cell is only dashes/colons.
+    private static func isTableSeparator(_ s: String) -> Bool {
+        let cells = tableCells(s)
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            let c = cell.trimmingCharacters(in: .whitespaces)
+            return !c.isEmpty && c.allSatisfy { $0 == "-" || $0 == ":" }
+        }
+    }
+    private static func tableCells(_ s: String) -> [String] {
+        var t = s.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("|") { t.removeFirst() }
+        if t.hasSuffix("|") { t.removeLast() }
+        return t.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// Render a parsed table as an aligned grid with a bold header row.
+    @ViewBuilder
+    static func tableView(header: [String], rows: [[String]]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+            GridRow {
+                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                    Text(inlineMarkdown(cell))
+                        .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
+                }
+            }
+            Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                        Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
 }
 
 struct CodeBlock: View {
     let language: String
     let code: String
     @State private var copied = false
+
+    /// Map a fenced-block language label → an extension `CodeSyntax` understands
+    /// (it only uses `ext` to pick the comment token, `#` vs `//`).
+    private var ext: String {
+        switch language.lowercased() {
+        case "python", "py":                                  return "py"
+        case "bash", "sh", "shell", "zsh", "console", "terminal": return "sh"
+        case "ruby", "rb":                                    return "rb"
+        case "yaml", "yml":                                   return "yml"
+        case "toml":                                          return "toml"
+        default:                                              return language.lowercased()
+        }
+    }
+
+    /// Whole-block syntax highlighting as a single `AttributedString`, so the block
+    /// stays one selectable run (per-line `Text` would break multi-line selection).
+    /// Very large blocks fall back to plain text — highlighting re-runs on every
+    /// redraw (incl. token-by-token while streaming), which is O(n²) on size.
+    private var highlightedCode: AttributedString {
+        guard code.count < 6000 else {
+            var a = AttributedString(code); a.foregroundColor = CodeSyntax.base; return a
+        }
+        let lines = code.components(separatedBy: "\n")
+        var result = AttributedString()
+        for (i, line) in lines.enumerated() {
+            result.append(CodeSyntax.highlight(line, ext: ext))
+            if i < lines.count - 1 { result.append(AttributedString("\n")) }
+        }
+        return result
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -232,11 +350,11 @@ struct CodeBlock: View {
             .background(Color.white.opacity(0.04))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
+                // Syntax-highlighted (keywords/types/strings/numbers/comments) via
+                // the same CodeSyntax engine the file/diff viewers use — one
+                // AttributedString so the whole block stays selectable.
+                Text(highlightedCode)
                     .font(.system(size: 12.5, design: .monospaced))
-                    // Neutral off-white instead of harsh terminal-green — easier
-                    // to read in a chat context; line-spacing for breathing room.
-                    .foregroundStyle(Color.white.opacity(0.92))
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .padding(12)

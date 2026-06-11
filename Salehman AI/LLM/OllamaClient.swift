@@ -97,7 +97,19 @@ enum OllamaClient {
     struct Generation: Sendable {
         var keepAlive: String   = "30s"
         var numCtx: Int         = OllamaClient.defaultNumCtx
+        var numPredict: Int?    = nil          // cap reply length (unset = model decides)
         nonisolated static let `default`    = Generation()
+
+        /// Knobs tuned to the model being called. The user's OWN Salehman model
+        /// (the 14B fine-tune) is ~9 GB — evicting it after 30 s means every
+        /// exchange after a pause re-pays a multi-second load, so it stays warm
+        /// 5 min and gets the 4096 context its Modelfile is built for. Other
+        /// (smaller) models keep the RAM-lean 30 s / 2048 defaults.
+        nonisolated static func tuned(for model: String) -> Generation {
+            model == AppSettings.customModelNameCurrent
+                ? Generation(keepAlive: "5m", numCtx: 4096)
+                : .default
+        }
     }
 
     /// Core call to /api/generate (non-streaming).
@@ -112,7 +124,8 @@ enum OllamaClient {
         // the KV cache size: a smaller context window literally allocates less
         // GPU/CPU RAM per request, so 2048 (default) is dramatically lighter
         // than the server default of 4096.
-        let options: [String: Any] = ["num_ctx": gen.numCtx]
+        var options: [String: Any] = ["num_ctx": gen.numCtx]
+        if let cap = gen.numPredict { options["num_predict"] = cap }
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
                                    "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
@@ -244,17 +257,18 @@ enum OllamaClient {
         return nil
     }
 
-    /// The model the general CHAT path should use right now. When the user pinned
-    /// their OWN "Salehman" model (`BrainPreference.salehman`), return ONLY that —
-    /// and only when it's actually pulled; never silently fall back to qwen, so
-    /// "run my model, nothing else" is honored. Otherwise the normal coder model.
+    /// The model the general CHAT path should use right now. For `.salehman`, PREFER
+    /// the user's own pinned model (`customModelName` — e.g. the fine-tuned 32B once
+    /// it's served in Ollama as "salehman"); but if that isn't pulled yet, fall back
+    /// to the best available local coder so Salehman is **never mute**. (It used to
+    /// return nil here — "run my model, nothing else" — which left Salehman silent
+    /// whenever the custom model wasn't pulled, e.g. before the 32B is served.)
     nonisolated static func activeChatModel() async -> String? {
         if AppSettings.brainPreferenceCurrent == .salehman {
             let name = AppSettings.customModelNameCurrent
-            guard !name.isEmpty, await hasModel(name) else { return nil }
-            return name
+            if !name.isEmpty, await hasModel(name) { return name }   // the user's own model wins when present
         }
-        return await activeCodeModel()
+        return await activeCodeModel()                                // floor: best local coder (qwen2.5-coder…)
     }
 
     /// True iff the user's custom `.salehman` model is pulled on this machine.
@@ -269,10 +283,36 @@ enum OllamaClient {
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
     /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
-    static func chat(prompt: String, system: String? = nil) async -> String? {
+    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap).
+    static func chat(prompt: String, system: String? = nil,
+                     gen: Generation? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
-        return await generate(model: model, prompt: prompt, system: system)
+        return await generate(model: model, prompt: prompt, system: system,
+                              gen: gen ?? .tuned(for: model))
     }
+
+    /// Pre-load the active chat model into RAM (no prompt → Ollama just loads the
+    /// weights and honors `keep_alive`). Fire-and-forget from the UI the moment the
+    /// user shows intent to type: a ~9 GB 14B takes seconds to load, and warming it
+    /// while they compose the message hides that load entirely. Once per launch.
+    @MainActor static func warmupChatModel() {
+        guard !didWarmup else { return }
+        didWarmup = true
+        Task.detached(priority: .utility) {
+            guard await isUp(), let model = await activeChatModel() else { return }
+            guard let url = URL(string: "\(base)/api/generate") else { return }
+            let body: [String: Any] = ["model": model, "stream": false,
+                                       "keep_alive": Generation.tuned(for: model).keepAlive]
+            guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payload
+            req.timeoutInterval = 120
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+    @MainActor private static var didWarmup = false
 
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
     /// with the cumulative text after each token chunk. Returns the final
@@ -281,8 +321,13 @@ enum OllamaClient {
                            onUpdate: @escaping (String) -> Void) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
+        // Same per-model tuning as the non-streaming path: the user's own Salehman
+        // model stays warm 5 min with its 4096 context; small models stay RAM-lean.
+        let gen = Generation.tuned(for: model)
+        var options: [String: Any] = ["num_ctx": gen.numCtx]
+        if let cap = gen.numPredict { options["num_predict"] = cap }
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": true,
-                                   "keep_alive": "30s"]   // evict from RAM ~30s after idle
+                                   "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 

@@ -515,3 +515,22 @@ So until the owner grants this session SSH egress (asked in chat), the division 
   probe-eval → targeted examples → next round; final merge → GGUF Q4_K_M/Q6_K → scp →
   `ollama create salehman`).
 If the owner grants SSH, I take the whole runbook and you're free of it — I'll confirm here either way.
+
+### 📋 2026-06-11 — TASK FOR THE OTHER SESSION: 14B-readiness in YOUR lane (owner: "give the other claude a similar task")
+Context: a 14B Salehman fine-tune (GGUF Q4_K_M ≈ 9 GB, Ollama model name **"salehman"**) lands on this Mac
+in a few hours (training live on the A100 pod — see handoff above). I've done the Chat-B-lane prep
+(OllamaClient per-model tuned keep-alive/num_ctx/num_predict + `warmupChatModel()`, CodeView warm-on-focus +
+"warming up" hint, trivial fast-path cap — committed with this merge). **Your lane's 14B-readiness, similar
+spirit:**
+1. **Settings: "Salehman model" status row** — show whether an Ollama model named `salehman`
+   (`AppSettings.customModelNameCurrent`) is installed, with a copyable `ollama create salehman -f Modelfile`
+   hint when missing. (You own SettingsView's recent layout — slot it near the Brain section.)
+2. **Concurrency audit for a 9 GB local model:** verify `MemoryManager.concurrencyLimit()` + the pipeline's
+   per-phase batch cap collapse to **1 in-flight generate** when the active brain resolves to the local
+   salehman (parallel agents against one 9 GB Ollama model = RAM spike + serial queue anyway). The
+   `isSerialLocal` predicate in AgentPipeline is the pattern to match.
+3. **Agents-lane assumptions sweep:** grep your lane (Agents/*, Tools/*) for spots assuming a small/fast local
+   model (timeouts < 60 s on local generate, retry loops that would re-pay a 9 GB load, hardcoded "qwen"
+   model names) and fix to route through `OllamaClient.activeChatModel()` / tuned Generation.
+4. When done: post results here, run the canonical build+tests (you're unblocked — if sandbox still blocks
+   xcodebuild, post the diff and I'll run the gate like last time).

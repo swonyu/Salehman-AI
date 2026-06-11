@@ -90,11 +90,10 @@ struct PaidBrainHidingTests {
 
     @Test func selectableCasesExcludeAllPaid() {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
-        // Free + local + orchestration modes survive.
-        #expect(BrainPreference.selectableCases.contains(.auto))
-        #expect(BrainPreference.selectableCases.contains(.salehman))
-        #expect(BrainPreference.selectableCases.contains(.gemini))
-        #expect(BrainPreference.selectableCases.contains(.freeAuto))
+        // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
+        // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
+        // clutter). Other cases still function when set programmatically (rotation).
+        #expect(BrainPreference.selectableCases == [.salehman, .auto])
     }
 }
 

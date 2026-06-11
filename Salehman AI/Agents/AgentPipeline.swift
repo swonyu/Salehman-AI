@@ -84,6 +84,17 @@ private nonisolated enum Thresholds {
     static let rawPromptTokens = 300      // max tokens for the raw-prompt path
 }
 
+/// Streaming-render tuning shared by the chat views (Code tab + main chat), so both
+/// gate live Markdown the same way. Public (module-internal) on purpose.
+nonisolated enum StreamRender {
+    /// Above this many characters, a STILL-STREAMING reply renders as plain text
+    /// instead of re-parsing Markdown on every throttle tick. That O(n)-per-tick
+    /// parse is what lags a fast local model (the 32B) — bounding it here keeps the
+    /// UI smooth. The committed message always renders full Markdown, so this only
+    /// defers rich formatting of long replies until the moment streaming ends.
+    static let liveMarkdownLimit = 1200
+}
+
 /// Keeps a short rolling transcript so non-chat agents have conversation context.
 /// **Self-persisting** (JSON in Application Support) so conversation CONTEXT survives
 /// an app restart: the displayed chat already persisted, but this in-memory store used
@@ -149,6 +160,37 @@ enum AgentPipeline {
         // that must NOT inherit context — e.g. the Code-tab Review — calls
         // `ConversationStore.reset()` first instead, then this records cleanly.)
         let priorHistory = await ConversationStore.shared.transcript()
+
+        // FAST PATH — a bare greeting / chit-chat ("hi", "thanks", "how are you") gets
+        // ONE direct Salehman reply: no multi-agent team, no leader/critique finalize,
+        // no tools. Even the lightest team path is a tool-agent call PLUS a
+        // `refineOwnDraft` self-critique pass — several sequential calls on a local
+        // model, which is why a plain "hi" felt like it took forever. History is
+        // still recorded. If the engine errors, fall through to the normal pipeline.
+        if isTrivialMission(mission) {
+            let prompt = withConversationContext(mission, history: priorHistory)
+            // Hit the WARM LOCAL model directly (≈2s) for greetings — the cloud-first
+            // SalehmanEngine iterates the whole cloud chain before the local floor, so
+            // a slow/rate-limited key adds seconds of round-trips to a throwaway "hi".
+            // Cloud engine is the fallback only when Ollama is unreachable. (Also makes
+            // greetings honor Offline-Only for free.)
+            // Cap the reply length: greetings never need >384 tokens, and on a
+            // ~25 tok/s local model an unbounded ramble is the difference between
+            // 3 s and 30 s. Persona training keeps these short anyway; the cap is
+            // the seatbelt.
+            var reply = await OllamaClient.chat(
+                prompt: prompt, system: SalehmanPersona.activeSystemPrompt,
+                gen: .init(keepAlive: "5m", numCtx: 2048, numPredict: 384)) ?? ""
+            if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
+                reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
+            }
+            if !isErrorReply(reply) {
+                await ConversationStore.shared.add(role: "User", text: mission)
+                await ConversationStore.shared.add(role: "Salehman AI", text: reply)
+                return reply
+            }
+        }
+
         var draft = await runDraft(mission: mission, priorHistory: priorHistory)
 
         // UNIVERSAL SAFETY NET — the chat must NEVER surface a raw provider error.

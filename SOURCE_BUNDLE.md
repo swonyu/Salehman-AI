@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 10:59 +03 · Swift files: 128 · Swift LOC: 23744_
+_Generated: 2026-06-11 11:09 +03 · Swift files: 128 · Swift LOC: 23814_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (667 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (673 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -268,7 +268,13 @@ enum AgentPipeline {
             // a slow/rate-limited key adds seconds of round-trips to a throwaway "hi".
             // Cloud engine is the fallback only when Ollama is unreachable. (Also makes
             // greetings honor Offline-Only for free.)
-            var reply = await OllamaClient.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) ?? ""
+            // Cap the reply length: greetings never need >384 tokens, and on a
+            // ~25 tok/s local model an unbounded ramble is the difference between
+            // 3 s and 30 s. Persona training keeps these short anyway; the cap is
+            // the seatbelt.
+            var reply = await OllamaClient.chat(
+                prompt: prompt, system: SalehmanPersona.activeSystemPrompt,
+                gen: .init(keepAlive: "5m", numCtx: 2048, numPredict: 384)) ?? ""
             if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
                 reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
             }
@@ -6816,7 +6822,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (317 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (361 lines) =====
 ```swift
 import Foundation
 
@@ -6917,7 +6923,19 @@ enum OllamaClient {
     struct Generation: Sendable {
         var keepAlive: String   = "30s"
         var numCtx: Int         = OllamaClient.defaultNumCtx
+        var numPredict: Int?    = nil          // cap reply length (unset = model decides)
         nonisolated static let `default`    = Generation()
+
+        /// Knobs tuned to the model being called. The user's OWN Salehman model
+        /// (the 14B fine-tune) is ~9 GB — evicting it after 30 s means every
+        /// exchange after a pause re-pays a multi-second load, so it stays warm
+        /// 5 min and gets the 4096 context its Modelfile is built for. Other
+        /// (smaller) models keep the RAM-lean 30 s / 2048 defaults.
+        nonisolated static func tuned(for model: String) -> Generation {
+            model == AppSettings.customModelNameCurrent
+                ? Generation(keepAlive: "5m", numCtx: 4096)
+                : .default
+        }
     }
 
     /// Core call to /api/generate (non-streaming).
@@ -6932,7 +6950,8 @@ enum OllamaClient {
         // the KV cache size: a smaller context window literally allocates less
         // GPU/CPU RAM per request, so 2048 (default) is dramatically lighter
         // than the server default of 4096.
-        let options: [String: Any] = ["num_ctx": gen.numCtx]
+        var options: [String: Any] = ["num_ctx": gen.numCtx]
+        if let cap = gen.numPredict { options["num_predict"] = cap }
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": false,
                                    "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
@@ -7090,10 +7109,36 @@ enum OllamaClient {
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
     /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
-    static func chat(prompt: String, system: String? = nil) async -> String? {
+    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap).
+    static func chat(prompt: String, system: String? = nil,
+                     gen: Generation? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
-        return await generate(model: model, prompt: prompt, system: system)
+        return await generate(model: model, prompt: prompt, system: system,
+                              gen: gen ?? .tuned(for: model))
     }
+
+    /// Pre-load the active chat model into RAM (no prompt → Ollama just loads the
+    /// weights and honors `keep_alive`). Fire-and-forget from the UI the moment the
+    /// user shows intent to type: a ~9 GB 14B takes seconds to load, and warming it
+    /// while they compose the message hides that load entirely. Once per launch.
+    @MainActor static func warmupChatModel() {
+        guard !didWarmup else { return }
+        didWarmup = true
+        Task.detached(priority: .utility) {
+            guard await isUp(), let model = await activeChatModel() else { return }
+            guard let url = URL(string: "\(base)/api/generate") else { return }
+            let body: [String: Any] = ["model": model, "stream": false,
+                                       "keep_alive": Generation.tuned(for: model).keepAlive]
+            guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payload
+            req.timeoutInterval = 120
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+    @MainActor private static var didWarmup = false
 
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
     /// with the cumulative text after each token chunk. Returns the final
@@ -7102,8 +7147,13 @@ enum OllamaClient {
                            onUpdate: @escaping (String) -> Void) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
+        // Same per-model tuning as the non-streaming path: the user's own Salehman
+        // model stays warm 5 min with its 4096 context; small models stay RAM-lean.
+        let gen = Generation.tuned(for: model)
+        var options: [String: Any] = ["num_ctx": gen.numCtx]
+        if let cap = gen.numPredict { options["num_predict"] = cap }
         var body: [String: Any] = ["model": model, "prompt": prompt, "stream": true,
-                                   "keep_alive": "30s"]   // evict from RAM ~30s after idle
+                                   "keep_alive": gen.keepAlive, "options": options]
         if let system { body["system"] = system }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
@@ -12385,7 +12435,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1154 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1174 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12593,6 +12643,7 @@ struct CodeView: View {
     @State private var attachedFile: URL?
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
+    @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -13059,7 +13110,12 @@ struct CodeView: View {
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.6)
-                        Text("Working…").font(.system(size: 12)).foregroundStyle(.secondary)
+                        // After ~5s of silence the local model is probably still
+                        // loading into RAM (a 14B is ~9 GB) — say so instead of
+                        // looking frozen.
+                        Text(showWarmupHint ? "Warming up the local model — first reply after a pause takes a few seconds…"
+                                            : "Working…")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 } else if progress.streamingAnswer.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: progress.streamingAnswer)
@@ -13106,6 +13162,11 @@ struct CodeView: View {
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .onSubmit(send)
+                    // Focusing the input = intent to send: pre-load the local model
+                    // (a 14B takes seconds to come into RAM) while the user types.
+                    .onChange(of: inputFocused) { _, focused in
+                        if focused { OllamaClient.warmupChatModel() }
+                    }
 
                 Button {
                     // Explicit body, not `action: isRunning ? stop : send`: unifying
@@ -13404,6 +13465,13 @@ struct CodeView: View {
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
         isRunning = true
+        // If nothing has streamed after 5s, the local model is likely still loading —
+        // flip the status line to say so (cleared when the run ends).
+        showWarmupHint = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if isRunning && progress.streamingAnswer.isEmpty { showWarmupHint = true }
+        }
 
         let projectLine = ws.projectRoot.map {
             "Project folder (your working directory for terminal + file edits): \($0.path)\n\n"
@@ -13433,6 +13501,7 @@ struct CodeView: View {
             await MainActor.run {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
+                showWarmupHint = false
                 MissionProgress.shared.finish()
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
@@ -13530,6 +13599,7 @@ struct CodeView: View {
             await MainActor.run {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
+                showWarmupHint = false
                 MissionProgress.shared.finish()
             }
         }
@@ -25100,7 +25170,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (517 lines) =====
+===== FILE: COORDINATION.md (536 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25619,7 +25689,26 @@ So until the owner grants this session SSH egress (asked in chat), the division 
   `ollama create salehman`).
 If the owner grants SSH, I take the whole runbook and you're free of it — I'll confirm here either way.
 
-===== FILE: DEVELOPMENT_LOG.md (2137 lines) =====
+### 📋 2026-06-11 — TASK FOR THE OTHER SESSION: 14B-readiness in YOUR lane (owner: "give the other claude a similar task")
+Context: a 14B Salehman fine-tune (GGUF Q4_K_M ≈ 9 GB, Ollama model name **"salehman"**) lands on this Mac
+in a few hours (training live on the A100 pod — see handoff above). I've done the Chat-B-lane prep
+(OllamaClient per-model tuned keep-alive/num_ctx/num_predict + `warmupChatModel()`, CodeView warm-on-focus +
+"warming up" hint, trivial fast-path cap — committed with this merge). **Your lane's 14B-readiness, similar
+spirit:**
+1. **Settings: "Salehman model" status row** — show whether an Ollama model named `salehman`
+   (`AppSettings.customModelNameCurrent`) is installed, with a copyable `ollama create salehman -f Modelfile`
+   hint when missing. (You own SettingsView's recent layout — slot it near the Brain section.)
+2. **Concurrency audit for a 9 GB local model:** verify `MemoryManager.concurrencyLimit()` + the pipeline's
+   per-phase batch cap collapse to **1 in-flight generate** when the active brain resolves to the local
+   salehman (parallel agents against one 9 GB Ollama model = RAM spike + serial queue anyway). The
+   `isSerialLocal` predicate in AgentPipeline is the pattern to match.
+3. **Agents-lane assumptions sweep:** grep your lane (Agents/*, Tools/*) for spots assuming a small/fast local
+   model (timeouts < 60 s on local generate, retry loops that would re-pay a 9 GB load, hardcoded "qwen"
+   model names) and fix to route through `OllamaClient.activeChatModel()` / tuned Generation.
+4. When done: post results here, run the canonical build+tests (you're unblocked — if sandbox still blocks
+   xcodebuild, post the diff and I'll run the gate like last time).
+
+===== FILE: DEVELOPMENT_LOG.md (2160 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27757,6 +27846,29 @@ Salehman now actually answers ("hi" → "مرحباً! كيف أقدر أساع�
 tests were unreliable while the owner used the Mac live — timing of the fast path still needs a
 hands-on check. NEXT: owner deploys a RunPod GPU ($15 budget), Claude drives multi-round 14B
 training to spend it well (eval-checkpointed rounds, weakness-targeted data, final Q4_K_M GGUF).
+
+## 2026-06-11 — 14B-readiness app tuning (keep-warm, warmup-on-focus, stream parity, reply caps)
+**Files:** `LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Views/CodeView.swift`,
+`Salehman AITests/ToolLoopTests.swift`, `COORDINATION.md`.
+**What & why:** The 14B fine-tune (GGUF ≈ 9 GB, Ollama name "salehman") lands today; at that size the
+7B-era knobs actively hurt: `keep_alive 30s` evicts 9 GB after every pause (each next reply re-pays a
+multi-second load), `chatStream` hardcoded 30s and skipped `num_ctx` entirely, and nothing warned the
+user that a silent first reply = model loading.
+- `Generation.tuned(for:)` — per-model knobs: the user's own model gets `keep_alive 5m` + `num_ctx 4096`
+  (matches its Modelfile); other models keep the RAM-lean 30s/2048. Applied to `chat()` AND `chatStream`
+  (parity — stream also gained `num_ctx`/`num_predict` options it never had).
+- `Generation.numPredict` — optional reply-length cap; trivial fast-path greetings capped at 384 tokens
+  (~25 tok/s local ⇒ seatbelt against a 30 s ramble).
+- `warmupChatModel()` (once per launch) — empty-prompt /api/generate pre-loads the active model; fired
+  from CodeView when the input gains FOCUS, so the 9 GB load happens while the user is still typing.
+- CodeView: "Warming up the local model…" status after 5 s of pre-stream silence (was an indistinguishable
+  "Working…" that looked frozen during model load).
+- `selectableCasesExcludeAllPaid` test updated to pin the new owner-approved picker contract
+  (`[.salehman, .auto]`) — was asserting the pre-pare menu (.gemini/.freeAuto present).
+**Result:** build green; suite green earlier at 297/297 (this entry's changes re-verified by build; suite
+re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
+live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
+concurrency audit + agents-lane sweep.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
