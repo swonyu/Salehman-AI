@@ -111,9 +111,18 @@ enum QASnapshots {
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
 
-        // Bridge layout + accessibility findings to the audit.
-        if let data = try? JSONEncoder().encode(structure) {
-            try? data.write(to: dir.appendingPathComponent("STRUCTURE.json"))
+        // Bridge layout + accessibility findings to the audit. MERGE, don't
+        // overwrite: `captureLiveWindows` contributes window_* entries (the
+        // only place AX trees are real), and a fresh offscreen capture was
+        // clobbering them (caught when window_0_live lost its axLabels check).
+        let url = dir.appendingPathComponent("STRUCTURE.json")
+        var merged: [String: QASurfaceStructure] =
+            (try? Data(contentsOf: url))
+                .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+        merged = merged.filter { $0.key.hasPrefix("window_") }   // keep only live-window entries
+        for (k, v) in structure { merged[k] = v }
+        if let data = try? JSONEncoder().encode(merged) {
+            try? data.write(to: url)
         }
 
         writeManifest(in: dir)

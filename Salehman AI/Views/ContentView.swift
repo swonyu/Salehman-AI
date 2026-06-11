@@ -57,15 +57,17 @@ struct ContentView: View {
         let prompt: String
     }
 
+    // Subtitle copy sized to FIT the bento cards — the QA welcome render
+    // showed "hardware,…" / "heaviest fold…" truncation at the old lengths.
     private let suggestions: [Suggestion] = [
         .init(icon: "desktopcomputer", title: "Inspect this Mac",
-              subtitle: "macOS version, hardware, uptime",
+              subtitle: "macOS, hardware, uptime",
               prompt: "What macOS version am I running, and give me a quick hardware summary."),
         .init(icon: "folder", title: "Find files",
-              subtitle: "List what's on the Desktop",
+              subtitle: "What's on the Desktop",
               prompt: "List the files on my Desktop, grouped by kind."),
         .init(icon: "internaldrive", title: "Storage health",
-              subtitle: "Free space + heaviest folders",
+              subtitle: "Free space + big folders",
               prompt: "How much free disk space do I have, and what are the heaviest folders in my home directory?"),
         .init(icon: "photo.on.rectangle", title: "Change my wallpaper",
               subtitle: "Pick from a few options",
@@ -475,7 +477,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 560)
+            .frame(maxWidth: 600)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
@@ -985,14 +987,19 @@ struct MessageBubble: View {
     }
 
     var body: some View {
+        // QA captures bypass the entry animation: `onAppear` never fires in an
+        // offscreen NSHostingView render, so `appeared` stays false and every
+        // bubble rendered fully transparent (caught when the gallery's message
+        // section went blank after the hosted-path switch).
+        let visible = appeared || QAGeometry.enabled
         bubbleRow
-            .opacity(appeared ? 1 : 0)
+            .opacity(visible ? 1 : 0)
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
             // 8pt rise (was 14): present, not theatrical.
-            .blur(radius: appeared ? 0 : 4)
-            .offset(y: appeared ? 0 : 8)
+            .blur(radius: visible ? 0 : 4)
+            .offset(y: visible ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's

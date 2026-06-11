@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 19:12 +03 · Swift files: 133 · Swift LOC: 25497_
+_Generated: 2026-06-11 19:19 +03 · Swift files: 133 · Swift LOC: 25519_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2034,7 +2034,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (384 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (389 lines) =====
 ```swift
 import SwiftUI
 
@@ -2094,6 +2094,7 @@ enum DS {
     // MARK: Typography
     enum Typography {
         static let titleL       = Font.system(size: 28, weight: .bold,     design: .rounded)
+        static let titleXL      = Font.system(size: 30, weight: .bold,     design: .rounded)
         static let titleM       = Font.system(size: 17, weight: .semibold, design: .rounded)
         static let body         = Font.system(size: 14)
         static let mono         = Font.system(size: 13, design: .monospaced)
@@ -2150,6 +2151,10 @@ enum DS {
             startPoint: .topLeading, endPoint: .bottomTrailing)
         static let bg = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
+        // Vertical variant for full-screen sheets (Onboarding/About) — straight
+        // top→bottom wash rather than the diagonal app background.
+        static let bgVertical = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
+                                               startPoint: .top, endPoint: .bottom)
     }
 }
 
@@ -11404,7 +11409,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (419 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (428 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11519,9 +11524,18 @@ enum QASnapshots {
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
 
-        // Bridge layout + accessibility findings to the audit.
-        if let data = try? JSONEncoder().encode(structure) {
-            try? data.write(to: dir.appendingPathComponent("STRUCTURE.json"))
+        // Bridge layout + accessibility findings to the audit. MERGE, don't
+        // overwrite: `captureLiveWindows` contributes window_* entries (the
+        // only place AX trees are real), and a fresh offscreen capture was
+        // clobbering them (caught when window_0_live lost its axLabels check).
+        let url = dir.appendingPathComponent("STRUCTURE.json")
+        var merged: [String: QASurfaceStructure] =
+            (try? Data(contentsOf: url))
+                .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+        merged = merged.filter { $0.key.hasPrefix("window_") }   // keep only live-window entries
+        for (k, v) in structure { merged[k] = v }
+        if let data = try? JSONEncoder().encode(merged) {
+            try? data.write(to: url)
         }
 
         writeManifest(in: dir)
@@ -12729,7 +12743,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (126 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (125 lines) =====
 ```swift
 import SwiftUI
 
@@ -12776,8 +12790,7 @@ struct AboutView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
@@ -14839,11 +14852,11 @@ struct CodeView: View {
         if attached.isEmpty, AgentPipeline.isTrivialMission(text) {
             mission = text
         } else {
-            mission = """
-            \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
-
-            Task: \(text)\(attached)
-            """
+            // NO "You are Salehman in CODING mode…" preamble. The model already gets
+            // the Salehman system prompt + its tools as specs; repeating the persona
+            // inside the message made the fine-tune NARRATE its instructions back
+            // ("How should Salehman respond?"). Just project context + the task.
+            mission = "\(projectLine)\(text)\(attached)"
         }
         attachedFile = nil; attachedText = ""
 
@@ -15235,7 +15248,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1459 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1466 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15296,15 +15309,17 @@ struct ContentView: View {
         let prompt: String
     }
 
+    // Subtitle copy sized to FIT the bento cards — the QA welcome render
+    // showed "hardware,…" / "heaviest fold…" truncation at the old lengths.
     private let suggestions: [Suggestion] = [
         .init(icon: "desktopcomputer", title: "Inspect this Mac",
-              subtitle: "macOS version, hardware, uptime",
+              subtitle: "macOS, hardware, uptime",
               prompt: "What macOS version am I running, and give me a quick hardware summary."),
         .init(icon: "folder", title: "Find files",
-              subtitle: "List what's on the Desktop",
+              subtitle: "What's on the Desktop",
               prompt: "List the files on my Desktop, grouped by kind."),
         .init(icon: "internaldrive", title: "Storage health",
-              subtitle: "Free space + heaviest folders",
+              subtitle: "Free space + big folders",
               prompt: "How much free disk space do I have, and what are the heaviest folders in my home directory?"),
         .init(icon: "photo.on.rectangle", title: "Change my wallpaper",
               subtitle: "Pick from a few options",
@@ -15714,7 +15729,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 560)
+            .frame(maxWidth: 600)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
@@ -16224,14 +16239,19 @@ struct MessageBubble: View {
     }
 
     var body: some View {
+        // QA captures bypass the entry animation: `onAppear` never fires in an
+        // offscreen NSHostingView render, so `appeared` stays false and every
+        // bubble rendered fully transparent (caught when the gallery's message
+        // section went blank after the hosted-path switch).
+        let visible = appeared || QAGeometry.enabled
         bubbleRow
-            .opacity(appeared ? 1 : 0)
+            .opacity(visible ? 1 : 0)
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
             // 8pt rise (was 14): present, not theatrical.
-            .blur(radius: appeared ? 0 : 4)
-            .offset(y: appeared ? 0 : 8)
+            .blur(radius: visible ? 0 : 4)
+            .offset(y: visible ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -18646,7 +18666,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (123 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (122 lines) =====
 ```swift
 import SwiftUI
 
@@ -18684,8 +18704,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -18862,7 +18881,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (185 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (189 lines) =====
 ```swift
 import SwiftUI
 
@@ -19045,7 +19064,11 @@ struct ScratchpadView: View {
         let prompt = pad == .tasks
             ? "Here are my notes and tasks:\n\n\(text)\n\nOrganize my OPEN tasks into a short, prioritized plan (group related ones, flag anything urgent). Be concise."
             : "Here are my notes and tasks:\n\n\(text)\n\nSummarize my NOTES into a tight overview with any action items called out. Be concise."
-        aiResult = await LocalLLM.generate(prompt, maxTokens: 400)
+        // On-device only: the scratchpad can hold private content, so Organize/
+        // Summarize never leaves the Mac (mirrors the Knowledge vault) — returns a
+        // clear message instead of silently routing to a pinned cloud brain.
+        aiResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+            ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
 }
@@ -21026,7 +21049,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (73 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (72 lines) =====
 ```swift
 import SwiftUI
 
@@ -21077,9 +21100,8 @@ struct ShortcutsView: View {
             .padding(.bottom, DS.Space.md)
 
             ForEach(groups) { group in
-                Text(group.title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    .tracking(0.8).padding(.top, DS.Space.sm).padding(.bottom, 4)
+                Eyebrow(text: group.title)
+                    .padding(.top, DS.Space.sm).padding(.bottom, 4)
                 ForEach(group.items) { s in
                     HStack {
                         Text(s.label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.9))
@@ -21334,7 +21356,7 @@ struct TodayView: View {
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
-                .font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                .font(DS.Typography.titleXL).foregroundStyle(.white)
             Text("Welcome back to Salehman AI — everything here stays on this Mac.")
                 .font(.callout).foregroundStyle(.secondary)
         }
@@ -21346,7 +21368,7 @@ struct TodayView: View {
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).tracking(0.8)
+            Eyebrow(text: title)
             content()
         }
     }
