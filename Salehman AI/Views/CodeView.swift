@@ -766,6 +766,7 @@ struct CodeView: View {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
                 shortcutHint("⌘L", "Ask")
+                shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
             // The 14B's home: show when the owner's own model is serving locally.
@@ -1111,6 +1112,15 @@ struct CodeView: View {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 }
+                // Live elapsed readout — long local runs are minutes of silence
+                // otherwise; a ticking clock shows the run is alive.
+                if isRunning, let t0 = progress.startedAt {
+                    TimelineView(.periodic(from: t0, by: 1)) { ctx in
+                        Text(elapsedLabel(since: t0, now: ctx.date))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary.opacity(0.85))
+                    }
+                }
                 Spacer()
                 Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
@@ -1130,6 +1140,12 @@ struct CodeView: View {
             }
         }
         .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// "12s" / "2m 05s" — the Activity header's run clock.
+    private func elapsedLabel(since start: Date, now: Date) -> String {
+        let s = max(0, Int(now.timeIntervalSince(start)))
+        return s < 60 ? "\(s)s" : String(format: "%dm %02ds", s / 60, s % 60)
     }
 
     /// Clickable list of the files the last run touched — one tap opens its diff.

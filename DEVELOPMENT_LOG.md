@@ -2700,3 +2700,14 @@ SlashCommand/SlashMenuView, composer cap, gallery section), `tools/qa.sh`.
 **Result:** Build green; QA **all surfaces pass** (code_samples Δ0.00% with the slash
 menu in the baseline, code_tab Δ0.00% with the new panel). Close→strip→reopen verified
 in pixels. Note for QA owner: the "structure" QAAudit refactor was NOT at fault.
+
+## 2026-06-11 (cont.) — Code tab round 3: Esc/⇧⌘I, changed-files list, live run clock, "/" welcome chip
+**What:** (1) Esc dismisses the half-typed `/` menu; (2) ⇧⌘I toggles the right panel
+(matches ⇧⌘E for the tree); (3) clickable **Changed files** list in the right panel —
+tap a file → its diff opens (the "include the diffs and files" half of the owner's
+sidebar ask, now one click); (4) **live elapsed clock** in the Activity header
+(TimelineView off `MissionProgress.startedAt`, new) — long local runs are no longer
+silent minutes; (5) welcome footer teaches `/` next to ⌘O/⌘R/⌘L.
+**Files:** `Views/CodeView.swift`, `Agents/AgentPipeline.swift` (startedAt on
+begin/finish/clear).
+**Result:** Build green, QA all surfaces pass.

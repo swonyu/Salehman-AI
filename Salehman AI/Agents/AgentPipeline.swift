@@ -34,6 +34,8 @@ final class MissionProgress: ObservableObject {
     @Published var steps: [Step] = []
     @Published var running = false
     @Published var streamingAnswer = ""   // live final answer as it streams
+    @Published var startedAt: Date?       // when the current run began (drives the
+                                          // Activity panel's elapsed-time readout)
 
     /// Monotonic timestamp of the last `streamingAnswer` publish, for throttling.
     private var lastStreamPushNs: UInt64 = 0
@@ -44,6 +46,7 @@ final class MissionProgress: ObservableObject {
         steps = specs.map { Step(name: $0.name, icon: $0.icon, status: .pending) }
         streamingAnswer = ""
         running = true
+        startedAt = Date()
     }
 
     /// Apply task-adapted titles (name → adapted title).
@@ -79,8 +82,8 @@ final class MissionProgress: ObservableObject {
         lastStreamPushNs = now
         streamingAnswer = text
     }
-    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0 }
-    func clear()  { steps = []; running = false; streamingAnswer = "" }
+    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0; startedAt = nil }
+    func clear()  { steps = []; running = false; streamingAnswer = ""; startedAt = nil }
 }
 
 /// Named tuning thresholds for the pipeline — were inline magic numbers scattered
