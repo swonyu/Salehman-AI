@@ -2130,3 +2130,10 @@ App is already well-aligned with 2026 agent-UX (named agents, Memory sheet, Rest
 
 **Result:** session stopped cleanly; tracked working tree clean (all source committed); research preserved.
 **Files:** `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:0x) — Chat C: regenerate SOURCE_BUNDLE (owner request)
+**What & why:** Owner: "regenerate source bundle." Ran `bash tools/bundle_source.sh` so the bundle reflects
+this session's source changes. Verified fresh (greps, not a full read): `enum MemorySort`, About eyebrow +
+"Private when you want it", grey-backdrop `bgTop` (0.11), and `nonisolated func recall` all present.
+**Result:** `SOURCE_BUNDLE.md` = 37,754 lines / 3.0M / 150 swift files (30,342 LOC) + docs. Committed.
+**Files:** `SOURCE_BUNDLE.md`, `DEVELOPMENT_LOG.md`.

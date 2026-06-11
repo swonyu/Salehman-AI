@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 02:26 +03 · Swift files: 150 · Swift LOC: 30290_
+_Generated: 2026-06-12 02:48 +03 · Swift files: 150 · Swift LOC: 30342_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13478,7 +13478,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (125 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (165 lines) =====
 ```swift
 import SwiftUI
 
@@ -13488,6 +13488,10 @@ import SwiftUI
 /// honest after every Xcode version bump (no source change needed).
 struct AboutView: View {
     let onClose: () -> Void
+    // Entrance choreography — settled under `--qa` so offscreen snapshots capture
+    // the final frame, not a mid-animation pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredCap: UUID?
 
     /// Major capability rows. Edit when a new feature surfaces — this is the
     /// "what can it do" answer shown to the user.
@@ -13500,7 +13504,7 @@ struct AboutView: View {
 
     private let capabilities: [Capability] = [
         .init(icon: "lock.shield.fill",
-              title: "Private, on-device",
+              title: "Private when you want it",
               body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Many brains, one Salehman",
@@ -13528,6 +13532,14 @@ struct AboutView: View {
             DS.Gradient.bgVertical
                 .ignoresSafeArea()
 
+            // Ambient brand glow behind the header — soft depth on the flat canvas.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.16))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: -120, y: -210)
+                .allowsHitTesting(false)
+
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 // Header — brand tile + identity + close.
                 HStack(alignment: .center, spacing: DS.Space.md) {
@@ -13536,6 +13548,13 @@ struct AboutView: View {
                             .fill(DS.Gradient.brand)
                             .frame(width: 52, height: 52)
                             .dsShadow(DS.Elevation.accentGlow(0.45))
+                            // Top-lit edge highlight → the tile reads dimensional.
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: 1)
+                            )
                         Image(systemName: "sparkles")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.white)
@@ -13556,10 +13575,17 @@ struct AboutView: View {
                     .accessibilityLabel("Close")
                 }
 
-                Text("Your private, on-device AI — built by Saleh. Many brains, real tools, your own model.")
+                Text("Your AI — cloud-first with a local fallback, built by Saleh. Many brains, real tools, your own model.")
                     .font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // Editorial section label → rhythm before the list.
+                Text("WHAT IT DOES")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(DS.Palette.accent)
+                    .padding(.top, 2)
 
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
@@ -13571,7 +13597,7 @@ struct AboutView: View {
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 300)
 
                 // Footer — small attribution + the one keyboard hint.
                 HStack {
@@ -13581,14 +13607,19 @@ struct AboutView: View {
                 }
             }
             .padding(DS.Space.xl)
+            // Card drifts up + fades in on first frame.
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 14)
         }
         .frame(width: 460, height: 560)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("About Salehman AI")
     }
 
     private func capabilityRow(_ cap: Capability) -> some View {
-        HStack(alignment: .top, spacing: DS.Space.md) {
+        let isHovered = hoveredCap == cap.id
+        return HStack(alignment: .top, spacing: DS.Space.md) {
             Image(systemName: cap.icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -13603,6 +13634,15 @@ struct AboutView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
+        // Hover highlight — a premium macOS row affordance (research: hover states).
+        .background(isHovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(DS.Motion.smooth) {
+                if hovering { hoveredCap = cap.id }
+                else if hoveredCap == cap.id { hoveredCap = nil }
+            }
+        }
     }
 }
 ```
@@ -14033,7 +14073,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (154 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (159 lines) =====
 ```swift
 import SwiftUI
 
@@ -14151,7 +14191,12 @@ struct ChatHistoryView: View {
                 ChatStore.archives()
             }.value
             loaded = true
-            revealed = true   // rows render hidden for one frame, then cascade in
+            // The reveal flip must land a frame AFTER the rows mount: flipping
+            // in the same update as insertion renders them at final values and
+            // `.animation(value:)` has no transition to interpolate (self-review
+            // catch — the cascade silently never fired when set together).
+            try? await Task.sleep(for: .milliseconds(50))
+            revealed = true
         }
     }
 
@@ -17145,7 +17190,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2368 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2375 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18858,7 +18903,14 @@ struct MessageBubble: View, Equatable {
     /// body (markdown-cache lookups + full tree diff × N messages) per
     /// keystroke. Comparing just message + qaShowActions skips all of it;
     /// speech-state updates still flow via @ObservedObject (dynamic-property
-    /// invalidation bypasses ==, by design).
+    /// invalidation bypasses ==, by design — SpeechOut publishes only
+    /// speakingID, twice per read-aloud, so the bypass is cheap).
+    ///
+    /// ⚠️ MAINTENANCE (verified failure mode, Airbnb eng. blog): if you ADD a
+    /// stored property that affects rendering, you MUST add it here — a stale
+    /// == silently freezes that property's UI. Closures stay excluded (that's
+    /// the point); `.equatable()` at the call site is REQUIRED, conformance
+    /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
     static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
         lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
     }
@@ -31766,7 +31818,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (127 lines) =====
+===== FILE: COORDINATION.md (128 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31847,6 +31899,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Chat B — perf deep-dive (2026-06-12 ~03:3x, owner: "/deep-research perf + lag spikes, fix them")** | `Views/ContentView.swift`, `Views/ChatHistoryView.swift` | 03:3x | ✅ DONE `b3eacc7` — **root cause: invalidation breadth.** Every keystroke re-ran EVERY settled MessageBubble's body (fresh closures defeat reflection diffing) → fixed with `MessageBubble: Equatable` + `.equatable()` (speech still invalidates via @ObservedObject). Also off-mained two synchronous decodes: `ChatStore.load()` at chat mount (guarded) and History-sheet `archives()` (≤100 file decodes, now `.task` + spinner). Evidence: 0 OS hang reports; launch/streaming/knowledge already fixed in prior rounds; MarkdownText cache already present. Typecheck EXIT 0 (your LLM WIP pinned again). **Streaming bonus: per-token cost now O(1 bubble) instead of O(transcript).** Runtime numbers owed — next QA run's renderMs + a typing `sample` will quantify. | **released** |
 | **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. **✅ SLICE 1 DONE + RELEASED (~02:1x):** seam+tests `446ffd8`, locale fix `3efc758` (staged as a single-hunk patch — your uncommitted hover WIP in ContentView untouched), bundle `e114d6c`. **Final verification: full `Salehman AITests` `** TEST SUCCEEDED **` (455 passed) + app build green + QA `settings` passes (0.33%).** FYI Chat A: `code_samples` baselineDiff 8.83% in the 01:4x capture = your committed design pass needing re-adopt (eyes-verify + `--adopt` on your next cycle). SettingsView + SettingsBrainReadyTests lanes are free again — `Views/SettingsBrainReadiness.swift` is the new pure seam (readiness rules live THERE now; re-read before editing brainReady). | **released** |
 | **Claude Chat D — slice 2: R1 brain-routing seam (2026-06-12 ~02:3x)** | `LLM/LocalLLM.swift` (Chat B lane — owner-directed, Chat B inactive; also old void Grok Tab B claim), NEW `LLM/BrainRouting.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift` (enabling the last blocked suite). **NOT touching** the cloud client files themselves (R3 out of scope), AgentPipeline, BrainAdapter.swift (additive shim stays as-is). | now | **CODEBASE_REVIEW R1 (staged): extract the routing PLAN as a pure seam.** The generate/generateStreaming/chat ladders + freeAuto/freeCoding/cloudCoding/ensemble rosters re-implement the same pin/key/offline gating 8+ ways (the drift class behind the review's confirmed bugs). Plan = pure functions over a `BrainRouteConfig` snapshot (one source of truth, hermetically testable → un-disables `BrainRoutingDispatchTests` with the .auto-never-cloud + offline + free-roster invariants); execution sites keep their exact per-provider quirks (behavior-preserving, verified by full AITests + app build + QA capture per sub-step). No red windows: additive file first, ladders rewired one at a time, build between each. **SCOPE +1 FILE (~02:4x): `LLM/SalehmanEngine.swift`** — the deep-read found **2 real bugs**: (1) 🔴 **Offline-Mode leak** (same class as the fixed WebTools leak): the pinned-cloud cascades in generate/generateStreaming/chat have NO `isOfflineOnly` gate (only `currentBrain` + the orchestration modes gate), so direct callers (Settings ping, StockSage, title gen) hit real cloud HTTP under Offline Mode — and a pinned `.salehman` walks its whole cloud chain incl. the PAID DeepSeek backstop (`SalehmanEngine.generate*` never checks offline). FIXING both layers (dispatch gate + engine gate, loopback-only endpoints offline, matching `generateOnDevice`'s rule) — this is the intended contract per `currentBrain`'s own doc + the disabled test's name. (2) 🟠 **ensemble/deepSeek drift**: `anyBrainReachable` counts DeepSeek but `generateEnsemble`'s roster omits it → DeepSeek-only user sees ensemble 'reachable' but the fan-out is empty. NOT fixing (visible behavior change) — flagged for owner. Unsloth/vLLM REMOTE endpoints under Offline Mode left as-is (currentBrain documents them untouched) — flagged as an open question. **✅ SLICE 2 DONE + RELEASED (~03:0x):** `BrainRouting.swift` landed; all 3 ladders + currentBrain + every roster consume it; 13 `*Allowed` gates deleted; Offline leak FIXED at both layers; `BrainRoutingDispatchTests` enabled (ALL 8 review suites now active). **Verified: build green per step; full AITests `** TEST SUCCEEDED **` (466); QA settings 0.33%/today 0.00% stable.** ⚠️ Chat A: `chat_history` FAILS baselineDiff + `chat_empty`/`chat_live` drift in the 03:0x capture = your committed round-2 choreography — please eyes-verify + re-adopt. **Heads-up to ALL: routing rules now live in `LLM/BrainRouting.swift` ONLY** — change rosters/gating THERE (tests pin them), not in LocalLLM's executors. LLM lane released. | **released** |
+| **Claude Chat D — HIDE MARKETS TAB (2026-06-12 ~03:4x)** | OWNER: "HIDE THE MARKETS TAB UNTIL FURTHER NOTICE." Touching: `App/AppState.swift` (AppTab.hidden/visible — append-only addition), `App/Salehman_AIApp.swift` (⌘5 menu item flag), `Views/TabSwitcherBar.swift` + `Views/RootView.swift` read-only check (Chat A lane — owner-directed), `Views/CommandPalette.swift`, `Views/ShortcutsView.swift` + `Views/TodayView.swift` market card (Chat C lane — owner-directed). | now | ONE reversible flag (`AppTab.hidden = [.markets]`): tab pill, ⌘5 menu, palette row, shortcuts row, Today market card, tab-bar market pill all gated; MarketsView/StockSage code + QA capture path UNTOUCHED (harness still captures the tab programmatically). Restore = empty the set. Build+tests+QA per usual. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -32832,7 +32885,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2062 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2132 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34186,6 +34239,14 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** full-target swiftc typecheck EXIT 0 (other session's in-flight LLM WIP pinned to HEAD). Runtime measurement owed: next time the app runs under QA, the renderMs budgets + a `sample` of typing in a long conversation will quantify the win; the swiftui-expert-skill's `record_trace.py` can capture an Instruments trace if the owner wants hard numbers.
 
+**Web-verification round (owner /deep-research, run INLINE per no-workflows directive):** checked the fixes + remaining architecture against community canon (Swift Forums "update SwiftUI many times a second" thread; Apple dev-forums TextField-lag threads; SwiftUI streaming-chat guides). Verdicts: (1) the canonical high-frequency prescriptions — throttle/batch publishes, leaf-view observation isolation, per-property tracking, stable ForEach identity — are ALL already implemented here (`MissionProgress.lastStreamPushNs` throttle; `RunningProgressView` isolating streaming observation from ContentView's body — its comment says exactly why; stored `ChatMessage.id`s; MarkdownText parse cache; 1.5s debounced saves). Equatable-view gating (today's fix 1) is the forums-endorsed pattern for the one gap that remained. (2) Known UPSTREAM SwiftUI issue, not fixable app-side: `TextField(axis:.vertical)` re-layout cost grows with very long drafts — mitigated by the composer's 2000-word warn badge (suggests splitting/attaching). (3) No regressions of the "computed-UUID id" anti-pattern found. Net: no further code changes warranted by the research; the remaining owed artifact is a runtime trace for hard numbers.
+
+## 2026-06-12 · Inline code review of tonight's branch work (Chat B) — 1 fix
+
+**Scope:** no open PR (PR #2 already merged) → reviewed the unmerged branch work solo (owner's no-fleets directive): CLAUDE.md-compliance, bug-scan, history/comment-compliance passes over ContentView/ChatViewModel/ChatHistoryView/CodeView/DS/test diffs, with the /code-review confidence rubric (report >=80 only).
+
+**Found & fixed (`70eee77`):** History-sheet staggered reveal NEVER animated — rows mounted in the same SwiftUI update as the `revealed=true` flip, so `.animation(value:)` had nothing to interpolate (insertion renders at final values; the welcome entrance works only because onAppear flips state a frame after first render). Fix: 50ms separation between row insertion and the reveal flip. Sub-80 notes (not fixed, recorded): `Shell.run` 10s timeout silently empties git dots on enormous repos; async `ChatStore.load()` re-fires a redundant debounced save (pre-existing behavior). CLAUDE.md compliance: clean. Typecheck EXIT 0 on the FULL live tree (twin session's BrainRouting refactor compiles at HEAD).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -34895,6 +34956,68 @@ just-committed design choreography — their baseline re-adopt, flagged).
 **Files:** `Salehman AI/LLM/BrainRouting.swift` (new), `Salehman AI/LLM/LocalLLM.swift`,
 `Salehman AI/LLM/SalehmanEngine.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift`,
 `PROJECT_CONTEXT.md`, `ARCHITECTURE.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:3x) — Chat C: high-end visual pass on AboutView (+ honest copy) [marathon, f/high-end-visual-design]
+**What & why:** Elevated the About sheet (brand moment, pairs with Onboarding) within the approved
+dark/brand DS palette — no colour/DS changes. Applied the same premium kit + the deep-research findings:
+ambient brand-glow orb behind the header (depth), top-lit gradient edge-highlight on the 52pt brand tile
+(dimension), a "WHAT IT DOES" editorial eyebrow (rhythm), **hover row-highlights** on the capability list
+(research: hover is a macOS-only premium affordance — `DS.Palette.accent.opacity(0.07)` on `.onHover`),
+and an entrance fade-rise (QA-gated under `--qa`). Only DS.* tokens already in scope. Also reconciled the
+sheet's **self-contradictory stale copy**: title "Private, on-device" + intro "Your private, on-device AI"
+contradicted its own "cloud-first" body → now "Private when you want it" / "Your AI — cloud-first with a
+local fallback" (app is cloud-first by default; same honesty fix applied app-wide).
+**Result:** `** BUILD SUCCEEDED **` (after a DB-lock retry). Verified in captured pixels
+(`qa/snapshots/about.png`): glow + eyebrow + dimensional tile + honest copy render correctly. Adopted ONLY
+the about baseline (targeted `cp`). Full capture `24/24 surfaces OK`; the `FAILURES: chat_history` flag is
+Chat B's surface (CVD/contrast), not mine. Commit `23cc98b`.
+**Files:** `Salehman AI/Views/AboutView.swift`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:0x) — Chat C: SESSION STOP (owner "STOP AND LOG EVERYTHING") + deep-research capture
+**Owner directive:** stop the high-end-visual marathon and log everything. Marathon halted, no further
+wakeups scheduled. All code work this session is already committed + logged; this entry preserves the
+three inline deep-research reports (run inline/solo per the absolute no-Workflow rule) and their open
+to-dos so they aren't lost.
+
+**This session's shipped work (all committed + individually logged above):**
+- Cycle 7: `MemoryStoreFactsTests` — 16 cases (extractFacts patterns + remember dedup/trim). `3d7e8a1`.
+- Swift 6.2 concurrency audit → `MemoryStore.recall`/`cosine` marked `nonisolated` (heavy NLEmbedding+cosine
+  scan was MainActor-pinned, called sync at `AgentPipeline.swift:458`). `458e4c5`.
+- Cycle 8: `MemorySort` (newest/oldest/A–Z + filter) wired into the Memory sheet + 7 tests. `60d7934`.
+- Onboarding high-end visual pass (ambient glow, eyebrow, dimensional tile, hover CTA, entrance). `da3630d`.
+- **Grey backdrop** (owner request "today should be grey"): `DS.Palette.bgTop`/`bgBottom`/`modalBG` warm-red
+  → neutral grey + `BackgroundView` glows red→white; accent kept red #FA2E4A. Cross-lane (DS=Chat B,
+  BackgroundView=Chat A), board-flagged. `ff065ec`.
+- Refined the `run-salehman-ai` skill (24 surfaces, CVD pass, backdrop+DB-lock gotchas). `9e58716` (skill is gitignored).
+- AboutView high-end pass + honest copy (de-staled "on-device"→"cloud-first"). `23cc98b`.
+
+**Deep-research #1 — Swift 6 strict concurrency + SwiftUI macOS (findings):** project confirmed on
+`SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` + `SWIFT_APPROACHABLE_CONCURRENCY=YES` (Swift 6.0). `nonisolated async`
+⇒ `nonisolated(nonsending)` (runs on caller); use `@concurrent` to offload heavy work. Observation `@Observable`
+only invalidates on read properties. ACTIONED: recall/cosine nonisolated (above). OPEN: offload the
+`AgentPipeline.swift:458` recall call site (`Task.detached`/`@concurrent`) — Chat A's lane, flagged.
+
+**Deep-research #2 — high-end macOS visual design (open to-dos):**
+1. Soften primary text `Color.white`→~0.94 (#F0F0F0) to cut glare (DS-level, Chat B's lane — flag, don't do unasked).
+2. Widen surface-elevation step to ~5–8% luminance (codeSurface vs codeSurfaceSide currently ~3%).
+3. Extend hover-lift (scale 1.03 + glow, `.smooth`) from Onboarding/About to Today/Markets cards + Knowledge/Notes rows.
+4. Codify a ~1.2 type scale (13–15pt base, ~6 steps) in DesignSystem to stop `.system(size:)` drift across sessions.
+5. (macOS 26+) Liquid Glass on chrome only, `if #available` gated, Regular variant, under-glassed.
+Premium values: button press 0.92/0.18s, hover 1.03/0.22s, spring response 0.3 snappy/0.55/0.9, damping 0.5/0.75/0.95.
+Dark-mode: no pure black/white, elevation by luminance not shadow, desaturate accents on dark, WCAG 4.5:1.
+
+**Deep-research #3 — shipping / local LLM / icon / agent UX (open to-dos):**
+1. Plan DIRECT distribution (Developer ID + notarized DMG + Sparkle) — App Store sandbox blocks the shell/Ollama
+   tool layer. Pipeline: Hardened Runtime, `notarytool`+`stapler`, NEVER `codesign --deep` (sign inside-out),
+   Sparkle EdDSA-signed appcast, `CFBundleVersion` must increment. (notarytool accepts .dmg/.zip/.pkg.)
+2. Graduated tool-approval friction — auto-allow read/search, reserve the safety card for shell/destructive/spend
+   (biggest UX win; currently approves every tool equally). Touches ToolPolicy/Agents (Chat A lane) — coordinate.
+3. Recommend Ollama 0.19+ (MLX backend, +57% prefill/+93% decode, needs ≥32GB); surface measured tok/s; default 4-bit.
+4. (macOS 26+) Icon Composer 2-layer icon (sparkles glyph + tile), bold/simple, don't bake effects; AppIcon fallback.
+App is already well-aligned with 2026 agent-UX (named agents, Memory sheet, Restore Checkpoint, .auto routing).
+
+**Result:** session stopped cleanly; tracked working tree clean (all source committed); research preserved.
+**Files:** `DEVELOPMENT_LOG.md`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
