@@ -59,7 +59,7 @@ struct TodayView: View {
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).tracking(0.8)
+            Eyebrow(text: title)
             content()
         }
     }

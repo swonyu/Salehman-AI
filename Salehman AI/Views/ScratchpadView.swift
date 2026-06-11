@@ -179,7 +179,11 @@ struct ScratchpadView: View {
         let prompt = pad == .tasks
             ? "Here are my notes and tasks:\n\n\(text)\n\nOrganize my OPEN tasks into a short, prioritized plan (group related ones, flag anything urgent). Be concise."
             : "Here are my notes and tasks:\n\n\(text)\n\nSummarize my NOTES into a tight overview with any action items called out. Be concise."
-        aiResult = await LocalLLM.generate(prompt, maxTokens: 400)
+        // On-device only: the scratchpad can hold private content, so Organize/
+        // Summarize never leaves the Mac (mirrors the Knowledge vault) — returns a
+        // clear message instead of silently routing to a pinned cloud brain.
+        aiResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+            ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
 }

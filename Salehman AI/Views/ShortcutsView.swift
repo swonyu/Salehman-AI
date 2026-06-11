@@ -47,9 +47,8 @@ struct ShortcutsView: View {
             .padding(.bottom, DS.Space.md)
 
             ForEach(groups) { group in
-                Text(group.title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    .tracking(0.8).padding(.top, DS.Space.sm).padding(.bottom, 4)
+                Eyebrow(text: group.title)
+                    .padding(.top, DS.Space.sm).padding(.bottom, 4)
                 ForEach(group.items) { s in
                     HStack {
                         Text(s.label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.9))
