@@ -885,9 +885,15 @@ struct CodeView: View {
             Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
         } label: {
             HStack(spacing: 4) {
+                // EXPLICIT child styles: the QA render proved Menu-level tint
+                // quiets Image-only labels but NOT label text — explicit styles
+                // on the children are what actually win (same mechanism that
+                // keeps `· salehman14b` accent below).
                 Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's

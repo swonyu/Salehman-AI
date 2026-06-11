@@ -93,7 +93,7 @@ struct PaidBrainHidingTests {
         // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
-        #expect(BrainPreference.selectableCases == [.salehman, .auto])
+        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
     }
 }
 
