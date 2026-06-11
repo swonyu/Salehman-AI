@@ -1302,6 +1302,20 @@ enum ChatStore {
         let stamp = Int(Date().timeIntervalSince1970 * 1000)
         try? data.write(to: archiveDir.appendingPathComponent("chat_\(stamp).json"),
                         options: .atomic)
+        pruneArchives()
+    }
+
+    /// Keep the newest 100 archives — the timestamped filenames sort
+    /// chronologically, so name order IS age order. Unbounded growth would
+    /// slowly bloat `archives()` (it decodes every file to summarize it).
+    nonisolated private static func pruneArchives(keep: Int = 100) {
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: archiveDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }   // newest first
+        for stale in files.dropFirst(keep) {
+            try? FileManager.default.removeItem(at: stale)
+        }
     }
 
     /// All archived conversations, newest activity first.

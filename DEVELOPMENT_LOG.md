@@ -1654,3 +1654,17 @@ qa request files; bundle regenerated.
 **Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **387 cases**. All 4 in-scope tabs now have
 a new feature (Markets sort, Knowledge sort, Notes search/clear, Agents filter) + heavy tests (29 new since
 marathon start, 322→387). Next: sheet polish (Memory/Onboarding/About/Shortcuts) or more tab tests.
+
+## 2026-06-12 (early) — marathon: post-adopt gate CLEAN + archive prune + a QA-eyes lesson
+**What & why:** (1) Post-adoption cycle: failures `[]`, every chat surface within budget against
+the new baselines — the marathon's visual state is fully baselined. (2) `pruneArchives(keep:100)`
+after each archive write — timestamped names sort chronologically, so name order is age order;
+unbounded growth would bloat `archives()` (it decodes every file). (3) **Eyes lesson:** the
+21.7% `agents` drift looked like a light-mode leak in my image preview (white canvas, black
+title) — but raw pixels, histogram (93.8% dark), and canvasFlat all said the file is a healthy
+dark capture. My preview renderer inverts SOME mostly-dark PNGs; the audit reads raw pixels and
+was right. Rule reinforced: a suspicious PICTURE gets verified with pixel math before any
+cross-lane flag (almost sent Chat A/C on a snipe hunt). The drift is Chat C's intentional
+agents polish (`4d3deb6`), passing.
+**Files:** `Views/ContentView.swift`; bundle regenerated.
+**Result:** Typecheck EXIT=0.

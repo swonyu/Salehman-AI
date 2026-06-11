@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 23:38 +03 · Swift files: 141 · Swift LOC: 28053_
+_Generated: 2026-06-12 00:12 +03 · Swift files: 142 · Swift LOC: 28145_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13463,7 +13463,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (288 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (327 lines) =====
 ```swift
 import SwiftUI
 
@@ -13473,6 +13473,7 @@ struct AgentsView: View {
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var directCommand: String = ""
+    @State private var agentSearch: String = ""
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -13621,12 +13622,40 @@ struct AgentsView: View {
     }
 
     private var agentsGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
-            ForEach(AgentDefinitions.pipeline) { spec in
-                AgentCard(spec: spec,
-                          isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
+        let agents = AgentFilter.matching(AgentDefinitions.pipeline, query: agentSearch)
+        return VStack(alignment: .leading, spacing: DS.Space.md) {
+            agentSearchRow
+            if agents.isEmpty {
+                Text("No agents match “\(agentSearch)”.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 20)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
+                    ForEach(agents) { spec in
+                        AgentCard(spec: spec,
+                                  isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
+                    }
+                }
             }
         }
+    }
+
+    private var agentSearchRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Filter agents…", text: $agentSearch)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Filter agents")
+            if !agentSearch.isEmpty {
+                Button { agentSearch = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     /// Toggle between starting and stopping the autonomous loop.
@@ -13751,6 +13780,16 @@ private struct AgentCard: View {
                         lineWidth: 1)
         )
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+    }
+}
+
+/// Pure agent-grid filter (Chat C feature): case-insensitive match on the agent's
+/// name OR its role text. Empty query → the whole pipeline. Pure → unit-tested.
+enum AgentFilter {
+    static func matching(_ specs: [AgentSpec], query: String) -> [AgentSpec] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return specs }
+        return specs.filter { $0.name.lowercased().contains(q) || $0.role.lowercased().contains(q) }
     }
 }
 ```
@@ -16509,7 +16548,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1977 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1991 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17815,6 +17854,20 @@ enum ChatStore {
         let stamp = Int(Date().timeIntervalSince1970 * 1000)
         try? data.write(to: archiveDir.appendingPathComponent("chat_\(stamp).json"),
                         options: .atomic)
+        pruneArchives()
+    }
+
+    /// Keep the newest 100 archives — the timestamped filenames sort
+    /// chronologically, so name order IS age order. Unbounded growth would
+    /// slowly bloat `archives()` (it decodes every file to summarize it).
+    nonisolated private static func pruneArchives(keep: Int = 100) {
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: archiveDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }   // newest first
+        for stale in files.dropFirst(keep) {
+            try? FileManager.default.removeItem(at: stale)
+        }
     }
 
     /// All archived conversations, newest activity first.
@@ -23757,6 +23810,49 @@ struct VoiceTurn: Identifiable, Equatable, Sendable {
         self.role = role
         self.text = text
         self.date = date
+    }
+}
+```
+
+===== FILE: Salehman AITests/AgentFilterTests.swift (39 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+/// Pins `AgentFilter.matching` — the agent-grid filter behind the Agents tab's
+/// search field. Matches on name OR role, case-insensitively.
+struct AgentFilterTests {
+
+    private let team = [
+        AgentSpec(name: "Code Quality Guardian", icon: "x", role: "Check the proposed answer for mistakes"),
+        AgentSpec(name: "Reasoning Strategist",  icon: "x", role: "Do the actual work: reason through it"),
+        AgentSpec(name: "Testing & Reliability", icon: "x", role: "Stress-test the draft for edge cases"),
+    ]
+
+    @Test func emptyOrBlankQueryReturnsAll() {
+        #expect(AgentFilter.matching(team, query: "").count == team.count)
+        #expect(AgentFilter.matching(team, query: "   ").count == team.count)
+    }
+
+    @Test func matchesNameCaseInsensitively() {
+        #expect(AgentFilter.matching(team, query: "guardian").map(\.name) == ["Code Quality Guardian"])
+        #expect(AgentFilter.matching(team, query: "TESTING").map(\.name) == ["Testing & Reliability"])
+    }
+
+    @Test func matchesRoleText() {
+        #expect(AgentFilter.matching(team, query: "stress").map(\.name) == ["Testing & Reliability"])
+        #expect(AgentFilter.matching(team, query: "reason").map(\.name) == ["Reasoning Strategist"])
+    }
+
+    @Test func noMatchIsEmpty() {
+        #expect(AgentFilter.matching(team, query: "zzz").isEmpty)
+    }
+
+    @Test func realShippedPipelineIsNonEmptyAndPassesThroughOnEmptyQuery() {
+        let all = AgentDefinitions.pipeline
+        #expect(!all.isEmpty)
+        #expect(AgentFilter.matching(all, query: "").count == all.count)
     }
 }
 ```
@@ -30535,7 +30631,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1636 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1656 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32172,6 +32268,26 @@ Commits `9b0f5da`, `13b97f7`.
   verified in notes.png.
 **Verified by marker:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **381 cases** (322 at marathon
 start). Pattern: pure `XxxSort`/`XxxList` enum from the view → menu in the view → unit tests. Marathon continues.
+
+## 2026-06-11 (night) — marathon: pictures verified (history sheet + gallery), baselines adopted, history UI flow
+**What & why:** The 23:35 rebuilt capture photographed everything: `chat_history.png` empty
+state matches the design (header bar, hairline, explainer); `chat_samples.png` shows the
+failure-row Retry, two-button user pill, four-icon assistant pill — its 8.0% baselineDiff was
+the predicted intentional drift → `ADOPT_BASELINES` planted at this verified state. Added the
+history sheet's UI flow (`testHistorySheetOpensAndCloses`, content-agnostic) + the header
+clock's accessibilityLabel it clicks. Knowledge/notes drifts in the same cycle are Chat C's
+lane (passing, unbudgeted).
+**Files:** `Views/ContentView.swift` (a11y label), `Salehman AIUITests/ChatTabUITests.swift`,
+qa request files; bundle regenerated.
+**Result:** Typecheck EXIT=0. 9 UI flows total.
+
+## 2026-06-12 (00:05) — Chat C: tabs marathon cycle 5 (Agents grid filter)
+**Files:** `Views/AgentsView.swift` (Chat B lane, owner-auth), `AgentFilterTests`. Commit `3c2346e`.
+**Feature:** filter the ~15-agent grid — new pure `AgentFilter.matching` (case-insensitive name OR role) + a
+"Filter agents…" field above the grid + a no-match state. **5 tests.** Filter field verified in agents.png.
+**Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **387 cases**. All 4 in-scope tabs now have
+a new feature (Markets sort, Knowledge sort, Notes search/clear, Agents filter) + heavy tests (29 new since
+marathon start, 322→387). Next: sheet polish (Memory/Onboarding/About/Shortcuts) or more tab tests.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
