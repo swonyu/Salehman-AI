@@ -7,6 +7,7 @@ struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
     @State private var pad: Pad = .tasks
     @State private var newText = ""
+    @State private var search = ""
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
@@ -26,6 +27,7 @@ struct ScratchpadView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
                 addRow
+                if store.tasks.count + store.notes.count > 5 { searchRow }
                 if pad == .tasks { tasksList } else { notesList }
                 if !aiResult.isEmpty { aiResultCard }
             }
@@ -82,20 +84,54 @@ struct ScratchpadView: View {
         addFocused = true
     }
 
-    /// Active tasks first, completed sunk to the bottom — each group keeps its
-    /// insertion order (stable partition, presentational only; no data mutation).
-    private var orderedTasks: [TaskItem] {
-        store.tasks.filter { !$0.done } + store.tasks.filter { $0.done }
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Search scratchpad")
+            if !search.isEmpty {
+                Button { search = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private var noMatch: some View {
+        Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
+            .font(.callout).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity).padding(.vertical, 16)
     }
 
     private var tasksList: some View {
-        Group {
+        let items = ScratchpadList.tasks(store.tasks, filter: search)
+        let done = ScratchpadList.completedCount(store.tasks)
+        return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
             } else {
-                listCard { ForEach(orderedTasks) { taskRow($0) } }
+                VStack(alignment: .leading, spacing: 8) {
+                    if done > 0 {
+                        HStack {
+                            Spacer()
+                            Button("Clear \(done) completed") { clearCompleted() }
+                                .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
+                                .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
+                        }
+                    }
+                    if items.isEmpty { noMatch } else { listCard { ForEach(items) { taskRow($0) } } }
+                }
             }
         }
+    }
+
+    private func clearCompleted() {
+        for t in store.tasks where t.done { store.deleteTask(t.id) }
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
@@ -113,11 +149,14 @@ struct ScratchpadView: View {
     }
 
     private var notesList: some View {
-        Group {
+        let items = ScratchpadList.notes(store.notes, filter: search)
+        return Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
+            } else if items.isEmpty {
+                noMatch
             } else {
-                listCard { ForEach(store.notes) { noteRow($0) } }
+                listCard { ForEach(items) { noteRow($0) } }
             }
         }
     }
@@ -186,4 +225,20 @@ struct ScratchpadView: View {
             ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
+}
+
+/// Pure list shaping for the Notes tab (Chat C feature): active tasks first with
+/// completed sunk, an optional case-insensitive text filter, and the
+/// completed-count for the "Clear completed" affordance. Pure → unit-tested.
+enum ScratchpadList {
+    static func tasks(_ all: [TaskItem], filter q: String = "") -> [TaskItem] {
+        let t = q.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = t.isEmpty ? all : all.filter { $0.title.lowercased().contains(t) }
+        return matched.filter { !$0.done } + matched.filter { $0.done }   // active first, stable
+    }
+    static func notes(_ all: [Note], filter q: String = "") -> [Note] {
+        let t = q.trimmingCharacters(in: .whitespaces).lowercased()
+        return t.isEmpty ? all : all.filter { $0.text.lowercased().contains(t) }
+    }
+    static func completedCount(_ all: [TaskItem]) -> Int { all.filter(\.done).count }
 }
