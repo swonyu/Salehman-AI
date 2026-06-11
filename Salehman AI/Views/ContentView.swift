@@ -1421,14 +1421,36 @@ enum ChatStore {
 
 // MARK: - Markdown export
 enum ChatExporter {
-    static func markdown(_ messages: [ChatMessage]) -> String {
+    /// Markdown for the whole conversation. Title follows the History sheet's
+    /// rule (first user line), then the date range, per-message blocks with
+    /// attachments noted by filename (they were silently dropped before), and
+    /// a stats footer. `nonisolated` + pure on its inputs so tests can pin the
+    /// format hermetically; date strings stay locale-formatted, so tests
+    /// assert structure, not exact dates.
+    nonisolated static func markdown(_ messages: [ChatMessage]) -> String {
         let df = DateFormatter()
         df.dateStyle = .medium; df.timeStyle = .short
-        var out = "# Salehman AI — Conversation\n\n"
+        var out = "# \(ChatStore.archiveTitle(for: messages))\n\n"
+        if let first = messages.map(\.timestamp).min(),
+           let last = messages.map(\.timestamp).max() {
+            out += "_\(df.string(from: first)) – \(df.string(from: last))_\n\n"
+        }
+        out += "---\n\n"
         for m in messages {
             let who = m.isUser ? "You" : "Salehman AI"
-            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n\(m.text)\n\n---\n\n"
+            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n"
+            if let path = m.imagePath {
+                out += "📎 `\(URL(fileURLWithPath: path).lastPathComponent)`\n\n"
+            }
+            out += "\(m.text)\n\n---\n\n"
         }
+        let words = messages.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        var footer = "_\(messages.count) messages · \(words) words"
+        let replies = messages.compactMap(\.duration)
+        if !replies.isEmpty {
+            footer += String(format: " · avg reply %.1fs", replies.reduce(0, +) / Double(replies.count))
+        }
+        out += footer + "_\n"
         return out
     }
 
