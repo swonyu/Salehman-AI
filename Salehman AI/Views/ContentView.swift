@@ -1506,6 +1506,13 @@ enum ChatStore {
 }
 
 // MARK: - Markdown export
+
+/// "1 message" / "3 messages" — exporter + stats share it. Pass the plural
+/// explicitly for irregulars ("reply"/"replies").
+private nonisolated func counted(_ n: Int, _ singular: String, _ plural: String? = nil) -> String {
+    "\(n) \(n == 1 ? singular : (plural ?? singular + "s"))"
+}
+
 enum ChatExporter {
     /// Markdown for the whole conversation. Title follows the History sheet's
     /// rule (first user line), then the date range, per-message blocks with
@@ -1517,7 +1524,9 @@ enum ChatExporter {
         let df = DateFormatter()
         df.dateStyle = .medium; df.timeStyle = .short
         var out = "# \(ChatStore.archiveTitle(for: messages))\n\n"
-        if let first = messages.map(\.timestamp).min(),
+        // Range needs two ends — a single message would render "X – X".
+        if messages.count > 1,
+           let first = messages.map(\.timestamp).min(),
            let last = messages.map(\.timestamp).max() {
             out += "_\(df.string(from: first)) – \(df.string(from: last))_\n\n"
         }
@@ -1531,7 +1540,7 @@ enum ChatExporter {
             out += "\(m.text)\n\n---\n\n"
         }
         let words = messages.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
-        var footer = "_\(messages.count) messages · \(words) words"
+        var footer = "_\(counted(messages.count, "message")) · \(counted(words, "word"))"
         let replies = messages.compactMap(\.duration)
         if !replies.isEmpty {
             footer += String(format: " · avg reply %.1fs", replies.reduce(0, +) / Double(replies.count))
@@ -1602,8 +1611,8 @@ struct ChatStats: Equatable {
     /// Two-line summary for the `/stats` alert. `%.1f` via `String(format:)`
     /// is locale-independent, so tests can pin the exact string.
     nonisolated var blurb: String {
-        let head = "\(messages) messages — \(yours) yours, \(replies) replies"
-        var tail = "\(words) words"
+        let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
+        var tail = counted(words, "word")
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail

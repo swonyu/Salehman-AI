@@ -14,6 +14,18 @@ struct ChatHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var archives: [ChatStore.ArchivedChat] = []
     @State private var hoveredRow: URL? = nil
+    @State private var query = ""
+
+    /// Title filter — case/diacritic-insensitive substring; blank = everything.
+    /// Pure for tests (same pattern as the Knowledge/Agents filters).
+    nonisolated static func filtered(_ archives: [ChatStore.ArchivedChat],
+                                     query: String) -> [ChatStore.ArchivedChat] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return archives }
+        return archives.filter {
+            $0.title.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,11 +59,31 @@ struct ChatHistoryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(archives) { item in
-                            row(item)
-                            Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    TextField("Filter by title…", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .accessibilityIdentifier("history.filter")
+                }
+                .padding(.horizontal, 18).padding(.vertical, 8)
+                .background(DS.Palette.codeSurfaceSide.opacity(0.6))
+                .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
+                         alignment: .bottom)
+
+                let shown = Self.filtered(archives, query: query)
+                if shown.isEmpty {
+                    Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(shown) { item in
+                                row(item)
+                                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                            }
                         }
                     }
                 }

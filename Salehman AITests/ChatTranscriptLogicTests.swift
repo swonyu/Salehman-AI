@@ -43,8 +43,9 @@ struct ChatExporterFormatTests {
 
     @Test func noDurationsMeansNoAvgReplySegment() {
         let md = ChatExporter.markdown([msg("hi there", user: true)])
-        #expect(md.hasSuffix("_1 messages · 2 words_\n"))
+        #expect(md.hasSuffix("_1 message · 2 words_\n"))   // singular, no "1 messages"
         #expect(!md.contains("avg reply"))
+        #expect(!md.contains(" – "))   // no "X – X" range for a single message
     }
 
     @Test func emptyConversationStaysWellFormed() {
@@ -105,7 +106,7 @@ struct ChatStatsTests {
             msg("one two", user: true, at: 0),
             msg("three", user: false, at: 90, duration: 1.5),
         ])
-        #expect(s.blurb == "2 messages — 1 yours, 1 replies\n3 words · avg reply 1.5s · spans 1m")
+        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · avg reply 1.5s · spans 1m")
     }
 
     @Test func emptyConversationBlurbIsCalm() {
@@ -157,6 +158,33 @@ struct ChatPinTests {
         #expect(ContentView.pinPreview("first\nsecond") == "first")
         let p = ContentView.pinPreview(String(repeating: "word ", count: 20))
         #expect(p.hasSuffix("…") && p.count <= 41)
+    }
+}
+
+// MARK: - History sheet title filter
+
+struct ChatHistoryFilterTests {
+
+    private func arc(_ title: String) -> ChatStore.ArchivedChat {
+        ChatStore.ArchivedChat(id: URL(fileURLWithPath: "/tmp/\(UUID()).json"),
+                               title: title, date: Date(timeIntervalSince1970: 0),
+                               messageCount: 1)
+    }
+
+    @Test func blankQueryReturnsEverything() {
+        let all = [arc("Plan my week"), arc("Fix the build")]
+        #expect(ChatHistoryView.filtered(all, query: "").count == 2)
+        #expect(ChatHistoryView.filtered(all, query: "   ").count == 2)
+    }
+
+    @Test func matchesCaseAndDiacriticInsensitively() {
+        let all = [arc("Café notes"), arc("Fix the build")]
+        #expect(ChatHistoryView.filtered(all, query: "cafe").map(\.title) == ["Café notes"])
+        #expect(ChatHistoryView.filtered(all, query: "BUILD").map(\.title) == ["Fix the build"])
+    }
+
+    @Test func noMatchIsEmptyNotEverything() {
+        #expect(ChatHistoryView.filtered([arc("Plan my week")], query: "zzz").isEmpty)
     }
 }
 

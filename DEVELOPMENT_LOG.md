@@ -1311,6 +1311,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** Code tab now distinguishes "uncommitted in git" (amber) from "AI-touched this run" (accent) at a glance; parser is regression-locked by tests. SOURCE_BUNDLE regenerated (144 files, 28443 LOC).
 
+## 2026-06-12 · Chat marathon 2, slices 1–4 (effort/grok session, owner-directed "3h chat tab")
+
+**Files:** `Views/ContentView.swift`, `Views/ChatViewModel.swift`, new `Salehman AITests/ChatTranscriptLogicTests.swift` (19 tests)
+
+**Slices:** (1) `07380e5` **Exporter v2** — heading follows the History-sheet title rule, date-range line, attachments exported by filename (previously silently dropped), stats footer; `nonisolated` + 6 format tests. (2) `e511ef0` **/stats** — whole-conversation roll-up (messages/sides/words/avg-reply/span) via pure `ChatStats` + calendar-free span humanizer, surfaced in a native alert; +5 tests. (3) `2e3d661` **Pinned messages** — context-menu Pin/Unpin on both row kinds, jump-chip rail above the transcript (`safeAreaInset`, zero chrome when nothing pinned, click centers the message); `pinned: Bool?` NOT defaulted-Bool so pre-pin archives decode (regression-locked by test); pure `togglingPin` core; +5 tests. (4) `1600677` **Composer word counter** — silent under 120 words, accent warn at 2000; +3 tests.
+
+**Verification:** every slice = full-target swiftc typecheck at project settings (Swift 6 / MainActor default / approachable concurrency) **EXIT 0** before commit; xcodebuild remains sandbox-blocked for this session (see 06-12 git-dots entry) — **standing request: build-capable session please run `AITests`** (expect 19 new green in `ChatTranscriptLogicTests`).
+
+**Result:** chat tab gains /stats + pins + length feedback; export is finally faithful to attachments. Marathon continues (self-review slice next).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
