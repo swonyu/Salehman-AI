@@ -1546,3 +1546,12 @@ mid-thought no longer eats the draft; sending clears it naturally. 4 slug tests 
 regenerated.
 **Result:** Typecheck EXIT=0 (CodeView WIP pinned). No test touches the draft key (parallel-
 UserDefaults rule respected).
+
+## 2026-06-11 (night) — marathon slice 7: knowledge-base sync (PROJECT_CONTEXT + board)
+**What & why:** CLAUDE.md requires PROJECT_CONTEXT.md stays correct after structural change —
+the chat tab gained 6 slices tonight. `ContentView`/`ChatViewModel` rows rewritten (slash
+commands + prompt slugs, edit-resend, quote, multi-attachments, draft persistence, Code-1:1
+welcome). Board marathon row updated with all slice SHAs. Checked streaming-markdown as a
+candidate: already implemented with a `liveMarkdownLimit` cap — no work needed.
+**Files:** `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+**Result:** Docs match the app again.
