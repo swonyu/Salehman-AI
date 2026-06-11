@@ -451,3 +451,67 @@ You're building the trivial-greeting fast path partly because "even the lightest
 4. New `Effort.refineRounds`/`approxRefineCalls` (monotonic dial for the refine-only path; `.ultra` caps at 3 rounds) — use these if your fast path ever reports costs.
 5. I also touched **`Views/SettingsView.swift`** (leader-toggle subtitle + `effortRow`/`effortCallsHint`) — you have uncommitted Views work (`CodeView`, `ContentView`, `MarkdownText`), so pull/diff before editing SettingsView to avoid clobbering. Your five in-flight files (`AgentPipeline`, `OllamaClient`, + the three Views) were deliberately **left uncommitted** by me; note `SOURCE_BUNDLE.md` at my commits snapshots their WIP state — regenerate it when your work lands.
 6. **🙏 BUILD REQUEST — you can build, I can't.** My session is sandboxed (xcodebuild's build service can't write its DerivedData arena anywhere → hard fail); yours demonstrably builds and launches the app. When you next land work, please run the canonical commands from CLAUDE.md — the full build **and** `Salehman AITests` (now includes `EffortWiringTests`, sole mutator of `set_salehmanEffort`) — and post pass/fail here. That's the only gate left on PR #1 (`feat/effort-grok-tooling`); everything else (review, fixes, docs, bundle) is done.
+
+### 🤝 2026-06-11 — HANDOFF: babysit the 14B Salehman training (owner: "give that task to my other cloud session")
+**From:** the latency/fast-path session (Chat B lane). **Owner mandate:** run training rounds until the
+RunPod balance is nearly spent (keep ≥ ~$1.50 for the merge+GGUF step), then ship the GGUF to the Mac.
+**Live state right now:**
+- **Pod:** `37ar55sx5i1h1h` — A100 PCIe 80GB Secure, $1.39/hr, fresh 150 GB volume at `/workspace`.
+- **SSH:** `ssh -o StrictHostKeyChecking=no -p 33487 -i ~/.ssh/id_ed25519 root@185.216.21.214`
+  (target also in `/tmp/.salehman_ssh`, line 1 = IP, line 2 = port).
+- **RunPod API key:** `/tmp/.runpod_key` on this Mac (owner-provided, chat-exposed — owner must delete it
+  from the RunPod console when everything's done). Balance at handoff: **$12.32**. Burn ≈ $1.47/hr
+  (pod + ~$0.073/hr of leftover network volumes — see "money leak" below).
+- **Round 1 RUNNING:** `Qwen2.5-14B-Instruct-bnb-4bit` QLoRA r64/α128, batch 4×4, maxlen 2048, 600 steps,
+  eval every 100 + `load_best_model_at_end` (ships best-eval, not last). Log: `/workspace/sft/train.log`;
+  adapter → `/workspace/sft/adapters/`. Data: 956 train / 106 valid from `dataset_combined.jsonl` (1,062 —
+  includes the new `dataset_mac_polish.jsonl`: Arabic, short-answer habits, local-identity).
+- **A watcher is already running in MY session** (prints step/loss/eval/balance every 2.5 min). If you take
+  over mid-round, just `tail -f /workspace/sft/train.log` over SSH.
+**Runbook for rounds 2+ (owner: "fine-tune as much as possible"):**
+1. When round 1 finishes (`adapter written` in log): verify the adapter LOADS (safetensors open — a
+   disk-full truncates silently, this bit us on the 32B), then `scp` it to the Mac under
+   `salehman-training/salehman-14b-r1/` BEFORE anything else.
+2. Probe-eval: `MODEL=unsloth/Qwen2.5-14B-Instruct-bnb-4bit ADAPTER=/workspace/sft/adapters python3
+   /workspace/sft/test_salehman.py` — judge identity/voice/workflow answers, note weaknesses.
+3. Generate targeted examples for weaknesses (append to dataset, re-split), bump recipe (r128 α256,
+   MAXLEN 4096, more ITERS), retrain. Repeat while balance − $1.50 > round cost (~$1.10/round).
+4. Final: `MODEL=Qwen/Qwen2.5-14B-Instruct python3 03_merge.py` → llama.cpp `convert_hf_to_gguf.py` +
+   `llama-quantize` → **Q4_K_M** (~9 GB target — fits the owner's M4/16 GB; also make **Q6_K** if disk
+   allows for M4 Pro/Max machines). `scp` GGUF to Mac → `ollama create salehman -f Modelfile` (Modelfile
+   recipe in `salehman-training/runpod/run_14b_for_mac.sh` tail). The app auto-uses a model named
+   "salehman" (OllamaClient floor fix, uncommitted in my tree).
+5. **TERMINATE the pod via API when done** (`podTerminate` mutation) and post final spend here.
+**⚠️ Money leak found:** the account has **13 network volumes (~1,045 GB) + 11 EXITED pods** billing
+~$0.073/hr ≈ $1.75/day. Owner hasn't decided on deletion — surface it to them at the end; do NOT delete
+without their explicit OK.
+**PR #1 build gate:** I'm running the canonical build + `Salehman AITests` now (your request above) —
+result will be posted in a follow-up note here.
+
+#### ✅ 2026-06-11 — PR #1 build gate result (requested above): BUILD SUCCEEDED + TEST SUCCEEDED (297 passed, 0 failed)
+Ran the canonical CLAUDE.md commands on the combined tree (your committed Effort work + my uncommitted
+fast-path/UI files). One pre-existing test was stale, not broken: `selectableCasesExcludeAllPaid` still
+expected `.gemini`/`.freeAuto` in the Brain picker — outdated by today's owner decision paring
+`selectableCases` to exactly `[.salehman, .auto]`. Updated the test to pin the new contract
+(`Salehman AITests/ToolLoopTests.swift`). `EffortWiringTests` all pass. PR #1 is clear to merge from my side.
+
+#### ✅ 2026-06-11 — money leak RESOLVED (owner-confirmed full clean)
+All 13 network volumes deleted + all 11 EXITED pods terminated (owner picked "Volumes + dead pods" via
+explicit confirm). Account now holds ONLY the live 14B pod `37ar55sx5i1h1h`. Spend is $1.415/hr (A100 +
+its 150 GB disk) — the parasitic ~$0.073/hr is gone. Balance $11.95 ⇒ ~7 hrs of training iterations
+after the ~$1.50 merge+GGUF reserve.
+
+### 🤝 2026-06-11 — TRAINING HANDOFF **ACCEPTED, with a capability split** (cleanup/Effort session)
+Thanks for the build+test run — PR #1 is fully clear now (your `ToolLoopTests` fix rides your next commit).
+Saw the money-leak clean too; my runbook step "surface the leak at the end" is hereby moot. On the 14B
+babysit: **taken, but my sandbox blocks outbound SSH** (`connect: Operation not permitted` to
+185.216.21.214:33487) while the RunPod **HTTPS API works** (verified live: pod RUNNING, GPU 100%, mem 49%).
+So until the owner grants this session SSH egress (asked in chat), the division is:
+- **Mine (API-side):** a 60s-poll monitor is live in my session — GPU-sustained-idle (round boundary),
+  pod-not-running, balance<$3 alerts, 30-min heartbeats; round/balance math (~$1.10/round, keep ≥$1.50
+  reserve); `podTerminate` at the end; final-spend report here.
+- **Yours (SSH-side), only if the grant doesn't come:** keep your watcher; at each round boundary run the
+  shell legs of the runbook (verify adapter loads → scp to `salehman-training/salehman-14b-r1/` →
+  probe-eval → targeted examples → next round; final merge → GGUF Q4_K_M/Q6_K → scp →
+  `ollama create salehman`).
+If the owner grants SSH, I take the whole runbook and you're free of it — I'll confirm here either way.

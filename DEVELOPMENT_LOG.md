@@ -1504,6 +1504,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** PR #1 fully done from this session's side; merge gate = owner (or latency session) runs build + tests.
 
+## 2026-06-11 · 14B training babysit accepted (API-side); PR #1 build gate PASSED by the other session
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** The latency session answered the board: (1) **PR #1 build gate cleared** — canonical build + `Salehman AITests` on the combined tree: BUILD SUCCEEDED, 297 tests passed / 0 failed (incl. all `EffortWiringTests`); it also updated stale `selectableCasesExcludeAllPaid` in `ToolLoopTests.swift` (rides its next commit). (2) It handed off the owner-mandated **14B Salehman training babysit** (pod `37ar55sx5i1h1h`, A100, round 1 of Qwen2.5-14B QLoRA running; runbook on the board). Accepted with a capability split: this sandbox blocks outbound SSH (`Operation not permitted`) but the RunPod HTTPS API works — so this session runs a 60s-poll monitor (GPU-sustained-idle = round boundary; pod-not-running; balance<$3; 30-min heartbeats), does the balance math, and will `podTerminate` + report final spend; the SSH legs (adapter verify/scp/eval/retrain/GGUF) stay with the other session unless the owner grants SSH egress. Monitor v1 had a real bug — zsh doesn't word-split unquoted `$line`, so `set -- $line` parked the whole status string in `$1` and zsh's `[` coerced the empty `$bal` to 0 → false "balance $0" alarm; v2 moved all logic into a single Python poller (no shell parsing). The other session also cleaned the RunPod money leak with owner confirmation (13 volumes + 11 dead pods deleted; burn now $1.415/hr) — my "surface the leak at the end" runbook step is moot.
+
+**Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -2084,3 +2092,46 @@ refactor, not this lane — left for them per coordination; went green when they
 data loss. Pod terminated by owner after backup. Serving (GGUF `Q3_K_M` + speculative decoding on the 4080)
 deferred to owner, next month. Lesson re-learned: a disk-full **truncates** a safetensors save silently —
 always verify the artifact *loads* before calling training done.
+
+## 2026-06-11 — "Why doesn't Salehman answer / it takes forever": mute-floor + 15-agents-for-"hi" fixes; brain menu pared; 14B-for-Mac kit
+**Files:** `LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Views/CodeView.swift`,
+`Views/ContentView.swift`, `Views/MarkdownText.swift`, `App/AppSettings.swift`;
+`salehman-training/runpod/run_14b_for_mac.sh` (new), `salehman-training/make_mac_polish_dataset.py` (new).
+**What & why:** Owner sent "hi" in the Code tab → stuck on "Working 0/15", no answer ever.
+Three stacked root causes, found by reading the live Ollama state + the routing code:
+- **Mute local floor.** `.salehman`'s `activeChatModel()` returned ONLY the custom model named
+  "salehman" — by design ("never silently fall back") — but that model isn't pulled (the 32B
+  isn't served yet), and with no cloud key the brain went silent. Fix: prefer the custom model
+  when present, else fall back to the best available local coder (qwen2.5-coder:7b) so Salehman
+  is never mute.
+- **15 agents for "hi".** `complexity()` correctly rates a greeting `.simple` — but the Code tab
+  wraps EVERY message in a multi-line >200-char coding preamble, which alone trips the
+  `.hard` heuristics → in Maximum mode that's the full 15-agent team for "hi". Fix: trivial
+  input (`isTrivialMission`) skips the preamble in CodeView, AND `AgentPipeline.run` got a
+  trivial fast-path: one direct warm-local reply (Ollama + persona), no team, no
+  leader/critique finalize, cloud engine only as fallback. (`finalize` was the second tax:
+  even a 1-agent run paid a `refineOwnDraft` self-critique pass.)
+- **Streaming lag guards** (owner: "the 32B must never lag the app"): still-streaming replies
+  longer than `StreamRender.liveMarkdownLimit` (1200 chars, shared constant in AgentPipeline)
+  render as plain text — the O(n)-per-tick Markdown re-parse was the jank source — full
+  Markdown renders once on commit. Applied in both CodeView's streamingView and the main
+  chat's StreamingBubble.
+- **Brain menu pared to Salehman + Auto** (owner: "stupid to have this many models" — picked
+  via AskUserQuestion). `selectableCases` = `[.salehman, .auto]`; init migrates+persists a
+  stale hidden pick to `.salehman` so picker and `brainPreferenceCurrent` can't disagree.
+  All other cases still function if set programmatically (rotation untouched).
+- **Markdown upgrades:** chat code blocks now syntax-highlighted via the existing `CodeSyntax`
+  engine (single AttributedString so selection spans the block; >6000-char blocks stay plain —
+  the per-tick re-highlight is quadratic while streaming); GFM tables (`| a | b |` + separator)
+  parse into a real Grid with bold header.
+- **14B-for-Mac kit:** owner wants HIS fine-tune fast on THIS Mac (M4/16 GB — a 32B can't fit:
+  ~18 GB weights alone). New turnkey `run_14b_for_mac.sh` (train Qwen2.5-14B QLoRA on the same
+  dataset → merge → GGUF Q4_K_M ≈ 9 GB → `ollama create salehman`; the floor fix above makes the
+  app auto-use it). Dataset grown 1,040 → **1,062** (`make_mac_polish_dataset.py`: Arabic pairs,
+  direct-short-answer habits, honest local-identity answers) — parse-clean, secret-scan clean.
+**Result:** build green after each step (one intermediate red: `await` on both sides of `??` is
+illegal in Swift — restructured). Verified via the app's persisted `chat_history.json` that
+Salehman now actually answers ("hi" → "مرحباً! كيف أقدر أساعدك اليوم؟"). Synthetic-keystroke UI
+tests were unreliable while the owner used the Mac live — timing of the fast path still needs a
+hands-on check. NEXT: owner deploys a RunPod GPU ($15 budget), Claude drives multi-round 14B
+training to spend it well (eval-checkpointed rounds, weakness-targeted data, final Q4_K_M GGUF).

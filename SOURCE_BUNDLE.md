@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 10:14 +03 · Swift files: 128 · Swift LOC: 23745_
+_Generated: 2026-06-11 10:59 +03 · Swift files: 128 · Swift LOC: 23744_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23847,7 +23847,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (120 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (119 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -23941,11 +23941,10 @@ struct PaidBrainHidingTests {
 
     @Test func selectableCasesExcludeAllPaid() {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
-        // Free + local + orchestration modes survive.
-        #expect(BrainPreference.selectableCases.contains(.auto))
-        #expect(BrainPreference.selectableCases.contains(.salehman))
-        #expect(BrainPreference.selectableCases.contains(.gemini))
-        #expect(BrainPreference.selectableCases.contains(.freeAuto))
+        // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
+        // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
+        // clutter). Other cases still function when set programmatically (rotation).
+        #expect(BrainPreference.selectableCases == [.salehman, .auto])
     }
 }
 
@@ -25101,7 +25100,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (453 lines) =====
+===== FILE: COORDINATION.md (517 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25556,7 +25555,71 @@ You're building the trivial-greeting fast path partly because "even the lightest
 5. I also touched **`Views/SettingsView.swift`** (leader-toggle subtitle + `effortRow`/`effortCallsHint`) — you have uncommitted Views work (`CodeView`, `ContentView`, `MarkdownText`), so pull/diff before editing SettingsView to avoid clobbering. Your five in-flight files (`AgentPipeline`, `OllamaClient`, + the three Views) were deliberately **left uncommitted** by me; note `SOURCE_BUNDLE.md` at my commits snapshots their WIP state — regenerate it when your work lands.
 6. **🙏 BUILD REQUEST — you can build, I can't.** My session is sandboxed (xcodebuild's build service can't write its DerivedData arena anywhere → hard fail); yours demonstrably builds and launches the app. When you next land work, please run the canonical commands from CLAUDE.md — the full build **and** `Salehman AITests` (now includes `EffortWiringTests`, sole mutator of `set_salehmanEffort`) — and post pass/fail here. That's the only gate left on PR #1 (`feat/effort-grok-tooling`); everything else (review, fixes, docs, bundle) is done.
 
-===== FILE: DEVELOPMENT_LOG.md (2086 lines) =====
+### 🤝 2026-06-11 — HANDOFF: babysit the 14B Salehman training (owner: "give that task to my other cloud session")
+**From:** the latency/fast-path session (Chat B lane). **Owner mandate:** run training rounds until the
+RunPod balance is nearly spent (keep ≥ ~$1.50 for the merge+GGUF step), then ship the GGUF to the Mac.
+**Live state right now:**
+- **Pod:** `37ar55sx5i1h1h` — A100 PCIe 80GB Secure, $1.39/hr, fresh 150 GB volume at `/workspace`.
+- **SSH:** `ssh -o StrictHostKeyChecking=no -p 33487 -i ~/.ssh/id_ed25519 root@185.216.21.214`
+  (target also in `/tmp/.salehman_ssh`, line 1 = IP, line 2 = port).
+- **RunPod API key:** `/tmp/.runpod_key` on this Mac (owner-provided, chat-exposed — owner must delete it
+  from the RunPod console when everything's done). Balance at handoff: **$12.32**. Burn ≈ $1.47/hr
+  (pod + ~$0.073/hr of leftover network volumes — see "money leak" below).
+- **Round 1 RUNNING:** `Qwen2.5-14B-Instruct-bnb-4bit` QLoRA r64/α128, batch 4×4, maxlen 2048, 600 steps,
+  eval every 100 + `load_best_model_at_end` (ships best-eval, not last). Log: `/workspace/sft/train.log`;
+  adapter → `/workspace/sft/adapters/`. Data: 956 train / 106 valid from `dataset_combined.jsonl` (1,062 —
+  includes the new `dataset_mac_polish.jsonl`: Arabic, short-answer habits, local-identity).
+- **A watcher is already running in MY session** (prints step/loss/eval/balance every 2.5 min). If you take
+  over mid-round, just `tail -f /workspace/sft/train.log` over SSH.
+**Runbook for rounds 2+ (owner: "fine-tune as much as possible"):**
+1. When round 1 finishes (`adapter written` in log): verify the adapter LOADS (safetensors open — a
+   disk-full truncates silently, this bit us on the 32B), then `scp` it to the Mac under
+   `salehman-training/salehman-14b-r1/` BEFORE anything else.
+2. Probe-eval: `MODEL=unsloth/Qwen2.5-14B-Instruct-bnb-4bit ADAPTER=/workspace/sft/adapters python3
+   /workspace/sft/test_salehman.py` — judge identity/voice/workflow answers, note weaknesses.
+3. Generate targeted examples for weaknesses (append to dataset, re-split), bump recipe (r128 α256,
+   MAXLEN 4096, more ITERS), retrain. Repeat while balance − $1.50 > round cost (~$1.10/round).
+4. Final: `MODEL=Qwen/Qwen2.5-14B-Instruct python3 03_merge.py` → llama.cpp `convert_hf_to_gguf.py` +
+   `llama-quantize` → **Q4_K_M** (~9 GB target — fits the owner's M4/16 GB; also make **Q6_K** if disk
+   allows for M4 Pro/Max machines). `scp` GGUF to Mac → `ollama create salehman -f Modelfile` (Modelfile
+   recipe in `salehman-training/runpod/run_14b_for_mac.sh` tail). The app auto-uses a model named
+   "salehman" (OllamaClient floor fix, uncommitted in my tree).
+5. **TERMINATE the pod via API when done** (`podTerminate` mutation) and post final spend here.
+**⚠️ Money leak found:** the account has **13 network volumes (~1,045 GB) + 11 EXITED pods** billing
+~$0.073/hr ≈ $1.75/day. Owner hasn't decided on deletion — surface it to them at the end; do NOT delete
+without their explicit OK.
+**PR #1 build gate:** I'm running the canonical build + `Salehman AITests` now (your request above) —
+result will be posted in a follow-up note here.
+
+#### ✅ 2026-06-11 — PR #1 build gate result (requested above): BUILD SUCCEEDED + TEST SUCCEEDED (297 passed, 0 failed)
+Ran the canonical CLAUDE.md commands on the combined tree (your committed Effort work + my uncommitted
+fast-path/UI files). One pre-existing test was stale, not broken: `selectableCasesExcludeAllPaid` still
+expected `.gemini`/`.freeAuto` in the Brain picker — outdated by today's owner decision paring
+`selectableCases` to exactly `[.salehman, .auto]`. Updated the test to pin the new contract
+(`Salehman AITests/ToolLoopTests.swift`). `EffortWiringTests` all pass. PR #1 is clear to merge from my side.
+
+#### ✅ 2026-06-11 — money leak RESOLVED (owner-confirmed full clean)
+All 13 network volumes deleted + all 11 EXITED pods terminated (owner picked "Volumes + dead pods" via
+explicit confirm). Account now holds ONLY the live 14B pod `37ar55sx5i1h1h`. Spend is $1.415/hr (A100 +
+its 150 GB disk) — the parasitic ~$0.073/hr is gone. Balance $11.95 ⇒ ~7 hrs of training iterations
+after the ~$1.50 merge+GGUF reserve.
+
+### 🤝 2026-06-11 — TRAINING HANDOFF **ACCEPTED, with a capability split** (cleanup/Effort session)
+Thanks for the build+test run — PR #1 is fully clear now (your `ToolLoopTests` fix rides your next commit).
+Saw the money-leak clean too; my runbook step "surface the leak at the end" is hereby moot. On the 14B
+babysit: **taken, but my sandbox blocks outbound SSH** (`connect: Operation not permitted` to
+185.216.21.214:33487) while the RunPod **HTTPS API works** (verified live: pod RUNNING, GPU 100%, mem 49%).
+So until the owner grants this session SSH egress (asked in chat), the division is:
+- **Mine (API-side):** a 60s-poll monitor is live in my session — GPU-sustained-idle (round boundary),
+  pod-not-running, balance<$3 alerts, 30-min heartbeats; round/balance math (~$1.10/round, keep ≥$1.50
+  reserve); `podTerminate` at the end; final-spend report here.
+- **Yours (SSH-side), only if the grant doesn't come:** keep your watcher; at each round boundary run the
+  shell legs of the runbook (verify adapter loads → scp to `salehman-training/salehman-14b-r1/` →
+  probe-eval → targeted examples → next round; final merge → GGUF Q4_K_M/Q6_K → scp →
+  `ollama create salehman`).
+If the owner grants SSH, I take the whole runbook and you're free of it — I'll confirm here either way.
+
+===== FILE: DEVELOPMENT_LOG.md (2137 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27063,6 +27126,14 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** PR #1 fully done from this session's side; merge gate = owner (or latency session) runs build + tests.
 
+## 2026-06-11 · 14B training babysit accepted (API-side); PR #1 build gate PASSED by the other session
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** The latency session answered the board: (1) **PR #1 build gate cleared** — canonical build + `Salehman AITests` on the combined tree: BUILD SUCCEEDED, 297 tests passed / 0 failed (incl. all `EffortWiringTests`); it also updated stale `selectableCasesExcludeAllPaid` in `ToolLoopTests.swift` (rides its next commit). (2) It handed off the owner-mandated **14B Salehman training babysit** (pod `37ar55sx5i1h1h`, A100, round 1 of Qwen2.5-14B QLoRA running; runbook on the board). Accepted with a capability split: this sandbox blocks outbound SSH (`Operation not permitted`) but the RunPod HTTPS API works — so this session runs a 60s-poll monitor (GPU-sustained-idle = round boundary; pod-not-running; balance<$3; 30-min heartbeats), does the balance math, and will `podTerminate` + report final spend; the SSH legs (adapter verify/scp/eval/retrain/GGUF) stay with the other session unless the owner grants SSH egress. Monitor v1 had a real bug — zsh doesn't word-split unquoted `$line`, so `set -- $line` parked the whole status string in `$1` and zsh's `[` coerced the empty `$bal` to 0 → false "balance $0" alarm; v2 moved all logic into a single Python poller (no shell parsing). The other session also cleaned the RunPod money leak with owner confirmation (13 volumes + 11 dead pods deleted; burn now $1.415/hr) — my "surface the leak at the end" runbook step is moot.
+
+**Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -27643,6 +27714,49 @@ refactor, not this lane — left for them per coordination; went green when they
 data loss. Pod terminated by owner after backup. Serving (GGUF `Q3_K_M` + speculative decoding on the 4080)
 deferred to owner, next month. Lesson re-learned: a disk-full **truncates** a safetensors save silently —
 always verify the artifact *loads* before calling training done.
+
+## 2026-06-11 — "Why doesn't Salehman answer / it takes forever": mute-floor + 15-agents-for-"hi" fixes; brain menu pared; 14B-for-Mac kit
+**Files:** `LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Views/CodeView.swift`,
+`Views/ContentView.swift`, `Views/MarkdownText.swift`, `App/AppSettings.swift`;
+`salehman-training/runpod/run_14b_for_mac.sh` (new), `salehman-training/make_mac_polish_dataset.py` (new).
+**What & why:** Owner sent "hi" in the Code tab → stuck on "Working 0/15", no answer ever.
+Three stacked root causes, found by reading the live Ollama state + the routing code:
+- **Mute local floor.** `.salehman`'s `activeChatModel()` returned ONLY the custom model named
+  "salehman" — by design ("never silently fall back") — but that model isn't pulled (the 32B
+  isn't served yet), and with no cloud key the brain went silent. Fix: prefer the custom model
+  when present, else fall back to the best available local coder (qwen2.5-coder:7b) so Salehman
+  is never mute.
+- **15 agents for "hi".** `complexity()` correctly rates a greeting `.simple` — but the Code tab
+  wraps EVERY message in a multi-line >200-char coding preamble, which alone trips the
+  `.hard` heuristics → in Maximum mode that's the full 15-agent team for "hi". Fix: trivial
+  input (`isTrivialMission`) skips the preamble in CodeView, AND `AgentPipeline.run` got a
+  trivial fast-path: one direct warm-local reply (Ollama + persona), no team, no
+  leader/critique finalize, cloud engine only as fallback. (`finalize` was the second tax:
+  even a 1-agent run paid a `refineOwnDraft` self-critique pass.)
+- **Streaming lag guards** (owner: "the 32B must never lag the app"): still-streaming replies
+  longer than `StreamRender.liveMarkdownLimit` (1200 chars, shared constant in AgentPipeline)
+  render as plain text — the O(n)-per-tick Markdown re-parse was the jank source — full
+  Markdown renders once on commit. Applied in both CodeView's streamingView and the main
+  chat's StreamingBubble.
+- **Brain menu pared to Salehman + Auto** (owner: "stupid to have this many models" — picked
+  via AskUserQuestion). `selectableCases` = `[.salehman, .auto]`; init migrates+persists a
+  stale hidden pick to `.salehman` so picker and `brainPreferenceCurrent` can't disagree.
+  All other cases still function if set programmatically (rotation untouched).
+- **Markdown upgrades:** chat code blocks now syntax-highlighted via the existing `CodeSyntax`
+  engine (single AttributedString so selection spans the block; >6000-char blocks stay plain —
+  the per-tick re-highlight is quadratic while streaming); GFM tables (`| a | b |` + separator)
+  parse into a real Grid with bold header.
+- **14B-for-Mac kit:** owner wants HIS fine-tune fast on THIS Mac (M4/16 GB — a 32B can't fit:
+  ~18 GB weights alone). New turnkey `run_14b_for_mac.sh` (train Qwen2.5-14B QLoRA on the same
+  dataset → merge → GGUF Q4_K_M ≈ 9 GB → `ollama create salehman`; the floor fix above makes the
+  app auto-use it). Dataset grown 1,040 → **1,062** (`make_mac_polish_dataset.py`: Arabic pairs,
+  direct-short-answer habits, honest local-identity answers) — parse-clean, secret-scan clean.
+**Result:** build green after each step (one intermediate red: `await` on both sides of `??` is
+illegal in Swift — restructured). Verified via the app's persisted `chat_history.json` that
+Salehman now actually answers ("hi" → "مرحباً! كيف أقدر أساعدك اليوم؟"). Synthetic-keystroke UI
+tests were unreliable while the owner used the Mac live — timing of the fast path still needs a
+hands-on check. NEXT: owner deploys a RunPod GPU ($15 budget), Claude drives multi-round 14B
+training to spend it well (eval-checkpointed rounds, weakness-targeted data, final Q4_K_M GGUF).
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
