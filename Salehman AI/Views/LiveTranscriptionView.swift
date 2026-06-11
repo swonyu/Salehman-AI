@@ -17,8 +17,7 @@ struct LiveTranscriptionView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: 14) {
                 header

@@ -32,7 +32,9 @@ struct TodayView: View {
                 section("AT A GLANCE") { statCards }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Same centered content column as the chat surfaces (design language).
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .onAppear(perform: refresh)
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
@@ -123,7 +125,9 @@ private struct ActionTile: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language — no translucent stacking
+            // over the landing glow.
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.5) : DS.Palette.surfaceStroke, lineWidth: 1))
             .scaleEffect(hovering ? 1.02 : 1)
@@ -158,7 +162,8 @@ private struct StatTile: View {
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language (see ActionTile).
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.4) : DS.Palette.surfaceStroke, lineWidth: 1))
         }

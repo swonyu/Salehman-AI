@@ -106,6 +106,17 @@ struct SettingsView: View {
     // design just to drive UI updates.
     @State private var mlxState: MLXSalehmanEngine.State = .unavailable(reason: "")
 
+    // 14B-readiness: tri-state probe of the user's own Ollama model (the
+    // `.salehman` brain's offline floor — default name "salehman"). Drives
+    // `salehmanModelStatusRow`; probed on appear, on name edit, on demand.
+    enum LocalModelProbe: Equatable {
+        case checking
+        case installed(String)   // model with this name is pulled — floor ready
+        case missing(String)     // Ollama up but no such model created yet
+        case ollamaDown          // server unreachable — can't know either way
+    }
+    @State private var localModelProbe: LocalModelProbe = .checking
+
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
@@ -123,11 +134,10 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            // Inherit the DS canvas tokens so the Settings sheet picks up the
-            // Apple-Music warm-dark identity (was a hardcoded cold-indigo literal
-            // that bypassed the token layer — a classic design-system leak).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Claude-Code-minimal restyle (owner directive, 2026-06-11): the
+            // sheet canvas is FLAT opaque neutral grey — no gradients, no
+            // translucent stacking. codeSurfaceSide = the panel shade.
+            DS.Palette.codeSurfaceSide.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -214,10 +224,16 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
+
+                        // Live status for the model named above: installed → the
+                        // .salehman brain's offline floor is ready; missing → a
+                        // copyable `ollama create` command for when the fine-tuned
+                        // GGUF lands; Ollama down → can't know.
+                        salehmanModelStatusRow
                     }
 
                     // Unsloth Studio (and any other local OpenAI-compatible server).
@@ -431,41 +447,36 @@ struct SettingsView: View {
     }
 
     private var header: some View {
+        // Slimmer header per the design language — title at body-plus weight,
+        // not a display headline.
         HStack {
-            Text("Settings").font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Spacer()
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).accessibilityLabel("Close")
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).help("Close").accessibilityLabel("Close")
         }
     }
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, _ subtitle: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Premium section header — a 3pt brand-gradient stripe "anchors" the
-            // title without competing with it; tracked uppercase + confident
-            // white reads as Linear/Things/Apple-Music rather than greyed-out.
-            HStack(spacing: 8) {
-                Capsule()
-                    .fill(DS.Gradient.brand)
-                    .frame(width: 3, height: 14)
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.92))
-            }
+            // Minimal section header: quiet tracked uppercase, no decorative
+            // stripe — the content box carries the structure (chrome diet).
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.leading, 11)   // align under the title (past the stripe)
             }
+            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                .dsShadow(DS.Elevation.shadow1)
         }
     }
 
@@ -837,7 +848,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -856,7 +867,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -905,7 +916,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -924,7 +935,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -1077,7 +1088,7 @@ struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.92))
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         .textSelection(.enabled)
@@ -1213,6 +1224,59 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// 14B-readiness status row under the custom-model-name field: is a model
+    /// with the typed name (default "salehman") actually pulled in Ollama?
+    /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
+    /// `OllamaClient.hasModel`), so what this row says is what the brain does.
+    private var salehmanModelStatusRow: some View {
+        HStack(spacing: 6) {
+            switch localModelProbe {
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Checking for your local model…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .installed(let name):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
+                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .missing(let name):
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString("ollama create \(name) -f Modelfile", forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .accessibilityLabel("Copy the ollama create command")
+            case .ollamaDown:
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Ollama isn't running — can't check for your local model.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await probeLocalModel() }
+            } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Re-check").accessibilityLabel("Re-check local model status")
+        }
+        .padding(.horizontal, 14).padding(.bottom, 11)
+        .task { await probeLocalModel() }
+        .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
+    }
+
+    /// Probe Ollama for the model named in Settings. Cheap: `isUp` is a
+    /// localhost ping and `hasModel` reads a 30s-cached model list.
+    private func probeLocalModel() async {
+        localModelProbe = .checking
+        guard await OllamaClient.isUp() else { localModelProbe = .ollamaDown; return }
+        let name = AppSettings.customModelNameCurrent
+        localModelProbe = await OllamaClient.hasModel(name) ? .installed(name) : .missing(name)
     }
 
     /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),

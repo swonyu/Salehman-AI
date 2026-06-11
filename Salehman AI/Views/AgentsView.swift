@@ -27,10 +27,9 @@ struct AgentsView: View {
 
     var body: some View {
         ZStack {
-            // Route through DS canvas tokens so this tab inherits any palette
-            // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Flat opaque working canvas (design language) — no gradients,
+            // no glow show-through on chat-like/working surfaces.
+            DS.Palette.codeSurface.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
@@ -48,16 +47,16 @@ struct AgentsView: View {
     }
 
     private var header: some View {
+        // Slimmer header, chrome diet: the "N agents" counter badge is gone —
+        // not actionable, and the gallery below already shows the team.
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Agents")
-                    .font(DS.Typography.titleL).foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your specialist team — they plan, build, and review together.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Text("\(AgentDefinitions.pipeline.count) agents")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, DS.Space.xl)
         .padding(.top, DS.Space.lg)
@@ -65,22 +64,16 @@ struct AgentsView: View {
     }
 
     private var autonomousControlSection: some View {
-        // Glass-hero treatment: this is the page's lead element so it gets a
-        // brand-tinted gradient wash + accent glow instead of the plain `Card`.
-        // Logic below (toggleAutonomousRun / sendDirectCommand / settings binding)
-        // is unchanged — chrome only.
+        // Flat card per the design language (was a glass-hero with gradient
+        // wash + accent glow). Logic below (toggleAutonomousRun /
+        // sendDirectCommand / settings binding) is unchanged — chrome only.
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 10) {
-                // Brand-tinted sparkle with halo (was off-brand yellow).
-                ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18))
-                        .frame(width: 34, height: 34).blur(radius: 8)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(DS.Palette.accent)
-                }
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
                 Text("Autonomous Mode")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
                 Toggle("Autonomous Mode", isOn: $settings.autonomousMode)
@@ -135,10 +128,8 @@ struct AgentsView: View {
                 TextField("Give agents a direct command…", text: $directCommand)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(DS.Palette.surface,
+                    .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
 
                 Button("Send") {
@@ -150,28 +141,13 @@ struct AgentsView: View {
             }
         }
         .padding(DS.Space.lg)
-        // Layered glass: deep accent-tinted gradient + neutral overlay so it
-        // reads "lit from inside" against the page's other cards.
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(DS.Palette.surface)
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [DS.Palette.accent.opacity(0.22),
-                                     DS.Palette.accent2.opacity(0.10),
-                                     .clear],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
+        // Flat opaque card + hairline — no gradient wash, no glow shadow.
+        .background(DS.Palette.codeSurfaceSide,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
         )
-        .dsShadow(DS.Elevation.accentGlow(0.35))
     }
 
     private var agentsGrid: some View {
@@ -295,15 +271,15 @@ private struct AgentCard: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque card + hairline; the hover/active stroke is the only
+        // elevation cue (no shadows — design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(isActive ? DS.Palette.accent.opacity(0.5)
                                  : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
                         lineWidth: 1)
         )
-        .dsShadow(hovering ? DS.Elevation.shadow2 : DS.Elevation.shadow1)
-        .scaleEffect(hovering ? 1.015 : 1.0)
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
     }
 }

@@ -46,3 +46,9 @@ Bash tool output*
 
 # Generated training-data export (tools/export_chat_training.py output)
 tools/salehman_training.jsonl
+qa/snapshots/
+qa/SNAPSHOT_REQUEST
+qa/WINDOW_REQUEST
+qa/ADOPT_BASELINES
+qa/baselines/
+qa/history.jsonl

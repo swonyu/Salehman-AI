@@ -32,6 +32,10 @@ enum DS {
         static let bgTop         = Color(red: 0.09, green: 0.05, blue: 0.07)
         static let bgBottom      = Color(red: 0.03, green: 0.02, blue: 0.03)
         static let surface       = Color.white.opacity(0.07)
+        // Code-tab editor surfaces — NEUTRAL grey (no red cast): the chat canvas
+        // is lighter, the sidebar/inspector a step darker for depth, like an editor.
+        static let codeSurface     = Color(white: 0.125)
+        static let codeSurfaceSide = Color(white: 0.095)
         static let surfaceAlt    = Color.white.opacity(0.06)
         static let modalBG       = Color(red: 0.13, green: 0.09, blue: 0.11)
         static let surfaceStroke = Color.white.opacity(0.12)

@@ -41,7 +41,6 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
-                        .dsShadow(DS.Elevation.accentGlow(0.6))
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 0) {
@@ -64,7 +63,7 @@ struct TabSwitcherBar: View {
                 ForEach(AppTab.allCases) { tab in pill(tab) }
             }
             .padding(4)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(Color.white.opacity(0.07), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
@@ -118,7 +117,7 @@ struct TabSwitcherBar: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.sm)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .background(
             GeometryReader { proxy in
                 Color.clear

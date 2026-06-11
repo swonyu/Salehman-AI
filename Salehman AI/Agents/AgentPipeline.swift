@@ -54,6 +54,19 @@ final class MissionProgress: ObservableObject {
     }
     func setRunning(_ i: Int) { if steps.indices.contains(i) { steps[i].status = .running } }
     func setDone(_ i: Int)    { if steps.indices.contains(i) { steps[i].status = .done } }
+
+    /// Surface tool-loop progress on the RUNNING step's title ("… · tool round
+    /// 3/8"). On the 9 GB 14B a single tool round can take 30–90 s, so an
+    /// 8-round chain is minutes of otherwise-silent work — this reuses the
+    /// existing adapted-title channel (zero new UI) to show life. Idempotent:
+    /// re-noting replaces the previous round suffix instead of stacking. No-ops
+    /// when no team mission is running (e.g. the trivial fast-path).
+    func noteToolRound(_ round: Int, of cap: Int) {
+        guard let i = steps.firstIndex(where: { $0.status == .running }) else { return }
+        let current = steps[i].adapted ?? steps[i].name
+        let base = current.components(separatedBy: " · tool round").first ?? current
+        steps[i].adapted = "\(base) · tool round \(round)/\(cap)"
+    }
     /// `text` is the FULL cumulative answer so far. Publishing it on every token
     /// re-runs Markdown parsing over the whole string each time (O(n²) on the main
     /// thread → visible jank on long replies). Throttle the @Published write to
@@ -242,9 +255,32 @@ enum AgentPipeline {
     /// like "yes" / "continue" reaches the brain with no idea what came before.
     /// No-op when there's no history yet (first turn). The transcript is already
     /// length-capped by `ConversationStore`, so this can't bloat the prompt.
+    /// Char budget for folded history when the LOCAL floor serves. The 14B runs at
+    /// num_ctx 4096 (≈16k chars TOTAL for persona + history + mission + reply); an
+    /// oversized prompt is truncated server-side from the TOP — which silently eats
+    /// the persona and these very instructions. ~9k chars of history leaves room.
+    nonisolated static let localHistoryCharBudget = 9_000
+
+    /// Drop OLDEST lines (the transcript is "Role: text" lines, oldest first) until
+    /// `history` fits `budget`. Pure + nonisolated → unit-testable.
+    nonisolated static func trimmedForLocalWindow(_ history: String, budget: Int) -> String {
+        guard history.count > budget else { return history }
+        var lines = history.components(separatedBy: "\n")
+        var trimmed = history
+        while trimmed.count > budget, lines.count > 2 {
+            lines.removeFirst()
+            trimmed = lines.joined(separator: "\n")
+        }
+        return "(earlier context trimmed)\n" + trimmed
+    }
+
     nonisolated static func withConversationContext(_ mission: String, history: String) -> String {
-        let h = history.trimmingCharacters(in: .whitespacesAndNewlines)
+        var h = history.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !h.isEmpty else { return mission }
+        // Only the local floor needs the diet — cloud windows are 32k+.
+        if !SalehmanEngine.hasAnyCloud {
+            h = trimmedForLocalWindow(h, budget: localHistoryCharBudget)
+        }
         return """
         Conversation so far (most recent last) — use it to interpret the new message \
         (e.g. a short "yes" / "no" / "continue" refers to what was just discussed):
@@ -358,10 +394,9 @@ enum AgentPipeline {
         // non-blocking from the orchestrator's perspective, but on Ollama / MLX
         // Salehman / Unsloth Studio the model server is serial, so this extra
         // generate() ends up QUEUED ahead of the user's first real agent call
-        // and directly delays the answer. Same predicate as `effectiveCap`'s
-        // serial-brain branch so they stay in lockstep when a new serial brain
-        // is added.
-        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm)
+        // and directly delays the answer. Shares `isSerialLocalBrain` with
+        // `effectiveCap` + the context diet so a new serial brain updates all.
+        let isSerialLocal = Self.isSerialLocalBrain(brain)
         if specs.count > 1 && !isSerialLocal {
             Task.detached(priority: .utility) {
                 let map = await adaptTitles(mission: mission, names: specs.map { $0.name })
@@ -441,7 +476,7 @@ enum AgentPipeline {
                     }
                     let input = AgentInput(
                         mission: mission, history: history, context: phaseContext,
-                        onStream: stream)
+                        brain: brain, onStream: stream)
                     group.addTask {
                         await MainActor.run { MissionProgress.shared.setRunning(i) }
                         // `??` uses an autoclosure that can't contain `await`,
@@ -520,6 +555,16 @@ enum AgentPipeline {
     /// chars (likely a paste/real ask), digits or code punctuation (likely a
     /// task), or >2 words that aren't a known greeting phrase. When in doubt it
     /// returns false (full pipeline). Pure + nonisolated → unit-testable.
+    /// Single-instance local servers (Ollama qwen-coder, the user's own
+    /// `.salehman` model, and the OpenAI-compatible Unsloth-Studio / vLLM
+    /// servers) all run serially on the same shared-RAM box — N parallel
+    /// requests would queue or OOM. The ONE predicate behind `effectiveCap`,
+    /// the adaptTitles skip, and the local context diet, so a new serial brain
+    /// added here updates all three behaviors in lockstep.
+    nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+    }
+
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL
     /// execution (cap 1) regardless of the memory-based `baseCap` — fanning many
     /// simultaneous inference requests at a multi-GB-resident model can push an
@@ -527,11 +572,33 @@ enum AgentPipeline {
     /// Other brains use the memory-derived cap (floored at 1). Pure + nonisolated
     /// so the OOM-prevention guarantee is unit-testable and won't silently regress.
     nonisolated static func effectiveCap(brain: LocalLLM.Brain, baseCap: Int) -> Int {
-        // Single-instance local servers (Ollama qwen-coder, the user's own
-        // `.salehman` model, and the OpenAI-compatible `.unslothStudio`
-        // server) all run serially — N parallel requests would queue or OOM
-        // on the same shared-RAM box.
-        (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm) ? 1 : max(1, baseCap)
+        isSerialLocalBrain(brain) ? 1 : max(1, baseCap)
+    }
+
+    // MARK: - Local context diet (num_ctx 4096)
+    //
+    // The rolling transcript caps each TURN at 4,000 chars × 8 turns — worst
+    // case 32k chars ≈ 8k tokens, double a local model's num_ctx 4096. Ollama
+    // drops the OLDEST tokens on overflow, which silently evicts the system
+    // prompt/persona first. So when the brain is a serial LOCAL model, the
+    // 2-agent path trims its inputs to these budgets BEFORE the prompt is
+    // built (cloud brains keep the full history — they have the context for it).
+
+    /// Char budget for conversation history on a local 4096-ctx brain
+    /// (~1.5k tokens), leaving room for persona + tool specs + answer.
+    nonisolated static let localHistoryBudget = 6_000
+    /// Char budget for phase context on a local 4096-ctx brain.
+    nonisolated static let localContextBudget = 1_500
+
+    /// Most-recent suffix of a transcript within `maxChars`, cut at a line
+    /// boundary (turns are "Role: text" lines) so no turn is sliced mid-thought.
+    /// A single over-budget line falls back to a raw char cut — never empty.
+    nonisolated static func recentTail(_ text: String, maxChars: Int) -> String {
+        guard text.count > maxChars else { return text }
+        let tail = String(text.suffix(maxChars))
+        guard let nl = tail.firstIndex(of: "\n") else { return tail }
+        let cut = String(tail[tail.index(after: nl)...])
+        return cut.isEmpty ? tail : cut
     }
 
     nonisolated static func isTrivialMission(_ mission: String) -> Bool {
@@ -576,7 +643,20 @@ enum AgentPipeline {
     /// work" signal escalates to `.hard`, and the middle defaults to
     /// `.moderate` (a safe reason+final pair), never `.simple`.
     nonisolated static func complexity(of mission: String) -> MissionComplexity {
-        let trimmed = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Judge the ACTUAL ask, not wrapper boilerplate. The Code tab wraps a fixed
+        // multi-line >200-char coding preamble around "Task: <ask>"; judging the whole
+        // string rated EVERY message .hard (multi-line + long + multi-sentence), so a
+        // 6-word question like "who are you" spun up the full 15-agent team. Extract
+        // the text after the last "Task:" marker when present. (The main chat sends raw
+        // messages with no marker, so it's unaffected.)
+        let raw = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed: String = {
+            guard let r = raw.range(of: "Task:", options: .backwards) else { return raw }
+            let t = raw[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Drop an appended "Attached file …" block so a pasted file doesn't inflate it.
+            let ask = t.range(of: "\n\nAttached file").map { String(t[..<$0.lowerBound]) } ?? t
+            return ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? raw : ask.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         guard !trimmed.isEmpty else { return .simple }
         let lower = trimmed.lowercased()
         let wordCount = trimmed.split { $0 == " " || $0 == "\n" }.count
@@ -600,7 +680,7 @@ enum AgentPipeline {
 
         // SIMPLE — greetings, acknowledgements, and short single-clause
         // questions ("who are u", "what's the weather"). One agent is plenty.
-        if isTrivialMission(mission) { return .simple }
+        if isTrivialMission(trimmed) { return .simple }
         if wordCount <= 6 { return .simple }
 
         // MODERATE — a normal one-line request (7–30 words, single sentence,

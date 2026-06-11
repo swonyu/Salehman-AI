@@ -10,12 +10,14 @@ enum Theme {
     static let accent2 = DS.Palette.accent2
     static let bgTop = DS.Palette.bgTop
     static let bgBottom = DS.Palette.bgBottom
-    static let userBubble = DS.Gradient.userBubble
     static let brand = DS.Gradient.brand
 }
 
 struct ContentView: View {
     @State private var mission: String = ""
+    /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
+    /// drives the empty-state eyebrow. Probed once per empty-state appearance.
+    @State private var localModelReady = false
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -68,6 +70,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Flat opaque chat canvas (design language): no glow show-through,
+            // no translucent stacking — same shade as the Code tab's canvas.
+            DS.Palette.codeSurface.ignoresSafeArea()
+
             // Global red tint when Unrestricted Mode is active.
             if settings.unrestrictedTools {
                 Color.red.opacity(0.03).ignoresSafeArea()
@@ -88,6 +94,10 @@ struct ContentView: View {
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
                 inputBar
+                    // Input pill aligns to the same 780pt reading column as the
+                    // transcript (design language).
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
             }
         }
         .preferredColorScheme(.dark)
@@ -163,7 +173,7 @@ struct ContentView: View {
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Color.red)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
@@ -172,12 +182,7 @@ struct ContentView: View {
                     // brain name stays available on hover and to VoiceOver.
                     Image(systemName: brainStatus.symbol)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(
-                            vm.isRunning
-                                ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                                               startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(brainStatus.dotColor)
-                        )
+                        .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
@@ -216,8 +221,7 @@ struct ContentView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 30, height: 30)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    .background(Color.white.opacity(0.09), in: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -273,7 +277,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        // Flat opaque bar (design language — no translucent material).
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
@@ -314,11 +319,11 @@ struct ContentView: View {
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
-                            // Tight 4pt default gap: grouped same-sender vm.messages
-                                // stay snug; first-in-group bubbles add +10 top
-                                // padding to land at the normal 14pt gap between
-                                // groups (see `isFirstInGroup`).
-                            LazyVStack(spacing: 4) {
+                            // Reading rhythm: 10pt within a same-sender burst,
+                            // +14 leading a new burst (= 24 between speakers) —
+                            // document-flow replies need more air than the old
+                            // bubble stacks did.
+                            LazyVStack(spacing: 10) {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -326,11 +331,9 @@ struct ContentView: View {
                                         TimeSeparator(date: msg.timestamp)
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
-                                    let isLast  = isLastInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate,
-                                                  isLastInGroup: isLast)
-                                        .padding(.top, isFirst ? 10 : 0)
+                                                  onRegenerate: vm.regenerate)
+                                        .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
                                 // Bottom sentinel: 1pt invisible view that
@@ -344,6 +347,11 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            // Centered reading column (design language): content
+                            // caps at 780pt; the input pill aligns to the same
+                            // column below.
+                            .frame(maxWidth: 780)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     // PROTECTED PATH: the streaming/auto-scroll triggers stay
@@ -392,13 +400,6 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
-    private func isLastInGroup(idx: Int, list: [ChatMessage]) -> Bool {
-        guard idx < list.count - 1 else { return true }
-        let curr = list[idx]; let next = list[idx + 1]
-        if curr.isUser != next.isUser { return true }
-        return next.timestamp.timeIntervalSince(curr.timestamp) > 5 * 60
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -415,7 +416,7 @@ struct ContentView: View {
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
 
@@ -428,16 +429,21 @@ struct ContentView: View {
 
     // MARK: Empty state
     private var emptyState: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 26) {
             // Hero logo — twin glow halos with a slow "breathing" scale on the
-            // brand tile. Gives the empty state a living, cinematic centerpiece
-            // instead of a static glyph.
+            // brand tile. The landing moment keeps its glow (design language
+            // allows it on landing surfaces); everything else stays flat.
             EmptyStateLogo()
 
             VStack(spacing: 10) {
-                Eyebrow(text: "Salehman AI · On-device")
-                Text("How can I help, Saleh?")
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                // Live eyebrow: flips to "your 14B is live" once the fine-tuned
+                // model is actually pulled in Ollama — same probe the Settings
+                // row uses, so the two never disagree.
+                Eyebrow(text: localModelReady
+                        ? "Salehman AI · your 14B is live"
+                        : "Salehman AI · On-device")
+                Text(greetingLine)
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text("Ask me anything, or let me run things on your Mac.")
@@ -456,11 +462,23 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 540)
+            .frame(maxWidth: 560)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
+        .task { localModelReady = await OllamaClient.hasCustomModel() }
+    }
+
+    /// Time-aware greeting — the same buckets the Today tab uses, so the two
+    /// landing surfaces always agree about the time of day.
+    private var greetingLine: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "Good morning, Saleh"
+        case 12..<17: return "Good afternoon, Saleh"
+        case 17..<22: return "Good evening, Saleh"
+        default:      return "Working late, Saleh?"
+        }
     }
 
     // MARK: Input bar
@@ -473,124 +491,129 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
-            HStack(spacing: 10) {
-                // Attach menu (+)
-                Menu {
-                    Button { Task { await attachFile() } } label: {
-                        Label("Attach file…", systemImage: "doc")
-                    }
-                    Button { Task { await attachImage() } } label: {
-                        Label("Attach image", systemImage: "photo")
-                    }
-                    Button { Task { await attachLastScreenshot() } } label: {
-                        Label("Send last screenshot", systemImage: "camera.viewfinder")
-                    }
-                    Button { Task { await pasteImage() } } label: {
-                        Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Attach a file, image, or your last screenshot")
-                .accessibilityLabel("Attach a file, image, or screenshot")
+            // ONE unified composer, Claude layout (matches the Code tab's
+            // owner-approved pattern): the text field rides ON TOP, a quiet
+            // controls row sits beneath — + menu (attachments AND prompts,
+            // halving the old left-side chrome), then mic and send at the
+            // trailing edge.
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...8)
+                    .focused($inputFocused)
+                    .onSubmit { submit(mission) }
+                    .accessibilityIdentifier("chat.composer.field")
+                    .padding(.horizontal, 4)
 
-                // Prompt library
-                Menu {
-                    if library.prompts.isEmpty {
-                        Text("No saved prompts yet")
-                    } else {
-                        Section("Insert a prompt") {
+                HStack(spacing: 8) {
+                    Menu {
+                        Section("Attach") {
+                            Button { Task { await attachFile() } } label: {
+                                Label("Attach file…", systemImage: "doc")
+                            }
+                            Button { Task { await attachImage() } } label: {
+                                Label("Attach image", systemImage: "photo")
+                            }
+                            Button { Task { await attachLastScreenshot() } } label: {
+                                Label("Send last screenshot", systemImage: "camera.viewfinder")
+                            }
+                            Button { Task { await pasteImage() } } label: {
+                                Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                            }
+                        }
+                        Section("Prompts") {
                             ForEach(library.prompts) { p in
                                 Button(p.title) { insertPrompt(p.text) }
                             }
+                            Button {
+                                newPromptTitle = ""
+                                savingPrompt = true
+                            } label: { Label("Save current as prompt…", systemImage: "plus") }
+                                .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
                     }
-                    Divider()
-                    Button {
-                        newPromptTitle = ""
-                        savingPrompt = true
-                    } label: { Label("Save current as prompt…", systemImage: "plus") }
-                        .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } label: {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Insert or save a reusable prompt")
-                .accessibilityLabel("Insert or save a reusable prompt")
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 26)
+                    .help("Attach files/images or insert a saved prompt")
+                    .accessibilityLabel("Attach files, images, or insert a saved prompt")
+                    .accessibilityIdentifier("chat.composer.plus")
 
-                HStack(spacing: 8) {
-                    Image(systemName: "text.bubble")
-                        .foregroundStyle(inputFocused ? Theme.accent : .secondary)
-                        .animation(DS.Motion.fade, value: inputFocused)
-                    TextField("Message Salehman AI…", text: $mission, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...6)
-                        .focused($inputFocused)
-                        .onSubmit { submit(mission) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                // Premium focus ring: 2px gradient stroke + soft accent glow.
-                // The old single-color 0.6-opacity ring was barely visible on
-                // the dark canvas. Computed contrast: pure-accent stroke on the
-                // canvas clears the 3:1 non-text floor; glow is decorative.
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    inputFocused ? Theme.accent.opacity(0.85)  : Color.white.opacity(0.10),
-                                    inputFocused ? Theme.accent2.opacity(0.65) : Color.white.opacity(0.05),
-                                ],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: inputFocused ? 2 : 1
-                        )
-                )
-                .shadow(color: inputFocused ? Theme.accent.opacity(0.20) : .clear,
-                        radius: inputFocused ? 12 : 0)
-                .animation(DS.Motion.smooth, value: inputFocused)
+                    Spacer(minLength: 0)
 
-                // Mic (dictation)
-                CircleIconButton(systemName: speechIn.isListening ? "mic.fill" : "mic",
-                                 size: 40, iconSize: 16,
-                                 tint: speechIn.isListening ? .red : .white,
-                                 ring: speechIn.isListening ? .red : nil,
-                                 help: "Dictate with your voice") { speechIn.toggle() }
+                    // Mic (dictation) — quiet inline icon; red while listening.
+                    Button { speechIn.toggle() } label: {
+                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dictate with your voice")
+                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+                    .accessibilityIdentifier("chat.composer.mic")
 
-                // Stop while generating, otherwise Send
-                if vm.isRunning {
-                    CircleIconButton(systemName: "stop.fill", size: 40, iconSize: 15,
-                                     tint: .red, ring: .red,
-                                     help: "Stop generating (⌘.)") { vm.stop() }
+                    // Stop while generating, otherwise Send — the composer's
+                    // one strong-color element (solid accent when sendable).
+                    if vm.isRunning {
+                        Button { vm.stop() } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 26, height: 26)
+                                .background(Color.red.opacity(0.85), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop generating (⌘.)")
+                        .accessibilityLabel("Stop generating")
                         .transition(.scale.combined(with: .opacity))
-                } else {
-                    CircleIconButton(systemName: "arrow.up", size: 40, iconSize: 16,
-                                     tint: .white, filled: canSend, disabled: !canSend,
-                                     help: "Send") { submit(mission) }
+                    } else {
+                        Button { submit(mission) } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(canSend ? .white : .secondary)
+                                .frame(width: 26, height: 26)
+                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
+                                            in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                        .help("Send")
+                        .accessibilityLabel("Send")
+                        .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            // Quiet flat composer (design language). Focus = a solid accent
+            // hairline — visible on the flat canvas without glow chrome.
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                            lineWidth: inputFocused ? 1.5 : 1)
+            )
+            .animation(DS.Motion.smooth, value: inputFocused)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial)
+        // Flat — the input row sits directly on the chat canvas.
+        .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
@@ -607,8 +630,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(Color.white.opacity(0.09), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -717,10 +739,7 @@ private struct ConfirmationChip: View {
             withAnimation(DS.Motion.smooth) { enabled.toggle() }
         } label: {
             HStack(spacing: 7) {
-                ZStack {
-                    Circle().fill(dotColor).frame(width: 7, height: 7)
-                    Circle().fill(dotColor.opacity(0.35)).frame(width: 13, height: 13).blur(radius: 3)
-                }
+                Circle().fill(dotColor).frame(width: 7, height: 7)
                 Text(enabled ? "Confirm" : "Auto-run")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -814,9 +833,9 @@ struct ScrollToLatestButton: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(DS.Gradient.brand, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            .dsShadow(DS.Elevation.accentGlow(0.45))
+            // Solid accent, no gradient/glow (design language) — it floats over
+            // the transcript, so it still reads as actionable.
+            .background(DS.Palette.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(unreadCount > 0
@@ -935,10 +954,6 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
-    /// Apple-Messages convention: the avatar/tail-anchor only renders on the
-    /// LAST message of a same-sender burst. Default `true` keeps existing
-    /// callers (single-message previews, ungrouped contexts) unchanged.
-    var isLastInGroup: Bool = true
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -956,8 +971,9 @@ struct MessageBubble: View {
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
-            .blur(radius: appeared ? 0 : 6)
-            .offset(y: appeared ? 0 : 14)
+            // 8pt rise (was 14): present, not theatrical.
+            .blur(radius: appeared ? 0 : 4)
+            .offset(y: appeared ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -982,98 +998,103 @@ struct MessageBubble: View {
     //       view-layer derivation; `messages[i].text` stays unmodified, so
     //       `ChatStore` persists the canonical form.
 
+    // Claude-Code-minimal (owner directive 2026-06-11, mirrors CodeMessageRow):
+    // user = quiet right-aligned block, assistant = flush-left document flow.
+    // No avatars, no name labels, no per-message timestamps (TimeSeparator rows
+    // already mark time between bursts). Actions stay ALWAYS MOUNTED for
+    // keyboard/VoiceOver and reveal on hover only.
     private var bubbleRow: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            // Assistant side: avatar only on the LAST message of a burst.
-            // Continuations get a same-size transparent placeholder so the
-            // bubble content stays horizontally aligned across the group.
-            if message.isUser { Spacer(minLength: 48) }
-            else if isLastInGroup { avatar }
-            else { Color.clear.frame(width: 30, height: 30) }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 3) {
-                Group {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if message.isUser {
-                            Text(message.text)
-                                .font(.system(size: 14))
-                                .textSelection(.enabled)
-                                .foregroundStyle(.white)
-                        } else {
-                            MarkdownText(text: displayedText)
-                                .foregroundStyle(Color.white.opacity(0.92))
-                                .lineSpacing(2)               // calmer reading rhythm on long replies
-                        }
-                        if let path = message.imagePath {
-                            CachedImage(path: path)
-                                .frame(maxWidth: 360, maxHeight: 360)
-                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)             // ↑ from 14 — more breathing room
-                .padding(.vertical, 12)               // ↑ from 10
-                .background(bubbleBackground)
-                .clipShape(bubbleShape)               // asymmetric (tail) corners
-                .overlay(
-                    bubbleShape.stroke(
-                        Color.white.opacity(message.isUser ? 0 : 0.08),
-                        lineWidth: 1
-                    )
-                )
-                // User bubbles get a soft brand-tinted glow (Apple-Music red);
-                // assistant gets a deeper neutral shadow for depth on dark.
-                .shadow(color: message.isUser ? Theme.accent.opacity(0.28) : Color.black.opacity(0.32),
-                        radius: message.isUser ? 10 : 8,
-                        y: 4)
-                // Cap content at a comfortable reading measure (~580pt) so
-                // bubbles don't stretch edge-to-edge on a wide window. The
-                // outer Spacer(minLength: 48) handles speaker-side alignment.
-                .frame(maxWidth: 580, alignment: message.isUser ? .trailing : .leading)
-                // VoiceOver reads the bubble as one element, prefixed with the
-                // speaker so the conversation is followable without sight. The
-                // action buttons below stay separate (their own a11y labels).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(message.isUser ? "You said: \(message.text)"
-                                                    : "Assistant replied: \(displayedText)")
-
-                HStack(spacing: 10) {
-                    Text(message.timestamp, style: .time)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    if !message.isUser {
-                        actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
-                                     "Read aloud", active: speech.speakingID == message.id) {
-                            speech.toggle(message.text, id: message.id)
-                        }
-                    }
-                    // Always mounted (keyboard / VoiceOver can reach them); hover
-                    // just lifts the opacity so they recede until you point at the row.
-                    actionButton("doc.on.doc", "Copy") { copyText() }
-                    if !message.isUser, onRegenerate != nil {
-                        actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
-                            .opacity(hovering ? 1 : 0.45)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .animation(DS.Motion.fade, value: hovering)
-            }
-
-            // User side: same rule mirrored.
-            if message.isUser {
-                if isLastInGroup { userAvatar }
-                else { Color.clear.frame(width: 30, height: 30) }
-            } else { Spacer(minLength: 48) }
+        Group {
+            if message.isUser { userRow } else { assistantRow }
         }
         .onHover { hovering = $0 }
+    }
+
+    private var userRow: some View {
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message.text)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+                if let path = message.imagePath {
+                    CachedImage(path: path)
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                }
+            }
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(Color.white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Comfortable wrap measure — long pastes shouldn't span the
+            // full 780 column just because they're the user's.
+            .frame(maxWidth: 480, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("You said: \(message.text)")
+            // Same floating-pill pattern as assistant rows — no reserved
+            // layout row beneath the block.
+            .overlay(alignment: .topTrailing) {
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(DS.Palette.codeSurfaceSide,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .offset(y: -10)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(DS.Motion.fade, value: hovering)
+            }
+        }
+    }
+
+    private var assistantRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MarkdownText(text: displayedText)
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineSpacing(2)               // calmer reading rhythm on long replies
+            if let path = message.imagePath {
+                CachedImage(path: path)
+                    .frame(maxWidth: 360, maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Assistant replied: \(displayedText)")
+        // Floating action pill: no layout reservation (text keeps the full
+        // measure), readable over any content thanks to its own flat panel.
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 2) {
+                actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                             "Read aloud", active: speech.speakingID == message.id) {
+                    speech.toggle(message.text, id: message.id)
+                }
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                if onRegenerate != nil {
+                    actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
+                }
+            }
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .offset(y: -4)
+            .opacity(hovering ? 1 : 0)
+            .animation(DS.Motion.fade, value: hovering)
+        }
     }
 
     private func actionButton(_ icon: String, _ help: String, active: Bool = false,
                               _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .foregroundStyle(active ? Theme.accent : .secondary)
+                .frame(width: 22, height: 22)        // comfortable hit target
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -1083,60 +1104,6 @@ struct MessageBubble: View {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
-    }
-
-    @ViewBuilder private var bubbleBackground: some View {
-        if message.isUser {
-            // Brand red→pink gradient (DS.Gradient.userBubble) — already vertical-ish
-            // via topLeading→bottomTrailing, so user bubbles already have depth.
-            Theme.userBubble
-        } else {
-            // Subtle vertical glass gradient instead of a flat 0.07 fill. Reads
-            // as a curved physical surface (lighter top, darker bottom) without
-            // breaking the dark aesthetic — the single change that makes the
-            // assistant bubble feel "real" instead of a tinted rectangle.
-            LinearGradient(
-                colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom
-            )
-        }
-    }
-
-    /// Asymmetric bubble corners. The bottom corner NEAREST the speaker's avatar
-    /// is small (6pt); the other three stay full-rounded (18pt). Reads as a
-    /// directional anchor — the Apple-Messages "tail" cue — without drawing a
-    /// custom Path. Requires `UnevenRoundedRectangle` (macOS 13+).
-    private var bubbleShape: UnevenRoundedRectangle {
-        let big: CGFloat = 18
-        let small: CGFloat = 6
-        return UnevenRoundedRectangle(
-            topLeadingRadius:     big,
-            bottomLeadingRadius:  message.isUser ? big   : small,   // assistant: tail bottom-left (toward its avatar)
-            bottomTrailingRadius: message.isUser ? small : big,     // user: tail bottom-right (toward its avatar)
-            topTrailingRadius:    big,
-            style: .continuous
-        )
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                .shadow(color: Theme.accent.opacity(0.5), radius: 6, y: 2)
-            Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
-    }
-
-    private var userAvatar: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-            Image(systemName: "person.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
     }
 }
 
@@ -1168,34 +1135,21 @@ struct CachedImage: View {
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
     @State private var animating = false
-    @State private var halo = false
+    // After ~5s of pre-stream silence the local model is probably loading into
+    // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
+    // auto-cancels when streaming starts (this view disappears).
+    @State private var warmHint = false
 
     var body: some View {
+        // Quiet flush-left working indicator (design language): three accent
+        // dots, no avatar disc, no halo/glow chrome — matches the streaming
+        // row's flush-left flow so the transition to text doesn't jump.
         HStack(spacing: 9) {
-            // Avatar with a breathing brand halo. The halo + the gradient dots
-            // are the visible heartbeat of "Salehman AI is working" — the
-            // single highest-leverage place to make the app feel premium during
-            // a wait. (Was a flat brand circle + three white dots.)
-            ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.55))
-                    .frame(width: 58, height: 58)
-                    .blur(radius: 14)
-                    .scaleEffect(halo ? 1.18 : 0.92)
-                    .opacity(halo ? 0.9 : 0.4)
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                    .shadow(color: DS.Palette.accent.opacity(0.55), radius: 10, y: 2)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-            }
             HStack(spacing: 6) {
-                // Gradient-tinted dots — the brand reads through every beat
-                // instead of generic white-on-dark blobs.
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 8, height: 8)
+                        .fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
                         .scaleEffect(animating ? 1.0 : 0.5)
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
@@ -1206,18 +1160,18 @@ struct TypingIndicator: View {
                             value: animating)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
-            )
-        }
-        .onAppear {
-            animating = true
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                halo = true
+            if warmHint {
+                Text("Warming up the local model…")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .onAppear { animating = true }
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }
@@ -1297,30 +1251,26 @@ struct AgentRunView: View {
     private var doneCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+        // Flush-left flat panel (no avatar disc — design language). The N/M
+        // counter stays: it's live progress, not decorative chrome.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Agent team working")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(doneCount)/\(steps.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("Agent team working")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("\(doneCount)/\(steps.count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(steps) { step in
-                        AgentRow(step: step)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    AgentRow(step: step)
                 }
             }
-            .padding(14)
-            .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
+        .padding(14)
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -1373,57 +1323,35 @@ struct StreamingBubble: View {
         text == LocalLLM.offMessage ? LocalLLM.unavailableMessage : text
     }
     var body: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    // "Alive" affordance while the answer streams in. `.pulse`
-                    // respects `accessibilityReduceMotion` automatically (SwiftUI
-                    // gates symbolEffect on the system setting).
-                    .symbolEffect(.pulse.byLayer, options: .repeating)
-            }
-            .accessibilityHidden(true)   // decorative — bubble label conveys "Assistant"
+        // Flush-left document flow, matching MessageBubble's assistant row so
+        // stream-end doesn't visibly snap styles. The pulsing dot sits ABOVE
+        // the text (not beside it) so the text's leading edge is already at
+        // the final x-position — no horizontal jump when the stream commits.
+        // `.pulse` respects accessibilityReduceMotion automatically.
+        VStack(alignment: .leading, spacing: 7) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(Theme.accent)
+                .symbolEffect(.pulse.byLayer, options: .repeating)
+                .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: displayedText)
                 } else {
                     // Long reply still streaming: plain text avoids the O(n) Markdown
                     // re-parse every throttle tick (what lags a fast local model). The
-                    // finalised bubble renders full Markdown the instant streaming ends.
+                    // finalised row renders full Markdown the instant streaming ends.
                     Text(displayedText)
                         .font(.system(size: 14))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineSpacing(2)               // parity with finalised bubble — no rhythm jump on stream-end
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(
-                    // Match the finalised assistant bubble so the moment streaming
-                    // ends the bubble doesn't visibly "snap" to a different style.
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Self.streamingShape)
-                .overlay(Self.streamingShape.stroke(Color.white.opacity(0.08), lineWidth: 1))
-                .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
-                .frame(maxWidth: 580, alignment: .leading)
-            Spacer(minLength: 48)   // mirror MessageBubble's right-side gap so the streaming bubble doesn't stretch
+            .foregroundStyle(Color.white.opacity(0.92))
+            .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    /// Same asymmetric corners as `MessageBubble`'s assistant variant (tail at
-    /// bottom-leading, toward the avatar).
-    private static let streamingShape = UnevenRoundedRectangle(
-        topLeadingRadius: 18, bottomLeadingRadius: 6,
-        bottomTrailingRadius: 18, topTrailingRadius: 18,
-        style: .continuous
-    )
 }
 
 // MARK: - Approval Card

@@ -19,6 +19,13 @@ struct Salehman_AIApp: App {
                 // so the assistant can answer about them via search_documents. Runs
                 // off-main and only on the first launch after this version.
                 .task { ExternalToolsKnowledge.seedIfNeeded() }
+                // QA: if qa/SNAPSHOT_REQUEST exists, render every surface to
+                // qa/snapshots/*.png so the screen-blind polish session can SEE
+                // the app (see QASnapshots.swift). WINDOW_REQUEST captures the
+                // real on-screen window (QACapture.swift); the audit then
+                // self-judges the pictures (QAAudit.swift).
+                .task { QASnapshots.checkAndRun() }
+                .task { QACapture.checkAndRun() }
                 // One global `.tint(...)` so every descendant that uses the SwiftUI
                 // system accent — Buttons/Toggles/Pickers + literal `Color.accentColor`
                 // call sites (SettingsView.brainGridCell, AgentsView, CopilotSignInView) —
@@ -64,6 +71,14 @@ struct Salehman_AIApp: App {
             CommandMenu("View") {
                 Button("Command Palette…") { app.showCommandPaletteRequested = true }
                     .keyboardShortcut("k", modifiers: .command)
+                // Renders every surface to qa/snapshots/*.png (QASnapshots.swift)
+                // so the screen-blind polish session can see the app on demand.
+                Button("Capture QA Snapshots") { QASnapshots.captureAll() }
+                // True pixels of the real window(s) — QACapture.swift.
+                Button("Capture Live Window") { QACapture.captureLiveWindows() }
+                // Audit current snapshots (AUDIT.json) / adopt them as baselines.
+                Button("Run QA Audit") { QAAudit.runDefault() }
+                Button("Adopt QA Baselines") { QAAudit.adoptBaselinesDefault() }
                 Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)

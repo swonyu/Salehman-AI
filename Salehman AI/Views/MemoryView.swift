@@ -21,8 +21,7 @@ struct MemoryView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
@@ -48,7 +47,7 @@ struct MemoryView: View {
                                     row(fact)
                                 }
                             }
-                            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
@@ -130,7 +129,7 @@ struct MemoryView: View {
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }

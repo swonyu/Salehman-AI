@@ -1263,12 +1263,22 @@ enum LocalLLM {
         // Terminal is always available; web tools only when external access is on
         // (and not Offline mode) — same gate as the FM web tools.
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
+        // Per-model knobs: the user's own 14B stays warm 5 min (re-paying its
+        // ~9 GB load mid-conversation is the single worst local latency hit);
+        // smaller models keep the RAM-lean 30 s eviction. num_ctx floors at
+        // 4096 regardless — tool transcripts (persona + specs + results) are
+        // fat, and `tuned`'s 2048 default would truncate them for small models.
+        let gen = OllamaClient.Generation.tuned(for: model)
         // Build the /api/chat body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the nonisolated client.
+        // `num_predict` bounds each turn (a tool-round answer or a chain step):
+        // unbounded on a ~25 tok/s local 14B means a rambling turn can hold the
+        // serial slot for minutes. 2048 is roomy for a full code answer.
         func bodyData(includeTools: Bool) -> Data? {
             var body: [String: Any] = ["model": model, "messages": messages,
-                                       "stream": false, "keep_alive": "30s",
-                                       "options": ["num_ctx": 4096]]
+                                       "stream": false, "keep_alive": gen.keepAlive,
+                                       "options": ["num_ctx": max(gen.numCtx, 4096),
+                                                   "num_predict": toolTurnTokenCap]]
             if includeTools { body["tools"] = toolSpecs }
             return try? JSONSerialization.data(withJSONObject: body)
         }
@@ -1279,7 +1289,15 @@ enum LocalLLM {
         // cap-out returns real content instead of that bare message.
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Stop pressed mid-mission (CodeView/chat cancels the task): abort
+            // BETWEEN rounds so a dead mission can't hold the serial 14B slot
+            // for minutes finishing rounds nobody wants. Mid-request cancels
+            // already surface as a nil chatTurn (URLSession is cancellation-aware).
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
+            // A round on the 14B can take 30–90 s — show life on the running
+            // team step ("· tool round N/8"). No-op outside team missions.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -1330,6 +1348,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -1340,6 +1360,12 @@ enum LocalLLM {
         if !lastAssistantText.isEmpty { return lastAssistantText }
         return "I worked through several steps but couldn't wrap it up in one go. Say \"continue\" and I'll pick up where I left off."
     }
+
+    /// Per-turn output bound shared by both tool loops (Ollama `num_predict`,
+    /// OpenAI-compat `max_tokens`). Without it a local server generates until
+    /// its context runs out — minutes per turn on a ~25 tok/s 14B. 2048 fits a
+    /// complete code answer while keeping the worst-case turn bounded.
+    nonisolated static let toolTurnTokenCap = 2048
 
     // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
 
@@ -1369,8 +1395,12 @@ enum LocalLLM {
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
         // Build the body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the client method.
+        // `max_tokens` mirrors the Ollama loop's `num_predict` bound: an absent
+        // cap makes vLLM/Studio generate to their max_model_len — minutes per
+        // turn on a slow local server.
         func bodyData(includeTools: Bool) -> Data? {
-            var body: [String: Any] = ["model": model, "messages": messages, "stream": false]
+            var body: [String: Any] = ["model": model, "messages": messages, "stream": false,
+                                       "max_tokens": toolTurnTokenCap]
             if includeTools {
                 body["tools"] = toolSpecs
                 body["tool_choice"] = "auto"
@@ -1382,7 +1412,12 @@ enum LocalLLM {
         // 5 rounds was too low and surfaced "(Reached the tool-call limit.)".
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Same Stop-pressed abort as the Ollama loop: bail between rounds.
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
+            // Same round-progress note as the Ollama loop — a local Unsloth
+            // Studio / vLLM server can be just as slow per round as Ollama.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -1441,6 +1476,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -1589,7 +1626,10 @@ enum LocalLLM {
     /// Mac" summary/Q&A). Returns `nil` when no on-device model is available, so
     /// the caller can say so honestly rather than silently falling back to cloud.
     static func generateOnDevice(_ prompt: String, maxTokens: Int? = nil) async -> String? {
-        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+        // Forward the caller's token budget — dropping it let a 110-token "terse
+        // note" run unbounded on the local 14B (~15 tok/s ⇒ a minute of ramble).
+        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                               maxTokens: maxTokens) { return reply }
         // Unsloth Studio (or any local OpenAI-compat server) qualifies as
         // on-device ONLY when its endpoint is a loopback URL — see
         // `UnslothStudio.isLocalLoopback`. A user-typed public URL would NOT

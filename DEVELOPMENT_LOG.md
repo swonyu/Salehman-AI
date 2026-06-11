@@ -1512,6 +1512,129 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
 
+## 2026-06-11 · 14B-readiness (Agents/Settings lane): status row + concurrency/assumptions audits; round-1 boundary relayed
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Worked the board task the latency session left (owner: "give the other claude a similar task") to make this lane 14B-ready before the fine-tuned GGUF lands. (1) **Settings "Salehman model" status row** (`salehmanModelStatusRow` + `LocalModelProbe` tri-state + `probeLocalModel()`): under the custom-model-name field in "Salehman engine" — green installed / orange missing with a copyable `ollama create ‹name› -f Modelfile` button / gray Ollama-down; probes via the same accessors the engine routes by (`customModelNameCurrent`, `OllamaClient.isUp/hasModel`) so the row can't disagree with actual routing; re-probes on name edit + manual refresh. (2) **Concurrency audit PASS** — `effectiveCap` already forces 1 in-flight generate for `.salehman`/`.ollamaCoder`/`.unslothStudio`/`.vllm` over the per-phase batch loop, `isSerialLocal` skips the adaptTitles side-generate, Effort ladder is sequential: no change needed. (3) **Assumptions sweep CLEAN** — no qwen text-model hardcodes (only the vision `qwen2.5vl`, correct), no sub-60s local-generate timeouts, no load-re-paying retry loops. Also: the API watch caught the **round-1 boundary** (GPU idle 3 min, balance $11.48, pod still billing $1.415/hr idle) — posted to the board for the SSH side with budget math ($9.98 usable ≈ 6–8 rounds); monitor v4 (state transitions + idle-cost heartbeats) is live. Monitor v3 note for the record: urllib transport couldn't verify the sandbox proxy's TLS cert (same root cause as the gh x509 failure) — v3+ use curl transport with Python logic.
+
+**Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
+
+## 2026-06-11 · 14B-in-app items 4–6: tool-loop warm-keep + round progress, local context diet, tests
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AI/Agents/AgentRegistry.swift`, `Salehman AITests/FourteenBReadinessTests.swift` (new), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Board items 4–6 (owner: "give yourself and other claude tasks that help salehman 14b in the app").
+- **Tool-loop budgets (item 4):** timeouts were already fine (chatTurn 300 s, compat 120 s); the real bugs: (a) `chatOllamaWithTools` hardcoded `keep_alive:"30s"`, bypassing `Generation.tuned(for:)` — the 14B was evicted 30 s after any tool-built reply and re-paid its ~9 GB load on the next message. Now uses tuned keep-alive (salehman → 5 m) with num_ctx floored at 4096 (tool transcripts are fat; tuned's 2048 would truncate them on small models). (b) Up to 8 silent 30–90 s rounds. Added `MissionProgress.noteToolRound(_:of:)` — annotates the running step's adapted title ("… · tool round 3/8"), idempotent, zero UI changes, no-op outside team missions; both tool loops emit it per round.
+- **Local context diet (item 5):** real worst case measured: 8 turns × 4,000 chars/turn = 32k chars ≈ 8k tokens — double num_ctx 4096, and Ollama evicts the OLDEST tokens on overflow (persona dies first). `AgentInput` now carries the resolved `brain`; on serial-local brains the 2-agent handlers trim history via new pure `AgentPipeline.recentTail` (6,000-char budget, most-recent turns, line-boundary cut) and context to 1,500 chars before prompt build. New shared predicate `isSerialLocalBrain` consolidates `effectiveCap` + the adaptTitles skip + the diet (one place to add a future serial brain). Cloud brains keep full history; 15-agent set untouched.
+- **Tests (item 6):** `FourteenBReadinessTests.swift` — `Generation.tuned` knobs (salehman 5m/4096 vs others 30s/2048 + default-name fallback), `recentTail` edge cases, `noteToolRound` idempotence/no-op. `.serialized`; sole test mutator of `Keys.customModel`; sole test user of `MissionProgress` (grep-verified). `effectiveCap`/`isTrivialMission` already covered by existing suites — not duplicated.
+
+**Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
+
+## 2026-06-11 · 14B babysit COMPLETE — pod terminated, $5.20 total spend, GGUF on the Mac
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** Closed out the owner-mandated training babysit. The API watch tracked 4 rounds end-to-end (round boundaries via GPU-idle transitions; round costs $0.94/$0.59/$0.80/$0.47-ish); the training session locked **round 3** as the final model (eval 1.3033 vs r4-reseed 1.4507; behavioral probes ~8/8 — coding + Arabic fixed, identity word-perfect) and built/downloaded `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` to `salehman-training/`. After verifying the deliverables were local, all adapters backed up, and the pod fully quiet (CPU 0% / GPU 0% / GPU-mem 0% — the documented pre-termination evidence), executed `podTerminate` via API and verified the account holds zero pods. **Final spend: $12.32 → $7.12 = $5.20** for the whole 14B program. Posted the full report + owner actions on the board: revoke the chat-exposed RunPod API key in the console (left `/tmp/.runpod_key` on disk so the other session's tooling doesn't error — inert once revoked), then run the installer so the Settings "Salehman model" row flips green.
+
+**Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
+
+## 2026-06-11 · Board items 7–10: tool-loop cancel propagation + per-turn output bounds; budget/alias audits
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Second wave of owner-mandated 14B-in-app tasks. **Item 7:** both tool loops (`chatOllamaWithTools`, `chatOpenAICompatWithTools`) now check `Task.isCancelled` at the top of every round and before the final wrap-up generate — pressing Stop aborts between rounds and returns the best prose so far, instead of a cancelled mission holding the serial 14B slot for minutes (mid-request cancels were already safe — URLSession is cancellation-aware). **Item 8:** new shared `LocalLLM.toolTurnTokenCap = 2048`, wired as `max_tokens` into the compat tool-path bodies (vLLM/Studio otherwise generate to max_model_len) and as `num_predict` into the Ollama tool-loop body (same unbounded risk). **Item 9 (audit, no code):** all agent call sites already pass token budgets (700/110/300). **Item 10 (audit, no code):** the Settings status row (shipped a47bb49) works with the `salehman14b`+alias plan; flagged the `Generation.tuned` exact-name alias trap on the board — the other session closed it same-day (salehman* prefix match). Items 7/8 were deliberately queued until the other session's in-flight LocalLLM commit (`70d6af7`) landed — a background watcher on the file's git state gated the start (shared working tree discipline).
+
+**Result:** Typecheck 0 errors / 0 warnings; build+tests delegated via board (their last run: 306/306 green incl. FourteenBReadinessTests). Next: the owner-directive whole-app restyle (accepted on the board; per-view, my lane grant: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge).
+
+## 2026-06-11 · Whole-app restyle 1/7 — SettingsView chrome to the Code-tab design language
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** First slice of the owner-directive restyle ("make the whole app look like [the Code tab]"). SettingsView macro chrome: sheet canvas gradient → flat opaque `DS.Palette.codeSurfaceSide`; section content boxes translucent-`surface`-with-shadow → opaque `codeSurface` with hairline stroke only; section headers' brand-gradient capsule stripe dropped for quiet tracked-uppercase 10.5pt secondary (chrome diet), subtitles to the spec's 11pt; "Settings" header 26pt-bold-rounded → 17pt-semibold with `.help()` on the close button. Inner control surfaces deliberately deferred to a second pass (canvases first). Lane grant per board: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge are mine for this task; CodeView/MarkdownText/DesignSystem stay with the other session.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate delegated. Next slice: ContentView (main chat) message rows + reading column.
+
+## 2026-06-11 · Whole-app restyle 2/7 — ContentView (main chat) to the document-flow message style
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Slice 2 of the owner-directive restyle, mirroring the Code tab's `CodeMessageRow` while keeping the main chat's richer actions. `MessageBubble` rewritten: user messages are a quiet right-aligned block (white 0.09, radius 13, 13.5pt, no avatar, no label, hover-only copy); assistant replies are flush-left document flow (no avatar disc, no bubble chrome, no per-message timestamp — the existing `TimeSeparator` rows already mark time between bursts) with speak/copy/regenerate in an always-mounted hover overlay (keyboard/VoiceOver reachable). `StreamingBubble` matched (pulsing 6pt accent dot replaces the avatar; same flush-left flow so stream-end doesn't visibly snap styles). Transcript and input bar now share a centered 780pt reading column. Chat canvas is flat opaque `codeSurface` (no glow show-through; the Unrestricted-Mode red tint still overlays). Dead code removed with the avatars: `bubbleShape`, `bubbleBackground`, `avatar`, `userAvatar`, the `isLastInGroup` param + helper, and the `Theme.userBubble` forwarding alias (`DS.Gradient.userBubble` is now orphaned app-wide — flagged to the DS-owning session to prune).
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
+
+## 2026-06-11 · Whole-app restyle 3–7/7 — Today, Agents, Notes, Knowledge, Markets to the design language
+
+**Files:** `Salehman AI/Views/TodayView.swift` (rode the other session's db57c44 — see note), `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MarketsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final five slices of the owner-directive restyle ("continue working and refining, gone for 3 hours"; gate for slices 1+2 passed 306/306 with owner feedback "this looks much better than the coding tab"). Surface convention applied everywhere: canvas = flat opaque `codeSurface` (0.125), panels/cards = `codeSurfaceSide` (0.095) + hairline, input pills = white 0.09 with no stroke, no shadows, headers 17pt-semibold/11pt-secondary, content in a centered 780pt column. Per view: **Today** — tiles opaque (no translucency over the landing glow, which stays — landing surface); **Agents** — glass-hero Autonomous card flattened (gradient wash/halo sparkle/accent-glow shadow removed), "N agents" header counter dropped per chrome diet, cards' hover/active stroke is the only elevation; **Notes/Knowledge** — flat canvases, list/ask cards to panel shade, add/search fields to pills; **Markets** — all cards swapped, `.ultraThinMaterial` disclaimer footer → flat panel + hairline. Shared-tree note: the other session's `db57c44` unintentionally swept my in-flight TodayView edits + an intermediate AgentsView state into their commit (content correct, their gate covered it) — flagged on the board with the `git status`-before-`add` discipline reminder.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned to HEAD in a temp tree — other session mid-edit). All 7 restyle slices are now in. Gate requested; pass-2 refinements (Settings inner controls, ContentView empty-state polish) next.
+
+## 2026-06-11 · Whole-app restyle pass 2 — main-chat chrome + Settings controls de-glassed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final pass of the owner-directive restyle. ContentView: every `.ultraThinMaterial` removed — header/search/input bars to flat `codeSurfaceSide`/`codeSurface`, the attach/library/export circle buttons and attachment chip to white-0.09 fills; the message input is now a quiet white-0.07 pill whose focus state is a solid accent hairline (the gradient focus ring + accent-glow shadow are gone); the ScrollToLatest pill swapped its brand gradient + glow for solid accent; `TypingIndicator` rebuilt from avatar-with-breathing-halo + glass bubble to three flush-left accent dots that style-match the streaming row (the 14B "Warming up the local model…" hint kept; orphaned `halo` state removed). SettingsView: the six remaining translucent `DS.Palette.surface` control fields became white-0.09 pills. Deliberately kept: the chat empty-state hero + `SuggestionCard`/`Eyebrow` (landing-moment identity, and DS-lane components) and the header brain-status halo (functional status indicator).
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). Restyle complete: 7/7 slices + pass 2; gate requested on the board.
+
+## 2026-06-11 · Whole-app restyle pass 3 — straggler views swept for consistency
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner directive was "the whole app"; the secondary views still wore the old glass and clashed against the new flat language. Swept: TabSwitcherBar (persistent header — bar to flat `codeSurfaceSide`, tab-pills capsule to white-0.07, brand-tile accent glow dropped), BottomShortcutBar (flat), MemoryView + LiveTranscriptionView (flat `codeSurface` canvases; Memory's cards to panel shade, its field to a white-0.09 pill), VoiceModeView (flat canvas — but the pulsing phase orb and its glow KEPT, it's the mode's functional centerpiece), AboutView (capabilities card opaque; landing canvas + icon glow kept). OnboardingView untouched (pure landing surface, glow allowed by spec); CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. All beyond the enumerated lane grant but inside its spirit and outside the other session's exclusions — declared on the board.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
+
+## 2026-06-11 · Chat-tab heavy polish pass 1 — Claude composer, floating actions, reading rhythm
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner directive ("POLISH THE CHAT TAB HEAVILY", away 3 h). (1) **Composer rebuilt to the Claude text-over-controls layout** the other session just shipped in CodeView (cross-tab consistency): one flat rounded container — TextField on top (grows 1…8 lines), controls row beneath with a single + menu that now carries BOTH attachments and saved prompts (replacing two separate 40 pt circles), a quiet inline mic, and a 26 pt solid-accent send (red stop while generating). (2) **Assistant hover actions float** on their own small panel pill instead of reserving 84 pt of trailing layout — replies get the full reading measure back, and the pill stays readable over any text. (3) **Reading rhythm**: 10 pt within a same-sender burst / 24 pt between speakers (was 4/14); user blocks cap at a 480 pt wrap measure; entry motion calmed (8 pt rise, blur 4, was 14/6). (4) Chrome diet leftovers: header thinking-glyph gradient → solid accent; UNRESTRICTED label 15-rounded → 12.5; `AgentRunView` lost its avatar disc and moved to the `codeSurfaceSide` panel (live N/M counter kept — it's progress, not chrome); `ConfirmationChip` dot lost its blur halo.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
+
+## 2026-06-11 · Chat-tab heavy polish passes 2+3 — live-14B welcome + two self-introduced continuity bugs fixed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pass 2: the empty-state greeting is time-aware (same hour buckets as the Today tab so the two landing surfaces agree); the eyebrow chip now flips to "Salehman AI · your 14B is live" once `OllamaClient.hasCustomModel()` is true — the same probe the Settings status row uses, so the two indicators can never disagree; headline toned from 32-rounded to 28-semibold plain SF. Pass 3 fixed two continuity bugs my own pass 1 introduced: (a) the user-block copy button lived in a VStack row that reserved ~22 pt of dead space under EVERY user message even un-hovered — replaced with the same floating panel-pill overlay the assistant rows use (zero reserved layout); (b) `StreamingBubble`'s pulsing dot sat BESIDE the text, indenting it ~14 pt, so the committed message visibly jumped left at stream-end — the dot now sits ABOVE the text and the leading edge is final from the first token.
+
+**Result:** Typecheck 0 errors / 0 warnings per pass; both committed+pushed; gate requested (passes 1–3 together). Chat tab at target shape pending owner/gate feedback.
+
+## 2026-06-11 · Visual QA delegated (sandbox can't see/drive the screen); blind checks pass
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for live functional verification of the polished chat tab (screen-record, drive the UI, fix what's broken). This session's sandbox blocks every needed capability — `screencapture` ("could not create image from display"), AppleScript/System Events (XPC connections severed), even process listing — while the parallel session demonstrably launches, screenshots, and keystrokes the app. Posted an 11-step visual-QA checklist on the board for it (empty state, suggestion submit, fast-path "hi", hover pills with zero layout shift, stream-commit continuity, Stop/⌘., composer growth + unified menu, ⌘F, scroll-to-latest, Unrestricted chrome, cross-tab canvases) with screenshots + PASS/FAIL + nit list requested; I fix whatever it finds. Blind-verifiable claims checked by code reading meanwhile: the ⌘. stop binding EXISTS (Salehman_AIApp.swift:92), ⌘F EXISTS (:94), and `ChatViewModel.stop()` performs real `Task.cancel()` — so the tool-loop cancel propagation built earlier today fires from the actual Stop button.
+
+**Result:** QA in the capable session's queue; no code changes this entry.
+
+## 2026-06-11 · QA harness: the app photographs itself (ImageRenderer → PNGs) + chat-flow UI tests
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift` (new), `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift` (new), `qa/README.md` (new), `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for a better QA mechanism than screenshot checklists. Shipped a **self-snapshot harness**: `QASnapshots` renders nine surfaces — including a deterministic `chat_samples` gallery covering every message/streaming/typing/agent-strip state the polish passes touched — to `qa/snapshots/*.png` via SwiftUI `ImageRenderer` (in-process; needs no Screen Recording permission, so it sidesteps the sandbox wall that blocks `screencapture` here). Triggers: a `qa/SNAPSHOT_REQUEST` file consumed at launch (one is planted now) or View ▸ "Capture QA Snapshots". Snapshot PNGs are gitignored (`chat_live.png` renders the owner's real history — must not land in the repo). Plus **`ChatTabUITests`**: four model-independent flows — send-button enable/disable gating, ⌘F search toggle, the unified +-menu carrying both Attach and Prompts sections, and a test that clicks the snapshot menu item and asserts the PNGs appear (so every gated UI-test run auto-delivers fresh pictures to the blind session). Composer controls gained accessibility identifiers (`chat.composer.field/plus/mic/send`) — for the tests and for VoiceOver. A file-watcher in this session fires when `chat_samples.png` lands → I read the images and iterate polish with actual eyes.
+
+**Result:** App typecheck 0 errors / 0 warnings; UI-test file parses clean (full test-target compile happens in the other session's gate). Stated limits: ImageRenderer is static layout/style only — hover/focus/sheet states remain on the manual checklist.
+
+## 2026-06-11 · QA v3 — first real eyes on the UI, self-judging audit, live-window capture
+
+**Files:** `Salehman AI/Tools/QAAudit.swift` (new), `Salehman AI/Tools/QACapture.swift` (new), `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AIUITests/ChatTabUITests.swift`, `qa/README.md`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Round-1 snapshots delivered first real eyes on the UI and an honest verdict on the harness itself. Findings: the chat gallery rendered correctly (rhythm/blocks/document-flow/agent-strip all match the design) except a stray sample row below the agent strip (LazyVStack misbehaving offscreen → plain VStack) and a third of the frame as dead space (vertical centering → `.topLeading` pin); `settings.png` rendered as a blank panel, `today.png` pure white, the live transcript empty, and TextField/Menu as yellow "unsupported" placeholders — plain `ImageRenderer` can't draw ScrollView/Lazy/AppKit content. Fix: the other session's `snapHosted` (NSHostingView offscreen render — both sessions converged on it independently) became THE single render path for all 13 surfaces. New **`QAAudit.swift`** makes the harness self-judging: after every capture it writes `AUDIT.json` (`nonBlank`, `canvasFlat` corner-luma vs the design greys, `baselineDiff` % + red heat-maps vs adoptable `qa/baselines`), and the capture UI test asserts `failures == []` — a visual regression now fails the gate like a broken unit test. New **`QACapture.swift`** photographs the app's real windows (`WINDOW_REQUEST`/menu — apps may capture their own windows, no permissions). The audit immediately earned its keep: it flagged `memory` (corners not design-grey); eyes-on triage showed a capture-config bug, not a missing canvas — MemoryView is a SHEET that floats in a tab-sized frame; now captured at 500×620 and exempted from corner sampling. Flagged to the other session: code-block text rendered invisible in the markdown sample — verify in the live app (their MarkdownText/CodeSyntaxView lane).
+
+**Result:** Typecheck 0/0; UI tests parse clean. Fresh SNAPSHOT_REQUEST + WINDOW_REQUEST planted — next app launch delivers v3 pictures + the first honest AUDIT.json; watcher armed.
+
+## 2026-06-11 · QA v4 — contrast probe, drift budgets, deeper canvas sampling, history + HTML report
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Fourth refinement round, turning the green loop into a protective one. (1) **`ContrastProbe`** — a new deterministic surface of 7 fixed text/surface bands (body+secondary on canvas and panel, user-block text, white-on-accent, accent-on-canvas; Arabic glyphs included); the audit scans each band's center line (median sample = background, extreme sample = glyph core) and enforces WCAG-style minimums (4.5:1 body, 3:1 secondary/accent) — the invisible-code-text class of bug found by eyes in round 1 is now caught by arithmetic every capture. (2) **Drift budgets** — deterministic galleries now FAIL `baselineDiff` beyond 2% (probe 1%) unless a baseline adoption made the change intentional; live surfaces stay informational. (3) `canvasFlat` samples mid-edges in addition to corners. (4) `qa/history.jsonl` trend trail (one line per audit) + `qa/snapshots/report.html` — an owner-facing page with badges and current/baseline/heat-map side by side. One Swift 6 isolation fix en route (DS tokens are MainActor; the probe's band table joined them).
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -2158,3 +2281,59 @@ user that a silent first reply = model loading.
 re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
 live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
 concurrency audit + agents-lane sweep.
+
+## 2026-06-11 — Code tab: Claude-minimal restyle + clipping fixes + 14B speed visibility (owner-driven polish loop)
+**Files:** `Views/CodeView.swift`, `Views/MarkdownText.swift`, `Views/CodeSyntaxView.swift`,
+`Views/ContentView.swift`, `Views/BackgroundView.swift`, `DesignSystem/DesignSystem.swift`,
+`LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+**What & why:** Owner ("make it simple and elegant like Claude Code; grey background; never stop
+polishing; make it a home for salehman14b and he runs fast"):
+- **Minimal conversation:** `CodeMessageRow` — user = right-aligned quiet block (no avatar/label),
+  assistant = flush-left document flow, copy-on-hover. Streaming view matches. 780pt centered reading
+  column incl. the input pill.
+- **Grey, flat, neutral:** new DS tokens `codeSurface` (0.125) / `codeSurfaceSide` (0.095); Code tab is
+  opaque (no glow bleed), sidebar/inspector a step darker; `BackgroundView` glows halved app-wide.
+- **Collapsible panels:** file tree + inspector both collapse (persisted via @AppStorage); slim reopen
+  bar; auto-expand when a file is picked or a run produces diffs. (Owner: "I can't even minimize it.")
+- **Clipping fixes (owner screenshot):** markdown TABLE cells now wrap at 300pt inside an h-scrollable
+  grid — Grid sized columns to ideal width and clipped long cells mid-word; prose files (md/txt) in the
+  file viewer wrap (vertical-only scroll) instead of single-row clipping.
+- **14B speed visibility:** chatStream captures Ollama's eval stats → "⚡ N tok/s" in the conversation
+  header after each local reply; welcome shows "<model> · local · ready" when the owner's model serves.
+- Plus: agent-steps strip flattened to the new surface, file-row hover states, floating
+  scroll-to-latest button, main-chat "Warming up the local model…" hint, `trimmedForLocalWindow`
+  (4096-ctx history diet, +2 tests — suite 306/306).
+**Result:** builds green throughout; committed `70d6af7` + pushed (unblocks the parallel session's items
+7+8 and the whole-app restyle task assigned per owner). Parallel: r3-best GGUF finale running on the A40
+(merged ✓ converted ✓ quantizing), round-6 seed lottery training, all 4 adapters + 32B now mirrored to
+Proton Drive. Owner away; autonomous loop continues until the RunPod balance is spent.
+
+## 2026-06-11 (afternoon) — Code-tab heavy polish, live-QA bug fix, QA system, clean GGUF pipeline
+**Files:** `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`, `Views/MarkdownText.swift`,
+`Agents/AgentPipeline.swift`, `LLM/OllamaClient.swift`, `Tools/QASnapshots.swift`, `tools/qa.sh` (new),
+`tools/QA.md` (new), `Salehman AITests/ToolLoopTests.swift`; `salehman-training/runpod/clean_pipeline.sh`.
+**What & why:**
+- **Code tab → Claude-minimal, grey, polished:** document-flow messages (right-aligned user block, flush-left
+  assistant, hover speak/copy/regenerate), `CodeMessageRow`/`PulsingDot`; flat neutral-grey surfaces
+  (`DS.codeSurface`/`codeSurfaceSide`, glows halved); collapsible tree + inspector (persisted, always-
+  recoverable strip + ⇧⌘E); centered 780 reading column; always-on red composer ring + focus glow + filled
+  send; personal welcome; tok/s readout; time separators.
+- **Live-QA bug fix:** driving the tab in the background found "who are you in one sentence" spinning up the
+  **full 15-agent team** — `complexity()` was judging the Code tab's coding-preamble wrapper, not the ask.
+  Fixed to judge the text after `Task:` (drops attached-file blocks); 3 regression tests. Live-verified 0/1.
+- **Markdown robustness:** table cells wrap (no mid-word clip) inside an h-scroll grid; prose files (md/txt)
+  wrap in the file viewer.
+- **QA system (with the parallel session):** their `QASnapshots`/`QAAudit` self-photograph + self-judge the
+  UI (no Screen-Recording perm). I added: Code-tab coverage, an `NSHostingView` capture path (`snapHosted`
+  renders HSplitView/ScrollView/SF-Symbols that ImageRenderer drops), an `INDEX.md` manifest (desc/size/
+  status/render-ms + git SHA, Hijri→Gregorian fix), a `contact_sheet.png` montage, responsive narrow
+  variants, an Arabic-RTL gallery, `tools/qa.sh` (one-command loop), and `tools/QA.md` (manual). The audit
+  immediately caught a real miss: `memory` canvas is black not design-grey (flagged to the other session).
+- **14B GGUF — the saga:** the rebuild pod's network volume hung writes/reads at exactly 4.31 GB (twice,
+  even after a restart). Root-caused as a volume I/O stall (load 41, 0% CPU, no OOM). Fix: a FRESH pod with
+  **no network volume — everything on the local container disk**; re-merged r3 from the Mac-backed adapter
+  → f16 → **Q4_K_M 8.37 GB** clean. Downloading to `/Users/Shared` via an unbounded resumable rsync loop
+  (the pod's upload drops every few hundred MB; `--append-verify` makes each retry resume).
+**Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
+Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
+spend report. Owner away ~3h; loop continues.

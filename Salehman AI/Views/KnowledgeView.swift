@@ -37,8 +37,12 @@ struct KnowledgeView: View {
                 documentsSection
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
         .onAppear(perform: reload)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay {
@@ -58,9 +62,9 @@ struct KnowledgeView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -93,8 +97,7 @@ struct KnowledgeView: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
@@ -121,7 +124,8 @@ struct KnowledgeView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque panel + hairline (design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
@@ -143,7 +147,7 @@ struct KnowledgeView: View {
                 VStack(spacing: 1) {
                     ForEach(docs) { doc in docRow(doc) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
         }
@@ -227,11 +231,11 @@ struct KnowledgeView: View {
             Text("Paste text").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             HStack {
                 Spacer()
@@ -338,7 +342,7 @@ private struct DocDetailSheet: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .padding(DS.Space.xl)

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 11:09 +03 · Swift files: 128 · Swift LOC: 23814_
+_Generated: 2026-06-11 18:09 +03 · Swift files: 132 · Swift LOC: 25225_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (673 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (753 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -148,6 +148,19 @@ final class MissionProgress: ObservableObject {
     }
     func setRunning(_ i: Int) { if steps.indices.contains(i) { steps[i].status = .running } }
     func setDone(_ i: Int)    { if steps.indices.contains(i) { steps[i].status = .done } }
+
+    /// Surface tool-loop progress on the RUNNING step's title ("… · tool round
+    /// 3/8"). On the 9 GB 14B a single tool round can take 30–90 s, so an
+    /// 8-round chain is minutes of otherwise-silent work — this reuses the
+    /// existing adapted-title channel (zero new UI) to show life. Idempotent:
+    /// re-noting replaces the previous round suffix instead of stacking. No-ops
+    /// when no team mission is running (e.g. the trivial fast-path).
+    func noteToolRound(_ round: Int, of cap: Int) {
+        guard let i = steps.firstIndex(where: { $0.status == .running }) else { return }
+        let current = steps[i].adapted ?? steps[i].name
+        let base = current.components(separatedBy: " · tool round").first ?? current
+        steps[i].adapted = "\(base) · tool round \(round)/\(cap)"
+    }
     /// `text` is the FULL cumulative answer so far. Publishing it on every token
     /// re-runs Markdown parsing over the whole string each time (O(n²) on the main
     /// thread → visible jank on long replies). Throttle the @Published write to
@@ -336,9 +349,32 @@ enum AgentPipeline {
     /// like "yes" / "continue" reaches the brain with no idea what came before.
     /// No-op when there's no history yet (first turn). The transcript is already
     /// length-capped by `ConversationStore`, so this can't bloat the prompt.
+    /// Char budget for folded history when the LOCAL floor serves. The 14B runs at
+    /// num_ctx 4096 (≈16k chars TOTAL for persona + history + mission + reply); an
+    /// oversized prompt is truncated server-side from the TOP — which silently eats
+    /// the persona and these very instructions. ~9k chars of history leaves room.
+    nonisolated static let localHistoryCharBudget = 9_000
+
+    /// Drop OLDEST lines (the transcript is "Role: text" lines, oldest first) until
+    /// `history` fits `budget`. Pure + nonisolated → unit-testable.
+    nonisolated static func trimmedForLocalWindow(_ history: String, budget: Int) -> String {
+        guard history.count > budget else { return history }
+        var lines = history.components(separatedBy: "\n")
+        var trimmed = history
+        while trimmed.count > budget, lines.count > 2 {
+            lines.removeFirst()
+            trimmed = lines.joined(separator: "\n")
+        }
+        return "(earlier context trimmed)\n" + trimmed
+    }
+
     nonisolated static func withConversationContext(_ mission: String, history: String) -> String {
-        let h = history.trimmingCharacters(in: .whitespacesAndNewlines)
+        var h = history.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !h.isEmpty else { return mission }
+        // Only the local floor needs the diet — cloud windows are 32k+.
+        if !SalehmanEngine.hasAnyCloud {
+            h = trimmedForLocalWindow(h, budget: localHistoryCharBudget)
+        }
         return """
         Conversation so far (most recent last) — use it to interpret the new message \
         (e.g. a short "yes" / "no" / "continue" refers to what was just discussed):
@@ -452,10 +488,9 @@ enum AgentPipeline {
         // non-blocking from the orchestrator's perspective, but on Ollama / MLX
         // Salehman / Unsloth Studio the model server is serial, so this extra
         // generate() ends up QUEUED ahead of the user's first real agent call
-        // and directly delays the answer. Same predicate as `effectiveCap`'s
-        // serial-brain branch so they stay in lockstep when a new serial brain
-        // is added.
-        let isSerialLocal = (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm)
+        // and directly delays the answer. Shares `isSerialLocalBrain` with
+        // `effectiveCap` + the context diet so a new serial brain updates all.
+        let isSerialLocal = Self.isSerialLocalBrain(brain)
         if specs.count > 1 && !isSerialLocal {
             Task.detached(priority: .utility) {
                 let map = await adaptTitles(mission: mission, names: specs.map { $0.name })
@@ -535,7 +570,7 @@ enum AgentPipeline {
                     }
                     let input = AgentInput(
                         mission: mission, history: history, context: phaseContext,
-                        onStream: stream)
+                        brain: brain, onStream: stream)
                     group.addTask {
                         await MainActor.run { MissionProgress.shared.setRunning(i) }
                         // `??` uses an autoclosure that can't contain `await`,
@@ -614,6 +649,16 @@ enum AgentPipeline {
     /// chars (likely a paste/real ask), digits or code punctuation (likely a
     /// task), or >2 words that aren't a known greeting phrase. When in doubt it
     /// returns false (full pipeline). Pure + nonisolated → unit-testable.
+    /// Single-instance local servers (Ollama qwen-coder, the user's own
+    /// `.salehman` model, and the OpenAI-compatible Unsloth-Studio / vLLM
+    /// servers) all run serially on the same shared-RAM box — N parallel
+    /// requests would queue or OOM. The ONE predicate behind `effectiveCap`,
+    /// the adaptTitles skip, and the local context diet, so a new serial brain
+    /// added here updates all three behaviors in lockstep.
+    nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+    }
+
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL
     /// execution (cap 1) regardless of the memory-based `baseCap` — fanning many
     /// simultaneous inference requests at a multi-GB-resident model can push an
@@ -621,11 +666,33 @@ enum AgentPipeline {
     /// Other brains use the memory-derived cap (floored at 1). Pure + nonisolated
     /// so the OOM-prevention guarantee is unit-testable and won't silently regress.
     nonisolated static func effectiveCap(brain: LocalLLM.Brain, baseCap: Int) -> Int {
-        // Single-instance local servers (Ollama qwen-coder, the user's own
-        // `.salehman` model, and the OpenAI-compatible `.unslothStudio`
-        // server) all run serially — N parallel requests would queue or OOM
-        // on the same shared-RAM box.
-        (brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm) ? 1 : max(1, baseCap)
+        isSerialLocalBrain(brain) ? 1 : max(1, baseCap)
+    }
+
+    // MARK: - Local context diet (num_ctx 4096)
+    //
+    // The rolling transcript caps each TURN at 4,000 chars × 8 turns — worst
+    // case 32k chars ≈ 8k tokens, double a local model's num_ctx 4096. Ollama
+    // drops the OLDEST tokens on overflow, which silently evicts the system
+    // prompt/persona first. So when the brain is a serial LOCAL model, the
+    // 2-agent path trims its inputs to these budgets BEFORE the prompt is
+    // built (cloud brains keep the full history — they have the context for it).
+
+    /// Char budget for conversation history on a local 4096-ctx brain
+    /// (~1.5k tokens), leaving room for persona + tool specs + answer.
+    nonisolated static let localHistoryBudget = 6_000
+    /// Char budget for phase context on a local 4096-ctx brain.
+    nonisolated static let localContextBudget = 1_500
+
+    /// Most-recent suffix of a transcript within `maxChars`, cut at a line
+    /// boundary (turns are "Role: text" lines) so no turn is sliced mid-thought.
+    /// A single over-budget line falls back to a raw char cut — never empty.
+    nonisolated static func recentTail(_ text: String, maxChars: Int) -> String {
+        guard text.count > maxChars else { return text }
+        let tail = String(text.suffix(maxChars))
+        guard let nl = tail.firstIndex(of: "\n") else { return tail }
+        let cut = String(tail[tail.index(after: nl)...])
+        return cut.isEmpty ? tail : cut
     }
 
     nonisolated static func isTrivialMission(_ mission: String) -> Bool {
@@ -670,7 +737,20 @@ enum AgentPipeline {
     /// work" signal escalates to `.hard`, and the middle defaults to
     /// `.moderate` (a safe reason+final pair), never `.simple`.
     nonisolated static func complexity(of mission: String) -> MissionComplexity {
-        let trimmed = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Judge the ACTUAL ask, not wrapper boilerplate. The Code tab wraps a fixed
+        // multi-line >200-char coding preamble around "Task: <ask>"; judging the whole
+        // string rated EVERY message .hard (multi-line + long + multi-sentence), so a
+        // 6-word question like "who are you" spun up the full 15-agent team. Extract
+        // the text after the last "Task:" marker when present. (The main chat sends raw
+        // messages with no marker, so it's unaffected.)
+        let raw = mission.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed: String = {
+            guard let r = raw.range(of: "Task:", options: .backwards) else { return raw }
+            let t = raw[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Drop an appended "Attached file …" block so a pasted file doesn't inflate it.
+            let ask = t.range(of: "\n\nAttached file").map { String(t[..<$0.lowerBound]) } ?? t
+            return ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? raw : ask.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         guard !trimmed.isEmpty else { return .simple }
         let lower = trimmed.lowercased()
         let wordCount = trimmed.split { $0 == " " || $0 == "\n" }.count
@@ -694,7 +774,7 @@ enum AgentPipeline {
 
         // SIMPLE — greetings, acknowledgements, and short single-clause
         // questions ("who are u", "what's the weather"). One agent is plenty.
-        if isTrivialMission(mission) { return .simple }
+        if isTrivialMission(trimmed) { return .simple }
         if wordCount <= 6 { return .simple }
 
         // MODERATE — a normal one-line request (7–30 words, single sentence,
@@ -767,7 +847,7 @@ enum AgentPipeline {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentRegistry.swift (92 lines) =====
+===== FILE: Salehman AI/Agents/AgentRegistry.swift (105 lines) =====
 ```swift
 import Foundation
 
@@ -777,6 +857,7 @@ struct AgentInput: Sendable {
     let mission: String
     let history: String
     let context: String     // built from MissionMemory.buildContext(...)
+    let brain: LocalLLM.Brain   // resolved once per mission; drives the local context diet
     let onStream: @Sendable (String) -> Void   // no-op for non-final agents
 }
 
@@ -820,6 +901,18 @@ struct AgentRegistry {
     private nonisolated static let registerToken: Void = {
         for spec in AgentDefinitions.pipeline {
             register(name: spec.name) { input in
+                // Local context diet: a serial local brain runs at num_ctx 4096
+                // (~16k chars); the full 8-turn transcript can be 32k. Trim to
+                // the most-recent budget so Ollama never silently evicts the
+                // system prompt. Cloud brains keep everything — they have room.
+                let dieted = AgentPipeline.isSerialLocalBrain(input.brain)
+                let history = dieted
+                    ? AgentPipeline.recentTail(input.history, maxChars: AgentPipeline.localHistoryBudget)
+                    : input.history
+                let context = dieted
+                    ? String(input.context.prefix(AgentPipeline.localContextBudget))
+                    : input.context
+
                 if spec.usesTools {
                     // Tool-calling path: `LocalLLM.chat` deliberately takes the
                     // bare message so the model can decide to invoke tools. But
@@ -828,7 +921,7 @@ struct AgentRegistry {
                     // other folder" lose their antecedent on the one agent that
                     // actually runs terminal commands. Prepend both as a
                     // preamble; the model still sees a clear "Request:" line.
-                    let h = input.history, c = input.context
+                    let h = history, c = context
                     let m: String
                     if h.isEmpty && c.isEmpty {
                         m = input.mission
@@ -847,14 +940,14 @@ struct AgentRegistry {
                     // server-side prefix caching, folded in for the rest — instead of
                     // re-sending the whole history inline on every turn.
                     let body = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                         history: "", context: input.context)
+                                                         history: "", context: context)
                     return await LocalLLM.generateStreaming(body, maxTokens: 700,
-                                                            cachePrefix: input.history) { partial in
+                                                            cachePrefix: history) { partial in
                         input.onStream(partial)
                     }
                 }
                 let prompt = AgentPipeline.buildPrompt(spec: spec, mission: input.mission,
-                                                       history: input.history, context: input.context)
+                                                       history: history, context: context)
                 return await LocalLLM.generate(prompt, maxTokens: spec.full ? 700 : 110)
             }
         }
@@ -1819,7 +1912,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/App/Salehman_AIApp.swift (103 lines) =====
+===== FILE: Salehman AI/App/Salehman_AIApp.swift (118 lines) =====
 ```swift
 //
 //  Salehman_AIApp.swift
@@ -1842,6 +1935,13 @@ struct Salehman_AIApp: App {
                 // so the assistant can answer about them via search_documents. Runs
                 // off-main and only on the first launch after this version.
                 .task { ExternalToolsKnowledge.seedIfNeeded() }
+                // QA: if qa/SNAPSHOT_REQUEST exists, render every surface to
+                // qa/snapshots/*.png so the screen-blind polish session can SEE
+                // the app (see QASnapshots.swift). WINDOW_REQUEST captures the
+                // real on-screen window (QACapture.swift); the audit then
+                // self-judges the pictures (QAAudit.swift).
+                .task { QASnapshots.checkAndRun() }
+                .task { QACapture.checkAndRun() }
                 // One global `.tint(...)` so every descendant that uses the SwiftUI
                 // system accent — Buttons/Toggles/Pickers + literal `Color.accentColor`
                 // call sites (SettingsView.brainGridCell, AgentsView, CopilotSignInView) —
@@ -1887,6 +1987,14 @@ struct Salehman_AIApp: App {
             CommandMenu("View") {
                 Button("Command Palette…") { app.showCommandPaletteRequested = true }
                     .keyboardShortcut("k", modifiers: .command)
+                // Renders every surface to qa/snapshots/*.png (QASnapshots.swift)
+                // so the screen-blind polish session can see the app on demand.
+                Button("Capture QA Snapshots") { QASnapshots.captureAll() }
+                // True pixels of the real window(s) — QACapture.swift.
+                Button("Capture Live Window") { QACapture.captureLiveWindows() }
+                // Audit current snapshots (AUDIT.json) / adopt them as baselines.
+                Button("Run QA Audit") { QAAudit.runDefault() }
+                Button("Adopt QA Baselines") { QAAudit.adoptBaselinesDefault() }
                 Divider()
                 Button("Today") { app.selectedTab = .today }
                     .keyboardShortcut("1", modifiers: .command)
@@ -1926,7 +2034,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (380 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (384 lines) =====
 ```swift
 import SwiftUI
 
@@ -1962,6 +2070,10 @@ enum DS {
         static let bgTop         = Color(red: 0.09, green: 0.05, blue: 0.07)
         static let bgBottom      = Color(red: 0.03, green: 0.02, blue: 0.03)
         static let surface       = Color.white.opacity(0.07)
+        // Code-tab editor surfaces — NEUTRAL grey (no red cast): the chat canvas
+        // is lighter, the sidebar/inspector a step darker for depth, like an editor.
+        static let codeSurface     = Color(white: 0.125)
+        static let codeSurfaceSide = Color(white: 0.095)
         static let surfaceAlt    = Color.white.opacity(0.06)
         static let modalBG       = Color(red: 0.13, green: 0.09, blue: 0.11)
         static let surfaceStroke = Color.white.opacity(0.12)
@@ -4463,7 +4575,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1896 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1936 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5730,12 +5842,22 @@ enum LocalLLM {
         // Terminal is always available; web tools only when external access is on
         // (and not Offline mode) — same gate as the FM web tools.
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
+        // Per-model knobs: the user's own 14B stays warm 5 min (re-paying its
+        // ~9 GB load mid-conversation is the single worst local latency hit);
+        // smaller models keep the RAM-lean 30 s eviction. num_ctx floors at
+        // 4096 regardless — tool transcripts (persona + specs + results) are
+        // fat, and `tuned`'s 2048 default would truncate them for small models.
+        let gen = OllamaClient.Generation.tuned(for: model)
         // Build the /api/chat body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the nonisolated client.
+        // `num_predict` bounds each turn (a tool-round answer or a chain step):
+        // unbounded on a ~25 tok/s local 14B means a rambling turn can hold the
+        // serial slot for minutes. 2048 is roomy for a full code answer.
         func bodyData(includeTools: Bool) -> Data? {
             var body: [String: Any] = ["model": model, "messages": messages,
-                                       "stream": false, "keep_alive": "30s",
-                                       "options": ["num_ctx": 4096]]
+                                       "stream": false, "keep_alive": gen.keepAlive,
+                                       "options": ["num_ctx": max(gen.numCtx, 4096),
+                                                   "num_predict": toolTurnTokenCap]]
             if includeTools { body["tools"] = toolSpecs }
             return try? JSONSerialization.data(withJSONObject: body)
         }
@@ -5746,7 +5868,15 @@ enum LocalLLM {
         // cap-out returns real content instead of that bare message.
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Stop pressed mid-mission (CodeView/chat cancels the task): abort
+            // BETWEEN rounds so a dead mission can't hold the serial 14B slot
+            // for minutes finishing rounds nobody wants. Mid-request cancels
+            // already surface as a nil chatTurn (URLSession is cancellation-aware).
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
+            // A round on the 14B can take 30–90 s — show life on the running
+            // team step ("· tool round N/8"). No-op outside team missions.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -5797,6 +5927,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -5807,6 +5939,12 @@ enum LocalLLM {
         if !lastAssistantText.isEmpty { return lastAssistantText }
         return "I worked through several steps but couldn't wrap it up in one go. Say \"continue\" and I'll pick up where I left off."
     }
+
+    /// Per-turn output bound shared by both tool loops (Ollama `num_predict`,
+    /// OpenAI-compat `max_tokens`). Without it a local server generates until
+    /// its context runs out — minutes per turn on a ~25 tok/s 14B. 2048 fits a
+    /// complete code answer while keeping the worst-case turn bounded.
+    nonisolated static let toolTurnTokenCap = 2048
 
     // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
 
@@ -5836,8 +5974,12 @@ enum LocalLLM {
         let toolSpecs = Self.ollamaToolSpecs(externalAllowed: ToolPolicy.isExternalAllowed)
         // Build the body locally and serialize to Data (Sendable) so the
         // non-Sendable [[String:Any]] never crosses into the client method.
+        // `max_tokens` mirrors the Ollama loop's `num_predict` bound: an absent
+        // cap makes vLLM/Studio generate to their max_model_len — minutes per
+        // turn on a slow local server.
         func bodyData(includeTools: Bool) -> Data? {
-            var body: [String: Any] = ["model": model, "messages": messages, "stream": false]
+            var body: [String: Any] = ["model": model, "messages": messages, "stream": false,
+                                       "max_tokens": toolTurnTokenCap]
             if includeTools {
                 body["tools"] = toolSpecs
                 body["tool_choice"] = "auto"
@@ -5849,7 +5991,12 @@ enum LocalLLM {
         // 5 rounds was too low and surfaced "(Reached the tool-call limit.)".
         let maxRounds = 8
         var lastAssistantText = ""
-        for _ in 0..<maxRounds {
+        for round in 0..<maxRounds {
+            // Same Stop-pressed abort as the Ollama loop: bail between rounds.
+            if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
+            // Same round-progress note as the Ollama loop — a local Unsloth
+            // Studio / vLLM server can be just as slow per round as Ollama.
+            await MainActor.run { MissionProgress.shared.noteToolRound(round + 1, of: maxRounds) }
             guard let data = bodyData(includeTools: true),
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
@@ -5908,6 +6055,8 @@ enum LocalLLM {
         }
         // Hit the round cap — ask once more with tools OFF for a direct final
         // answer, nudging the model to wrap up using what the tools already returned.
+        // Skipped when cancelled: a dead mission doesn't pay the wrap-up generate.
+        if Task.isCancelled { return lastAssistantText.isEmpty ? nil : lastAssistantText }
         messages.append(["role": "user",
                          "content": "Now give me your final answer directly, using the results above. Do not call any more tools."])
         guard let data = bodyData(includeTools: false),
@@ -6056,7 +6205,10 @@ enum LocalLLM {
     /// Mac" summary/Q&A). Returns `nil` when no on-device model is available, so
     /// the caller can say so honestly rather than silently falling back to cloud.
     static func generateOnDevice(_ prompt: String, maxTokens: Int? = nil) async -> String? {
-        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+        // Forward the caller's token budget — dropping it let a 110-token "terse
+        // note" run unbounded on the local 14B (~15 tok/s ⇒ a minute of ramble).
+        if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                               maxTokens: maxTokens) { return reply }
         // Unsloth Studio (or any local OpenAI-compat server) qualifies as
         // on-device ONLY when its endpoint is a loopback URL — see
         // `UnslothStudio.isLocalLoopback`. A user-typed public URL would NOT
@@ -6822,7 +6974,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (361 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (392 lines) =====
 ```swift
 import Foundation
 
@@ -6931,8 +7083,14 @@ enum OllamaClient {
         /// exchange after a pause re-pays a multi-second load, so it stays warm
         /// 5 min and gets the 4096 context its Modelfile is built for. Other
         /// (smaller) models keep the RAM-lean 30 s / 2048 defaults.
+        /// Matches the configured name OR any "salehman*" variant — the model
+        /// ships as `salehman14b` with a `salehman` alias, and a caller passing
+        /// the raw name must not silently get the small-model knobs (the alias
+        /// trap the parallel session flagged in COORDINATION).
         nonisolated static func tuned(for model: String) -> Generation {
-            model == AppSettings.customModelNameCurrent
+            let custom = AppSettings.customModelNameCurrent
+            let base = model.components(separatedBy: ":").first ?? model
+            return (model == custom || base.lowercased().hasPrefix("salehman"))
                 ? Generation(keepAlive: "5m", numCtx: 4096)
                 : .default
         }
@@ -7109,12 +7267,16 @@ enum OllamaClient {
     /// General-purpose chat completion via qwen-coder (used as the fallback brain
     /// when no other brain is set). Returns nil if Ollama or any preferred
     /// coder model isn't available, so callers can degrade gracefully.
-    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap).
+    /// Pass `gen` to override the per-model tuned knobs (e.g. a reply-length cap),
+    /// or just `maxTokens` to cap reply length while keeping the tuned knobs —
+    /// callers with a token budget (agent notes are 110, full replies 700) MUST
+    /// cap, or a 14B at ~15 tok/s turns a "terse note" into a minute-long ramble.
     static func chat(prompt: String, system: String? = nil,
-                     gen: Generation? = nil) async -> String? {
+                     gen: Generation? = nil, maxTokens: Int? = nil) async -> String? {
         guard await isUp(), let model = await activeChatModel() else { return nil }
-        return await generate(model: model, prompt: prompt, system: system,
-                              gen: gen ?? .tuned(for: model))
+        var g = gen ?? .tuned(for: model)
+        if let cap = maxTokens { g.numPredict = cap }
+        return await generate(model: model, prompt: prompt, system: system, gen: g)
     }
 
     /// Pre-load the active chat model into RAM (no prompt → Ollama just loads the
@@ -7139,6 +7301,19 @@ enum OllamaClient {
         }
     }
     @MainActor private static var didWarmup = false
+
+    // MARK: - Last-generation stats (speed visibility for the local model)
+
+    /// (model, tokens/sec) of the most recent completed local generation, with a
+    /// lock so the stream task can write while the UI reads. Display-only.
+    nonisolated(unsafe) private static var _lastStats: (model: String, tps: Double)?
+    nonisolated private static let statsLock = NSLock()
+    nonisolated static func recordStats(model: String, tokensPerSec: Double) {
+        statsLock.lock(); _lastStats = (model, tokensPerSec); statsLock.unlock()
+    }
+    nonisolated static var lastStats: (model: String, tps: Double)? {
+        statsLock.lock(); defer { statsLock.unlock() }; return _lastStats
+    }
 
     /// Streaming chat via /api/generate with `stream=true`. Calls `onUpdate`
     /// with the cumulative text after each token chunk. Returns the final
@@ -7175,7 +7350,15 @@ enum OllamaClient {
                     accumulated += chunk
                     onUpdate(accumulated)
                 }
-                if (json["done"] as? Bool) == true { break }
+                if (json["done"] as? Bool) == true {
+                    // Final chunk carries generation stats — capture tokens/sec so the
+                    // UI can show how fast the local model actually ran.
+                    if let count = json["eval_count"] as? Int,
+                       let ns = json["eval_duration"] as? Int, ns > 0 {
+                        recordStats(model: model, tokensPerSec: Double(count) / (Double(ns) / 1e9))
+                    }
+                    break
+                }
             }
         } catch {
             // Network/stream errors — surface what we accumulated so the UI can decide.
@@ -10658,6 +10841,753 @@ enum GrokWatchTool {
 }
 ```
 
+===== FILE: Salehman AI/Tools/QAAudit.swift (322 lines) =====
+```swift
+import AppKit
+
+/// **Self-judging visual QA** — turns `QASnapshots`' pictures into pass/fail.
+///
+/// After every capture this audits each PNG and writes `AUDIT.json` next to
+/// them, so a session (or a gate) can verify the UI without human eyes:
+///
+/// * **nonBlank** — the render produced real content (≥ a handful of distinct
+///   sampled colors), catching silent `ImageRenderer` failures.
+/// * **canvasFlat** — sampled canvas points sit within tolerance of the
+///   design-language grey (`codeSurface`/`codeSurfaceSide`), catching glow
+///   bleed, gradient regressions, or translucent stacking sneaking back in.
+/// * **baselineDiff** — percentage of sampled pixels that moved vs
+///   `qa/baselines/<name>.png` (adopted on demand), plus a red heat-map PNG
+///   for any snapshot that changed >0.5% — regression *detection*, not just
+///   pictures. No baseline yet = informational, never a failure.
+///
+/// The UI-test gate asserts `failures == []`, so a visual regression fails
+/// the build the same way a broken unit test does.
+@MainActor
+enum QAAudit {
+
+    struct CheckResult: Codable {
+        let name: String
+        let pass: Bool
+        let detail: String
+    }
+    struct SnapshotResult: Codable {
+        let snapshot: String
+        let checks: [CheckResult]
+        let diffPercent: Double?
+    }
+    struct Report: Codable {
+        let generatedAt: String
+        let results: [SnapshotResult]
+        let failures: [String]
+    }
+
+    /// Expected canvas shade per snapshot, sampled near the BOTTOM corners
+    /// (headers/banners legitimately use the panel shade up top). `nil` =
+    /// canvas check skipped (Today keeps its landing glow by design).
+    private static let expectedCanvas: [String: CGFloat] = [
+        "chat_live": 0.125, "chat_samples": 0.125,
+        "agents": 0.125, "notes": 0.125, "knowledge": 0.125,
+        "markets": 0.095,   // bottom edge = the flat disclaimer footer
+        // "memory" exempt: it's a SHEET with rounded corners — corner sampling
+        // reads the cutout, not a canvas (round-1 false-positive).
+    ]
+
+    /// Deterministic surfaces must not drift past these change budgets without
+    /// an explicit baseline adoption — THE regression tripwire. Live surfaces
+    /// (real chat history, real window) stay informational: they change every
+    /// conversation by design.
+    private static let diffBudgets: [String: Double] = [
+        "chat_samples": 2.0, "code_samples": 2.0, "contrast_probe": 1.0,
+        "settings": 0.095,
+    ]
+
+    /// Same repo-root resolution as `QASnapshots.qaDir` (kept self-contained
+    /// so the two files never block on each other's in-flight edits).
+    static var defaultQADir: URL {
+        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
+    }
+
+    /// Convenience entry points for menu items / launch hooks.
+    static func runDefault() {
+        run(snapshotsDir: defaultQADir.appendingPathComponent("snapshots"),
+            baselinesDir: defaultQADir.appendingPathComponent("baselines"))
+    }
+    static func adoptBaselinesDefault() {
+        adoptBaselines(snapshotsDir: defaultQADir.appendingPathComponent("snapshots"),
+                       baselinesDir: defaultQADir.appendingPathComponent("baselines"))
+    }
+
+    static func run(snapshotsDir: URL, baselinesDir: URL) {
+        var results: [SnapshotResult] = []
+        var failures: [String] = []
+
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path)) ?? [])
+            .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png") }.sorted()
+
+        for file in names {
+            let name = String(file.dropLast(4))
+            guard let rep = bitmap(at: snapshotsDir.appendingPathComponent(file)) else {
+                results.append(.init(snapshot: name,
+                                     checks: [.init(name: "decodable", pass: false, detail: "PNG unreadable")],
+                                     diffPercent: nil))
+                failures.append(name)
+                continue
+            }
+            var checks: [CheckResult] = []
+
+            // nonBlank — sample a sparse grid, count distinct quantized colors.
+            let distinct = distinctSampleCount(rep)
+            checks.append(.init(name: "nonBlank", pass: distinct >= 8,
+                                detail: "\(distinct) distinct sampled colors"))
+
+            // canvasFlat — bottom corners + mid-edges within ±0.035 of the
+            // target grey (edges catch a sidebar/panel regressing to
+            // translucent even when the corners survive).
+            if let target = expectedCanvas[name] {
+                let measured = canvasSampleLuma(rep)
+                let ok = measured.allSatisfy { abs($0 - target) <= 0.035 }
+                checks.append(.init(name: "canvasFlat", pass: ok,
+                                    detail: "target \(target), samples \(measured.map { String(format: "%.3f", $0) }.joined(separator: "/"))"))
+            }
+
+            // contrast — the readability probe's bands, measured for real.
+            if name == "contrast_probe" {
+                checks.append(contentsOf: contrastChecks(rep))
+            }
+
+            // baselineDiff — informational for live surfaces; a FAILURE for
+            // deterministic ones that exceed their drift budget.
+            var diffPercent: Double? = nil
+            let baseURL = baselinesDir.appendingPathComponent(file)
+            if let base = bitmap(at: baseURL) {
+                let (pct, heat) = diff(rep, base)
+                diffPercent = pct
+                if pct > 0.5, let heat {
+                    try? heat.write(to: snapshotsDir.appendingPathComponent("\(name)_diff.png"))
+                }
+                let budget = diffBudgets[name]
+                let pass = budget.map { pct <= $0 } ?? true
+                checks.append(.init(name: "baselineDiff", pass: pass,
+                                    detail: String(format: "%.2f%% changed vs baseline%@", pct,
+                                                   budget.map { String(format: " (budget %.1f%%)", $0) } ?? "")))
+            } else {
+                checks.append(.init(name: "baselineDiff", pass: true, detail: "no baseline adopted yet"))
+            }
+
+            if checks.contains(where: { $0.pass == false }) { failures.append(name) }
+            results.append(.init(snapshot: name, checks: checks, diffPercent: diffPercent))
+        }
+
+        let report = Report(generatedAt: ISO8601DateFormatter().string(from: Date()),
+                            results: results, failures: failures.sorted())
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(report) {
+            try? data.write(to: snapshotsDir.appendingPathComponent("AUDIT.json"))
+        }
+
+        // Trend trail: one JSONL line per audit run (timestamp, fail count,
+        // total diff) — cheap history for "when did this start drifting?".
+        let totalDiff = results.compactMap(\.diffPercent).reduce(0, +)
+        let histLine = "{\"at\":\"\(report.generatedAt)\",\"failures\":\(failures.count),\"surfaces\":\(results.count),\"totalDiffPct\":\(String(format: "%.2f", totalDiff))}\n"
+        if let d = histLine.data(using: .utf8) {
+            let url = snapshotsDir.deletingLastPathComponent().appendingPathComponent("history.jsonl")
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile(); handle.write(d); try? handle.close()
+            } else {
+                try? d.write(to: url)
+            }
+        }
+
+        writeHTMLReport(report, in: snapshotsDir)
+    }
+
+    /// One-glance owner report: every surface with its badges, current image,
+    /// and (when present) baseline + heat-map side by side. Pure static HTML —
+    /// open qa/snapshots/report.html in any browser.
+    private static func writeHTMLReport(_ report: Report, in dir: URL) {
+        var html = """
+        <!doctype html><meta charset="utf-8"><title>Salehman AI — QA report</title>
+        <style>
+        body{background:#1b1b1b;color:#eee;font:14px -apple-system,sans-serif;margin:24px}
+        h1{font-size:18px} .ok{color:#5dd167} .bad{color:#ff5d5d}
+        .card{background:#252525;border:1px solid #3a3a3a;border-radius:10px;padding:14px;margin:14px 0}
+        .imgs{display:flex;gap:10px;flex-wrap:wrap} .imgs figure{margin:0}
+        .imgs img{max-width:380px;border:1px solid #444;border-radius:6px}
+        figcaption{font-size:11px;color:#999;margin-top:4px}
+        .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;background:#333;margin-right:6px}
+        </style>
+        <h1>QA report — \(report.generatedAt) ·
+        <span class="\(report.failures.isEmpty ? "ok" : "bad")">\(report.failures.isEmpty ? "ALL GREEN" : "\(report.failures.count) FAILING: \(report.failures.joined(separator: ", "))")</span></h1>
+        """
+        for r in report.results {
+            html += "<div class=\"card\"><b>\(r.snapshot)</b><br>"
+            for c in r.checks {
+                html += "<span class=\"badge \(c.pass ? "ok" : "bad")\">\(c.pass ? "✓" : "✗") \(c.name)</span> <small>\(c.detail)</small><br>"
+            }
+            html += "<div class=\"imgs\">"
+            html += "<figure><img src=\"\(r.snapshot).png\"><figcaption>current</figcaption></figure>"
+            html += "<figure><img src=\"../baselines/\(r.snapshot).png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>baseline</figcaption></figure>"
+            html += "<figure><img src=\"\(r.snapshot)_diff.png\" onerror=\"this.parentElement.style.display='none'\"><figcaption>diff heat-map</figcaption></figure>"
+            html += "</div></div>"
+        }
+        try? html.write(to: dir.appendingPathComponent("report.html"), atomically: true, encoding: .utf8)
+    }
+
+    /// Promote the current snapshots to baselines (menu/trigger-file driven).
+    static func adoptBaselines(snapshotsDir: URL, baselinesDir: URL) {
+        try? FileManager.default.createDirectory(at: baselinesDir, withIntermediateDirectories: true)
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path)) ?? [])
+            .filter { $0.hasSuffix(".png") && !$0.hasSuffix("_diff.png") }
+        for f in files {
+            let dst = baselinesDir.appendingPathComponent(f)
+            try? FileManager.default.removeItem(at: dst)
+            try? FileManager.default.copyItem(at: snapshotsDir.appendingPathComponent(f), to: dst)
+        }
+    }
+
+    // MARK: - Pixel helpers
+
+    private static func bitmap(at url: URL) -> NSBitmapImageRep? {
+        guard let data = try? Data(contentsOf: url),
+              let rep = NSBitmapImageRep(data: data) else { return nil }
+        return rep
+    }
+
+    /// Quantized distinct-color count over a sparse sample grid.
+    private static func distinctSampleCount(_ rep: NSBitmapImageRep) -> Int {
+        var seen = Set<UInt32>()
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        let step = max(1, min(w, h) / 40)
+        var y = 0
+        while y < h {
+            var x = 0
+            while x < w {
+                if let c = rep.colorAt(x: x, y: y) {
+                    let key = (UInt32(c.redComponent * 31) << 10)
+                        | (UInt32(c.greenComponent * 31) << 5)
+                        | UInt32(c.blueComponent * 31)
+                    seen.insert(key)
+                }
+                x += step
+            }
+            y += step
+        }
+        return seen.count
+    }
+
+    /// Luma at canvas sample points: bottom corners + both mid-edges (12 px inset).
+    private static func canvasSampleLuma(_ rep: NSBitmapImageRep) -> [CGFloat] {
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        let inset = 12
+        let points = [(inset, h - inset), (w - inset, h - inset),
+                      (inset, h / 2), (w - inset, h / 2)]
+        return points.compactMap { (x, y) in
+            rep.colorAt(x: x, y: y).map { luma($0) }
+        }
+    }
+
+    private static func luma(_ c: NSColor) -> CGFloat {
+        0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+    }
+
+    /// Measure each `ContrastProbe` band: scan the band's center line, take the
+    /// median sample as background and the most-distant sample as glyph core,
+    /// then compute the WCAG-style ratio (L1+0.05)/(L2+0.05). Anti-aliasing
+    /// dilutes glyph edges, so the probe packs heavy glyphs ("HHHH") across the
+    /// line and we take the EXTREME — the core of a stroke.
+    private static func contrastChecks(_ rep: NSBitmapImageRep) -> [CheckResult] {
+        let bands = ContrastProbe.bands
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard h > bands.count, w > 40 else {
+            return [.init(name: "contrast", pass: false, detail: "probe image too small")]
+        }
+        var results: [CheckResult] = []
+        for (i, band) in bands.enumerated() {
+            let y = Int((Double(i) + 0.5) / Double(bands.count) * Double(h))
+            var lumas: [CGFloat] = []
+            // Scan the middle 80% of the line (the text is centered).
+            var x = w / 10
+            while x < w - w / 10 {
+                if let c = rep.colorAt(x: x, y: y) { lumas.append(luma(c)) }
+                x += 2
+            }
+            guard lumas.count > 10 else {
+                results.append(.init(name: "contrast:\(band.0)", pass: false, detail: "no samples"))
+                continue
+            }
+            let sorted = lumas.sorted()
+            let bg = sorted[sorted.count / 2]                       // median = background
+            let extreme = abs(sorted.first! - bg) > abs(sorted.last! - bg)
+                ? sorted.first! : sorted.last!                       // farthest = glyph core
+            let ratio = Double((max(bg, extreme) + 0.05) / (min(bg, extreme) + 0.05))
+            results.append(.init(name: "contrast:\(band.0)", pass: ratio >= band.4,
+                                 detail: String(format: "%.2f:1 (min %.1f:1)", ratio, band.4)))
+        }
+        return results
+    }
+
+    /// Sampled pixel diff (per-channel threshold) + red heat-map at sample
+    /// resolution. Compares the overlapping region when sizes drift.
+    private static func diff(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (Double, Data?) {
+        let w = min(a.pixelsWide, b.pixelsWide), h = min(a.pixelsHigh, b.pixelsHigh)
+        let step = 3
+        let sw = w / step, sh = h / step
+        guard sw > 0, sh > 0,
+              let heat = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: sw, pixelsHigh: sh,
+                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                          isPlanar: false, colorSpaceName: .deviceRGB,
+                                          bytesPerRow: 0, bitsPerPixel: 0)
+        else { return (0, nil) }
+
+        var changed = 0, total = 0
+        for sy in 0..<sh {
+            for sx in 0..<sw {
+                let x = sx * step, y = sy * step
+                total += 1
+                guard let ca = a.colorAt(x: x, y: y), let cb = b.colorAt(x: x, y: y) else { continue }
+                let moved = abs(ca.redComponent - cb.redComponent) > 0.05
+                    || abs(ca.greenComponent - cb.greenComponent) > 0.05
+                    || abs(ca.blueComponent - cb.blueComponent) > 0.05
+                if moved {
+                    changed += 1
+                    heat.setColor(NSColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.9), atX: sx, y: sy)
+                } else {
+                    heat.setColor(NSColor(red: 0, green: 0, blue: 0, alpha: 0.08), atX: sx, y: sy)
+                }
+            }
+        }
+        let pct = total == 0 ? 0 : Double(changed) / Double(total) * 100
+        return (pct, pct > 0.5 ? heat.representation(using: .png, properties: [:]) : nil)
+    }
+}
+```
+
+===== FILE: Salehman AI/Tools/QACapture.swift (75 lines) =====
+```swift
+import SwiftUI
+import AppKit
+
+/// **QA capture v3 — real-window rendering.**
+///
+/// Round 1 of the snapshot harness used `ImageRenderer`, and the pictures
+/// told the truth about it: pure-SwiftUI galleries render perfectly, but
+/// anything wrapping AppKit (TextField/Menu → yellow "unsupported"
+/// placeholders) or lazy/scroll containers (Settings → blank panel, Today →
+/// white void, live transcript → empty) does not survive a context-free
+/// render. The fix is to give views what they actually need — a window:
+///
+/// * `renderInWindow(_:size:)` mounts the view in an **offscreen borderless
+///   `NSWindow`** via `NSHostingView`, forces a real layout pass, and
+///   captures with `bitmapImageRepForCachingDisplay` — full AppKit fidelity
+///   (scroll views populate, text fields draw, menus show their labels).
+/// * `captureLiveWindows(to:)` photographs the app's **actual on-screen
+///   windows** — an app may always capture its own windows, no Screen
+///   Recording permission involved — giving TRUE screenshots of the running
+///   UI (real chat history, real settings state).
+///
+/// Triggers (independent of QASnapshots so the two files never block on each
+/// other): `qa/WINDOW_REQUEST` consumed on launch after success, and the
+/// View ▸ "Capture Live Window" menu item.
+@MainActor
+enum QACapture {
+
+    static var qaDir: URL {
+        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
+    }
+
+    // (Offscreen per-view rendering lives in QASnapshots.snap — the hosted
+    // NSHostingView path. This file owns only what QASnapshots can't do:
+    // photographing the REAL windows.)
+
+    /// Photograph every visible app window (true pixels of the running UI).
+    /// Returns the file names written.
+    @discardableResult
+    static func captureLiveWindows(to dir: URL? = nil) -> [String] {
+        let out = dir ?? qaDir.appendingPathComponent("snapshots")
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        var written: [String] = []
+        for (i, window) in NSApp.windows.enumerated() where window.isVisible {
+            guard let view = window.contentView,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+            let name = "window_\(i)_live.png"
+            if (try? png.write(to: out.appendingPathComponent(name))) != nil {
+                written.append(name)
+            }
+        }
+        return written
+    }
+
+    /// Launch hook — `qa/WINDOW_REQUEST` → capture live windows; consumed
+    /// only after at least one window was written (premature launch states
+    /// retry on the next launch).
+    static func checkAndRun() {
+        let request = qaDir.appendingPathComponent("WINDOW_REQUEST")
+        guard FileManager.default.fileExists(atPath: request.path) else { return }
+        Task { @MainActor in
+            // Let the main window actually appear + first layout settle.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            let written = captureLiveWindows()
+            if !written.isEmpty {
+                try? FileManager.default.removeItem(at: request)
+            }
+        }
+    }
+}
+```
+
+===== FILE: Salehman AI/Tools/QASnapshots.swift (338 lines) =====
+```swift
+import SwiftUI
+import AppKit
+
+/// **Self-snapshot QA harness** — the app photographs its own surfaces.
+///
+/// Why: the sandboxed AI session that polishes this UI cannot see the screen
+/// (`screencapture` and AppleScript are both blocked there), but it CAN read
+/// files in the repo. `ImageRenderer` renders SwiftUI views to PNG entirely
+/// in-process — no Screen Recording permission, no window server involvement —
+/// so the app can hand that session real pictures of every tab.
+///
+/// Two triggers:
+/// * **File request:** drop a file named `SNAPSHOT_REQUEST` in `<repo>/qa/`,
+///   relaunch (or foreground) the app → snapshots appear in
+///   `<repo>/qa/snapshots/*.png` and the request file is consumed. This lets
+///   a headless session request pictures and a normal launch fulfill them.
+/// * **Menu:** View ▸ “Capture QA Snapshots” runs the same capture on demand.
+///
+/// Determinism: alongside the LIVE views (whatever state the stores hold),
+/// `ChatSampleGallery` renders a fixed set of message/composer states so
+/// before/after comparisons don't depend on the owner's real chat history.
+///
+/// Limits (by design): `ImageRenderer` draws static view trees — no hover,
+/// focus, or sheet states. Those stay covered by the UI-test flows; this
+/// harness is for LAYOUT/STYLE eyes.
+@MainActor
+enum QASnapshots {
+
+    /// Repo root: this is a personal app pinned to the owner's machine layout
+    /// (same assumption the training scripts make). Overridable for safety.
+    private static var qaDir: URL {
+        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
+    }
+
+    /// Launch hook: capture if `qa/SNAPSHOT_REQUEST` is present. The request
+    /// file is consumed AFTER a successful capture — a launch that quits
+    /// mid-render (e.g. a quick UI-test run) leaves the request in place so
+    /// the NEXT launch retries instead of silently eating it. Small delay
+    /// lets the singleton stores finish their first load.
+    static func checkAndRun() {
+        // Baseline adoption trigger (QAAudit): promote the CURRENT snapshots
+        // to qa/baselines so future captures diff against them.
+        let adopt = qaDir.appendingPathComponent("ADOPT_BASELINES")
+        if FileManager.default.fileExists(atPath: adopt.path) {
+            QAAudit.adoptBaselinesDefault()
+            try? FileManager.default.removeItem(at: adopt)
+        }
+        let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
+        guard FileManager.default.fileExists(atPath: request.path) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            captureAll()
+            try? FileManager.default.removeItem(at: request)
+        }
+    }
+
+    /// Render every main surface + the deterministic chat gallery, then write
+    /// a `CAPTURE_DONE.txt` marker (timestamp + file list) so a remote session
+    /// can verify completion without listing PNGs.
+    /// One captured surface, recorded for the manifest + contact sheet.
+    private struct Shot { let name: String; let desc: String; let w: Int; let h: Int; let ok: Bool; let ms: Int }
+    private static var shots: [Shot] = []
+
+    static func captureAll() {
+        let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        shots.removeAll()
+
+        // ── Code tab ─────────────────────────────────────────────────────────
+        snap(CodeView(),           "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
+        snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (blocks, code, table, Arabic RTL, streaming, agent strip, refusal)", .init(width: 860, height: 1560), in: dir)
+        // ── Main chat ────────────────────────────────────────────────────────
+        snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
+        // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
+        snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(CodeView(),           "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
+        // ── Every other tab — flat-canvas restyle spot-check ────────────────
+        snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
+        snap(AgentsView(),         "agents",       "Agents tab", .init(width: 1000, height: 740), in: dir)
+        snap(ScratchpadView(),     "notes",        "Notes / scratchpad", .init(width: 1000, height: 700), in: dir)
+        snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
+        snap(MarketsView(),        "markets",      "Markets tab", .init(width: 1000, height: 740), in: dir)
+        // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
+        // frame with uncomposited margins) — capture at its natural sheet size.
+        snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
+        snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
+        // ── Readability probe — every text-style/surface pairing the design
+        // language uses, in fixed bands the audit measures for CONTRAST (the
+        // invisible-code-text class of bug, caught by eyes in round 1, is now
+        // caught by arithmetic every capture).
+        snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
+
+        writeManifest(in: dir)
+        buildContactSheet(in: dir)
+        // Keep the simple completion marker too (the other session's watcher reads it).
+        let names = shots.map(\.name).sorted()
+        let marker = "captured \(shots.filter(\.ok).count)/\(shots.count) snapshots at \(Date())\n"
+            + names.joined(separator: "\n") + "\n"
+        try? marker.write(to: dir.appendingPathComponent("CAPTURE_DONE.txt"), atomically: true, encoding: .utf8)
+
+        // Self-judge the pictures: AUDIT.json (nonBlank / canvasFlat / baseline
+        // diff + heat-maps). The UI-test gate asserts failures == [].
+        QAAudit.run(snapshotsDir: dir,
+                    baselinesDir: qaDir.appendingPathComponent("baselines"))
+    }
+
+    /// ONE render path: host the view offscreen in an `NSHostingView` and cache
+    /// its layer to a bitmap. Round-1 evidence (see qa history): plain
+    /// `ImageRenderer` silently produced blank/placeholder PNGs for everything
+    /// wrapping AppKit or lazy/scroll containers — Settings was a flat panel,
+    /// Today pure white, the live transcript empty, TextField/Menu drew yellow
+    /// "unsupported" boxes. Hosting gives every view a real AppKit context, so
+    /// scroll views populate and controls draw. Slightly heavier per shot;
+    /// correctness wins.
+    private static func snap<V: View>(_ view: V, _ name: String, _ desc: String, _ size: CGSize, in dir: URL) {
+        let start = Date()
+        let host = NSHostingView(rootView:
+            view.frame(width: size.width, height: size.height)
+                .preferredColorScheme(.dark)
+                .tint(DS.Palette.accent)
+        )
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        var ok = false
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            rep.size = host.bounds.size
+            host.cacheDisplay(in: host.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]) {
+                ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
+            }
+        }
+        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
+                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+    }
+
+    /// Markdown manifest: what each PNG shows, its size, render status + time, the
+    /// commit it was captured at — so the blind session reading the PNGs has full context.
+    private static func writeManifest(in dir: URL) {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")          // force Gregorian (owner's locale renders Hijri)
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let okN = shots.filter(\.ok).count
+        var md = """
+        # QA snapshots — Salehman AI
+        **\(f.string(from: Date()))** · commit `\(gitHead())` · **\(okN)/\(shots.count)** surfaces OK · \
+        see `contact_sheet.png` for a one-glance montage.
+
+        In-process `ImageRenderer` captures (no Screen-Recording permission). Static layout/style only —
+        hover/focus/sheet states stay on the manual checklist. Re-capture: View ▸ Capture QA Snapshots,
+        or `touch qa/SNAPSHOT_REQUEST` and launch.
+
+        | file | shows | size | status | render |
+        |---|---|---|---|---|
+
+        """
+        for s in shots {
+            md += "| `\(s.name).png` | \(s.desc) | \(s.w)×\(s.h) | \(s.ok ? "✅" : "❌ FAILED") | \(s.ms) ms |\n"
+        }
+        try? md.write(to: dir.appendingPathComponent("INDEX.md"), atomically: true, encoding: .utf8)
+    }
+
+    /// Montage of every captured surface (thumbnail + label) into one PNG — lets the
+    /// remote session eyeball the WHOLE app in a single image before drilling in.
+    private static func buildContactSheet(in dir: URL) {
+        let cols = 4
+        let thumbs: [(String, NSImage)] = shots.filter(\.ok).compactMap { s in
+            NSImage(contentsOf: dir.appendingPathComponent("\(s.name).png")).map { (s.name, $0) }
+        }
+        guard !thumbs.isEmpty else { return }
+        let rows = stride(from: 0, to: thumbs.count, by: cols).map { Array(thumbs[$0..<min($0+cols, thumbs.count)]) }
+        let sheet = VStack(alignment: .leading, spacing: 14) {
+            Text("Salehman AI — QA contact sheet").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, item in
+                        VStack(spacing: 5) {
+                            Image(nsImage: item.1).resizable().aspectRatio(contentMode: .fit)
+                                .frame(width: 250, height: 170)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12)))
+                            Text(item.0).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 250)
+                    }
+                }
+            }
+        }
+        .padding(20).background(DS.Palette.codeSurfaceSide)
+        let r = ImageRenderer(content: sheet.frame(width: CGFloat(cols) * 264 + 40).fixedSize()
+            .preferredColorScheme(.dark).tint(DS.Palette.accent))
+        r.scale = 1.5
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("contact_sheet.png"))
+        }
+    }
+
+    /// Best-effort short git SHA (reads `.git` directly, no shell-out).
+    private static func gitHead() -> String {
+        let g = qaDir.deletingLastPathComponent().appendingPathComponent(".git")
+        guard let head = try? String(contentsOf: g.appendingPathComponent("HEAD"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return "unknown" }
+        guard head.hasPrefix("ref: ") else { return String(head.prefix(8)) }
+        let ref = String(head.dropFirst(5))
+        if let sha = try? String(contentsOf: g.appendingPathComponent(ref), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) { return String(sha.prefix(8)) }
+        if let packed = try? String(contentsOf: g.appendingPathComponent("packed-refs"), encoding: .utf8) {
+            for l in packed.split(separator: "\n") where l.hasSuffix(ref) { return String(l.prefix(8)) }
+        }
+        return "ref:" + (ref.split(separator: "/").last.map(String.init) ?? "?")
+    }
+}
+
+/// Deterministic chat states for stable before/after comparison: a short user
+/// block, a long user paste (wrap-measure check), an assistant markdown
+/// document, a follow-up burst, the streaming row, the typing dots, and the
+/// agent strip — everything the heavy-polish passes touched.
+/// Fixed contrast bands: each row is one text-style/surface pairing at a known
+/// fractional y-position, so `QAAudit` can measure glyph-vs-background contrast
+/// without OCR — band i's center line sits at (i + 0.5) / bands.count of the
+/// image height. Order here MUST match `QAAudit.contrastBands`.
+struct ContrastProbe: View {
+    static let bandHeight: CGFloat = 56
+
+    /// (label, text style, foreground, background, minimum contrast the audit
+    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
+    static var bands: [(String, CGFloat, Color, Color, Double)] {
+        [
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+        ]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(Self.bands.enumerated()), id: \.offset) { _, band in
+                ZStack {
+                    band.3
+                    // Heavy glyph coverage across the scan line → the sampler
+                    // reliably hits glyph cores despite anti-aliasing.
+                    Text("HHHH \(band.0) — 0123 السلام HHHH")
+                        .font(.system(size: band.1, weight: .medium))
+                        .foregroundStyle(band.2)
+                        .lineLimit(1)
+                }
+                .frame(height: Self.bandHeight)
+            }
+        }
+    }
+}
+
+private struct ChatSampleGallery: View {
+    private let now = Date(timeIntervalSince1970: 1_781_200_000)   // fixed clock
+
+    private var samples: [ChatMessage] {
+        [
+            ChatMessage(id: UUID(), text: "hi", isUser: true, timestamp: now),
+            ChatMessage(id: UUID(),
+                        text: "Hello Saleh — ready when you are. What should we work on?",
+                        isUser: false, timestamp: now.addingTimeInterval(4)),
+            ChatMessage(id: UUID(),
+                        text: "Summarize this long requirements paragraph I pasted so we can sanity-check the user block's 480pt wrap measure, padding, and corner radius against the design language.",
+                        isUser: true, timestamp: now.addingTimeInterval(60)),
+            ChatMessage(id: UUID(),
+                        text: """
+                        Here's the summary:
+
+                        **Key points**
+                        - The composer uses the Claude text-over-controls layout
+                        - Assistant replies are flush-left *documents* — no bubbles
+                        - Hover actions float on a panel pill
+
+                        ```swift
+                        let rhythm = (burst: 10, speakers: 24)
+                        ```
+
+                        Want me to apply this to the remaining views?
+                        """,
+                        isUser: false, timestamp: now.addingTimeInterval(75)),
+            ChatMessage(id: UUID(), text: "yes — and keep the motion subtle.",
+                        isUser: true, timestamp: now.addingTimeInterval(95)),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            gallerySection("Messages — rhythm, blocks, document flow") {
+                // Plain VStack on purpose: round-1 evidence showed a Lazy stack
+                // misplacing a sample row below later sections in static renders.
+                VStack(spacing: 10) {
+                    ForEach(samples) { msg in MessageBubble(message: msg) }
+                }
+            }
+            gallerySection("Streaming row — dot above, leading edge final") {
+                StreamingBubble(text: "Streaming a reply right now — the text's left edge must already be at its committed position…")
+            }
+            gallerySection("Typing dots — pre-stream") {
+                TypingIndicator()
+            }
+            gallerySection("Agent strip — flat panel, live counter, tool round note") {
+                AgentRunView(steps: [
+                    .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                          status: .running, adapted: "Reasoning Strategist · tool round 3/8"),
+                    .init(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
+                          status: .pending),
+                ])
+            }
+        }
+        .padding(28)
+        // Pin to the TOP of the fixed snapshot frame — round 1 centered the
+        // content vertically, wasting a third of the picture as dead space.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(DS.Palette.codeSurface)
+    }
+
+    private func gallerySection<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold)).tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
+            content()
+        }
+    }
+}
+```
+
 ===== FILE: Salehman AI/Tools/RepoPacker.swift (178 lines) =====
 ```swift
 import Foundation
@@ -11649,7 +12579,7 @@ struct AboutView: View {
                     VStack(spacing: 1) {
                         ForEach(capabilities) { cap in capabilityRow(cap) }
                     }
-                    .background(DS.Palette.surface,
+                    .background(DS.Palette.codeSurfaceSide,
                                 in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -11690,7 +12620,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (309 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (285 lines) =====
 ```swift
 import SwiftUI
 
@@ -11721,10 +12651,9 @@ struct AgentsView: View {
 
     var body: some View {
         ZStack {
-            // Route through DS canvas tokens so this tab inherits any palette
-            // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Flat opaque working canvas (design language) — no gradients,
+            // no glow show-through on chat-like/working surfaces.
+            DS.Palette.codeSurface.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
@@ -11742,16 +12671,16 @@ struct AgentsView: View {
     }
 
     private var header: some View {
+        // Slimmer header, chrome diet: the "N agents" counter badge is gone —
+        // not actionable, and the gallery below already shows the team.
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Agents")
-                    .font(DS.Typography.titleL).foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your specialist team — they plan, build, and review together.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Text("\(AgentDefinitions.pipeline.count) agents")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, DS.Space.xl)
         .padding(.top, DS.Space.lg)
@@ -11759,22 +12688,16 @@ struct AgentsView: View {
     }
 
     private var autonomousControlSection: some View {
-        // Glass-hero treatment: this is the page's lead element so it gets a
-        // brand-tinted gradient wash + accent glow instead of the plain `Card`.
-        // Logic below (toggleAutonomousRun / sendDirectCommand / settings binding)
-        // is unchanged — chrome only.
+        // Flat card per the design language (was a glass-hero with gradient
+        // wash + accent glow). Logic below (toggleAutonomousRun /
+        // sendDirectCommand / settings binding) is unchanged — chrome only.
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 10) {
-                // Brand-tinted sparkle with halo (was off-brand yellow).
-                ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18))
-                        .frame(width: 34, height: 34).blur(radius: 8)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(DS.Palette.accent)
-                }
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
                 Text("Autonomous Mode")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
                 Toggle("Autonomous Mode", isOn: $settings.autonomousMode)
@@ -11829,10 +12752,8 @@ struct AgentsView: View {
                 TextField("Give agents a direct command…", text: $directCommand)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(DS.Palette.surface,
+                    .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
 
                 Button("Send") {
@@ -11844,28 +12765,13 @@ struct AgentsView: View {
             }
         }
         .padding(DS.Space.lg)
-        // Layered glass: deep accent-tinted gradient + neutral overlay so it
-        // reads "lit from inside" against the page's other cards.
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(DS.Palette.surface)
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [DS.Palette.accent.opacity(0.22),
-                                     DS.Palette.accent2.opacity(0.10),
-                                     .clear],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
+        // Flat opaque card + hairline — no gradient wash, no glow shadow.
+        .background(DS.Palette.codeSurfaceSide,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
         )
-        .dsShadow(DS.Elevation.accentGlow(0.35))
     }
 
     private var agentsGrid: some View {
@@ -11989,15 +12895,15 @@ private struct AgentCard: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque card + hairline; the hover/active stroke is the only
+        // elevation cue (no shadows — design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(isActive ? DS.Palette.accent.opacity(0.5)
                                  : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
                         lineWidth: 1)
         )
-        .dsShadow(hovering ? DS.Elevation.shadow2 : DS.Elevation.shadow1)
-        .scaleEffect(hovering ? 1.015 : 1.0)
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
     }
 }
@@ -12020,9 +12926,9 @@ struct BackgroundView: View {
     /// state-free → the cached texture survives all parent redraws.
     private var glows: some View {
         ZStack {
-            Circle().fill(Theme.accent.opacity(0.18)).frame(width: 480).blur(radius: 90)
+            Circle().fill(Theme.accent.opacity(0.09)).frame(width: 480).blur(radius: 90)
                 .offset(x: -220, y: -260)
-            Circle().fill(Theme.accent2.opacity(0.16)).frame(width: 420).blur(radius: 90)
+            Circle().fill(Theme.accent2.opacity(0.08)).frame(width: 420).blur(radius: 90)
                 .offset(x: 260, y: 300)
         }
         .drawingGroup()
@@ -12092,7 +12998,7 @@ struct BottomShortcutBar: View {
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(alignment: .top) { Rectangle().fill(DS.Palette.hairline).frame(height: 1) }
     }
 }
@@ -12265,7 +13171,7 @@ final class ChatViewModel: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeSyntaxView.swift (166 lines) =====
+===== FILE: Salehman AI/Views/CodeSyntaxView.swift (173 lines) =====
 ```swift
 import SwiftUI
 
@@ -12384,6 +13290,11 @@ struct CodeTextView: View {
         content.isEmpty ? [] : content.components(separatedBy: "\n")
     }
 
+    /// Prose-y files WRAP (a clipped sentence reads as broken UI — the owner hit
+    /// this on a .md); code keeps one-row lines + horizontal scroll, which is
+    /// what you want for indentation-meaningful source.
+    private var wraps: Bool { ["md", "markdown", "txt", ""].contains(ext.lowercased()) }
+
     var body: some View {
         if lines.isEmpty {
             Text("‹empty file›")
@@ -12393,7 +13304,9 @@ struct CodeTextView: View {
         } else {
             let gutter = String(lines.count).count
             ScrollViewReader { proxy in
-                ScrollView([.vertical, .horizontal]) {
+                // Wrapping needs a vertical-only scroll: a horizontal axis proposes
+                // infinite width, so Text would never wrap.
+                ScrollView(wraps ? [.vertical] : [.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                             HStack(alignment: .top, spacing: 12) {
@@ -12403,7 +13316,7 @@ struct CodeTextView: View {
                                 Text(highlighted(line))
                                     .font(.system(size: 11.5, design: .monospaced))
                                     .textSelection(.enabled)
-                                    .fixedSize(horizontal: true, vertical: false)
+                                    .fixedSize(horizontal: !wraps, vertical: wraps)
                             }
                             .padding(.horizontal, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -12435,7 +13348,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1174 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1509 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -12644,6 +13557,14 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
+    @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
+    @State private var hoveredFile: URL?            // file-tree row under the pointer
+    @State private var atBottom = true              // chat scrolled to the end (hides the jump button)
+    // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
+    // across launches. Auto-expands when a file is selected or a run leaves diffs.
+    @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
+    @AppStorage("code_treeCollapsed") private var treeCollapsed = false
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -12672,18 +13593,32 @@ struct CodeView: View {
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
-                fileTree
-                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                if !treeCollapsed {
+                    fileTree
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 360)
+                } else {
+                    treeReopenStrip
+                }
 
                 VSplitView {
                     chatPane
                         .frame(minHeight: 220)
-                    inspectorPane
-                        .frame(minHeight: 160)
+                    // Collapsible: the inspector used to be pinned at minHeight 160 —
+                    // permanently eating half the tab even when empty ("I can't even
+                    // minimize it"). Collapsed = a slim reopen bar; auto-expands when
+                    // a file is selected or a run produces diffs.
+                    if inspectorCollapsed {
+                        inspectorReopenBar
+                    } else {
+                        inspectorPane
+                            .frame(minHeight: 160)
+                    }
                 }
                 .frame(minWidth: 420)
             }
-            .background(Color.black.opacity(0.18))
+            // Opaque flat surface (covers the app's glow blobs) — the Code tab
+            // reads like a clean editor, not a mood piece. Neutral GREY, no red cast.
+            .background(DS.Palette.codeSurface)
             // Inline command-approval card — the SAME gate as the Chat tab, so terminal /
             // file-edit commands the AI runs here still prompt for approval (unless
             // Unrestricted is on).
@@ -12710,6 +13645,8 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
+                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -12731,6 +13668,10 @@ struct CodeView: View {
     // MARK: File tree (left)
 
     private var fileTree: some View {
+        treeContent.background(DS.Palette.codeSurfaceSide)
+    }
+
+    private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button(action: ws.openFolder) {
@@ -12755,6 +13696,12 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                        Image(systemName: "sidebar.left").font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Hide the file tree")
+                    .accessibilityLabel("Hide the file tree")
                         .help("Rescan project files")
                         .accessibilityLabel("Rescan project files")
                 }
@@ -12770,10 +13717,9 @@ struct CodeView: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     if !ws.files.isEmpty {
-                        Text("\(ws.files.count)")
-                            .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.white.opacity(0.06), in: Capsule())
+                        // Quiet plain count (chrome diet — no badge box)
+                        Text("\(ws.files.count) files")
+                            .font(.system(size: 9.5)).foregroundStyle(.secondary.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 6)
@@ -12809,6 +13755,7 @@ struct CodeView: View {
                                 FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
                                     ws.select(url)
                                     rightPane = ws.changedFiles.contains(url) ? .diff : .file
+                                    inspectorCollapsed = false
                                 }
                             }
                         }
@@ -12869,6 +13816,7 @@ struct CodeView: View {
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
+            inspectorCollapsed = false   // user asked to see a file — bring the pane back
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon.symbol)
@@ -12883,8 +13831,11 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(isSel ? Color.white.opacity(0.08)
+                        : (hoveredFile == url ? Color.white.opacity(0.04) : .clear),
+                        in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
+            .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
         }
         .buttonStyle(.plain)
         .contextMenu { fileActionsMenu(url) }
@@ -12897,35 +13848,51 @@ struct CodeView: View {
 
     // MARK: Chat pane (top-right)
 
+    /// Quiet icon button for the conversation header — hover-brightens, tooltip label.
+    @ViewBuilder
+    private func headerIcon(_ icon: String, _ help: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 12))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help(help).accessibilityLabel(help)
+    }
+
     private var chatPane: some View {
         VStack(spacing: 0) {
             // Clear the Code-tab conversation (it otherwise accumulates with no reset).
             if !messages.isEmpty {
-                HStack(spacing: 12) {
-                    Text("\(messages.count) message\(messages.count == 1 ? "" : "s")")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    if treeCollapsed {
+                        headerIcon("sidebar.left", "Show the file tree") {
+                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                        }
+                    }
+                    if let tps = lastTokPerSec {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill").font(.system(size: 8))
+                            Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary.opacity(0.8))
+                        .help("Speed of the last local reply")
+                    }
                     Spacer()
-                    Button {
+                    headerIcon("square.and.pencil", "New chat") {
+                        if !isRunning { withAnimation { messages.removeAll() } }
+                    }
+                    headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
                             .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
                             .joined(separator: "\n\n---\n\n")
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(md, forType: .string)
-                    } label: {
-                        Label("Copy all", systemImage: "doc.on.doc").font(.system(size: 11, weight: .medium))
                     }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Copy the whole conversation as Markdown")
-                    .accessibilityLabel("Copy the whole conversation")
-                    Button { messages.removeAll() } label: {
-                        Label("Clear", systemImage: "trash").font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Clear this conversation")
-                    .accessibilityLabel("Clear this conversation")
-                    .disabled(isRunning)
                 }
-                .padding(.horizontal, 12).padding(.top, 8)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8)
+                .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
             }
             // Agent steps — feature: plan / agent steps view.
             if isRunning && !progress.steps.isEmpty {
@@ -12934,19 +13901,34 @@ struct CodeView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
                         }
-                        ForEach(messages) { msg in
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
+                            if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
+                                Text(msg.timestamp, style: .time)
+                                    .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.7))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 2)
+                            }
                             codeBubble(msg)
                                 .id(msg.id)
                         }
                         if isRunning {
                             streamingView.id("stream")
                         }
+                        // Bottom sentinel — tracks whether the view is scrolled to the end.
+                        Color.clear.frame(height: 1).id("bottom")
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
+                    // Centered reading column (Claude-style): long lines are hard to
+                    // read edge-to-edge on a wide window — cap and center.
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
+                    .animation(.easeOut(duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -12956,11 +13938,31 @@ struct CodeView: View {
                 .onChange(of: progress.streamingAnswer) { _, _ in
                     proxy.scrollTo("stream", anchor: .bottom)
                 }
+                // Floating jump-to-latest (only when scrolled up in history).
+                .overlay(alignment: .bottomTrailing) {
+                    if !atBottom && !messages.isEmpty {
+                        Button {
+                            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: 30, height: 30)
+                                .background(DS.Palette.codeSurfaceSide, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .padding(.trailing, 16).padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .help("Jump to the latest message")
+                        .accessibilityLabel("Jump to the latest message")
+                    }
+                }
             }
 
             inputBar
         }
-        .background(Color.black.opacity(0.12))
+        .background(Color.clear)
     }
 
     /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
@@ -12978,8 +13980,8 @@ struct CodeView: View {
                 .frame(width: 60, height: 60)
                 .background(DS.Palette.accent.opacity(0.12), in: Circle())
                 .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 14)
-            Text("Code with Salehman")
+                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+            Text("What are we building, Saleh?")
                 .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
@@ -13009,6 +14011,15 @@ struct CodeView: View {
                 shortcutHint("⌘L", "Ask")
             }
             .padding(.top, 10)
+            // The 14B's home: show when the owner's own model is serving locally.
+            if let m = localServingModel {
+                HStack(spacing: 5) {
+                    Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                    Text("\(m) · local · ready")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 46)
@@ -13032,6 +14043,7 @@ struct CodeView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
                 Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer()
@@ -13054,7 +14066,8 @@ struct CodeView: View {
                 .padding(.horizontal, 12).padding(.bottom, 8)
             }
         }
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.5)) }
     }
 
     @ViewBuilder
@@ -13066,47 +14079,23 @@ struct CodeView: View {
         }
     }
 
-    /// Sender avatar — Salehman gets an accent-tinted disc matching the welcome icon.
-    @ViewBuilder
-    private func senderAvatar(isUser: Bool) -> some View {
-        ZStack {
-            if !isUser { Circle().fill(DS.Palette.accent.opacity(0.13)).frame(width: 26, height: 26) }
-            Image(systemName: isUser ? "person.crop.circle.fill" : "sparkles")
-                .font(.system(size: isUser ? 17 : 13, weight: isUser ? .regular : .semibold))
-                .foregroundStyle(isUser ? Color.white.opacity(0.55) : DS.Palette.accent)
-        }
-        .frame(width: 26, height: 26)
+    private func codeBubble(_ msg: ChatMessage) -> some View {
+        let isLastAssistant = !msg.isUser && msg.id == messages.last(where: { !$0.isUser })?.id
+        return CodeMessageRow(msg: msg,
+                              onRegenerate: (isLastAssistant && !isRunning) ? { regenerateLast() } : nil)
     }
 
-    private func codeBubble(_ msg: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: msg.isUser)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(msg.isUser ? "You" : "Salehman")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-                    if !msg.isUser {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(msg.text, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc").font(.system(size: 10))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy this message")
-                    }
-                }
-                MarkdownText(text: msg.text)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// Re-run the last user prompt (drops the reply being regenerated first).
+    private func regenerateLast() {
+        guard !isRunning, let lastUser = messages.last(where: { $0.isUser }) else { return }
+        if let last = messages.last, !last.isUser { messages.removeLast() }
+        runMission(for: lastUser.text)
     }
 
     private var streamingView: some View {
         HStack(alignment: .top, spacing: 10) {
-            senderAvatar(isUser: false)
+            PulsingDot().padding(.top, 7)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Salehman").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 if progress.streamingAnswer.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.6)
@@ -13149,17 +14138,12 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
             }
-            HStack(spacing: 8) {
-                controlsMenu
-                Button { attachFile() } label: { Image(systemName: "plus.circle").font(.system(size: 16)) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Attach a file as context")
-                    .accessibilityLabel("Attach a file as context")
-
+            VStack(spacing: 9) {
+                // Text first — full width, comfortable, nothing competing with it.
                 TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .lineLimit(1...5)
+                    .font(.system(size: 13.5))
+                    .lineLimit(1...6)
                     .focused($inputFocused)
                     .onSubmit(send)
                     // Focusing the input = intent to send: pre-load the local model
@@ -13167,32 +14151,52 @@ struct CodeView: View {
                     .onChange(of: inputFocused) { _, focused in
                         if focused { OllamaClient.warmupChatModel() }
                     }
-
-                Button {
-                    // Explicit body, not `action: isRunning ? stop : send`: unifying
-                    // two method references into one closure ICEs the type-checker
-                    // ("failed to produce diagnostic") under the Swift 6 language mode.
-                    if isRunning { stop() } else { send() }
-                } label: {
-                    Image(systemName: isRunning ? "stop.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isRunning ? Color.red : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : DS.Palette.accent))
+                // Controls live UNDER the text (Claude layout): brain/effort menu +
+                // attach on the left, filled send on the right.
+                HStack(spacing: 8) {
+                    controlsMenu
+                    Button { attachFile() } label: { Image(systemName: "paperclip").font(.system(size: 13)) }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Attach a file as context")
+                        .accessibilityLabel("Attach a file as context")
+                    Spacer()
+                    Button {
+                        // Explicit body, not `action: isRunning ? stop : send`: unifying
+                        // two method references into one closure ICEs the type-checker
+                        // ("failed to produce diagnostic") under the Swift 6 language mode.
+                        if isRunning { stop() } else { send() }
+                    } label: {
+                        Image(systemName: isRunning ? "stop.fill" : "arrow.up")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(isRunning ? Color.white
+                                : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .frame(width: 27, height: 27)
+                            .background(
+                                isRunning ? AnyShapeStyle(Color.red.opacity(0.85))
+                                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
+                                        ? AnyShapeStyle(Color.white.opacity(0.10))
+                                        : AnyShapeStyle(DS.Palette.accent)),
+                                in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel(isRunning ? "Stop generating" : "Send")
                 }
-                .buttonStyle(.plain)
-                .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityLabel(isRunning ? "Stop generating" : "Send")
             }
-            // One cohesive input pill (Claude-style) instead of loose controls.
-            // Border warms to the accent while you're typing.
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // The signature red ring (owner request — matches the main chat's input):
+            // always visible, warms while typing, full-strength on file drop.
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(
                 isDropTargeted ? DS.Palette.accent
-                    : (input.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? Color.white.opacity(0.09) : DS.Palette.accent.opacity(0.45)),
+                    : DS.Palette.accent.opacity(
+                        input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
             .animation(.easeOut(duration: 0.18), value: input.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(.easeOut(duration: 0.2), value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -13206,6 +14210,8 @@ struct CodeView: View {
                 return true
             }
         }
+        .frame(maxWidth: 780)
+        .frame(maxWidth: .infinity)
         .padding(10)
         .background(.ultraThinMaterial)
     }
@@ -13230,6 +14236,17 @@ struct CodeView: View {
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
+                // Which LOCAL model is actually serving (only shown when Salehman has
+                // no cloud configured, so the local floor is what answers): the owner's
+                // own fine-tune gets the accent — a fallback coder stays grey. Makes
+                // "is the real salehman14b active?" visible at a glance.
+                if let m = localServingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
@@ -13240,9 +14257,80 @@ struct CodeView: View {
         .foregroundStyle(.secondary)
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        // Refresh the serving-model suffix when the tab appears or the brain changes.
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Resolve which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers).
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            localServingModel = nil; return
+        }
+        localServingModel = await OllamaClient.activeChatModel()
     }
 
     // MARK: Inspector pane (bottom-right): file viewer / diff
+
+    /// Always-visible slim strip while the file tree is collapsed — the previous
+    /// reopen button lived in the conversation header (absent on an empty chat),
+    /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
+    private var treeReopenStrip: some View {
+        VStack(spacing: 14) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+                Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Show the file tree (⇧⌘E)")
+            .accessibilityLabel("Show the file tree")
+            Button(action: ws.openFolder) {
+                Image(systemName: "folder.badge.plus").font(.system(size: 10.5))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Open a project folder")
+            .accessibilityLabel("Open a project folder")
+            if ws.projectRoot != nil {
+                Button { reviewProject() } label: {
+                    Image(systemName: "sparkles").font(.system(size: 10.5))
+                        .frame(width: 24, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent.opacity(0.8))
+                .disabled(isRunning)
+                .help("Review this project (⌘R)")
+                .accessibilityLabel("Review this project")
+            }
+            Spacer()
+        }
+        .padding(.top, 10)
+        .frame(width: 26)
+        .frame(maxHeight: .infinity)
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// Slim bar shown while the inspector is collapsed — one click brings it back.
+    private var inspectorReopenBar: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
+                Text("Files & Diffs").font(.system(size: 10.5, weight: .medium))
+                if !ws.changedFiles.isEmpty {
+                    Text("\(ws.changedFiles.count) changed")
+                        .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .background(DS.Palette.codeSurfaceSide)
+        .help("Show the file viewer / diff panel")
+        .accessibilityLabel("Show the files and diffs panel")
+    }
 
     private var inspectorPane: some View {
         VStack(spacing: 0) {
@@ -13284,6 +14372,15 @@ struct CodeView: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = true }
+                } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Hide this panel (it comes back when a run has diffs)")
+                .accessibilityLabel("Hide the files and diffs panel")
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
@@ -13304,7 +14401,7 @@ struct CodeView: View {
                 fileView
             }
         }
-        .background(Color.black.opacity(0.20))
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     private var fileView: some View {
@@ -13464,6 +14561,13 @@ struct CodeView: View {
         guard !text.isEmpty, !isRunning else { return }
         messages.append(ChatMessage(id: UUID(), text: text, isUser: true, timestamp: Date()))
         input = ""
+        runMission(for: text)
+    }
+
+    /// The shared run pipeline — used by send() and regenerate (which must NOT
+    /// re-append the user message).
+    private func runMission(for text: String) {
+        guard !isRunning else { return }
         isRunning = true
         // If nothing has streamed after 5s, the local model is likely still loading —
         // flip the status line to say so (cleared when the run ends).
@@ -13502,11 +14606,12 @@ struct CodeView: View {
                 messages.append(ChatMessage(id: UUID(), text: reply, isUser: false, timestamp: Date()))
                 isRunning = false
                 showWarmupHint = false
+                lastTokPerSec = OllamaClient.lastStats?.tps   // show how fast the local model ran
                 MissionProgress.shared.finish()
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
             await MainActor.run {
-                if !ws.changedFiles.isEmpty { rightPane = .diff }
+                if !ws.changedFiles.isEmpty { rightPane = .diff; inspectorCollapsed = false }
             }
         }
     }
@@ -13549,7 +14654,7 @@ struct CodeView: View {
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the only brain is the local qwen2.5-coder — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
                 To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
                 """
@@ -13609,6 +14714,149 @@ struct CodeView: View {
         runningTask?.cancel()
         isRunning = false
         MissionProgress.shared.finish()
+    }
+}
+
+/// One conversation row, Claude-Code style: the user's message is a quiet
+/// right-aligned block; Salehman's reply flows flush-left like a document —
+/// no avatars, no name labels, copy appears on hover. Simple and elegant.
+struct CodeMessageRow: View {
+    let msg: ChatMessage
+    var onRegenerate: (() -> Void)? = nil
+    @ObservedObject private var speech = SpeechOut.shared
+    @State private var hovering = false
+
+    var body: some View {
+        if msg.isUser {
+            HStack {
+                Spacer(minLength: 60)
+                Text(msg.text)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 13).padding(.vertical, 8)
+                    .background(Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                MarkdownText(text: msg.text)
+                Spacer(minLength: 26)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 64)   // room for the hover action pill
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 8) {
+                    action(speech.speakingID == msg.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                           "Read aloud", active: speech.speakingID == msg.id) {
+                        speech.toggle(msg.text, id: msg.id)
+                    }
+                    action("doc.on.doc", "Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(msg.text, forType: .string)
+                    }
+                    if let regen = onRegenerate {
+                        action("arrow.clockwise", "Regenerate", regen)
+                    }
+                }
+                .opacity(hovering ? 1 : 0)
+                .animation(.easeOut(duration: 0.12), value: hovering)
+            }
+            .onHover { hovering = $0 }
+        }
+    }
+
+    private func action(_ icon: String, _ help: String, active: Bool = false,
+                        _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 11))
+                .foregroundStyle(active ? DS.Palette.accent : .secondary)
+                .frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Small breathing accent dot shown while a reply streams in.
+struct PulsingDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle().fill(DS.Palette.accent)
+            .frame(width: 7, height: 7)
+            .opacity(on ? 1 : 0.35)
+            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Deterministic Code-tab states for the QA snapshot harness — mirrors the chat
+/// gallery but for the Code tab's own row style. Fixed clock + content so
+/// before/after diffs are stable. Includes an Arabic reply (the 14B answers in
+/// Arabic) to catch RTL/script rendering regressions.
+struct CodeSampleGallery: View {
+    private let now = Date(timeIntervalSince1970: 1_781_200_000)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            sec("User block — right-aligned, no avatar") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "fix the off-by-one in the paginator", isUser: true, timestamp: now))
+            }
+            sec("Assistant — flush-left document, syntax-highlighted code, hover-copy") {
+                CodeMessageRow(msg: .init(id: UUID(), text: """
+                Found it in `Paginator.swift` — the loop used `<=` but pages are 0-indexed:
+
+                ```swift
+                for i in 0..<count {   // was 0...count
+                    rows.append(page[i])
+                }
+                ```
+
+                Built + ran the tests — all green. The last page no longer double-counts.
+                """, isUser: false, timestamp: now), onRegenerate: {})
+            }
+            sec("Arabic reply — RTL/script rendering (the 14B speaks Arabic)") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "تم — أضفت زر يحذف الملفات المؤقتة، وبنيت المشروع. يشتغل تمام.", isUser: false, timestamp: now))
+            }
+            sec("Streaming — pulsing dot above, plain text while long") {
+                HStack(alignment: .top, spacing: 10) {
+                    PulsingDot().padding(.top, 7)
+                    Text("Generating the refactor plan across the auth module…")
+                        .font(.system(size: 14)).foregroundStyle(Color.white.opacity(0.92))
+                }
+            }
+            sec("Agent strip — one agent, tool-round note") {
+                AgentRunView(steps: [
+                    .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                          status: .running, adapted: "Reasoning Strategist · tool round 2/8")
+                ])
+            }
+            sec("Markdown table — cells wrap, no mid-word clip (table-wrap fix)") {
+                CodeMessageRow(msg: .init(id: UUID(), text: """
+                | round | recipe | eval loss |
+                |---|---|---|
+                | r3 | r128 + app-missions | **1.3033** — shipped |
+                | r5 | + round-5 data | 1.3446 |
+                """, isUser: false, timestamp: now))
+            }
+            sec("Long user paste — right-block wrap / max-width measure") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "here's a long requirement i'm pasting to sanity-check that the right-aligned user block caps its width, wraps cleanly, and keeps its padding + corner radius instead of running edge to edge across a wide window", isUser: true, timestamp: now))
+            }
+            sec("Refusal — honest, no hedging") {
+                CodeMessageRow(msg: .init(id: UUID(), text: "No — I can't promise bug-free code; that wouldn't be honest for anything non-trivial. What I *will* do: run the tests, read the diff, and tell you exactly what I verified.", isUser: false, timestamp: now))
+            }
+        }
+        .padding(26)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.Palette.codeSurface)
+    }
+
+    private func sec<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold)).tracking(1.1)
+                .foregroundStyle(DS.Palette.textSecondary)
+            content()
+        }
     }
 }
 ```
@@ -13738,7 +14986,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1512 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1440 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -13752,12 +15000,14 @@ enum Theme {
     static let accent2 = DS.Palette.accent2
     static let bgTop = DS.Palette.bgTop
     static let bgBottom = DS.Palette.bgBottom
-    static let userBubble = DS.Gradient.userBubble
     static let brand = DS.Gradient.brand
 }
 
 struct ContentView: View {
     @State private var mission: String = ""
+    /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
+    /// drives the empty-state eyebrow. Probed once per empty-state appearance.
+    @State private var localModelReady = false
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -13810,6 +15060,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Flat opaque chat canvas (design language): no glow show-through,
+            // no translucent stacking — same shade as the Code tab's canvas.
+            DS.Palette.codeSurface.ignoresSafeArea()
+
             // Global red tint when Unrestricted Mode is active.
             if settings.unrestrictedTools {
                 Color.red.opacity(0.03).ignoresSafeArea()
@@ -13830,6 +15084,10 @@ struct ContentView: View {
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
                 inputBar
+                    // Input pill aligns to the same 780pt reading column as the
+                    // transcript (design language).
+                    .frame(maxWidth: 780)
+                    .frame(maxWidth: .infinity)
             }
         }
         .preferredColorScheme(.dark)
@@ -13905,7 +15163,7 @@ struct ContentView: View {
                             .shadow(color: Color.red.opacity(0.6), radius: 3)
                     }
                     Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Color.red)
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
@@ -13914,12 +15172,7 @@ struct ContentView: View {
                     // brain name stays available on hover and to VoiceOver.
                     Image(systemName: brainStatus.symbol)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(
-                            vm.isRunning
-                                ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                                               startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(brainStatus.dotColor)
-                        )
+                        .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
                     // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
@@ -13958,8 +15211,7 @@ struct ContentView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 30, height: 30)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    .background(Color.white.opacity(0.09), in: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -14015,7 +15267,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        // Flat opaque bar (design language — no translucent material).
+        .background(DS.Palette.codeSurfaceSide)
     }
 
     // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
@@ -14056,11 +15309,11 @@ struct ContentView: View {
                                 .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
-                            // Tight 4pt default gap: grouped same-sender vm.messages
-                                // stay snug; first-in-group bubbles add +10 top
-                                // padding to land at the normal 14pt gap between
-                                // groups (see `isFirstInGroup`).
-                            LazyVStack(spacing: 4) {
+                            // Reading rhythm: 10pt within a same-sender burst,
+                            // +14 leading a new burst (= 24 between speakers) —
+                            // document-flow replies need more air than the old
+                            // bubble stacks did.
+                            LazyVStack(spacing: 10) {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
@@ -14068,11 +15321,9 @@ struct ContentView: View {
                                         TimeSeparator(date: msg.timestamp)
                                     }
                                     let isFirst = isFirstInGroup(idx: idx, list: list)
-                                    let isLast  = isLastInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate,
-                                                  isLastInGroup: isLast)
-                                        .padding(.top, isFirst ? 10 : 0)
+                                                  onRegenerate: vm.regenerate)
+                                        .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
                                 // Bottom sentinel: 1pt invisible view that
@@ -14086,6 +15337,11 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            // Centered reading column (design language): content
+                            // caps at 780pt; the input pill aligns to the same
+                            // column below.
+                            .frame(maxWidth: 780)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     // PROTECTED PATH: the streaming/auto-scroll triggers stay
@@ -14134,13 +15390,6 @@ struct ContentView: View {
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
-    private func isLastInGroup(idx: Int, list: [ChatMessage]) -> Bool {
-        guard idx < list.count - 1 else { return true }
-        let curr = list[idx]; let next = list[idx + 1]
-        if curr.isUser != next.isUser { return true }
-        return next.timestamp.timeIntervalSince(curr.timestamp) > 5 * 60
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -14157,7 +15406,7 @@ struct ContentView: View {
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
 
@@ -14170,16 +15419,21 @@ struct ContentView: View {
 
     // MARK: Empty state
     private var emptyState: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 26) {
             // Hero logo — twin glow halos with a slow "breathing" scale on the
-            // brand tile. Gives the empty state a living, cinematic centerpiece
-            // instead of a static glyph.
+            // brand tile. The landing moment keeps its glow (design language
+            // allows it on landing surfaces); everything else stays flat.
             EmptyStateLogo()
 
             VStack(spacing: 10) {
-                Eyebrow(text: "Salehman AI · On-device")
-                Text("How can I help, Saleh?")
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                // Live eyebrow: flips to "your 14B is live" once the fine-tuned
+                // model is actually pulled in Ollama — same probe the Settings
+                // row uses, so the two never disagree.
+                Eyebrow(text: localModelReady
+                        ? "Salehman AI · your 14B is live"
+                        : "Salehman AI · On-device")
+                Text(greetingLine)
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text("Ask me anything, or let me run things on your Mac.")
@@ -14198,11 +15452,23 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: 540)
+            .frame(maxWidth: 560)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
+        .task { localModelReady = await OllamaClient.hasCustomModel() }
+    }
+
+    /// Time-aware greeting — the same buckets the Today tab uses, so the two
+    /// landing surfaces always agree about the time of day.
+    private var greetingLine: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "Good morning, Saleh"
+        case 12..<17: return "Good afternoon, Saleh"
+        case 17..<22: return "Good evening, Saleh"
+        default:      return "Working late, Saleh?"
+        }
     }
 
     // MARK: Input bar
@@ -14215,124 +15481,129 @@ struct ContentView: View {
                 attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
             }
 
-            HStack(spacing: 10) {
-                // Attach menu (+)
-                Menu {
-                    Button { Task { await attachFile() } } label: {
-                        Label("Attach file…", systemImage: "doc")
-                    }
-                    Button { Task { await attachImage() } } label: {
-                        Label("Attach image", systemImage: "photo")
-                    }
-                    Button { Task { await attachLastScreenshot() } } label: {
-                        Label("Send last screenshot", systemImage: "camera.viewfinder")
-                    }
-                    Button { Task { await pasteImage() } } label: {
-                        Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Attach a file, image, or your last screenshot")
-                .accessibilityLabel("Attach a file, image, or screenshot")
+            // ONE unified composer, Claude layout (matches the Code tab's
+            // owner-approved pattern): the text field rides ON TOP, a quiet
+            // controls row sits beneath — + menu (attachments AND prompts,
+            // halving the old left-side chrome), then mic and send at the
+            // trailing edge.
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...8)
+                    .focused($inputFocused)
+                    .onSubmit { submit(mission) }
+                    .accessibilityIdentifier("chat.composer.field")
+                    .padding(.horizontal, 4)
 
-                // Prompt library
-                Menu {
-                    if library.prompts.isEmpty {
-                        Text("No saved prompts yet")
-                    } else {
-                        Section("Insert a prompt") {
+                HStack(spacing: 8) {
+                    Menu {
+                        Section("Attach") {
+                            Button { Task { await attachFile() } } label: {
+                                Label("Attach file…", systemImage: "doc")
+                            }
+                            Button { Task { await attachImage() } } label: {
+                                Label("Attach image", systemImage: "photo")
+                            }
+                            Button { Task { await attachLastScreenshot() } } label: {
+                                Label("Send last screenshot", systemImage: "camera.viewfinder")
+                            }
+                            Button { Task { await pasteImage() } } label: {
+                                Label("Paste image from clipboard", systemImage: "doc.on.clipboard")
+                            }
+                        }
+                        Section("Prompts") {
                             ForEach(library.prompts) { p in
                                 Button(p.title) { insertPrompt(p.text) }
                             }
+                            Button {
+                                newPromptTitle = ""
+                                savingPrompt = true
+                            } label: { Label("Save current as prompt…", systemImage: "plus") }
+                                .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
                     }
-                    Divider()
-                    Button {
-                        newPromptTitle = ""
-                        savingPrompt = true
-                    } label: { Label("Save current as prompt…", systemImage: "plus") }
-                        .disabled(mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } label: {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 40)
-                .help("Insert or save a reusable prompt")
-                .accessibilityLabel("Insert or save a reusable prompt")
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 26)
+                    .help("Attach files/images or insert a saved prompt")
+                    .accessibilityLabel("Attach files, images, or insert a saved prompt")
+                    .accessibilityIdentifier("chat.composer.plus")
 
-                HStack(spacing: 8) {
-                    Image(systemName: "text.bubble")
-                        .foregroundStyle(inputFocused ? Theme.accent : .secondary)
-                        .animation(DS.Motion.fade, value: inputFocused)
-                    TextField("Message Salehman AI…", text: $mission, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...6)
-                        .focused($inputFocused)
-                        .onSubmit { submit(mission) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                // Premium focus ring: 2px gradient stroke + soft accent glow.
-                // The old single-color 0.6-opacity ring was barely visible on
-                // the dark canvas. Computed contrast: pure-accent stroke on the
-                // canvas clears the 3:1 non-text floor; glow is decorative.
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    inputFocused ? Theme.accent.opacity(0.85)  : Color.white.opacity(0.10),
-                                    inputFocused ? Theme.accent2.opacity(0.65) : Color.white.opacity(0.05),
-                                ],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: inputFocused ? 2 : 1
-                        )
-                )
-                .shadow(color: inputFocused ? Theme.accent.opacity(0.20) : .clear,
-                        radius: inputFocused ? 12 : 0)
-                .animation(DS.Motion.smooth, value: inputFocused)
+                    Spacer(minLength: 0)
 
-                // Mic (dictation)
-                CircleIconButton(systemName: speechIn.isListening ? "mic.fill" : "mic",
-                                 size: 40, iconSize: 16,
-                                 tint: speechIn.isListening ? .red : .white,
-                                 ring: speechIn.isListening ? .red : nil,
-                                 help: "Dictate with your voice") { speechIn.toggle() }
+                    // Mic (dictation) — quiet inline icon; red while listening.
+                    Button { speechIn.toggle() } label: {
+                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dictate with your voice")
+                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+                    .accessibilityIdentifier("chat.composer.mic")
 
-                // Stop while generating, otherwise Send
-                if vm.isRunning {
-                    CircleIconButton(systemName: "stop.fill", size: 40, iconSize: 15,
-                                     tint: .red, ring: .red,
-                                     help: "Stop generating (⌘.)") { vm.stop() }
+                    // Stop while generating, otherwise Send — the composer's
+                    // one strong-color element (solid accent when sendable).
+                    if vm.isRunning {
+                        Button { vm.stop() } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 26, height: 26)
+                                .background(Color.red.opacity(0.85), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop generating (⌘.)")
+                        .accessibilityLabel("Stop generating")
                         .transition(.scale.combined(with: .opacity))
-                } else {
-                    CircleIconButton(systemName: "arrow.up", size: 40, iconSize: 16,
-                                     tint: .white, filled: canSend, disabled: !canSend,
-                                     help: "Send") { submit(mission) }
+                    } else {
+                        Button { submit(mission) } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(canSend ? .white : .secondary)
+                                .frame(width: 26, height: 26)
+                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
+                                            in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                        .help("Send")
+                        .accessibilityLabel("Send")
+                        .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            // Quiet flat composer (design language). Focus = a solid accent
+            // hairline — visible on the flat canvas without glow chrome.
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
+                            lineWidth: inputFocused ? 1.5 : 1)
+            )
+            .animation(DS.Motion.smooth, value: inputFocused)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial)
+        // Flat — the input row sits directly on the chat canvas.
+        .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
     }
 
@@ -14349,8 +15620,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .background(Color.white.opacity(0.09), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -14459,10 +15729,7 @@ private struct ConfirmationChip: View {
             withAnimation(DS.Motion.smooth) { enabled.toggle() }
         } label: {
             HStack(spacing: 7) {
-                ZStack {
-                    Circle().fill(dotColor).frame(width: 7, height: 7)
-                    Circle().fill(dotColor.opacity(0.35)).frame(width: 13, height: 13).blur(radius: 3)
-                }
+                Circle().fill(dotColor).frame(width: 7, height: 7)
                 Text(enabled ? "Confirm" : "Auto-run")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -14556,9 +15823,9 @@ struct ScrollToLatestButton: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(DS.Gradient.brand, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            .dsShadow(DS.Elevation.accentGlow(0.45))
+            // Solid accent, no gradient/glow (design language) — it floats over
+            // the transcript, so it still reads as actionable.
+            .background(DS.Palette.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(unreadCount > 0
@@ -14677,10 +15944,6 @@ enum ChatExporter {
 struct MessageBubble: View {
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
-    /// Apple-Messages convention: the avatar/tail-anchor only renders on the
-    /// LAST message of a same-sender burst. Default `true` keeps existing
-    /// callers (single-message previews, ungrouped contexts) unchanged.
-    var isLastInGroup: Bool = true
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -14698,8 +15961,9 @@ struct MessageBubble: View {
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
-            .blur(radius: appeared ? 0 : 6)
-            .offset(y: appeared ? 0 : 14)
+            // 8pt rise (was 14): present, not theatrical.
+            .blur(radius: appeared ? 0 : 4)
+            .offset(y: appeared ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -14724,98 +15988,103 @@ struct MessageBubble: View {
     //       view-layer derivation; `messages[i].text` stays unmodified, so
     //       `ChatStore` persists the canonical form.
 
+    // Claude-Code-minimal (owner directive 2026-06-11, mirrors CodeMessageRow):
+    // user = quiet right-aligned block, assistant = flush-left document flow.
+    // No avatars, no name labels, no per-message timestamps (TimeSeparator rows
+    // already mark time between bursts). Actions stay ALWAYS MOUNTED for
+    // keyboard/VoiceOver and reveal on hover only.
     private var bubbleRow: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            // Assistant side: avatar only on the LAST message of a burst.
-            // Continuations get a same-size transparent placeholder so the
-            // bubble content stays horizontally aligned across the group.
-            if message.isUser { Spacer(minLength: 48) }
-            else if isLastInGroup { avatar }
-            else { Color.clear.frame(width: 30, height: 30) }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 3) {
-                Group {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if message.isUser {
-                            Text(message.text)
-                                .font(.system(size: 14))
-                                .textSelection(.enabled)
-                                .foregroundStyle(.white)
-                        } else {
-                            MarkdownText(text: displayedText)
-                                .foregroundStyle(Color.white.opacity(0.92))
-                                .lineSpacing(2)               // calmer reading rhythm on long replies
-                        }
-                        if let path = message.imagePath {
-                            CachedImage(path: path)
-                                .frame(maxWidth: 360, maxHeight: 360)
-                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)             // ↑ from 14 — more breathing room
-                .padding(.vertical, 12)               // ↑ from 10
-                .background(bubbleBackground)
-                .clipShape(bubbleShape)               // asymmetric (tail) corners
-                .overlay(
-                    bubbleShape.stroke(
-                        Color.white.opacity(message.isUser ? 0 : 0.08),
-                        lineWidth: 1
-                    )
-                )
-                // User bubbles get a soft brand-tinted glow (Apple-Music red);
-                // assistant gets a deeper neutral shadow for depth on dark.
-                .shadow(color: message.isUser ? Theme.accent.opacity(0.28) : Color.black.opacity(0.32),
-                        radius: message.isUser ? 10 : 8,
-                        y: 4)
-                // Cap content at a comfortable reading measure (~580pt) so
-                // bubbles don't stretch edge-to-edge on a wide window. The
-                // outer Spacer(minLength: 48) handles speaker-side alignment.
-                .frame(maxWidth: 580, alignment: message.isUser ? .trailing : .leading)
-                // VoiceOver reads the bubble as one element, prefixed with the
-                // speaker so the conversation is followable without sight. The
-                // action buttons below stay separate (their own a11y labels).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(message.isUser ? "You said: \(message.text)"
-                                                    : "Assistant replied: \(displayedText)")
-
-                HStack(spacing: 10) {
-                    Text(message.timestamp, style: .time)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    if !message.isUser {
-                        actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
-                                     "Read aloud", active: speech.speakingID == message.id) {
-                            speech.toggle(message.text, id: message.id)
-                        }
-                    }
-                    // Always mounted (keyboard / VoiceOver can reach them); hover
-                    // just lifts the opacity so they recede until you point at the row.
-                    actionButton("doc.on.doc", "Copy") { copyText() }
-                    if !message.isUser, onRegenerate != nil {
-                        actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
-                            .opacity(hovering ? 1 : 0.45)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .animation(DS.Motion.fade, value: hovering)
-            }
-
-            // User side: same rule mirrored.
-            if message.isUser {
-                if isLastInGroup { userAvatar }
-                else { Color.clear.frame(width: 30, height: 30) }
-            } else { Spacer(minLength: 48) }
+        Group {
+            if message.isUser { userRow } else { assistantRow }
         }
         .onHover { hovering = $0 }
+    }
+
+    private var userRow: some View {
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message.text)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+                if let path = message.imagePath {
+                    CachedImage(path: path)
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                }
+            }
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(Color.white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Comfortable wrap measure — long pastes shouldn't span the
+            // full 780 column just because they're the user's.
+            .frame(maxWidth: 480, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("You said: \(message.text)")
+            // Same floating-pill pattern as assistant rows — no reserved
+            // layout row beneath the block.
+            .overlay(alignment: .topTrailing) {
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(DS.Palette.codeSurfaceSide,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .offset(y: -10)
+                    .opacity(hovering ? 1 : 0)
+                    .animation(DS.Motion.fade, value: hovering)
+            }
+        }
+    }
+
+    private var assistantRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MarkdownText(text: displayedText)
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineSpacing(2)               // calmer reading rhythm on long replies
+            if let path = message.imagePath {
+                CachedImage(path: path)
+                    .frame(maxWidth: 360, maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Assistant replied: \(displayedText)")
+        // Floating action pill: no layout reservation (text keeps the full
+        // measure), readable over any content thanks to its own flat panel.
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 2) {
+                actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
+                             "Read aloud", active: speech.speakingID == message.id) {
+                    speech.toggle(message.text, id: message.id)
+                }
+                actionButton("doc.on.doc", "Copy") { copyText() }
+                if onRegenerate != nil {
+                    actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
+                }
+            }
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .offset(y: -4)
+            .opacity(hovering ? 1 : 0)
+            .animation(DS.Motion.fade, value: hovering)
+        }
     }
 
     private func actionButton(_ icon: String, _ help: String, active: Bool = false,
                               _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .foregroundStyle(active ? Theme.accent : .secondary)
+                .frame(width: 22, height: 22)        // comfortable hit target
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -14825,60 +16094,6 @@ struct MessageBubble: View {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
-    }
-
-    @ViewBuilder private var bubbleBackground: some View {
-        if message.isUser {
-            // Brand red→pink gradient (DS.Gradient.userBubble) — already vertical-ish
-            // via topLeading→bottomTrailing, so user bubbles already have depth.
-            Theme.userBubble
-        } else {
-            // Subtle vertical glass gradient instead of a flat 0.07 fill. Reads
-            // as a curved physical surface (lighter top, darker bottom) without
-            // breaking the dark aesthetic — the single change that makes the
-            // assistant bubble feel "real" instead of a tinted rectangle.
-            LinearGradient(
-                colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom
-            )
-        }
-    }
-
-    /// Asymmetric bubble corners. The bottom corner NEAREST the speaker's avatar
-    /// is small (6pt); the other three stay full-rounded (18pt). Reads as a
-    /// directional anchor — the Apple-Messages "tail" cue — without drawing a
-    /// custom Path. Requires `UnevenRoundedRectangle` (macOS 13+).
-    private var bubbleShape: UnevenRoundedRectangle {
-        let big: CGFloat = 18
-        let small: CGFloat = 6
-        return UnevenRoundedRectangle(
-            topLeadingRadius:     big,
-            bottomLeadingRadius:  message.isUser ? big   : small,   // assistant: tail bottom-left (toward its avatar)
-            bottomTrailingRadius: message.isUser ? small : big,     // user: tail bottom-right (toward its avatar)
-            topTrailingRadius:    big,
-            style: .continuous
-        )
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                .shadow(color: Theme.accent.opacity(0.5), radius: 6, y: 2)
-            Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
-    }
-
-    private var userAvatar: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-            Image(systemName: "person.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .accessibilityHidden(true)   // decorative — speaker is in the bubble label
     }
 }
 
@@ -14910,34 +16125,21 @@ struct CachedImage: View {
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
     @State private var animating = false
-    @State private var halo = false
+    // After ~5s of pre-stream silence the local model is probably loading into
+    // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
+    // auto-cancels when streaming starts (this view disappears).
+    @State private var warmHint = false
 
     var body: some View {
+        // Quiet flush-left working indicator (design language): three accent
+        // dots, no avatar disc, no halo/glow chrome — matches the streaming
+        // row's flush-left flow so the transition to text doesn't jump.
         HStack(spacing: 9) {
-            // Avatar with a breathing brand halo. The halo + the gradient dots
-            // are the visible heartbeat of "Salehman AI is working" — the
-            // single highest-leverage place to make the app feel premium during
-            // a wait. (Was a flat brand circle + three white dots.)
-            ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.55))
-                    .frame(width: 58, height: 58)
-                    .blur(radius: 14)
-                    .scaleEffect(halo ? 1.18 : 0.92)
-                    .opacity(halo ? 0.9 : 0.4)
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                    .shadow(color: DS.Palette.accent.opacity(0.55), radius: 10, y: 2)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-            }
             HStack(spacing: 6) {
-                // Gradient-tinted dots — the brand reads through every beat
-                // instead of generic white-on-dark blobs.
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(LinearGradient(colors: [DS.Palette.accent, DS.Palette.accent2],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 8, height: 8)
+                        .fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
                         .scaleEffect(animating ? 1.0 : 0.5)
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
@@ -14948,18 +16150,18 @@ struct TypingIndicator: View {
                             value: animating)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1)
-            )
-        }
-        .onAppear {
-            animating = true
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                halo = true
+            if warmHint {
+                Text("Warming up the local model…")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .onAppear { animating = true }
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }
@@ -15039,30 +16241,26 @@ struct AgentRunView: View {
     private var doneCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+        // Flush-left flat panel (no avatar disc — design language). The N/M
+        // counter stays: it's live progress, not decorative chrome.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Agent team working")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(doneCount)/\(steps.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("Agent team working")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("\(doneCount)/\(steps.count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(steps) { step in
-                        AgentRow(step: step)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    AgentRow(step: step)
                 }
             }
-            .padding(14)
-            .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
+        .padding(14)
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -15115,57 +16313,35 @@ struct StreamingBubble: View {
         text == LocalLLM.offMessage ? LocalLLM.unavailableMessage : text
     }
     var body: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    // "Alive" affordance while the answer streams in. `.pulse`
-                    // respects `accessibilityReduceMotion` automatically (SwiftUI
-                    // gates symbolEffect on the system setting).
-                    .symbolEffect(.pulse.byLayer, options: .repeating)
-            }
-            .accessibilityHidden(true)   // decorative — bubble label conveys "Assistant"
+        // Flush-left document flow, matching MessageBubble's assistant row so
+        // stream-end doesn't visibly snap styles. The pulsing dot sits ABOVE
+        // the text (not beside it) so the text's leading edge is already at
+        // the final x-position — no horizontal jump when the stream commits.
+        // `.pulse` respects accessibilityReduceMotion automatically.
+        VStack(alignment: .leading, spacing: 7) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(Theme.accent)
+                .symbolEffect(.pulse.byLayer, options: .repeating)
+                .accessibilityHidden(true)
             Group {
                 if displayedText.count <= StreamRender.liveMarkdownLimit {
                     MarkdownText(text: displayedText)
                 } else {
                     // Long reply still streaming: plain text avoids the O(n) Markdown
                     // re-parse every throttle tick (what lags a fast local model). The
-                    // finalised bubble renders full Markdown the instant streaming ends.
+                    // finalised row renders full Markdown the instant streaming ends.
                     Text(displayedText)
                         .font(.system(size: 14))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineSpacing(2)               // parity with finalised bubble — no rhythm jump on stream-end
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(
-                    // Match the finalised assistant bubble so the moment streaming
-                    // ends the bubble doesn't visibly "snap" to a different style.
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.05)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Self.streamingShape)
-                .overlay(Self.streamingShape.stroke(Color.white.opacity(0.08), lineWidth: 1))
-                .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
-                .frame(maxWidth: 580, alignment: .leading)
-            Spacer(minLength: 48)   // mirror MessageBubble's right-side gap so the streaming bubble doesn't stretch
+            .foregroundStyle(Color.white.opacity(0.92))
+            .lineSpacing(2)               // parity with finalised row — no rhythm jump on stream-end
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    /// Same asymmetric corners as `MessageBubble`'s assistant variant (tail at
-    /// bottom-leading, toward the avatar).
-    private static let streamingShape = UnevenRoundedRectangle(
-        topLeadingRadius: 18, bottomLeadingRadius: 6,
-        bottomTrailingRadius: 18, topTrailingRadius: 18,
-        style: .continuous
-    )
 }
 
 // MARK: - Approval Card
@@ -15507,7 +16683,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (393 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (397 lines) =====
 ```swift
 import SwiftUI
 import UniformTypeIdentifiers
@@ -15548,8 +16724,12 @@ struct KnowledgeView: View {
                 documentsSection
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
         .onAppear(perform: reload)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay {
@@ -15569,9 +16749,9 @@ struct KnowledgeView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -15604,8 +16784,7 @@ struct KnowledgeView: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
@@ -15632,7 +16811,8 @@ struct KnowledgeView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        // Flat opaque panel + hairline (design language).
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
@@ -15654,7 +16834,7 @@ struct KnowledgeView: View {
                 VStack(spacing: 1) {
                     ForEach(docs) { doc in docRow(doc) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
         }
@@ -15738,11 +16918,11 @@ struct KnowledgeView: View {
             Text("Paste text").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             HStack {
                 Spacer()
@@ -15849,7 +17029,7 @@ private struct DocDetailSheet: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .padding(DS.Space.xl)
@@ -15904,7 +17084,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (240 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (239 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15925,8 +17105,7 @@ struct LiveTranscriptionView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: 14) {
                 header
@@ -16148,7 +17327,7 @@ struct LiveTranscriptionView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarkdownText.swift (375 lines) =====
+===== FILE: Salehman AI/Views/MarkdownText.swift (384 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16409,25 +17588,34 @@ struct MarkdownText: View {
     }
 
     /// Render a parsed table as an aligned grid with a bold header row.
+    /// Cells CAP at 300pt and WRAP — a Grid otherwise sizes columns to each cell's
+    /// ideal (single-line) width, so long cells overflowed the message column and
+    /// were clipped mid-word (owner hit this). Wide tables h-scroll as the escape.
     @ViewBuilder
     static func tableView(header: [String], rows: [[String]]) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow {
-                ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                    Text(inlineMarkdown(cell))
-                        .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
-                }
-            }
-            Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                        Text(inlineMarkdown(cell))
+                            .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 300, alignment: .leading)
+                    }
+                }
+                Divider().overlay(DS.Palette.surfaceStroke).gridCellColumns(max(1, header.count))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 300, alignment: .leading)
+                        }
                     }
                 }
             }
+            .padding(10)
         }
-        .padding(10)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
@@ -16557,7 +17745,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (456 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (459 lines) =====
 ```swift
 import SwiftUI
 
@@ -16592,18 +17780,22 @@ struct MarketsView: View {
                     content
                 }
                 .padding(DS.Space.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Centered content column, same as the chat surfaces.
+                .frame(maxWidth: 780, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
             MarketDisclaimerFooter()
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Markets")
-                .font(DS.Typography.titleL).foregroundStyle(.white)
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Text("Rule-based momentum signals · educational, not financial advice")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
 
@@ -16672,7 +17864,7 @@ struct MarketsView: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
@@ -16684,7 +17876,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -16747,7 +17939,7 @@ struct MarketsView: View {
                 VStack(spacing: 1) {
                     ForEach(portfolio.positions) { positionRow($0) }
                 }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
@@ -16774,7 +17966,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -16801,9 +17993,7 @@ struct MarketsView: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .accessibilityLabel(placeholder)
     }
 
@@ -16926,7 +18116,7 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         .help(signal?.reason ?? "")
@@ -16967,7 +18157,7 @@ struct MarketsView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17011,13 +18201,14 @@ struct MarketDisclaimerFooter: View {
             .multilineTextAlignment(.leading)
             .padding(.horizontal, DS.Space.lg).padding(.vertical, DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
+            // Flat opaque footer + hairline (was translucent material).
+            .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .top)
     }
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (166 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (165 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17042,8 +18233,7 @@ struct MemoryView: View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
@@ -17069,7 +18259,7 @@ struct MemoryView: View {
                                     row(fact)
                                 }
                             }
-                            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
@@ -17151,7 +18341,7 @@ struct MemoryView: View {
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17403,7 +18593,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (174 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (178 lines) =====
 ```swift
 import SwiftUI
 
@@ -17437,16 +18627,20 @@ struct ScratchpadView: View {
                 if !aiResult.isEmpty { aiResultCard }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centered content column, same as the chat surfaces.
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        // Flat opaque working canvas (design language).
+        .background(DS.Palette.codeSurface.ignoresSafeArea())
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Notes").font(DS.Typography.titleL).foregroundStyle(.white)
+                Text("Notes").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { Task { await runAI() } } label: {
@@ -17465,8 +18659,7 @@ struct ScratchpadView: View {
             TextField(pad == .tasks ? "Add a task…" : "Add a note…", text: $newText)
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .focused($addFocused)
                 .onSubmit(add)
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
@@ -17537,8 +18730,9 @@ struct ScratchpadView: View {
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -17564,7 +18758,7 @@ struct ScratchpadView: View {
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
     }
@@ -17581,7 +18775,7 @@ struct ScratchpadView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1907 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1971 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -17691,6 +18885,17 @@ struct SettingsView: View {
     // design just to drive UI updates.
     @State private var mlxState: MLXSalehmanEngine.State = .unavailable(reason: "")
 
+    // 14B-readiness: tri-state probe of the user's own Ollama model (the
+    // `.salehman` brain's offline floor — default name "salehman"). Drives
+    // `salehmanModelStatusRow`; probed on appear, on name edit, on demand.
+    enum LocalModelProbe: Equatable {
+        case checking
+        case installed(String)   // model with this name is pulled — floor ready
+        case missing(String)     // Ollama up but no such model created yet
+        case ollamaDown          // server unreachable — can't know either way
+    }
+    @State private var localModelProbe: LocalModelProbe = .checking
+
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
@@ -17708,11 +18913,10 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            // Inherit the DS canvas tokens so the Settings sheet picks up the
-            // Apple-Music warm-dark identity (was a hardcoded cold-indigo literal
-            // that bypassed the token layer — a classic design-system leak).
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // Claude-Code-minimal restyle (owner directive, 2026-06-11): the
+            // sheet canvas is FLAT opaque neutral grey — no gradients, no
+            // translucent stacking. codeSurfaceSide = the panel shade.
+            DS.Palette.codeSurfaceSide.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -17799,10 +19003,16 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
+
+                        // Live status for the model named above: installed → the
+                        // .salehman brain's offline floor is ready; missing → a
+                        // copyable `ollama create` command for when the fine-tuned
+                        // GGUF lands; Ollama down → can't know.
+                        salehmanModelStatusRow
                     }
 
                     // Unsloth Studio (and any other local OpenAI-compatible server).
@@ -18016,41 +19226,36 @@ struct SettingsView: View {
     }
 
     private var header: some View {
+        // Slimmer header per the design language — title at body-plus weight,
+        // not a display headline.
         HStack {
-            Text("Settings").font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
             Spacer()
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain).accessibilityLabel("Close")
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).help("Close").accessibilityLabel("Close")
         }
     }
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, _ subtitle: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Premium section header — a 3pt brand-gradient stripe "anchors" the
-            // title without competing with it; tracked uppercase + confident
-            // white reads as Linear/Things/Apple-Music rather than greyed-out.
-            HStack(spacing: 8) {
-                Capsule()
-                    .fill(DS.Gradient.brand)
-                    .frame(width: 3, height: 14)
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.92))
-            }
+            // Minimal section header: quiet tracked uppercase, no decorative
+            // stripe — the content box carries the structure (chrome diet).
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(DS.Palette.textSecondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.leading, 11)   // align under the title (past the stripe)
             }
+            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                .dsShadow(DS.Elevation.shadow1)
         }
     }
 
@@ -18422,7 +19627,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -18441,7 +19646,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -18490,7 +19695,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -18509,7 +19714,7 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -18662,7 +19867,7 @@ struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.92))
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         .textSelection(.enabled)
@@ -18798,6 +20003,59 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// 14B-readiness status row under the custom-model-name field: is a model
+    /// with the typed name (default "salehman") actually pulled in Ollama?
+    /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
+    /// `OllamaClient.hasModel`), so what this row says is what the brain does.
+    private var salehmanModelStatusRow: some View {
+        HStack(spacing: 6) {
+            switch localModelProbe {
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Checking for your local model…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .installed(let name):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
+                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            case .missing(let name):
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString("ollama create \(name) -f Modelfile", forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .accessibilityLabel("Copy the ollama create command")
+            case .ollamaDown:
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Ollama isn't running — can't check for your local model.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await probeLocalModel() }
+            } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Re-check").accessibilityLabel("Re-check local model status")
+        }
+        .padding(.horizontal, 14).padding(.bottom, 11)
+        .task { await probeLocalModel() }
+        .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
+    }
+
+    /// Probe Ollama for the model named in Settings. Cheap: `isUp` is a
+    /// localhost ping and `hasModel` reads a 30s-cached model list.
+    private func probeLocalModel() async {
+        localModelProbe = .checking
+        guard await OllamaClient.isUp() else { localModelProbe = .ollamaDown; return }
+        let name = AppSettings.customModelNameCurrent
+        localModelProbe = await OllamaClient.hasModel(name) ? .installed(name) : .missing(name)
     }
 
     /// Branch-aware cost: `.salehman` brain uses refine-only path (no fan-out),
@@ -19569,7 +20827,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (177 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (176 lines) =====
 ```swift
 import SwiftUI
 
@@ -19614,7 +20872,6 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
-                        .dsShadow(DS.Elevation.accentGlow(0.6))
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 0) {
@@ -19637,7 +20894,7 @@ struct TabSwitcherBar: View {
                 ForEach(AppTab.allCases) { tab in pill(tab) }
             }
             .padding(4)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(Color.white.opacity(0.07), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
@@ -19691,7 +20948,7 @@ struct TabSwitcherBar: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.sm)
-        .background(.ultraThinMaterial)
+        .background(DS.Palette.codeSurfaceSide)
         .background(
             GeometryReader { proxy in
                 Color.clear
@@ -19750,7 +21007,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (168 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (173 lines) =====
 ```swift
 import SwiftUI
 
@@ -19786,7 +21043,9 @@ struct TodayView: View {
                 section("AT A GLANCE") { statCards }
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Same centered content column as the chat surfaces (design language).
+            .frame(maxWidth: 780, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .onAppear(perform: refresh)
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
@@ -19877,7 +21136,9 @@ private struct ActionTile: View {
             }
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language — no translucent stacking
+            // over the landing glow.
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.5) : DS.Palette.surfaceStroke, lineWidth: 1))
             .scaleEffect(hovering ? 1.02 : 1)
@@ -19912,7 +21173,8 @@ private struct StatTile: View {
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            // Opaque tile per the design language (see ActionTile).
+            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(hovering ? DS.Palette.accent.opacity(0.4) : DS.Palette.surfaceStroke, lineWidth: 1))
         }
@@ -19922,7 +21184,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (139 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (138 lines) =====
 ```swift
 import SwiftUI
 
@@ -19970,8 +21232,7 @@ struct VoiceModeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(spacing: DS.Space.lg) {
                 HStack {
@@ -21161,6 +22422,126 @@ struct EnsembleRoutingTests {
             LocalLLM.EnsembleAnswer(label: "Apple Intelligence", text: "hello"),
         ])
         #expect(out != LocalLLM.offMessage)
+    }
+}
+```
+
+===== FILE: Salehman AITests/FourteenBReadinessTests.swift (116 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - 14B readiness — per-model knobs, context diet, tool-round notes
+//
+// Written for the 9 GB `salehman` fine-tune landing on this Mac: the knobs that
+// keep it warm, the budgets that keep its 4096-token context from silently
+// evicting the persona, and the progress note that keeps slow tool rounds
+// visible. (`effectiveCap` / `isTrivialMission` are already pinned by
+// ToolLoopTests / AgentPipelineConcurrencyTests / TrivialMissionTests.)
+//
+// `.serialized` + save/restore: `tunedKnobs…` mutate the global UserDefaults
+// key `Keys.customModel`. This file is the SOLE test mutator of that key
+// (verified 2026-06-11) — don't write it from another suite without
+// serializing against this one.
+
+@Suite(.serialized)
+struct FourteenBReadinessTests {
+
+    /// Run `body` with the custom-model-name key saved and restored.
+    private func withSavedModelKey(_ body: () -> Void) {
+        let key = AppSettings.Keys.customModel
+        let prior = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        body()
+    }
+
+    // MARK: Generation.tuned(for:) — the user's own model stays warm
+
+    @Test func tunedKnobsKeepTheUsersOwnModelWarm() {
+        withSavedModelKey {
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let gen = OllamaClient.Generation.tuned(for: "salehman14b")
+            // 5-minute keep-alive: re-paying the ~9 GB load mid-conversation is
+            // the single worst local latency hit. 4096 ctx matches its Modelfile.
+            #expect(gen.keepAlive == "5m")
+            #expect(gen.numCtx == 4096)
+        }
+    }
+
+    @Test func tunedKnobsStayRAMLeanForOtherModels() {
+        withSavedModelKey {
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let gen = OllamaClient.Generation.tuned(for: "qwen2.5-coder:7b")
+            // Small models keep the laptop-friendly defaults — evict fast, small KV.
+            #expect(gen.keepAlive == "30s")
+            #expect(gen.numCtx == OllamaClient.defaultNumCtx)
+        }
+    }
+
+    @Test func tunedKnobsFollowTheDefaultModelName() {
+        withSavedModelKey {
+            // Key unset → customModelNameCurrent defaults to "salehman" — the
+            // name the fine-tune ships under (`ollama create salehman …`).
+            UserDefaults.standard.removeObject(forKey: AppSettings.Keys.customModel)
+            #expect(OllamaClient.Generation.tuned(for: "salehman").keepAlive == "5m")
+            #expect(OllamaClient.Generation.tuned(for: "anything-else").keepAlive == "30s")
+        }
+    }
+
+    // MARK: recentTail — local context diet keeps the most-recent turns
+
+    @Test func recentTailKeepsShortTextWhole() {
+        #expect(AgentPipeline.recentTail("User: hi\nAI: hello", maxChars: 100) == "User: hi\nAI: hello")
+        #expect(AgentPipeline.recentTail("", maxChars: 100) == "")
+    }
+
+    @Test func recentTailKeepsTheNewestTurnsAndCutsAtALineBoundary() {
+        let turns = (1...50).map { "User: message number \($0)" }.joined(separator: "\n")
+        let tail = AgentPipeline.recentTail(turns, maxChars: 200)
+        #expect(tail.count <= 200)
+        // Newest turn survives; the cut never starts mid-line.
+        #expect(tail.hasSuffix("User: message number 50"))
+        #expect(tail.hasPrefix("User: "))
+    }
+
+    @Test func recentTailNeverReturnsEmptyForAGiantSingleLine() {
+        let oneLine = String(repeating: "x", count: 10_000)
+        let tail = AgentPipeline.recentTail(oneLine, maxChars: 500)
+        #expect(tail.count == 500)   // raw char cut, not ""
+    }
+
+    // MARK: noteToolRound — slow tool rounds show life on the running step
+
+    @MainActor
+    @Test func noteToolRoundAnnotatesTheRunningStepIdempotently() {
+        let progress = MissionProgress.shared
+        defer { progress.clear() }
+        let specs = [
+            AgentSpec(name: "Reasoning Strategist", icon: "brain.head.profile",
+                      role: "test", usesTools: true, phase: 0),
+            AgentSpec(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
+                      role: "test", full: true, isFinal: true, phase: 1),
+        ]
+        progress.begin(specs)
+        progress.setRunning(0)
+
+        progress.noteToolRound(2, of: 8)
+        #expect(progress.steps[0].adapted == "Reasoning Strategist · tool round 2/8")
+
+        // Re-noting REPLACES the suffix (no "round 2/8 · tool round 3/8" stacking),
+        // and an adapted title set by adaptTitles survives as the base.
+        progress.noteToolRound(3, of: 8)
+        #expect(progress.steps[0].adapted == "Reasoning Strategist · tool round 3/8")
+
+        // The non-running step is untouched; no-run/no-steps is a safe no-op.
+        #expect(progress.steps[1].adapted == nil)
+        progress.clear()
+        progress.noteToolRound(1, of: 8)   // must not crash on empty steps
+        #expect(progress.steps.isEmpty)
     }
 }
 ```
@@ -23917,7 +25298,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (119 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (165 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -24015,6 +25396,52 @@ struct PaidBrainHidingTests {
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
         #expect(BrainPreference.selectableCases == [.salehman, .auto])
+    }
+}
+
+// MARK: - Local-window history trim (14B num_ctx 4096 protection)
+//
+// Oversized prompts are truncated SERVER-side from the top — eating the persona.
+// The trim must drop OLDEST turns first, keep the newest, and no-op under budget.
+struct LocalWindowTrimTests {
+    @Test func underBudgetIsUntouched() {
+        let h = "User: hi\nSalehman AI: hey"
+        #expect(AgentPipeline.trimmedForLocalWindow(h, budget: 1_000) == h)
+    }
+    @Test func overBudgetDropsOldestKeepsNewest() {
+        let lines = (1...50).map { "User: message number \($0) with some padding text" }
+        let h = lines.joined(separator: "\n")
+        let out = AgentPipeline.trimmedForLocalWindow(h, budget: 400)
+        #expect(out.hasPrefix("(earlier context trimmed)"))
+        #expect(out.contains("message number 50"))      // newest survives
+        #expect(!out.contains("message number 1 "))     // oldest dropped
+        #expect(out.count <= 400 + 60)                  // budget + marker slack
+    }
+}
+
+// MARK: - Complexity judges the ASK, not the Code-tab wrapper boilerplate
+//
+// The Code tab wraps every message in a long multi-line coding preamble ending in
+// "Task: <ask>". complexity() must judge the ask — judging the whole wrapper rated
+// EVERYTHING .hard (multi-line + >200 chars), so a 6-word question spun up all 15
+// agents in Maximum mode. Caught by live functional QA 2026-06-11.
+struct WrappedMissionComplexityTests {
+    private static let preamble = """
+    Project folder (your working directory for terminal + file edits): /Users/x/proj
+
+    You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
+
+    Task:
+    """
+    @Test func wrappedShortQuestionIsSimple() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "who are you in one sentence") == .simple)
+    }
+    @Test func wrappedRealCodingTaskStaysHard() {
+        #expect(AgentPipeline.complexity(of: Self.preamble + "refactor the auth module and add tests") == .hard)
+    }
+    @Test func wrappedAttachedFileDoesNotInflateAShortAsk() {
+        let m = Self.preamble + "what does this do\n\nAttached file \"x.swift\":\n" + String(repeating: "let x = 1\n", count: 200)
+        #expect(AgentPipeline.complexity(of: m) != .hard)   // the ASK is short; the pasted file mustn't force the team
     }
 }
 
@@ -25170,7 +26597,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (536 lines) =====
+===== FILE: COORDINATION.md (906 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
@@ -25708,7 +27135,377 @@ spirit:**
 4. When done: post results here, run the canonical build+tests (you're unblocked — if sandbox still blocks
    xcodebuild, post the diff and I'll run the gate like last time).
 
-===== FILE: DEVELOPMENT_LOG.md (2160 lines) =====
+### 🚨 2026-06-11 ~11:30 — ROUND 1 BOUNDARY HIT (API watch) — SSH side, you're up
+My monitor caught **GPU idle 3 consecutive minutes** at balance **$11.48** — round 1 finished or crashed
+(API can't tell which). **The pod is still RUNNING and billing $1.415/hr while idle** (~$0.024/min). Please
+run the SSH legs now: `tail /workspace/sft/train.log` → **verify the adapter actually LOADS** (the 32B
+disk-full lesson) → `scp` to `salehman-training/salehman-14b-r1/` → probe-eval → round 2 or stop. Budget
+math from my side: $11.48 − $1.50 reserve = **$9.98 usable ≈ 7.0 h ≈ 6–8 more rounds** at the observed
+~$0.85–1.10/round. My watch v4 is live and will flag here-and-in-chat when GPU goes active (round 2
+confirmed), the pod stops, or balance crosses $3.
+**UPDATE ~11:35:** watch v4 confirms **GPU active again at 100% — round 2 is RUNNING** (balance still
+$11.48; idle window was only minutes). You clearly caught the boundary yourself — the call-to-action above
+is satisfied; treat it as the standing playbook for each next boundary.
+
+### ✅ 2026-06-11 — YOUR 14B-READINESS TASK: DONE (Agents/Settings lane, cleanup/Effort session)
+All four items, results:
+1. **Settings status row — ADDED.** `salehmanModelStatusRow` sits directly under the custom-model-name field
+   in the "Salehman engine" section: green "installed — offline floor ready" / orange "no ‹name› model yet"
+   with a copyable `ollama create ‹name› -f Modelfile` button / gray "Ollama isn't running". Probes via the
+   SAME accessors the engine routes by (`customModelNameCurrent` + `OllamaClient.isUp`/`hasModel`, 30s-cached)
+   so the row never lies relative to routing; re-probes on name edit + manual refresh.
+2. **Concurrency audit — PASS, no change needed.** The chain holds: `MemoryManager.concurrencyLimit()`
+   (16 GB healthy → 2) is overridden by `effectiveCap(brain:baseCap:)` → **hard 1** for
+   `.ollamaCoder/.salehman/.unslothStudio/.vllm`; the per-phase batch loop honors `cap` via `stride`
+   batching; `isSerialLocal` also skips the `adaptTitles` detached side-generate. Effort ladder fan-out
+   (`Effort.respond`) is sequential `await`s — never parallel against the local model. The `.salehman`
+   cap=1 is conservative when it resolves to CLOUD (serializes parallelizable calls) — acceptable, safe.
+3. **Assumptions sweep — CLEAN.** Only "qwen" hits in my lane are comments + `qwen2.5vl` in
+   StockSageScreenAnalysis/VisionAnalyzer (vision model — correct, the 14B doesn't replace it). No
+   sub-60s timeouts wrap local generates (ShellTool 60s = shell, WebTools 20–25s = HTTP). No retry
+   loops that would re-pay a model load.
+4. **Verification:** full-tree `swiftc -typecheck` (Swift 6, `-default-isolation MainActor`) — 0 errors /
+   0 warnings, committed+pushed. Sandbox still blocks xcodebuild → **please run the canonical build+tests
+   on your next pass** (only SettingsView changed; `EffortWiringTests` unaffected).
+
+### 📋 2026-06-11 — 14B-IN-APP work split (owner: "give yourself and other claude tasks that help salehman 14b in the app")
+**Chat A / other session — your queue (in addition to the 3 items tasked earlier):**
+4. **Tool-loop budgets for slow local brains.** The agentic loops (`ollamaReply`, freeCoding path) were
+   tuned when local = a fast 7B. On the 9 GB 14B (~6× slower): audit round caps + per-call timeouts so a
+   tool loop can't spend minutes silently; surface "still running tool round N" progress where the loop
+   already reports steps.
+5. **Agent-prompt token diet (2-agent path).** The Reasoning-Strategist + final-agent prompts were written
+   for cloud context windows; local salehman14b runs at num_ctx 4096. Trim/structure those two prompts so
+   mission + history + tools fit 4096 without truncating the tail (history is capped at 8 turns/4k chars,
+   the prompts are the fat part). Don't touch the 15-agent set — it never runs on serial local brains.
+6. **Tests I'll run for you** (you write, post here; my session builds): `Generation.tuned(for:)` knob
+   selection (salehman vs other models), trivial fast-path routing (greeting → no team), and the Review
+   pack-cap behavior below once I land it.
+**Chat B / me — doing now:**
+- **Active-model transparency:** Code-tab brain label shows WHICH local model is serving ("salehman14b" vs
+  "qwen-coder fallback") so the owner can see when the real fine-tune is answering.
+- **Review pack cap for local ctx:** when Salehman resolves to the LOCAL floor (no cloud configured), the
+  Review digest must fit num_ctx 4096 — cap the packed repo digest so Ollama doesn't silently truncate the
+  middle of the codebase.
+- r1-best adapter backed up to Mac + verified (672 tensors byte-exact); round 2 at ~70/300; GGUF toolchain
+  pre-built on the pod (TOOLCHAIN-READY).
+
+### ✅ 2026-06-11 — ITEMS 4–6 DONE (Agents lane, cleanup/Effort session) — tests ready for your build
+**Item 4 (tool-loop budgets):** audit found per-call timeouts already generous (Ollama `chatTurn` 300 s,
+compat `chatTurnWithTools` 120 s — nothing <60 s) and the 8-round cap sane; the REAL bugs were (a)
+`chatOllamaWithTools` hardcoded `keep_alive:"30s"` — your `Generation.tuned(for:)` never reached the tool
+loop, so the 14B got evicted 30 s after every tool-built reply and re-paid the ~9 GB load next message.
+Fixed: the loop now takes `tuned(for: model)` keep-alive (14B → 5 m) with `num_ctx` floored at 4096 (tool
+transcripts are fat; tuned's 2048 default would truncate them for small models). (b) Zero progress during
+up to 8 × 30–90 s rounds. Fixed: `MissionProgress.noteToolRound(_:of:)` annotates the RUNNING step's title
+("Reasoning Strategist · tool round 3/8") — reuses the adapted-title channel, ZERO UI changes, idempotent,
+no-ops outside team missions; both loops (Ollama + OpenAI-compat) emit it each round.
+**Item 5 (token diet):** measured the real worst case — history is 4k chars/TURN × 8 turns = 32k chars
+≈ 8k tokens (the "4k total" reading was per-turn), and on num_ctx overflow Ollama drops the OLDEST tokens,
+i.e. the persona/system prompt evicts first. Fix at the 2-agent path: `AgentInput` now carries the
+resolved `brain`; when `AgentPipeline.isSerialLocalBrain(brain)` (new SHARED predicate — also refactored
+into `effectiveCap` + the adaptTitles skip) the handlers trim history to `recentTail(…, 6_000 chars)`
+(most-recent turns, line-boundary cut) and context to 1,500 chars BEFORE prompt build. Cloud brains keep
+the full history. 15-agent set untouched per your note (its terse-note branch shares the conditional but
+it's inert there — never serial-local).
+**Item 6 (tests) — `Salehman AITests/FourteenBReadinessTests.swift`, please build+run:** `Generation.tuned`
+knob selection (salehman → 5m/4096, others → 30s/2048, default-name fallback), `recentTail` (short-text
+identity, newest-turns + line-boundary cut, giant-single-line never-empty), `noteToolRound` (annotates the
+running step, idempotent re-noting, safe no-op on empty). Suite is `.serialized`, sole test mutator of
+`Keys.customModel`, sole test user of `MissionProgress` (both verified by grep). `effectiveCap` +
+`isTrivialMission` were already pinned by your ToolLoopTests/AgentPipelineConcurrencyTests/
+TrivialMissionTests — not duplicated. Review pack-cap test: waiting on your landing, ping me here.
+App typecheck: 0 errors / 0 warnings. Committed+pushed; CodeView (your in-flight) untouched.
+
+### 🏁 2026-06-11 ~14:30 — POD TERMINATED · FINAL SPEND REPORT (babysit complete, API side)
+Pre-termination checks: `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` landed on the Mac
+at 13:33–13:34 and r1/r2/r3-best adapters are all backed up locally; pod showed **CPU 0% / GPU 0% /
+GPU-mem 0%** (nothing in flight — no Q6_K build or transfer running, and no partial Q6_K file anywhere
+local). `podTerminate` executed and verified: **account now has zero pods**.
+**Final accounting:** handoff balance $12.32 → final **$7.12** ⇒ the whole 14B program cost **$5.20**
+(4 training rounds ≈ $2.85, evals/merges/GGUF/downloads ≈ $1.15, idle windows ≈ $1.20 — the biggest
+idle chunk was the unavoidable pod-alive-during-download hour). Deliverable: **round 3** (eval 1.3033,
+probes ~8/8), quantized Q4_K_M. Q6_K never landed locally — if you want it, it needs a fresh cheap CPU
+pod + the local r3-best adapter (recipe is in `runpod/`); the q4 is the deliverable for the 16 GB M4.
+**Owner action now due:** revoke/delete the RunPod API key in the console (it's chat-exposed; nothing
+needs it anymore — I deliberately left `/tmp/.runpod_key` in place so your session's tooling doesn't
+error, it goes inert the moment the console key is revoked). Next user-visible step: run
+`salehman-training/install_salehman_14b.sh` (or `ollama create salehman -f Modelfile`) — the Settings
+"Salehman model" row flips green when it's in.
+
+### 📋 2026-06-11 (later) — MORE 14B-app tasks for the other session (owner: "give other claude similar tasks")
+Seen + appreciated: your tool-loop tuning (tuned keep-warm, num_ctx≥4096 floor, `noteToolRound` progress) — it
+builds green and is exactly the right shape. Next wave, same spirit (your lanes):
+7. **Cancel-propagation through the tool loop.** When the user hits Stop mid-mission, the 8-round loop
+   should abort BETWEEN rounds (check `Task.isCancelled` per round) — today a cancelled mission can keep
+   the serial 14B slot busy for minutes finishing rounds nobody wants. (My CodeView `stop()` cancels the
+   task; the loop just needs to notice.)
+8. **maxTokens parity on the OpenAI-compat local path.** I wired `maxTokens → num_predict` through
+   `OllamaClient.chat` / `LocalLLM.generateOnDevice` (committed shortly). The Unsloth-Studio/vLLM tool path
+   (`chatTurnWithTools`, LocalLLM ~1399) still sends unbounded requests — wire `max_tokens` into those
+   client bodies the same way.
+9. **Agent token budgets actually passed.** `Thresholds.fullTokens=700` / `shortTokens=110` exist, but sweep
+   YOUR agent call sites (AgentRegistry/agent runner) to confirm each call passes its budget into
+   `LocalLLM.generate(maxTokens:)` — any call without it rambles unbounded on the 14B.
+10. Reminder if not done: the Settings "salehman model installed?" status row (task #1 from earlier) — the
+   GGUF lands today as Ollama model `salehman14b` + alias `salehman`.
+
+### ✅ 2026-06-11 — items 9+10 answered now; 7+8 queued behind YOUR in-flight commit (cleanup/Effort session)
+**9 (budgets) — AUDIT PASS, no edits needed:** every agent call site already passes its budget — final
+agent `generateStreaming(maxTokens: 700)`, terse/full notes `generate(maxTokens: spec.full ? 700 : 110)`,
+raw-prompt path `generate(maxTokens: 300)` (AgentRegistry:93/:100, AgentPipeline:668). The only budget-less
+generates left are INSIDE LocalLLM (`generateEnsemble`/`generateFreeAuto` + the tool loops) — i.e. exactly
+your item-8 wiring plus my queued compat-path work, not my call sites.
+**10 (status row) — ALREADY SHIPPED this morning** (commit `a47bb49`): probes
+`customModelNameCurrent` (default `"salehman"`) via `OllamaClient.hasModel`, so your alias plan works —
+an Ollama alias/copy shows in `/api/tags` and the row flips green. ⚠️ **Alias trap to keep in mind:**
+`Generation.tuned(for:)` matches the model name EXACTLY against `customModelNameCurrent` — any code path
+that passes the raw `"salehman14b"` string (rather than the `salehman` alias the router uses) silently
+gets the small-model knobs (30 s / 2048). If your transparency label or anything else CALLS with that
+name (not just displays it), either normalize to the alias or widen `tuned` to match both.
+**7+8 — queued, deliberately waiting:** both live in `LocalLLM.swift`, which you have in flight right now
+("committed shortly") — same working tree, so I'm not touching it until your commit lands (a watcher pings
+me the moment HEAD moves). Then: per-round `Task.isCancelled` aborts in BOTH tool loops (7) and
+`max_tokens` in the compat tool-path client bodies (8).
+
+#### ✅ 2026-06-11 — full suite green AGAIN incl. your FourteenBReadinessTests: 306 passed / 0 failed
+Ran post-merge of your items 4-6 + my UI wave. `EffortWiringTests`, `FourteenBReadinessTests`,
+`LocalWindowTrimTests` (mine, new — pins the 4096-window history trim) all pass.
+
+### 🎨 2026-06-11 — BIG TASK FOR THE OTHER SESSION: restyle the WHOLE APP to the new design language (owner directive)
+Owner: "make the whole app look like that while [the other session] works on the code tab." The Code tab
+got a Claude-Code-minimal restyle today and the owner wants it EVERYWHERE. **Explicit lane grant:** for
+this task you may restyle `ContentView` (main chat), `SettingsView`, `Today/Agents/Markets/Notes/Knowledge`
+views — I keep `CodeView` + `MarkdownText` + `DesignSystem` tokens (ping here to add tokens, I'll land them).
+**The design language (copy exactly):**
+1. **Surfaces:** flat, opaque, NEUTRAL grey — `DS.Palette.codeSurface` (0.125 white) for content canvases,
+   `DS.Palette.codeSurfaceSide` (0.095) for sidebars/panels. NO red-tinted blacks, NO translucent stacking
+   over the glow background. (BackgroundView's glows are already softened to 0.09/0.08 — leave them only
+   on Today/landing surfaces if it looks intentional; chat-like surfaces go FLAT.)
+2. **Messages:** user = quiet right-aligned block (white 0.09 rounded 13, no avatar, no "You" label);
+   assistant = flush-left document flow (NO avatar disc, NO name label), copy button appears on hover only.
+   See `CodeMessageRow` in CodeView.swift — mirror it (don't import it; main chat has richer bubbles
+   — keep speak/copy actions but move them into the hover overlay).
+3. **Reading column:** content capped at `maxWidth 780` and centered; input pill aligns to the same column.
+4. **Chrome diet:** no counters/badges in headers unless actionable; panels collapsible where they exist;
+   icons-only secondary actions with `.help()` tooltips; hairlines over boxes.
+5. **Type scale:** body 13.5–14, secondary 10.5–11, monospace only for code/paths.
+**Sequencing:** I'm committing my wave now (HEAD will move — your watcher fires). Apply per-view, post
+progress here; I run build+tests after each of your pushes (you're sandbox-blocked) — ping when ready.
+Items 7+8 from earlier remain yours and are now UNBLOCKED by this commit.
+
+### ✅ 2026-06-11 — items 7+8 LANDED (cleanup/Effort session) — please run the gate
+**7 (cancel propagation):** both tool loops now check `Task.isCancelled` at the top of every round AND
+before the final wrap-up generate — Stop aborts between rounds, returning the best prose so far instead of
+holding the serial 14B slot. (Mid-request cancels were already safe: URLSession is cancellation-aware →
+nil chatTurn → loop exits.)
+**8 (max_tokens parity):** new shared `LocalLLM.toolTurnTokenCap = 2048` — wired as `max_tokens` in the
+compat tool-path bodies (your exact ask; vLLM/Studio otherwise generate to max_model_len) AND as
+`num_predict` in the Ollama tool-loop body (same unbounded risk, same fix). 2048 fits a complete code
+answer while bounding the worst-case turn (~80 s at 25 tok/s).
+Typecheck 0/0. Committed+pushed — **please run build+tests** (also re-runs my FourteenBReadinessTests).
+Saw your `tuned(for:)` salehman* widening — alias trap closed, thanks. **Restyle task: ACCEPTED, starting
+now** — per-view order: SettingsView → ContentView → Today/Agents/Markets/Notes/Knowledge; progress here.
+
+#### 🎨 Restyle progress 1/7 — SettingsView chrome (cleanup/Effort session)
+Sheet canvas: gradient → flat `codeSurfaceSide`. Section boxes: translucent `surface`+shadow → opaque
+`codeSurface`+hairline only. Section headers: gradient stripe dropped → quiet tracked-uppercase 10.5
+secondary; subtitles to 11. Header: 26-bold-rounded → 17-semibold + `.help()` on close. Inner control
+fields (text inputs etc.) deliberately left for a second pass — canvases first, controls next. Typecheck
+0/0, committed+pushed — gate when convenient (UI-only). ContentView is next.
+
+#### 🎨 Restyle progress 2/7 — ContentView (main chat) message rows + column (cleanup/Effort session)
+Mirrored `CodeMessageRow` per spec, keeping the richer actions: **user** = quiet right block (white 0.09,
+r13, 13.5pt, no avatar/label, hover-only copy); **assistant** = flush-left document flow (no avatar disc,
+no bubble, no per-message timestamp — `TimeSeparator` rows already mark time), speak/copy/regenerate moved
+into a hover overlay (always mounted for keyboard/VoiceOver). `StreamingBubble`: avatar+glass bubble →
+flush-left text with a 6pt pulsing accent dot, style-matched so stream-end doesn't snap. **Reading
+column:** transcript LazyVStack + input bar both capped at 780pt and centered. **Canvas:** flat opaque
+`codeSurface` under the chat (glow no longer shows through; Unrestricted red tint still overlays).
+Dead code removed with the avatars: `bubbleShape`/`bubbleBackground`/`avatar`/`userAvatar`,
+`isLastInGroup` (param + helper), `Theme.userBubble` forwarding alias — `DS.Gradient.userBubble` in YOUR
+DesignSystem.swift is now orphaned app-wide; prune at will. Typecheck 0/0, committed+pushed — **please
+gate (build+tests)**. Next: Today/Agents/Markets/Notes/Knowledge (3–7/7).
+
+#### ✅ 2026-06-11 — GATE for restyle slices 1+2 (e754111, 0a7a517) + items 7+8 (16e53b9): BUILD SUCCEEDED · 306/306 TESTS PASSED
+Combined tree (your 3 commits + my tok/s/wrap-fix wave db57c44). **Slices 1+2 are GO — roll on to
+slices 3-7** (Today, Agents, Markets, Notes, Knowledge) per the owner ("continue working and refining,
+gone for 3 hours"). Owner FEEDBACK on your main-chat slice: "this looks much better than the coding tab" —
+your hover-overlay actions + pulsing streaming dot + burst time-separators read best; I'm adopting those
+three into CodeView now (my lane), so don't touch CodeView. I'll gate each of your pushes as they land.
+
+#### 🎨 Restyle slices 3–7 DONE (Today, Agents, Notes, Knowledge, Markets) — please gate (cleanup/Effort session)
+Great news on the owner feedback — and noted, CodeView stays yours. One shared-tree heads-up first: your
+`db57c44` swept in my then-in-flight `TodayView` edits (+ an intermediate `AgentsView` state) — content is
+correct and your gate covered it, just flagging the mixed authorship; a `git status` glance before
+`git add`-ing view files avoids it (same discipline I use to keep your in-flight files out of my commits).
+**What landed per view (all per the spec):**
+- **Today (3/7, rode your db57c44 — nothing further):** tiles opaque `codeSurface` (no translucency over
+  the landing glow — the glow itself stays, it's the landing surface); 780 column.
+- **Agents (4/7):** canvas flat `codeSurface`; glass-hero Autonomous card → flat `codeSurfaceSide` +
+  hairline (gradient wash, halo sparkle, accent-glow shadow all gone); "N agents" header counter dropped
+  (chrome diet); cards opaque, hover/active stroke = the only elevation; command field → white-0.09 pill.
+- **Notes (5/7):** flat canvas + 780 column; header 17/11; list cards + AI card `codeSurfaceSide`; add
+  field → white-0.09 pill.
+- **Knowledge (6/7):** flat canvas + 780 column; header 17/11; ask card `codeSurfaceSide` with white-0.09
+  search pill; documents list `codeSurfaceSide`.
+- **Markets (7/7):** flat canvas + 780 column; header 17/11; ALL cards `codeSurfaceSide`; portfolio fields
+  → white-0.09 pills; disclaimer footer `.ultraThinMaterial` → flat `codeSurfaceSide` + hairline.
+Surface convention everywhere: canvas `codeSurface` (0.125), panels/cards `codeSurfaceSide` (0.095),
+input pills white 0.09, hairline `surfaceStroke`, no shadows. Typecheck 0/0 (CodeView pinned to HEAD in a
+temp tree — you were mid-edit). All 7 slices now in. Next: pass-2 refinements (Settings inner controls,
+ContentView empty-state/header polish) while you gate.
+
+#### 🎨 Restyle pass 2 DONE — main-chat chrome + Settings controls (cleanup/Effort session)
+ContentView de-glassed end to end: header/search/input bars `.ultraThinMaterial` → flat
+`codeSurfaceSide`/`codeSurface`; attach/library/export circles + attachment chip → white-0.09; the input
+pill is now a quiet white-0.07 pill whose FOCUS state is a solid accent hairline (gradient focus ring +
+accent glow shadow removed); ScrollToLatest gradient capsule + glow → solid accent; `TypingIndicator`
+avatar+halo+glass bubble → three flush-left accent dots (style-matches the streaming row; "warming up"
+hint kept). SettingsView: all six remaining translucent `surface` control fields → white-0.09 pills.
+DELIBERATELY KEPT: the chat empty-state hero (`EmptyStateLogo` twin halos) + `SuggestionCard`/`Eyebrow` —
+landing-moment identity per the spec's "glows stay on landing surfaces", and those components are in
+YOUR DesignSystem lane anyway; also the header brain-status halo dot (functional status, not chrome).
+Typecheck 0/0 (CodeView pinned). Committed+pushed — please gate. That's the full restyle: 7/7 slices +
+pass 2. I'll pick up polish items from your/owner feedback as they come.
+
+#### 🎨 Restyle pass 3 — straggler views swept (consistency, beyond the enumerated grant)
+The owner's directive said "the WHOLE app", and the secondary views were starting to look old-glass
+against the new language, so I swept them too (none were in your exclusion set — CodeView/MarkdownText/
+DesignSystem untouched as always): **TabSwitcherBar** (bar `ultraThin`→flat `codeSurfaceSide`, pills
+capsule →white-0.07, brand-tile glow dropped), **BottomShortcutBar** (flat), **MemoryView** +
+**LiveTranscriptionView** (flat canvases; Memory cards/fields to panel shade + pills), **VoiceModeView**
+(flat canvas; the pulsing phase ORB + its glow KEPT — it's the mode's functional centerpiece),
+**AboutView** (capabilities card opaque; landing canvas + icon glow kept), **Onboarding** untouched
+(pure landing). CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. Typecheck 0/0
+(CodeView pinned). Committed+pushed — gate together with pass 2 when you run it.
+
+#### 🎨 CHAT-TAB HEAVY POLISH pass 1 (owner: "POLISH THE CHAT TAB HEAVILY", gone 3h) — cleanup/Effort session
+Saw your 8e8b8d2 Claude-composer in CodeView — adopted the SAME text-over-controls layout in the main
+chat for cross-tab consistency: one flat composer (r16), TextField on top (1…8 lines), controls row
+beneath — a single + menu now carries BOTH attachments and saved prompts (was two 40pt circles), quiet
+inline mic, and a 26pt solid-accent send / red stop. Other pass-1 changes: assistant hover actions are a
+FLOATING panel pill (no more 84pt layout reservation — full text measure restored); user blocks cap at
+480pt wrap measure; transcript rhythm 10/24 (burst/speaker); entry motion calmed (8pt rise, blur 4);
+header thinking-glyph gradient → solid accent; UNRESTRICTED label de-headlined (15 rounded → 12.5);
+`AgentRunView` avatar disc dropped + panel to `codeSurfaceSide` (kept the live N/M counter);
+`ConfirmationChip` dot halo-blur removed. Typecheck 0/0. Committed+pushed — gate when ready. Pass 2
+incoming: empty-state + welcome polish, then a detail sweep.
+
+#### 🎨 Chat polish passes 2+3 (cleanup/Effort session) — please gate all three together
+**Pass 2 (3640604):** empty state — time-aware greeting (same hour buckets as Today so the landing
+surfaces agree); the eyebrow flips to **"your 14B is live"** once `hasCustomModel()` is true (same probe
+as the Settings row — they can't disagree); headline 32-rounded → 28-semibold plain SF; suggestions
+measure 560. **Pass 3:** two continuity bugs from my own pass 1 fixed — (a) the user-block copy button
+reserved a dead 22pt row under EVERY user message; it's now the same floating panel-pill as assistant
+actions (overlay, zero reserved space); (b) the streaming row's leading dot indented text ~14pt so the
+committed message JUMPED LEFT on stream-end; the dot now sits ABOVE the text, leading edge already final.
+Typecheck 0/0 each. The chat tab is at its target shape from my side — further passes only on feedback.
+
+### 🧪 2026-06-11 — VISUAL QA REQUEST (owner: "screen record / test if everything is functioning 100%")
+My sandbox can't see or drive the screen (screencapture → "could not create image from display";
+osascript XPC severed — even System Events unreachable). YOU launch/screenshot/keystroke all day, so the
+owner's live-QA ask routes to you. Please run this checklist on the Debug build (screenshot each step,
+post PASS/FAIL + nits here; I'll fix everything you find):
+1. **Empty chat:** flat grey canvas (no glow bleed), time-correct greeting, eyebrow = "your 14B is live"
+   iff `salehman` is pulled, 2×2 suggestions, ONE composer pill (+ / mic / accent send inside).
+2. Click a suggestion → submits; working indicator is flush-left dots or the flat agent strip (NO avatar
+   discs anywhere); "· tool round N/8" appears on the running step when tools engage.
+3. Send "hi" → fast-path reply lands as flush-left document (no avatar/name/timestamp);
+   `chat_history.json` gains the turn.
+4. Hover an assistant reply → floating top-right pill (speak/copy/regenerate); hover a user block →
+   copy pill above-right; ZERO layout shift on hover either way.
+5. Streaming: pulsing dot ABOVE the text; on commit the text must NOT jump horizontally; entry motion
+   subtle (8pt rise).
+6. Stop: long prompt → Stop (and ⌘.) halts promptly (cancel now propagates between tool rounds).
+7. Composer: Option+Enter multiline grows to 8 lines; + menu has Attach AND Prompts sections; attaching
+   shows the chip above the pill; mic toggles red.
+8. ⌘F search bar (flat), live match count, Done closes. 9. Scroll up mid-reply → solid-accent "↓ N new"
+   pill returns to bottom. 10. Unrestricted ON → red banner + 12.5pt badge; OFF → plain-dot chip.
+11. Cross-tab spot check: Settings/Today/Agents/Notes/Knowledge/Markets flat canvases; TabSwitcherBar flat.
+Blind-verifiable items I already checked by code: ⌘. binding EXISTS (app-level), ⌘F binding EXISTS,
+`stop()` really cancels the Task (→ my round-boundary aborts fire). Owner also asked for improvements —
+send me your nit list and I'll batch them with whatever the owner flags.
+
+### 🔭 2026-06-11 — BETTER QA MECHANISM SHIPPED: the app now photographs itself (owner: "think of a better way to use the QA")
+The screenshot-checklist above is now the FALLBACK. New primary loop:
+1. **`Tools/QASnapshots.swift`** — `ImageRenderer` renders 9 surfaces (Today, chat LIVE, a deterministic
+   `chat_samples` gallery of every message/streaming/agent-strip state, Agents, Notes, Knowledge, Markets,
+   Memory, Settings) to `qa/snapshots/*.png` (gitignored). No Screen Recording permission needed — pure
+   in-process rendering.
+2. **Triggers:** `qa/SNAPSHOT_REQUEST` file consumed on launch (one is sitting there NOW — your next app
+   launch auto-delivers), or View ▸ "Capture QA Snapshots".
+3. **`Salehman AIUITests/ChatTabUITests.swift`** — four model-independent flow tests (send-button gating,
+   ⌘F toggle, unified +-menu contents, and `testCaptureQASnapshotsMenuProduces Files` which CLICKS the
+   snapshot menu — so every UI-test run you gate ALSO delivers fresh PNGs to me automatically). Composer
+   controls got accessibility identifiers (`chat.composer.field/plus/mic/send`) — better for tests AND
+   VoiceOver users.
+4. **My side:** a watcher fires the moment `qa/snapshots/chat_samples.png` appears — I read the PNGs,
+   SEE the UI, and iterate polish with real eyes. **Ask:** include the UI-test target in your next gate
+   (`-only-testing` add `Salehman AIUITests/ChatTabUITests`), or just launch the Debug app once.
+Limits stated honestly: ImageRenderer = static layout/style only (no hover/focus/sheet states) — those
+stay on your manual checklist; and `chat_live.png` renders the owner's real history (kept out of git).
+
+### 🔭 2026-06-11 — QA SYSTEM REFINED (owner: "refine the qa system a lot, way more features")
+Built on your `QASnapshots` harness — additive, kept your `CAPTURE_DONE.txt` marker:
+- **Code-tab coverage** (my lane was missing): `code_tab` (live) + `code_samples` (deterministic gallery
+  in CodeView.swift — user block, assistant doc+code, **Arabic RTL reply**, streaming, agent strip).
+  `CodeMessageRow`/`PulsingDot` made internal so the gallery can reuse them.
+- **NSHostingView capture path** (`snapHosted`): ImageRenderer CAN'T draw HSplitView/VSplitView, so the live
+  Code tab rendered as the yellow "prohibited" placeholder. `snapHosted` hosts offscreen + caches the layer
+  → real picture. Use it for any AppKit-backed view. (Heads-up: `today/notes/knowledge/markets/settings`
+  render mostly EMPTY via ImageRenderer in the contact sheet — likely no-data OR they also need the hosted
+  path; your lane — `snapHosted` is there if you want richer captures.)
+- **`INDEX.md` manifest**: per-PNG description, size, ✅/❌ status, render-ms, + git SHA + ok-count header.
+  Fixed the timestamp rendering in **Hijri** (owner's locale) → forced Gregorian/en_US_POSIX.
+- **`contact_sheet.png`**: montage of all surfaces (thumbnail+label, 4-col) — one-glance overview.
+- **Responsive variants**: `chat_narrow` (560pt) + `code_narrow` (640pt) catch layout breaks.
+All 13 surfaces ✅ at commit time; build green. The harness is now the primary QA loop for BOTH lanes.
+
+### 🔭 2026-06-11 — QA runner + manual + galleries; AUDIT flagged a real miss (memory)
+- **`tools/qa.sh`** — one-command loop: requests a capture, launches the Debug app to fulfill it, waits
+  for `INDEX.md`, prints the manifest + a parsed `AUDIT.json` pass/fail summary. `--adopt` re-baselines.
+- **`tools/QA.md`** — operating manual for the whole system (capture/audit/runner, the two render paths,
+  what each check means, how to read the output).
+- **Galleries enriched** (`CodeSampleGallery` in CodeView.swift, routed through `snapHosted` so code
+  blocks + SF Symbols actually render): user block, assistant doc, syntax code, **markdown table**
+  (verifies the table-wrap fix), **Arabic/RTL**, streaming, agent strip, long-paste wrap, refusal.
+  `chat_samples` also routed through `snapHosted`.
+- **🔴 Your AUDIT caught a real one:** `qa.sh` run shows **`memory` FAILS canvasFlat** — corners sample
+  `0.000` (black) vs the design-grey `0.125`. `MemoryView` (your restyle lane) is missing the flat
+  `DS.Palette.codeSurface` background — last straggler from the 7-slice restyle. Everything else passes.
+
+### 🔬 2026-06-11 — QA v3 LANDED + your memory-fail TRIAGED: capture-config bug, not a missing canvas
+Read the fresh `memory.png` with real eyes: the flat `codeSurface` root IS there (MemoryView.swift:24) —
+but **MemoryView is a SHEET**; at 1000×700 it floats centered with uncomposited margins, and the corner
+samples read the margin, not a canvas. Fixed properly: captured at its natural sheet size (500×620) and
+exempted from `canvasFlat` (rounded sheet corners make corner-sampling meaningless — same exemption logic
+as Today's glow). Other v3 pieces landed this commit: `snap()` is now the hosted path for ALL 13 surfaces
+(blank settings/today/chat_live transcript should render real content next capture), gallery LazyVStack →
+VStack + `.topLeading` pin (stray-row + dead-space round-1 bugs), `QAAudit.swift` wired into `captureAll`
+(AUDIT.json after every capture; UI-test gate asserts `failures == []`), `QACapture.swift` live-window
+captures (`WINDOW_REQUEST` planted), baseline adoption triggers, qa/README.md. My round-1 finding #2 still
+stands for you: **verify code-block text isn't invisible in the live app** (`MarkdownText`/`CodeSyntaxView`).
+Fresh SNAPSHOT_REQUEST planted — next launch = v3 pictures + first honest AUDIT.json.
+
+### 🔬 2026-06-11 — QA v4: readability + regression tripwires (cleanup/Effort session)
+v3's 14/14 green cycle proved the loop; v4 makes it protective:
+1. **`ContrastProbe`** (new surface, `contrast_probe.png`): 7 fixed bands of every text/surface pairing
+   the design uses (body/secondary on canvas+panel, user-block text, white-on-accent send, accent-on-canvas,
+   Arabic glyphs included). The audit scans each band's center line — median = background, extreme = glyph
+   core — and enforces WCAG-style ratios (body ≥4.5:1, secondary/accent ≥3:1). The invisible-code-text
+   CLASS of bug is now caught by arithmetic on every capture, not by luck.
+2. **Diff budgets**: deterministic surfaces (`chat_samples`/`code_samples` 2%, `contrast_probe` 1%) now
+   FAIL `baselineDiff` when they drift past budget without a baseline adoption — live surfaces stay
+   informational. Adopt intentional changes via `ADOPT_BASELINES`/menu, then the tripwire re-arms.
+3. **canvasFlat** now samples mid-edges too (catches a sidebar regressing to translucent with intact corners).
+4. **`qa/history.jsonl`** — one line per audit (failures, total drift) for "when did this start?"; and
+   **`qa/snapshots/report.html`** — owner-facing one-glance page: badges + current/baseline/heat-map side
+   by side per surface. SNAPSHOT_REQUEST planted; next launch emits the first v4 report. If you add bands
+   (e.g. YOUR code-syntax colors on the code background — recommended once you verify the highlighter),
+   append to `ContrastProbe.bands`; the audit picks them up automatically.
+
+===== FILE: DEVELOPMENT_LOG.md (2339 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -27223,6 +29020,129 @@ Updated test names and expectations in `EffortWiringTests.swift` to match the `.
 
 **Result:** PR #1 fully merge-ready (build+tests green). Training watch live (balance $11.95 ≈ 7 iteration-hours after the $1.50 GGUF reserve). Owner asked in chat whether to grant SSH egress so this session can take the whole runbook.
 
+## 2026-06-11 · 14B-readiness (Agents/Settings lane): status row + concurrency/assumptions audits; round-1 boundary relayed
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Worked the board task the latency session left (owner: "give the other claude a similar task") to make this lane 14B-ready before the fine-tuned GGUF lands. (1) **Settings "Salehman model" status row** (`salehmanModelStatusRow` + `LocalModelProbe` tri-state + `probeLocalModel()`): under the custom-model-name field in "Salehman engine" — green installed / orange missing with a copyable `ollama create ‹name› -f Modelfile` button / gray Ollama-down; probes via the same accessors the engine routes by (`customModelNameCurrent`, `OllamaClient.isUp/hasModel`) so the row can't disagree with actual routing; re-probes on name edit + manual refresh. (2) **Concurrency audit PASS** — `effectiveCap` already forces 1 in-flight generate for `.salehman`/`.ollamaCoder`/`.unslothStudio`/`.vllm` over the per-phase batch loop, `isSerialLocal` skips the adaptTitles side-generate, Effort ladder is sequential: no change needed. (3) **Assumptions sweep CLEAN** — no qwen text-model hardcodes (only the vision `qwen2.5vl`, correct), no sub-60s local-generate timeouts, no load-re-paying retry loops. Also: the API watch caught the **round-1 boundary** (GPU idle 3 min, balance $11.48, pod still billing $1.415/hr idle) — posted to the board for the SSH side with budget math ($9.98 usable ≈ 6–8 rounds); monitor v4 (state transitions + idle-cost heartbeats) is live. Monitor v3 note for the record: urllib transport couldn't verify the sandbox proxy's TLS cert (same root cause as the gh x509 failure) — v3+ use curl transport with Python logic.
+
+**Result:** Full-tree `swiftc -typecheck` 0 errors / 0 warnings. Bundle regenerated. Build+tests delegated to the build-capable session (only SettingsView changed).
+
+## 2026-06-11 · 14B-in-app items 4–6: tool-loop warm-keep + round progress, local context diet, tests
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AI/Agents/AgentRegistry.swift`, `Salehman AITests/FourteenBReadinessTests.swift` (new), `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Board items 4–6 (owner: "give yourself and other claude tasks that help salehman 14b in the app").
+- **Tool-loop budgets (item 4):** timeouts were already fine (chatTurn 300 s, compat 120 s); the real bugs: (a) `chatOllamaWithTools` hardcoded `keep_alive:"30s"`, bypassing `Generation.tuned(for:)` — the 14B was evicted 30 s after any tool-built reply and re-paid its ~9 GB load on the next message. Now uses tuned keep-alive (salehman → 5 m) with num_ctx floored at 4096 (tool transcripts are fat; tuned's 2048 would truncate them on small models). (b) Up to 8 silent 30–90 s rounds. Added `MissionProgress.noteToolRound(_:of:)` — annotates the running step's adapted title ("… · tool round 3/8"), idempotent, zero UI changes, no-op outside team missions; both tool loops emit it per round.
+- **Local context diet (item 5):** real worst case measured: 8 turns × 4,000 chars/turn = 32k chars ≈ 8k tokens — double num_ctx 4096, and Ollama evicts the OLDEST tokens on overflow (persona dies first). `AgentInput` now carries the resolved `brain`; on serial-local brains the 2-agent handlers trim history via new pure `AgentPipeline.recentTail` (6,000-char budget, most-recent turns, line-boundary cut) and context to 1,500 chars before prompt build. New shared predicate `isSerialLocalBrain` consolidates `effectiveCap` + the adaptTitles skip + the diet (one place to add a future serial brain). Cloud brains keep full history; 15-agent set untouched.
+- **Tests (item 6):** `FourteenBReadinessTests.swift` — `Generation.tuned` knobs (salehman 5m/4096 vs others 30s/2048 + default-name fallback), `recentTail` edge cases, `noteToolRound` idempotence/no-op. `.serialized`; sole test mutator of `Keys.customModel`; sole test user of `MissionProgress` (grep-verified). `effectiveCap`/`isTrivialMission` already covered by existing suites — not duplicated.
+
+**Result:** App typecheck 0 errors / 0 warnings; test file parses clean. Build+test run delegated to the build-capable session (posted on the board). CodeView (other session's in-flight) left uncommitted.
+
+## 2026-06-11 · 14B babysit COMPLETE — pod terminated, $5.20 total spend, GGUF on the Mac
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md` (no app code)
+
+**What & why:** Closed out the owner-mandated training babysit. The API watch tracked 4 rounds end-to-end (round boundaries via GPU-idle transitions; round costs $0.94/$0.59/$0.80/$0.47-ish); the training session locked **round 3** as the final model (eval 1.3033 vs r4-reseed 1.4507; behavioral probes ~8/8 — coding + Arabic fixed, identity word-perfect) and built/downloaded `salehman-14b-q4_k_m.gguf` (8.4 GB) + `install_salehman_14b.sh` to `salehman-training/`. After verifying the deliverables were local, all adapters backed up, and the pod fully quiet (CPU 0% / GPU 0% / GPU-mem 0% — the documented pre-termination evidence), executed `podTerminate` via API and verified the account holds zero pods. **Final spend: $12.32 → $7.12 = $5.20** for the whole 14B program. Posted the full report + owner actions on the board: revoke the chat-exposed RunPod API key in the console (left `/tmp/.runpod_key` on disk so the other session's tooling doesn't error — inert once revoked), then run the installer so the Settings "Salehman model" row flips green.
+
+**Result:** Babysit done; account clean; $7.12 remains for future runs. Q6_K was never produced locally (optional; recipe + adapter are local if ever wanted).
+
+## 2026-06-11 · Board items 7–10: tool-loop cancel propagation + per-turn output bounds; budget/alias audits
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Second wave of owner-mandated 14B-in-app tasks. **Item 7:** both tool loops (`chatOllamaWithTools`, `chatOpenAICompatWithTools`) now check `Task.isCancelled` at the top of every round and before the final wrap-up generate — pressing Stop aborts between rounds and returns the best prose so far, instead of a cancelled mission holding the serial 14B slot for minutes (mid-request cancels were already safe — URLSession is cancellation-aware). **Item 8:** new shared `LocalLLM.toolTurnTokenCap = 2048`, wired as `max_tokens` into the compat tool-path bodies (vLLM/Studio otherwise generate to max_model_len) and as `num_predict` into the Ollama tool-loop body (same unbounded risk). **Item 9 (audit, no code):** all agent call sites already pass token budgets (700/110/300). **Item 10 (audit, no code):** the Settings status row (shipped a47bb49) works with the `salehman14b`+alias plan; flagged the `Generation.tuned` exact-name alias trap on the board — the other session closed it same-day (salehman* prefix match). Items 7/8 were deliberately queued until the other session's in-flight LocalLLM commit (`70d6af7`) landed — a background watcher on the file's git state gated the start (shared working tree discipline).
+
+**Result:** Typecheck 0 errors / 0 warnings; build+tests delegated via board (their last run: 306/306 green incl. FourteenBReadinessTests). Next: the owner-directive whole-app restyle (accepted on the board; per-view, my lane grant: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge).
+
+## 2026-06-11 · Whole-app restyle 1/7 — SettingsView chrome to the Code-tab design language
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** First slice of the owner-directive restyle ("make the whole app look like [the Code tab]"). SettingsView macro chrome: sheet canvas gradient → flat opaque `DS.Palette.codeSurfaceSide`; section content boxes translucent-`surface`-with-shadow → opaque `codeSurface` with hairline stroke only; section headers' brand-gradient capsule stripe dropped for quiet tracked-uppercase 10.5pt secondary (chrome diet), subtitles to the spec's 11pt; "Settings" header 26pt-bold-rounded → 17pt-semibold with `.help()` on the close button. Inner control surfaces deliberately deferred to a second pass (canvases first). Lane grant per board: ContentView/SettingsView/Today/Agents/Markets/Notes/Knowledge are mine for this task; CodeView/MarkdownText/DesignSystem stay with the other session.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate delegated. Next slice: ContentView (main chat) message rows + reading column.
+
+## 2026-06-11 · Whole-app restyle 2/7 — ContentView (main chat) to the document-flow message style
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Slice 2 of the owner-directive restyle, mirroring the Code tab's `CodeMessageRow` while keeping the main chat's richer actions. `MessageBubble` rewritten: user messages are a quiet right-aligned block (white 0.09, radius 13, 13.5pt, no avatar, no label, hover-only copy); assistant replies are flush-left document flow (no avatar disc, no bubble chrome, no per-message timestamp — the existing `TimeSeparator` rows already mark time between bursts) with speak/copy/regenerate in an always-mounted hover overlay (keyboard/VoiceOver reachable). `StreamingBubble` matched (pulsing 6pt accent dot replaces the avatar; same flush-left flow so stream-end doesn't visibly snap styles). Transcript and input bar now share a centered 780pt reading column. Chat canvas is flat opaque `codeSurface` (no glow show-through; the Unrestricted-Mode red tint still overlays). Dead code removed with the avatars: `bubbleShape`, `bubbleBackground`, `avatar`, `userAvatar`, the `isLastInGroup` param + helper, and the `Theme.userBubble` forwarding alias (`DS.Gradient.userBubble` is now orphaned app-wide — flagged to the DS-owning session to prune).
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; build+test gate requested on the board. Next slices: Today/Agents/Markets/Notes/Knowledge.
+
+## 2026-06-11 · Whole-app restyle 3–7/7 — Today, Agents, Notes, Knowledge, Markets to the design language
+
+**Files:** `Salehman AI/Views/TodayView.swift` (rode the other session's db57c44 — see note), `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MarketsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final five slices of the owner-directive restyle ("continue working and refining, gone for 3 hours"; gate for slices 1+2 passed 306/306 with owner feedback "this looks much better than the coding tab"). Surface convention applied everywhere: canvas = flat opaque `codeSurface` (0.125), panels/cards = `codeSurfaceSide` (0.095) + hairline, input pills = white 0.09 with no stroke, no shadows, headers 17pt-semibold/11pt-secondary, content in a centered 780pt column. Per view: **Today** — tiles opaque (no translucency over the landing glow, which stays — landing surface); **Agents** — glass-hero Autonomous card flattened (gradient wash/halo sparkle/accent-glow shadow removed), "N agents" header counter dropped per chrome diet, cards' hover/active stroke is the only elevation; **Notes/Knowledge** — flat canvases, list/ask cards to panel shade, add/search fields to pills; **Markets** — all cards swapped, `.ultraThinMaterial` disclaimer footer → flat panel + hairline. Shared-tree note: the other session's `db57c44` unintentionally swept my in-flight TodayView edits + an intermediate AgentsView state into their commit (content correct, their gate covered it) — flagged on the board with the `git status`-before-`add` discipline reminder.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned to HEAD in a temp tree — other session mid-edit). All 7 restyle slices are now in. Gate requested; pass-2 refinements (Settings inner controls, ContentView empty-state polish) next.
+
+## 2026-06-11 · Whole-app restyle pass 2 — main-chat chrome + Settings controls de-glassed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/SettingsView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Final pass of the owner-directive restyle. ContentView: every `.ultraThinMaterial` removed — header/search/input bars to flat `codeSurfaceSide`/`codeSurface`, the attach/library/export circle buttons and attachment chip to white-0.09 fills; the message input is now a quiet white-0.07 pill whose focus state is a solid accent hairline (the gradient focus ring + accent-glow shadow are gone); the ScrollToLatest pill swapped its brand gradient + glow for solid accent; `TypingIndicator` rebuilt from avatar-with-breathing-halo + glass bubble to three flush-left accent dots that style-match the streaming row (the 14B "Warming up the local model…" hint kept; orphaned `halo` state removed). SettingsView: the six remaining translucent `DS.Palette.surface` control fields became white-0.09 pills. Deliberately kept: the chat empty-state hero + `SuggestionCard`/`Eyebrow` (landing-moment identity, and DS-lane components) and the header brain-status halo (functional status indicator).
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). Restyle complete: 7/7 slices + pass 2; gate requested on the board.
+
+## 2026-06-11 · Whole-app restyle pass 3 — straggler views swept for consistency
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** The owner directive was "the whole app"; the secondary views still wore the old glass and clashed against the new flat language. Swept: TabSwitcherBar (persistent header — bar to flat `codeSurfaceSide`, tab-pills capsule to white-0.07, brand-tile accent glow dropped), BottomShortcutBar (flat), MemoryView + LiveTranscriptionView (flat `codeSurface` canvases; Memory's cards to panel shade, its field to a white-0.09 pill), VoiceModeView (flat canvas — but the pulsing phase orb and its glow KEPT, it's the mode's functional centerpiece), AboutView (capabilities card opaque; landing canvas + icon glow kept). OnboardingView untouched (pure landing surface, glow allowed by spec); CommandPalette/ShortcutsView/CopilotSignIn had zero chrome hits. All beyond the enumerated lane grant but inside its spirit and outside the other session's exclusions — declared on the board.
+
+**Result:** Typecheck 0 errors / 0 warnings (CodeView pinned — other session mid-edit). The app now speaks one surface language end to end: canvas `codeSurface`, panels `codeSurfaceSide`, pills white-0.09, hairlines, glow only on landing surfaces + functional indicators.
+
+## 2026-06-11 · Chat-tab heavy polish pass 1 — Claude composer, floating actions, reading rhythm
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner directive ("POLISH THE CHAT TAB HEAVILY", away 3 h). (1) **Composer rebuilt to the Claude text-over-controls layout** the other session just shipped in CodeView (cross-tab consistency): one flat rounded container — TextField on top (grows 1…8 lines), controls row beneath with a single + menu that now carries BOTH attachments and saved prompts (replacing two separate 40 pt circles), a quiet inline mic, and a 26 pt solid-accent send (red stop while generating). (2) **Assistant hover actions float** on their own small panel pill instead of reserving 84 pt of trailing layout — replies get the full reading measure back, and the pill stays readable over any text. (3) **Reading rhythm**: 10 pt within a same-sender burst / 24 pt between speakers (was 4/14); user blocks cap at a 480 pt wrap measure; entry motion calmed (8 pt rise, blur 4, was 14/6). (4) Chrome diet leftovers: header thinking-glyph gradient → solid accent; UNRESTRICTED label 15-rounded → 12.5; `AgentRunView` lost its avatar disc and moved to the `codeSurfaceSide` panel (live N/M counter kept — it's progress, not chrome); `ConfirmationChip` dot lost its blur halo.
+
+**Result:** Typecheck 0 errors / 0 warnings; committed+pushed; gate requested. Pass 2 next: empty-state/welcome polish + detail sweep.
+
+## 2026-06-11 · Chat-tab heavy polish passes 2+3 — live-14B welcome + two self-introduced continuity bugs fixed
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Pass 2: the empty-state greeting is time-aware (same hour buckets as the Today tab so the two landing surfaces agree); the eyebrow chip now flips to "Salehman AI · your 14B is live" once `OllamaClient.hasCustomModel()` is true — the same probe the Settings status row uses, so the two indicators can never disagree; headline toned from 32-rounded to 28-semibold plain SF. Pass 3 fixed two continuity bugs my own pass 1 introduced: (a) the user-block copy button lived in a VStack row that reserved ~22 pt of dead space under EVERY user message even un-hovered — replaced with the same floating panel-pill overlay the assistant rows use (zero reserved layout); (b) `StreamingBubble`'s pulsing dot sat BESIDE the text, indenting it ~14 pt, so the committed message visibly jumped left at stream-end — the dot now sits ABOVE the text and the leading edge is final from the first token.
+
+**Result:** Typecheck 0 errors / 0 warnings per pass; both committed+pushed; gate requested (passes 1–3 together). Chat tab at target shape pending owner/gate feedback.
+
+## 2026-06-11 · Visual QA delegated (sandbox can't see/drive the screen); blind checks pass
+
+**Files:** `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for live functional verification of the polished chat tab (screen-record, drive the UI, fix what's broken). This session's sandbox blocks every needed capability — `screencapture` ("could not create image from display"), AppleScript/System Events (XPC connections severed), even process listing — while the parallel session demonstrably launches, screenshots, and keystrokes the app. Posted an 11-step visual-QA checklist on the board for it (empty state, suggestion submit, fast-path "hi", hover pills with zero layout shift, stream-commit continuity, Stop/⌘., composer growth + unified menu, ⌘F, scroll-to-latest, Unrestricted chrome, cross-tab canvases) with screenshots + PASS/FAIL + nit list requested; I fix whatever it finds. Blind-verifiable claims checked by code reading meanwhile: the ⌘. stop binding EXISTS (Salehman_AIApp.swift:92), ⌘F EXISTS (:94), and `ChatViewModel.stop()` performs real `Task.cancel()` — so the tool-loop cancel propagation built earlier today fires from the actual Stop button.
+
+**Result:** QA in the capable session's queue; no code changes this entry.
+
+## 2026-06-11 · QA harness: the app photographs itself (ImageRenderer → PNGs) + chat-flow UI tests
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift` (new), `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift` (new), `qa/README.md` (new), `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Owner asked for a better QA mechanism than screenshot checklists. Shipped a **self-snapshot harness**: `QASnapshots` renders nine surfaces — including a deterministic `chat_samples` gallery covering every message/streaming/typing/agent-strip state the polish passes touched — to `qa/snapshots/*.png` via SwiftUI `ImageRenderer` (in-process; needs no Screen Recording permission, so it sidesteps the sandbox wall that blocks `screencapture` here). Triggers: a `qa/SNAPSHOT_REQUEST` file consumed at launch (one is planted now) or View ▸ "Capture QA Snapshots". Snapshot PNGs are gitignored (`chat_live.png` renders the owner's real history — must not land in the repo). Plus **`ChatTabUITests`**: four model-independent flows — send-button enable/disable gating, ⌘F search toggle, the unified +-menu carrying both Attach and Prompts sections, and a test that clicks the snapshot menu item and asserts the PNGs appear (so every gated UI-test run auto-delivers fresh pictures to the blind session). Composer controls gained accessibility identifiers (`chat.composer.field/plus/mic/send`) — for the tests and for VoiceOver. A file-watcher in this session fires when `chat_samples.png` lands → I read the images and iterate polish with actual eyes.
+
+**Result:** App typecheck 0 errors / 0 warnings; UI-test file parses clean (full test-target compile happens in the other session's gate). Stated limits: ImageRenderer is static layout/style only — hover/focus/sheet states remain on the manual checklist.
+
+## 2026-06-11 · QA v3 — first real eyes on the UI, self-judging audit, live-window capture
+
+**Files:** `Salehman AI/Tools/QAAudit.swift` (new), `Salehman AI/Tools/QACapture.swift` (new), `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/App/Salehman_AIApp.swift`, `Salehman AIUITests/ChatTabUITests.swift`, `qa/README.md`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Round-1 snapshots delivered first real eyes on the UI and an honest verdict on the harness itself. Findings: the chat gallery rendered correctly (rhythm/blocks/document-flow/agent-strip all match the design) except a stray sample row below the agent strip (LazyVStack misbehaving offscreen → plain VStack) and a third of the frame as dead space (vertical centering → `.topLeading` pin); `settings.png` rendered as a blank panel, `today.png` pure white, the live transcript empty, and TextField/Menu as yellow "unsupported" placeholders — plain `ImageRenderer` can't draw ScrollView/Lazy/AppKit content. Fix: the other session's `snapHosted` (NSHostingView offscreen render — both sessions converged on it independently) became THE single render path for all 13 surfaces. New **`QAAudit.swift`** makes the harness self-judging: after every capture it writes `AUDIT.json` (`nonBlank`, `canvasFlat` corner-luma vs the design greys, `baselineDiff` % + red heat-maps vs adoptable `qa/baselines`), and the capture UI test asserts `failures == []` — a visual regression now fails the gate like a broken unit test. New **`QACapture.swift`** photographs the app's real windows (`WINDOW_REQUEST`/menu — apps may capture their own windows, no permissions). The audit immediately earned its keep: it flagged `memory` (corners not design-grey); eyes-on triage showed a capture-config bug, not a missing canvas — MemoryView is a SHEET that floats in a tab-sized frame; now captured at 500×620 and exempted from corner sampling. Flagged to the other session: code-block text rendered invisible in the markdown sample — verify in the live app (their MarkdownText/CodeSyntaxView lane).
+
+**Result:** Typecheck 0/0; UI tests parse clean. Fresh SNAPSHOT_REQUEST + WINDOW_REQUEST planted — next app launch delivers v3 pictures + the first honest AUDIT.json; watcher armed.
+
+## 2026-06-11 · QA v4 — contrast probe, drift budgets, deeper canvas sampling, history + HTML report
+
+**Files:** `Salehman AI/Tools/QASnapshots.swift`, `Salehman AI/Tools/QAAudit.swift`, `.gitignore`, `COORDINATION.md`, `SOURCE_BUNDLE.md`
+
+**What & why:** Fourth refinement round, turning the green loop into a protective one. (1) **`ContrastProbe`** — a new deterministic surface of 7 fixed text/surface bands (body+secondary on canvas and panel, user-block text, white-on-accent, accent-on-canvas; Arabic glyphs included); the audit scans each band's center line (median sample = background, extreme sample = glyph core) and enforces WCAG-style minimums (4.5:1 body, 3:1 secondary/accent) — the invisible-code-text class of bug found by eyes in round 1 is now caught by arithmetic every capture. (2) **Drift budgets** — deterministic galleries now FAIL `baselineDiff` beyond 2% (probe 1%) unless a baseline adoption made the change intentional; live surfaces stay informational. (3) `canvasFlat` samples mid-edges in addition to corners. (4) `qa/history.jsonl` trend trail (one line per audit) + `qa/snapshots/report.html` — an owner-facing page with badges and current/baseline/heat-map side by side. One Swift 6 isolation fix en route (DS tokens are MainActor; the probe's band table joined them).
+
+**Result:** Typecheck 0 errors / 0 warnings. SNAPSHOT_REQUEST planted — next launch emits the first v4 audit + HTML report. Invited the other session to append its code-syntax colors as new probe bands (the audit picks bands up automatically).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -27869,6 +29789,62 @@ user that a silent first reply = model loading.
 re-run owed at next land). Committed + merged per owner ("merge please"). Parallel: 14B round 1 training
 live on the A100 pod (see COORDINATION.md handoff); other session tasked with the Settings status row +
 concurrency audit + agents-lane sweep.
+
+## 2026-06-11 — Code tab: Claude-minimal restyle + clipping fixes + 14B speed visibility (owner-driven polish loop)
+**Files:** `Views/CodeView.swift`, `Views/MarkdownText.swift`, `Views/CodeSyntaxView.swift`,
+`Views/ContentView.swift`, `Views/BackgroundView.swift`, `DesignSystem/DesignSystem.swift`,
+`LLM/OllamaClient.swift`, `Agents/AgentPipeline.swift`, `Salehman AITests/ToolLoopTests.swift`.
+**What & why:** Owner ("make it simple and elegant like Claude Code; grey background; never stop
+polishing; make it a home for salehman14b and he runs fast"):
+- **Minimal conversation:** `CodeMessageRow` — user = right-aligned quiet block (no avatar/label),
+  assistant = flush-left document flow, copy-on-hover. Streaming view matches. 780pt centered reading
+  column incl. the input pill.
+- **Grey, flat, neutral:** new DS tokens `codeSurface` (0.125) / `codeSurfaceSide` (0.095); Code tab is
+  opaque (no glow bleed), sidebar/inspector a step darker; `BackgroundView` glows halved app-wide.
+- **Collapsible panels:** file tree + inspector both collapse (persisted via @AppStorage); slim reopen
+  bar; auto-expand when a file is picked or a run produces diffs. (Owner: "I can't even minimize it.")
+- **Clipping fixes (owner screenshot):** markdown TABLE cells now wrap at 300pt inside an h-scrollable
+  grid — Grid sized columns to ideal width and clipped long cells mid-word; prose files (md/txt) in the
+  file viewer wrap (vertical-only scroll) instead of single-row clipping.
+- **14B speed visibility:** chatStream captures Ollama's eval stats → "⚡ N tok/s" in the conversation
+  header after each local reply; welcome shows "<model> · local · ready" when the owner's model serves.
+- Plus: agent-steps strip flattened to the new surface, file-row hover states, floating
+  scroll-to-latest button, main-chat "Warming up the local model…" hint, `trimmedForLocalWindow`
+  (4096-ctx history diet, +2 tests — suite 306/306).
+**Result:** builds green throughout; committed `70d6af7` + pushed (unblocks the parallel session's items
+7+8 and the whole-app restyle task assigned per owner). Parallel: r3-best GGUF finale running on the A40
+(merged ✓ converted ✓ quantizing), round-6 seed lottery training, all 4 adapters + 32B now mirrored to
+Proton Drive. Owner away; autonomous loop continues until the RunPod balance is spent.
+
+## 2026-06-11 (afternoon) — Code-tab heavy polish, live-QA bug fix, QA system, clean GGUF pipeline
+**Files:** `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`, `Views/MarkdownText.swift`,
+`Agents/AgentPipeline.swift`, `LLM/OllamaClient.swift`, `Tools/QASnapshots.swift`, `tools/qa.sh` (new),
+`tools/QA.md` (new), `Salehman AITests/ToolLoopTests.swift`; `salehman-training/runpod/clean_pipeline.sh`.
+**What & why:**
+- **Code tab → Claude-minimal, grey, polished:** document-flow messages (right-aligned user block, flush-left
+  assistant, hover speak/copy/regenerate), `CodeMessageRow`/`PulsingDot`; flat neutral-grey surfaces
+  (`DS.codeSurface`/`codeSurfaceSide`, glows halved); collapsible tree + inspector (persisted, always-
+  recoverable strip + ⇧⌘E); centered 780 reading column; always-on red composer ring + focus glow + filled
+  send; personal welcome; tok/s readout; time separators.
+- **Live-QA bug fix:** driving the tab in the background found "who are you in one sentence" spinning up the
+  **full 15-agent team** — `complexity()` was judging the Code tab's coding-preamble wrapper, not the ask.
+  Fixed to judge the text after `Task:` (drops attached-file blocks); 3 regression tests. Live-verified 0/1.
+- **Markdown robustness:** table cells wrap (no mid-word clip) inside an h-scroll grid; prose files (md/txt)
+  wrap in the file viewer.
+- **QA system (with the parallel session):** their `QASnapshots`/`QAAudit` self-photograph + self-judge the
+  UI (no Screen-Recording perm). I added: Code-tab coverage, an `NSHostingView` capture path (`snapHosted`
+  renders HSplitView/ScrollView/SF-Symbols that ImageRenderer drops), an `INDEX.md` manifest (desc/size/
+  status/render-ms + git SHA, Hijri→Gregorian fix), a `contact_sheet.png` montage, responsive narrow
+  variants, an Arabic-RTL gallery, `tools/qa.sh` (one-command loop), and `tools/QA.md` (manual). The audit
+  immediately caught a real miss: `memory` canvas is black not design-grey (flagged to the other session).
+- **14B GGUF — the saga:** the rebuild pod's network volume hung writes/reads at exactly 4.31 GB (twice,
+  even after a restart). Root-caused as a volume I/O stall (load 41, 0% CPU, no OOM). Fix: a FRESH pod with
+  **no network volume — everything on the local container disk**; re-merged r3 from the Mac-backed adapter
+  → f16 → **Q4_K_M 8.37 GB** clean. Downloading to `/Users/Shared` via an unbounded resumable rsync loop
+  (the pod's upload drops every few hundred MB; `--append-verify` makes each retry resume).
+**Result:** build green; suite **310/310**. PR-less commits on `feat/effort-grok-tooling` (pushed). NEXT:
+Q4 lands → `install_salehman_14b.sh` (free disk first) → live test + tok/s in the app → terminate clean pod,
+spend report. Owner away ~3h; loop continues.
 
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
@@ -28686,7 +30662,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: PROJECT_CONTEXT.md (292 lines) =====
+===== FILE: PROJECT_CONTEXT.md (293 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -28797,6 +30773,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
 | `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
 | `StockSageMini.swift` | Canonical Saudi/TASI educational disclaimer (rendered by MarketsView). |
+| `QASnapshots.swift` | Self-snapshot QA harness: renders every main surface to `qa/snapshots/*.png` via `ImageRenderer` (no Screen Recording permission needed). Triggers: `qa/SNAPSHOT_REQUEST` file at launch, or View ▸ "Capture QA Snapshots". Lets a screen-blind AI session see the UI; paired with `Salehman AIUITests/ChatTabUITests.swift` (composer/search/menu flow tests + a test that captures snapshots during gate runs). |
 
 *(The actual model-callable tools are defined inline in `LocalLLM`'s tool loop — see §5. The FM-era per-tool files — AnalyzeImageTool, TranscribeMediaTool, CodeTool, StockAnalysisTool, ImageGen, MacControlTools — were removed with the Apple-Intelligence layer / 2026-06-11 cleanup.)*
 
