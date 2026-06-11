@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 20:06 +03 · Swift files: 134 · Swift LOC: 25736_
+_Generated: 2026-06-11 20:15 +03 · Swift files: 134 · Swift LOC: 25753_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11412,7 +11412,7 @@ struct QASurfaceStructure: Codable {
 }
 ```
 
-===== FILE: Salehman AI/Tools/QASnapshots.swift (428 lines) =====
+===== FILE: Salehman AI/Tools/QASnapshots.swift (429 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -11805,11 +11805,12 @@ private struct ChatSampleGallery: View {
             }
             // States a static render can't reach naturally — forced visible so
             // they get eyes + baseline protection like everything else.
-            gallerySection("Hover state — floating action pill (QA-forced)") {
+            gallerySection("Hover state — floating action pill + reply timing (QA-forced)") {
                 MessageBubble(message: ChatMessage(id: UUID(),
-                                                   text: "Hover actions float on a panel pill — speak, copy, regenerate — without reserving layout.",
+                                                   text: "Hover actions float on a panel pill — timing, speak, copy, regenerate — without reserving layout.",
                                                    isUser: false,
-                                                   timestamp: now.addingTimeInterval(120)),
+                                                   timestamp: now.addingTimeInterval(120),
+                                                   duration: 4.2),
                               onRegenerate: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row
@@ -13259,7 +13260,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (163 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (165 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -13358,10 +13359,12 @@ final class ChatViewModel: ObservableObject {
             var autoContinues = 0
             let maxAutoContinues = 4
             while true {
+                let turnStart = Date()
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                        timestamp: Date())
+                                        timestamp: Date(),
+                                        duration: Date().timeIntervalSince(turnStart))
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
                 let turnQuestion = question, turnReply = result.output
@@ -15257,7 +15260,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1589 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1603 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16253,6 +16256,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Seconds the reply took to generate (assistant messages only; optional
+    /// so history persisted before this field decodes unchanged). Surfaced in
+    /// the hover pill — zero chrome at rest.
+    var duration: Double? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -16477,6 +16484,16 @@ struct MessageBubble: View {
         // measure), readable over any content thanks to its own flat panel.
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 2) {
+                // Reply timing — metadata only on demand (hover), zero chrome
+                // at rest. "4.2s" for quick replies, "1m 12s" past a minute.
+                if let d = message.duration {
+                    Text(d < 60 ? String(format: "%.1fs", d)
+                                : "\(Int(d) / 60)m \(Int(d) % 60)s")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help("Time to generate this reply")
+                }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
                     speech.toggle(message.text, id: message.id)
@@ -27116,8 +27133,15 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (983 lines) =====
+===== FILE: COORDINATION.md (990 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
+
+> ## 🔴🔴🔴 BUILD IS RED ON `main`/branch HEAD — CHAT B PLEASE FIX (flagged by Chat C ~20:14)
+> Commit `15292f4` (and `0d1ddac` before it) do **not compile**. `Views/ContentView.swift:741`
+> uses `.onDrop(of: [.fileURL])` (`UTType.fileURL`) but **`import UniformTypeIdentifiers` is missing**.
+> **FIX = add `import UniformTypeIdentifiers` to the top of `ContentView.swift`.** Red across 3 build
+> checks (~10 min). Chat C is NOT editing ContentView (your active lane — clobber risk) and is holding a
+> ready `TodayView` fix until the branch compiles. This blocks every session's build + the app itself.
 
 Up to three build sessions work this repo at the same time: **two Claude Code** +
 **one Grok** (added 2026-06-06). There is **no direct session-to-session channel** —

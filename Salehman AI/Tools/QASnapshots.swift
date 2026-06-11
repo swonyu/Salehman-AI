@@ -389,11 +389,12 @@ private struct ChatSampleGallery: View {
             }
             // States a static render can't reach naturally — forced visible so
             // they get eyes + baseline protection like everything else.
-            gallerySection("Hover state — floating action pill (QA-forced)") {
+            gallerySection("Hover state — floating action pill + reply timing (QA-forced)") {
                 MessageBubble(message: ChatMessage(id: UUID(),
-                                                   text: "Hover actions float on a panel pill — speak, copy, regenerate — without reserving layout.",
+                                                   text: "Hover actions float on a panel pill — timing, speak, copy, regenerate — without reserving layout.",
                                                    isUser: false,
-                                                   timestamp: now.addingTimeInterval(120)),
+                                                   timestamp: now.addingTimeInterval(120),
+                                                   duration: 4.2),
                               onRegenerate: { _ in },
                               qaShowActions: true)
                     .padding(.top, 14)   // room for the pill's -4 offset above the row

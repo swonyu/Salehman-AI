@@ -992,6 +992,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Seconds the reply took to generate (assistant messages only; optional
+    /// so history persisted before this field decodes unchanged). Surfaced in
+    /// the hover pill — zero chrome at rest.
+    var duration: Double? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -1216,6 +1220,16 @@ struct MessageBubble: View {
         // measure), readable over any content thanks to its own flat panel.
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 2) {
+                // Reply timing — metadata only on demand (hover), zero chrome
+                // at rest. "4.2s" for quick replies, "1m 12s" past a minute.
+                if let d = message.duration {
+                    Text(d < 60 ? String(format: "%.1fs", d)
+                                : "\(Int(d) / 60)m \(Int(d) % 60)s")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help("Time to generate this reply")
+                }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
                     speech.toggle(message.text, id: message.id)
