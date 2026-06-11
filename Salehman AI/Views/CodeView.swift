@@ -2,6 +2,57 @@ import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import Vision
+
+// MARK: - Screenshot attach (/shot)
+
+/// Finds the user's most recent screenshot and extracts its TEXT on-device
+/// (Vision OCR) — the local 14B has no image input, but error dialogs, terminal
+/// output, and UI text in a screenshot become perfectly good context as text.
+enum ScreenshotGrabber {
+    /// Where macOS saves screenshots (`com.apple.screencapture location` is the
+    /// authority — this owner moved theirs to ~/Pictures/Screenshots; Desktop is
+    /// the fallback).
+    nonisolated static func screenshotsDirectory() -> URL {
+        if let loc = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"),
+           !loc.isEmpty {
+            let url = URL(fileURLWithPath: (loc as NSString).expandingTildeInPath, isDirectory: true)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+    }
+
+    /// Newest image file in `dir` (by modification date). Injectable for tests.
+    nonisolated static func latestScreenshot(in dir: URL) -> URL? {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles])) ?? []
+        return files
+            .filter { exts.contains($0.pathExtension.lowercased()) }
+            .max { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return da < db
+            }
+    }
+
+    /// On-device OCR (accurate mode). Returns recognized lines top-to-bottom,
+    /// empty string when nothing is legible.
+    nonisolated static func ocr(_ url: URL) -> String {
+        guard let img = NSImage(contentsOf: url) else { return "" }
+        var rect = CGRect.zero
+        guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return "" }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: cg)
+        try? handler.perform([request])
+        return (request.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
+    }
+}
 
 // MARK: - Diff model
 
@@ -1096,6 +1147,7 @@ struct CodeView: View {
         .init(id: "refactor", icon: "wand.and.stars",       blurb: "Refactor for clarity",    kind: .template("Refactor this for clarity and simplicity, keeping behaviour identical:\n\n")),
         .init(id: "review",   icon: "magnifyingglass",      blurb: "Review for issues",       kind: .template("Review this for bugs, edge cases, and improvements:\n\n")),
         .init(id: "docs",     icon: "doc.text",             blurb: "Add documentation",       kind: .template("Write clear doc comments for this:\n\n")),
+        .init(id: "shot",     icon: "camera.viewfinder",    blurb: "Attach your latest screenshot (on-device OCR)", kind: .action("shot")),
         .init(id: "clear",    icon: "square.and.pencil",    blurb: "Start a new chat",        kind: .action("clear")),
         .init(id: "copy",     icon: "doc.on.doc",           blurb: "Copy chat as Markdown",   kind: .action("copy")),
     ]
@@ -1117,6 +1169,7 @@ struct CodeView: View {
         case .action(let a):
             input = ""
             switch a {
+            case "shot": attachLatestScreenshot()
             case "clear": if !isRunning { withAnimation { messages.removeAll() } }
             case "copy":
                 let md = messages
@@ -1325,16 +1378,42 @@ struct CodeView: View {
     private var inputBar: some View {
         VStack(spacing: 6) {
             if let att = attachedFile {
-                HStack(spacing: 6) {
-                    Image(systemName: "paperclip").font(.system(size: 10))
+                HStack(spacing: 7) {
+                    // Screenshots show a real thumbnail in a machined micro-tile;
+                    // other files keep the paperclip.
+                    if ["png", "jpg", "jpeg", "heic"].contains(att.pathExtension.lowercased()),
+                       let thumb = NSImage(contentsOf: att) {
+                        Image(nsImage: thumb)
+                            .resizable().aspectRatio(contentMode: .fill)
+                            .frame(width: 26, height: 18)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    } else {
+                        Image(systemName: "paperclip").font(.system(size: 10))
+                    }
                     Text(att.lastPathComponent).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                    Button { attachedFile = nil; attachedText = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
+                    if attachedText.hasPrefix("[Text recognized") {
+                        Text("OCR").font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(DS.Palette.accent)
+                            .padding(.horizontal, 5).padding(.vertical, 1.5)
+                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1))
+                    }
+                    Button { attachedFile = nil; attachedText = "" } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .frame(width: 16, height: 16)
+                            .background(Color.white.opacity(0.08), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(LuxPressStyle())
                     Spacer()
                 }
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 5)
+                .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             // Slash-command menu — appears above the composer while typing `/…`.
             // `↵` picks the top row; clicking a row runs it. Templates pre-fill the
@@ -1372,6 +1451,12 @@ struct CodeView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Attach a file as context")
                         .accessibilityLabel("Attach a file as context")
+                    Button { attachLatestScreenshot() } label: {
+                        Image(systemName: "camera.viewfinder").font(.system(size: 13))
+                    }
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
+                    .help("Attach your latest screenshot — its text is read on-device (OCR) so the model can use it")
+                    .accessibilityLabel("Attach your latest screenshot")
                     Spacer()
                     Button {
                         // Explicit body, not `action: isRunning ? stop : send`: unifying
@@ -1599,6 +1684,35 @@ struct CodeView: View {
             }
         }
         .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// `/shot` and the camera button: grab the newest screenshot, OCR it
+    /// off-main, and attach the recognized TEXT (the local model has no image
+    /// input — its words are the useful part).
+    private func attachLatestScreenshot() {
+        guard let shot = ScreenshotGrabber.latestScreenshot(in: ScreenshotGrabber.screenshotsDirectory()) else {
+            attachedFile = nil
+            attachedText = ""
+            input = ""
+            withAnimation(Self.lux) {
+                messages.append(ChatMessage(id: UUID(),
+                    text: "No screenshots found in \(ScreenshotGrabber.screenshotsDirectory().path).",
+                    isUser: false, timestamp: Date()))
+            }
+            return
+        }
+        attachedFile = shot
+        attachedText = "(reading screenshot…)"
+        Task.detached(priority: .userInitiated) {
+            let text = ScreenshotGrabber.ocr(shot)
+            await MainActor.run {
+                guard attachedFile == shot else { return }   // user swapped attachments meanwhile
+                attachedText = text.isEmpty
+                    ? "[Screenshot \(shot.lastPathComponent) — no legible text found by OCR]"
+                    : "[Text recognized on-device from screenshot \(shot.lastPathComponent)]\n\(text)"
+                inputFocused = true
+            }
+        }
     }
 
     /// "12s" / "2m 05s" — the Activity header's run clock.

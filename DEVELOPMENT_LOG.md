@@ -1966,3 +1966,18 @@ Today; live-window capture was stale this run). Commit `ff065ec`. Cross-lane but
 on the COORDINATION board (banner) for Chat A + Chat B to coexist, not revert.
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/BackgroundView.swift`,
 `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 — marathon M: /shot — attach your latest screenshot with on-device OCR
+**What (owner: "add send last screenshot"):** the composer gets a camera button + a
+`/shot` slash command. One click finds the newest image in the user's REAL screenshot
+location (`com.apple.screencapture location` → ~/Pictures/Screenshots here; Desktop
+fallback) and attaches it — and because the local 14B has no image input, the
+screenshot's TEXT is extracted **on-device** (Vision OCR, accurate mode, language
+correction) and attached as context: error dialogs, terminal output, UI text all become
+usable words. Design language on the chip: live thumbnail in a machined micro-tile,
+an accent OCR badge, seated ✕ with press physics.
+**Verified:** build green; `ScreenshotGrabberTests` ×3 (newest-image picker with
+injected dir + mtimes, non-images ignored, OCR reads a rendered "SALEHMAN OCR 42"
+PNG) — TEST SUCCEEDED. One test-only trap fixed: the enumerator returns
+/private/var/… for /var/… temp paths, so the picker test compares names, not URLs.
+**Files:** `Views/CodeView.swift`, `Salehman AITests/ScreenshotGrabberTests.swift`.
