@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 01:07 +03 · Swift files: 144 · Swift LOC: 28443_
+_Generated: 2026-06-12 01:30 +03 · Swift files: 146 · Swift LOC: 29047_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9775,7 +9775,7 @@ final class MemoryStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    func recall(_ query: String, k: Int = 4) -> [String] {
+    nonisolated func recall(_ query: String, k: Int = 4) -> [String] {
         lock.lock(); let snapshot = items; lock.unlock()
         guard !snapshot.isEmpty else { return [] }
 
@@ -9795,7 +9795,7 @@ final class MemoryStore: @unchecked Sendable {
         }.prefix(k).map { $0.text }
     }
 
-    private func cosine(_ a: [Float], _ b: [Float]) -> Double {
+    private nonisolated func cosine(_ a: [Float], _ b: [Float]) -> Double {
         guard a.count == b.count else { return 0 }
         var dot = 0.0, na = 0.0, nb = 0.0
         for i in 0..<a.count { let x = Double(a[i]), y = Double(b[i]); dot += x*y; na += x*x; nb += y*y }
@@ -13889,7 +13889,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (99 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (131 lines) =====
 ```swift
 import SwiftUI
 
@@ -13907,6 +13907,18 @@ struct ChatHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var archives: [ChatStore.ArchivedChat] = []
     @State private var hoveredRow: URL? = nil
+    @State private var query = ""
+
+    /// Title filter — case/diacritic-insensitive substring; blank = everything.
+    /// Pure for tests (same pattern as the Knowledge/Agents filters).
+    nonisolated static func filtered(_ archives: [ChatStore.ArchivedChat],
+                                     query: String) -> [ChatStore.ArchivedChat] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return archives }
+        return archives.filter {
+            $0.title.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13940,11 +13952,31 @@ struct ChatHistoryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(archives) { item in
-                            row(item)
-                            Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    TextField("Filter by title…", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .accessibilityIdentifier("history.filter")
+                }
+                .padding(.horizontal, 18).padding(.vertical, 8)
+                .background(DS.Palette.codeSurfaceSide.opacity(0.6))
+                .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
+                         alignment: .bottom)
+
+                let shown = Self.filtered(archives, query: query)
+                if shown.isEmpty {
+                    Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(shown) { item in
+                                row(item)
+                                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                            }
                         }
                     }
                 }
@@ -13992,7 +14024,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (181 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (198 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -14024,6 +14056,23 @@ final class ChatViewModel: ObservableObject {
         runningTask = nil
         isRunning = false
         MissionProgress.shared.finish()
+    }
+
+    /// Pure core of `togglePin` — nil/false → true → nil (absent, so old
+    /// archives stay byte-identical when nothing is pinned). Unknown id = no-op.
+    /// `nonisolated static` so tests pin the semantics without building a VM.
+    nonisolated static func togglingPin(in messages: [ChatMessage], id: UUID) -> [ChatMessage] {
+        var out = messages
+        if let i = out.firstIndex(where: { $0.id == id }) {
+            out[i].pinned = (out[i].pinned == true) ? nil : true
+        }
+        return out
+    }
+
+    /// Pin/unpin a message (either side). Persisted with the conversation —
+    /// the save path already rides on `messages` changes.
+    func togglePin(_ message: ChatMessage) {
+        messages = Self.togglingPin(in: messages, id: message.id)
     }
 
     /// Re-answer: drop this assistant reply (and anything after it) and re-run the
@@ -14354,7 +14403,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2149 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2272 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14507,6 +14556,42 @@ final class CodeWorkspace: ObservableObject {
         panel.prompt = "Open Project"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         openProject(at: url)
+    }
+
+    // MARK: Restore checkpoint (revert this run's AI edits)
+
+    /// Disk side of a revert: write the pre-run snapshot back, or — when the run
+    /// CREATED the file (no snapshot) — delete it. Pure function of its inputs;
+    /// unit-tested against a temp directory.
+    nonisolated static func revert(file: URL, toSnapshot snapshot: String?) throws {
+        if let snapshot {
+            try snapshot.write(to: file, atomically: true, encoding: .utf8)
+        } else {
+            try FileManager.default.removeItem(at: file)
+        }
+    }
+
+    /// Revert ONE changed file to its pre-run state (Cursor's "Restore Checkpoint",
+    /// per file). Updates every dependent surface: changed list, stats, tree, the
+    /// open file/diff pane, and the git dots.
+    @discardableResult
+    func restoreFromSnapshot(_ url: URL) -> Bool {
+        let snap = snapshots[url]          // nil ⇒ the run created this file
+        do { try Self.revert(file: url, toSnapshot: snap) } catch { return false }
+        changedFiles.removeAll { $0 == url }
+        changeStats[url] = nil
+        if snap == nil { files.removeAll { $0 == url } }
+        if selectedFile == url {
+            if let snap { fileContent = snap; diff = [] }
+            else { selectedFile = nil; fileContent = ""; diff = [] }
+        }
+        Task { await refreshGitStatus() }
+        return true
+    }
+
+    /// Revert EVERY file the last run touched — the one-click "Restore all".
+    func restoreAllChanged() {
+        for url in changedFiles { restoreFromSnapshot(url) }
     }
 
     /// Scan the project tree OFF the main actor — file enumeration was blocking the
@@ -14705,7 +14790,9 @@ struct ChangedFileRow: View {
     let label: String
     let isSelected: Bool
     var stat: CodeWorkspace.DiffStat? = nil
+    var onRestore: (() -> Void)? = nil
     var onTap: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: onTap) {
@@ -14717,7 +14804,21 @@ struct ChangedFileRow: View {
                     .lineLimit(1).truncationMode(.head)
                     .foregroundStyle(isSelected ? .white : .secondary)
                 Spacer(minLength: 0)
-                if let stat {
+                // Hover swaps the stats for a per-file undo — accept the good
+                // files, revert just the bad one (Cursor/Zed review pattern).
+                if hovering, let onRestore {
+                    Button(action: onRestore) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Revert this file to its pre-run state")
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                } else if let stat {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
@@ -14737,6 +14838,8 @@ struct ChangedFileRow: View {
         }
         .buttonStyle(.plain)
         .help("Show this file's diff")
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -14764,12 +14867,27 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    /// Design-language motion: one sprung curve for every Code-tab transition
+    /// (cubic-bezier(0.32, 0.72, 0, 1) — heavy start, soft landing). Replaces the
+    /// scattered `easeOut` micro-durations so all motion shares one physical feel.
+    static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
+    /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
+    /// onAppear, so the capture would otherwise photograph an invisible welcome).
+    @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
     // the message history with a subtle wash on the current match.
     @State private var convoSearching = false
     @State private var convoQuery = ""
     @State private var convoMatchIndex = 0
     @FocusState private var convoSearchFocused: Bool
+
+    /// % of the local model's history window this conversation occupies (chars vs
+    /// `AgentPipeline.localHistoryCharBudget` — the same budget the trim uses, so
+    /// the meter and the trimming can never disagree).
+    private var contextPct: Int {
+        let chars = messages.reduce(0) { $0 + $1.text.count + 16 }
+        return Int((Double(chars) / Double(AgentPipeline.localHistoryCharBudget) * 100).rounded())
+    }
 
     private var convoMatches: [UUID] {
         let q = convoQuery.trimmingCharacters(in: .whitespaces)
@@ -14886,11 +15004,11 @@ struct CodeView: View {
         // and pop the right panel open so the file/diff is actually visible.
         .onChange(of: ws.selectedFile) { _, sel in
             revealInTree(sel)
-            if sel != nil { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+            if sel != nil { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
         }
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
-            if !files.isEmpty { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } }
+            if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -14901,12 +15019,12 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                Button("") { withAnimation(CodeView.lux) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed.toggle() } }
+                Button("") { withAnimation(CodeView.lux) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button("") {
-                    withAnimation(.easeOut(duration: 0.12)) { convoSearching = true }
+                    withAnimation(CodeView.lux) { convoSearching = true }
                     convoSearchFocused = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
@@ -14973,7 +15091,7 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
-                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                    Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -15148,8 +15266,19 @@ struct CodeView: View {
                 HStack(spacing: 10) {
                     if treeCollapsed {
                         headerIcon("sidebar.left", "Show the file tree") {
-                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                            withAnimation(CodeView.lux) { treeCollapsed = false }
                         }
+                    }
+                    // Context meter — the local 14B sees only ~9k chars of history;
+                    // beyond that the OLDEST turns silently drop. Surfacing it
+                    // answers "why did it forget" before the question is asked.
+                    if contextPct >= 50 {
+                        Text("ctx \(min(contextPct, 100))%")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .help(contextPct >= 100
+                                  ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
+                                  : "How much of the local model's history window this conversation uses.")
                     }
                     if let tps = lastTokPerSec {
                         HStack(spacing: 3) {
@@ -15188,6 +15317,16 @@ struct CodeView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
+                                // Heavy fade-up entrance (one-shot). Pre-revealed on
+                                // QA launches: onAppear never fires in offscreen
+                                // hosted renders, so captures would photograph an
+                                // invisible welcome without the --qa short-circuit.
+                                .opacity(welcomeAppeared ? 1 : 0)
+                                .offset(y: welcomeAppeared ? 0 : 16)
+                                .onAppear {
+                                    guard !welcomeAppeared else { return }
+                                    withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
+                                }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
                             if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
@@ -15314,7 +15453,7 @@ struct CodeView: View {
     }
 
     private func closeConvoSearch() {
-        withAnimation(.easeOut(duration: 0.12)) { convoSearching = false }
+        withAnimation(CodeView.lux) { convoSearching = false }
         convoQuery = ""; convoMatchIndex = 0
         inputFocused = true
     }
@@ -15370,6 +15509,12 @@ struct CodeView: View {
 
     private var welcome: some View {
         VStack(spacing: 14) {
+            // Eyebrow tag (design-language): microscopic tracked caps above the hero.
+            Text("PAIR PROGRAMMER")
+                .font(.system(size: 9, weight: .semibold)).tracking(2.2)
+                .foregroundStyle(.secondary.opacity(0.85))
+                .padding(.horizontal, 10).padding(.vertical, 3.5)
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -15618,18 +15763,29 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // DOUBLE-BEZEL composer (design-language pass): an inner core with its
+            // own surface + machined top-bevel highlight, seated in an outer tray.
+            // Concentric radii (18 outer − 4 padding = 14 inner) read as hardware.
+            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .padding(4)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             // The signature red ring (owner request — matches the main chat's input):
-            // always visible, warms while typing, full-strength on file drop.
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+            // always visible, warms while typing, full-strength on file drop. Now on
+            // the OUTER shell so the bezel sits inside it.
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
                 isDropTargeted ? DS.Palette.accent
                     : DS.Palette.accent.opacity(
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(.easeOut(duration: 0.18), value: input.isEmpty)
-            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
-            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            .animation(Self.lux, value: input.isEmpty)
+            .animation(Self.lux, value: isDropTargeted)
+            .animation(Self.lux, value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -15723,7 +15879,7 @@ struct CodeView: View {
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+            Button { withAnimation(CodeView.lux) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
@@ -15789,7 +15945,7 @@ struct CodeView: View {
                     }
                 }
                 Spacer()
-                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true } } label: {
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
@@ -15826,6 +15982,21 @@ struct CodeView: View {
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
+                // The run-level safety net: one click reverts EVERY AI edit from
+                // this run (your own edits in other files are untouched).
+                Button { withAnimation(CodeView.lux) { ws.restoreAllChanged() } } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
+                        Text("Restore all").font(.system(size: 9.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Revert every file this run changed back to its pre-run state")
+                .disabled(isRunning)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             ScrollView {
@@ -15833,7 +16004,8 @@ struct CodeView: View {
                     ForEach(ws.changedFiles, id: \.self) { url in
                         ChangedFileRow(label: relativePath(url),
                                        isSelected: ws.selectedFile == url,
-                                       stat: ws.changeStats[url]) {
+                                       stat: ws.changeStats[url],
+                                       onRestore: { withAnimation(CodeView.lux) { _ = ws.restoreFromSnapshot(url) } }) {
                             ws.select(url)
                             rightPane = .diff
                         }
@@ -15899,14 +16071,14 @@ struct CodeView: View {
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
     private var rightReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+            Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
-                Button { withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = false } } label: {
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10.5))
                         .frame(width: 24, height: 22).contentShape(Rectangle())
                         .overlay(alignment: .topTrailing) {
@@ -15926,7 +16098,7 @@ struct CodeView: View {
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+            withAnimation(CodeView.lux) { inspectorCollapsed = false }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
@@ -15987,7 +16159,7 @@ struct CodeView: View {
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { rightPanelCollapsed = true }
+                    withAnimation(CodeView.lux) { rightPanelCollapsed = true }
                 } label: {
                     Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
@@ -16632,7 +16804,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2022 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2199 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16686,6 +16858,8 @@ struct ContentView: View {
     private var loadingAttachment: Bool { attachmentLoads > 0 }
     @State private var showSettings = false
     @State private var showHistory = false
+    @State private var showStats = false
+    @State private var statsBlurb = ""
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -16784,6 +16958,9 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { submit($0) }) }
         .sheet(isPresented: $showHistory) { ChatHistoryView(onRestore: restoreArchive) }
+        .alert("Conversation stats", isPresented: $showStats) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(statsBlurb) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -17016,7 +17193,8 @@ struct ContentView: View {
                                                       mission = mission.isEmpty ? q + "\n\n"
                                                                                 : mission + "\n" + q + "\n"
                                                       inputFocused = true
-                                                  })
+                                                  },
+                                                  onTogglePin: { vm.togglePin($0) })
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -17063,6 +17241,12 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                // Pinned-message jump chips ride ABOVE the transcript as an
+                // inset (not inside the scroll) so they're always reachable;
+                // zero chrome when nothing is pinned.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                }
             }
         }
     }
@@ -17292,6 +17476,58 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Pinned messages
+    private var pinnedMessages: [ChatMessage] { vm.messages.filter { $0.pinned == true } }
+
+    /// First line of a pinned message, trimmed to chip width. Pure for tests.
+    nonisolated static func pinPreview(_ text: String, max: Int = 40) -> String {
+        let first = text.components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return first.count <= max ? first
+            : String(first.prefix(max)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Composer length readout: nil below the noise floor (short drafts get
+    /// no chrome), then "N words" with `warn` past the soft budget. Words
+    /// rather than characters — that's how people gauge prompts. Pure for tests.
+    nonisolated static func composerCount(_ text: String,
+                                          floor: Int = 120,
+                                          budget: Int = 2_000) -> (label: String, warn: Bool)? {
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        guard words >= floor else { return nil }
+        return ("\(words) words", words >= budget)
+    }
+
+    /// Horizontal chip rail: click a chip to jump to (and center) its message.
+    /// A chip whose message is search-filtered out scrolls nowhere — harmless.
+    private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(DS.Palette.accent)
+                    .accessibilityHidden(true)
+                ForEach(pinnedMessages) { m in
+                    Button {
+                        withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
+                    } label: {
+                        Text(Self.pinPreview(m.text))
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(m.text)
+                    .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 6)
+        }
+        .frame(maxWidth: 780)
+        .accessibilityIdentifier("chat.pinnedstrip")
+    }
+
     /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
     /// (blank lines too, so multi-paragraph quotes stay one block). Pure for
     /// tests.
@@ -17342,6 +17578,9 @@ struct ContentView: View {
         .init(id: "history", icon: "clock.arrow.circlepath",
               blurb: "Browse archived conversations",
               kind: .action("history")),
+        .init(id: "stats", icon: "chart.bar",
+              blurb: "Conversation statistics",
+              kind: .action("stats")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -17372,6 +17611,9 @@ struct ContentView: View {
             case "find":    withAnimation(DS.Motion.snappy) { searching = true }
             case "voice":   showLive = true
             case "history": showHistory = true
+            case "stats":
+                statsBlurb = ChatStats.summarize(vm.messages).blurb
+                showStats = true
             default: break
             }
         }
@@ -17534,6 +17776,18 @@ struct ContentView: View {
                     .accessibilityIdentifier("chat.composer.plus")
 
                     Spacer(minLength: 0)
+
+                    // Draft-length readout — invisible until the draft is
+                    // genuinely long (zero chrome at rest), accent past the
+                    // soft budget where local-model context gets tight.
+                    if let count = Self.composerCount(mission) {
+                        Text(count.label)
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                            .help(count.warn ? "Very long message — consider splitting it or attaching a file"
+                                             : "Draft length")
+                            .accessibilityIdentifier("chat.composer.count")
+                    }
 
                     // Mic (dictation) — quiet inline icon; red while listening.
                     Button { speechIn.toggle() } label: {
@@ -17907,6 +18161,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// so history persisted before this field decodes unchanged). Surfaced in
     /// the hover pill — zero chrome at rest.
     var duration: Double? = nil
+    /// Pinned by the user (context menu). Optional, not Bool-with-default:
+    /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
+    /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
+    var pinned: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -18056,15 +18314,46 @@ enum ChatStore {
 }
 
 // MARK: - Markdown export
+
+/// "1 message" / "3 messages" — exporter + stats share it. Pass the plural
+/// explicitly for irregulars ("reply"/"replies").
+private nonisolated func counted(_ n: Int, _ singular: String, _ plural: String? = nil) -> String {
+    "\(n) \(n == 1 ? singular : (plural ?? singular + "s"))"
+}
+
 enum ChatExporter {
-    static func markdown(_ messages: [ChatMessage]) -> String {
+    /// Markdown for the whole conversation. Title follows the History sheet's
+    /// rule (first user line), then the date range, per-message blocks with
+    /// attachments noted by filename (they were silently dropped before), and
+    /// a stats footer. `nonisolated` + pure on its inputs so tests can pin the
+    /// format hermetically; date strings stay locale-formatted, so tests
+    /// assert structure, not exact dates.
+    nonisolated static func markdown(_ messages: [ChatMessage]) -> String {
         let df = DateFormatter()
         df.dateStyle = .medium; df.timeStyle = .short
-        var out = "# Salehman AI — Conversation\n\n"
+        var out = "# \(ChatStore.archiveTitle(for: messages))\n\n"
+        // Range needs two ends — a single message would render "X – X".
+        if messages.count > 1,
+           let first = messages.map(\.timestamp).min(),
+           let last = messages.map(\.timestamp).max() {
+            out += "_\(df.string(from: first)) – \(df.string(from: last))_\n\n"
+        }
+        out += "---\n\n"
         for m in messages {
             let who = m.isUser ? "You" : "Salehman AI"
-            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n\(m.text)\n\n---\n\n"
+            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n"
+            if let path = m.imagePath {
+                out += "📎 `\(URL(fileURLWithPath: path).lastPathComponent)`\n\n"
+            }
+            out += "\(m.text)\n\n---\n\n"
         }
+        let words = messages.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        var footer = "_\(counted(messages.count, "message")) · \(counted(words, "word"))"
+        let replies = messages.compactMap(\.duration)
+        if !replies.isEmpty {
+            footer += String(format: " · avg reply %.1fs", replies.reduce(0, +) / Double(replies.count))
+        }
+        out += footer + "_\n"
         return out
     }
 
@@ -18086,6 +18375,58 @@ enum ChatExporter {
     }
 }
 
+// MARK: - Conversation stats
+/// Whole-conversation roll-up behind the `/stats` command — the per-reply
+/// hover pill answers "how fast was THIS reply"; this answers "what has this
+/// conversation been". Pure + nonisolated so tests pin the math and format.
+struct ChatStats: Equatable {
+    let messages: Int
+    let yours: Int
+    let replies: Int
+    let words: Int
+    let avgReplySeconds: Double?     // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+
+    nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
+        let yours = msgs.filter(\.isUser).count
+        let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let durations = msgs.compactMap(\.duration)
+        let stamps = msgs.map(\.timestamp)
+        var span: TimeInterval? = nil
+        if msgs.count > 1, let a = stamps.min(), let b = stamps.max() {
+            span = b.timeIntervalSince(a)
+        }
+        return ChatStats(
+            messages: msgs.count, yours: yours, replies: msgs.count - yours,
+            words: words,
+            avgReplySeconds: durations.isEmpty ? nil
+                : durations.reduce(0, +) / Double(durations.count),
+            spanSeconds: span)
+    }
+
+    /// "45s", "5m", "1h 20m", "2d 3h" — calendar-free span humanizer.
+    nonisolated static func human(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        if s < 60 { return "\(s)s" }
+        let m = s / 60
+        if m < 60 { return "\(m)m" }
+        let h = m / 60
+        if h < 24 { return m % 60 == 0 ? "\(h)h" : "\(h)h \(m % 60)m" }
+        let d = h / 24
+        return h % 24 == 0 ? "\(d)d" : "\(d)d \(h % 24)h"
+    }
+
+    /// Two-line summary for the `/stats` alert. `%.1f` via `String(format:)`
+    /// is locale-independent, so tests can pin the exact string.
+    nonisolated var blurb: String {
+        let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
+        var tail = counted(words, "word")
+        if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
+        if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
+        return head + "\n" + tail
+    }
+}
+
 // MARK: - Message Bubble
 struct MessageBubble: View {
     let message: ChatMessage
@@ -18095,6 +18436,8 @@ struct MessageBubble: View {
     var onEdit: ((ChatMessage) -> Void)? = nil
     /// Quote an assistant reply into the composer (`> `-prefixed). nil hides it.
     var onQuote: ((String) -> Void)? = nil
+    /// Pin/unpin this message (context menu, either side). nil hides it.
+    var onTogglePin: ((ChatMessage) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -18160,6 +18503,12 @@ struct MessageBubble: View {
         // reach for the context menu before discovering hover affordances.
         .contextMenu {
             Button { copyText() } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if onTogglePin != nil {
+                Button { onTogglePin?(message) } label: {
+                    Label(message.pinned == true ? "Unpin" : "Pin",
+                          systemImage: message.pinned == true ? "pin.slash" : "pin")
+                }
+            }
             if message.isUser {
                 if onEdit != nil {
                     Button { onEdit?(message) } label: {
@@ -24330,6 +24679,221 @@ struct ChatGreetingBucketTests {
 }
 ```
 
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (211 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Chat transcript pure logic — exporter format
+//
+// `ChatExporter.markdown` is `nonisolated` and pure on its inputs. Dates
+// render locale-formatted, so these tests pin STRUCTURE (heading rule,
+// attachment lines, stats footer) — never exact date strings.
+
+struct ChatExporterFormatTests {
+
+    private func msg(_ text: String, user: Bool, at t: TimeInterval = 1_000,
+                     image: String? = nil, duration: Double? = nil) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: user,
+                    timestamp: Date(timeIntervalSince1970: t),
+                    imagePath: image, duration: duration)
+    }
+
+    @Test func headingUsesFirstUserLineLikeHistorySheet() {
+        let md = ChatExporter.markdown([
+            msg("Plan my week\nwith details", user: true),
+            msg("Sure — here's a plan.", user: false),
+        ])
+        #expect(md.hasPrefix("# Plan my week\n"))
+    }
+
+    @Test func attachmentsAppearByFilename() {
+        let md = ChatExporter.markdown([
+            msg("look at this", user: true, image: "/tmp/shots/screen 1.png"),
+        ])
+        #expect(md.contains("📎 `screen 1.png`"))
+    }
+
+    @Test func footerCountsMessagesWordsAndAvgReply() {
+        let md = ChatExporter.markdown([
+            msg("one two three", user: true, at: 100),
+            msg("four five", user: false, at: 200, duration: 1.0),
+            msg("six seven", user: false, at: 300, duration: 3.0),
+        ])
+        #expect(md.hasSuffix("_3 messages · 7 words · avg reply 2.0s_\n"))
+    }
+
+    @Test func noDurationsMeansNoAvgReplySegment() {
+        let md = ChatExporter.markdown([msg("hi there", user: true)])
+        #expect(md.hasSuffix("_1 message · 2 words_\n"))   // singular, no "1 messages"
+        #expect(!md.contains("avg reply"))
+        #expect(!md.contains(" – "))   // no "X – X" range for a single message
+    }
+
+    @Test func emptyConversationStaysWellFormed() {
+        let md = ChatExporter.markdown([])
+        #expect(md.hasPrefix("# Conversation\n"))
+        #expect(md.hasSuffix("_0 messages · 0 words_\n"))
+    }
+
+    @Test func dateRangeLineAppearsForNonEmpty() {
+        let md = ChatExporter.markdown([msg("a", user: true, at: 100),
+                                        msg("b", user: false, at: 999_999)])
+        let lines = md.components(separatedBy: "\n")
+        // Line 0 = "# …", line 1 = "", line 2 = "_<start> – <end>_".
+        #expect(lines.count > 2 && lines[2].hasPrefix("_") && lines[2].contains(" – "))
+    }
+}
+
+// MARK: - /stats summarizer
+
+struct ChatStatsTests {
+
+    private func msg(_ text: String, user: Bool, at t: TimeInterval = 1_000,
+                     duration: Double? = nil) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: user,
+                    timestamp: Date(timeIntervalSince1970: t), duration: duration)
+    }
+
+    @Test func summarizeCountsSidesWordsAvgAndSpan() {
+        let s = ChatStats.summarize([
+            msg("one two", user: true, at: 0),
+            msg("three four five", user: false, at: 60, duration: 2.0),
+            msg("six", user: true, at: 120),
+            msg("seven eight", user: false, at: 300, duration: 4.0),
+        ])
+        #expect(s.messages == 4 && s.yours == 2 && s.replies == 2)
+        #expect(s.words == 8)
+        #expect(s.avgReplySeconds == 3.0)
+        #expect(s.spanSeconds == 300)
+    }
+
+    @Test func noDurationsAndSingleMessageGiveNils() {
+        let s = ChatStats.summarize([msg("hello", user: true)])
+        #expect(s.avgReplySeconds == nil)
+        #expect(s.spanSeconds == nil)
+    }
+
+    @Test func humanizerBoundaries() {
+        #expect(ChatStats.human(59) == "59s")
+        #expect(ChatStats.human(60) == "1m")
+        #expect(ChatStats.human(3_600) == "1h")
+        #expect(ChatStats.human(5_400) == "1h 30m")
+        #expect(ChatStats.human(86_400) == "1d")
+        #expect(ChatStats.human(90_000) == "1d 1h")
+    }
+
+    @Test func blurbPinsExactFormat() {
+        let s = ChatStats.summarize([
+            msg("one two", user: true, at: 0),
+            msg("three", user: false, at: 90, duration: 1.5),
+        ])
+        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · avg reply 1.5s · spans 1m")
+    }
+
+    @Test func emptyConversationBlurbIsCalm() {
+        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words")
+    }
+}
+
+// MARK: - Pinned messages
+
+struct ChatPinTests {
+
+    private func msg(_ text: String, user: Bool = true, pinned: Bool? = nil) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: user,
+                    timestamp: Date(timeIntervalSince1970: 0), pinned: pinned)
+    }
+
+    /// Pre-pin history must decode unchanged — this is WHY the field is
+    /// `Bool?` and not a defaulted `Bool` (synthesized Codable would throw
+    /// keyNotFound on every archived conversation).
+    @Test func legacyJSONWithoutPinnedKeyDecodes() throws {
+        let legacy = #"[{"id":"00000000-0000-0000-0000-000000000001","text":"hi","isUser":true,"timestamp":0}]"#
+        let msgs = try JSONDecoder().decode([ChatMessage].self, from: Data(legacy.utf8))
+        #expect(msgs.count == 1 && msgs[0].pinned == nil)
+    }
+
+    @Test func pinnedRoundTripsThroughCoding() throws {
+        let original = [msg("keep this", pinned: true), msg("normal")]
+        let decoded = try JSONDecoder().decode([ChatMessage].self,
+                                               from: JSONEncoder().encode(original))
+        #expect(decoded[0].pinned == true)
+        #expect(decoded[1].pinned == nil)
+    }
+
+    @Test func togglingPinFlipsThenClearsToAbsent() {
+        let a = msg("a"), b = msg("b")
+        let once = ChatViewModel.togglingPin(in: [a, b], id: b.id)
+        #expect(once[1].pinned == true && once[0].pinned == nil)
+        let twice = ChatViewModel.togglingPin(in: once, id: b.id)
+        #expect(twice[1].pinned == nil)   // back to ABSENT, not false
+    }
+
+    @Test func togglingPinUnknownIdIsNoOp() {
+        let list = [msg("a")]
+        #expect(ChatViewModel.togglingPin(in: list, id: UUID()) == list)
+    }
+
+    @Test func pinPreviewTrimsToFirstLineAndWidth() {
+        #expect(ContentView.pinPreview("short line") == "short line")
+        #expect(ContentView.pinPreview("first\nsecond") == "first")
+        let p = ContentView.pinPreview(String(repeating: "word ", count: 20))
+        #expect(p.hasSuffix("…") && p.count <= 41)
+    }
+}
+
+// MARK: - History sheet title filter
+
+struct ChatHistoryFilterTests {
+
+    private func arc(_ title: String) -> ChatStore.ArchivedChat {
+        ChatStore.ArchivedChat(id: URL(fileURLWithPath: "/tmp/\(UUID()).json"),
+                               title: title, date: Date(timeIntervalSince1970: 0),
+                               messageCount: 1)
+    }
+
+    @Test func blankQueryReturnsEverything() {
+        let all = [arc("Plan my week"), arc("Fix the build")]
+        #expect(ChatHistoryView.filtered(all, query: "").count == 2)
+        #expect(ChatHistoryView.filtered(all, query: "   ").count == 2)
+    }
+
+    @Test func matchesCaseAndDiacriticInsensitively() {
+        let all = [arc("Café notes"), arc("Fix the build")]
+        #expect(ChatHistoryView.filtered(all, query: "cafe").map(\.title) == ["Café notes"])
+        #expect(ChatHistoryView.filtered(all, query: "BUILD").map(\.title) == ["Fix the build"])
+    }
+
+    @Test func noMatchIsEmptyNotEverything() {
+        #expect(ChatHistoryView.filtered([arc("Plan my week")], query: "zzz").isEmpty)
+    }
+}
+
+// MARK: - Composer length readout
+
+struct ComposerCountTests {
+
+    @Test func quietBelowTheFloor() {
+        #expect(ContentView.composerCount("just a short draft") == nil)
+        #expect(ContentView.composerCount("") == nil)
+    }
+
+    @Test func labelsAtTheFloorWithoutWarning() {
+        let draft = Array(repeating: "w", count: 120).joined(separator: " ")
+        let c = ContentView.composerCount(draft)
+        #expect(c?.label == "120 words" && c?.warn == false)
+    }
+
+    @Test func warnsAtTheBudget() {
+        let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
+        let c = ContentView.composerCount(draft)
+        #expect(c?.label == "2000 words" && c?.warn == true)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/CloudClientParsingTests.swift (269 lines) =====
 ```swift
 import Testing
@@ -27498,6 +28062,54 @@ struct RepoPackerTests {
 }
 ```
 
+===== FILE: Salehman AITests/RestoreSnapshotTests.swift (44 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// Restore Checkpoint (revert this run's AI edits) — pins the DISK half of the
+// feature: `CodeWorkspace.revert(file:toSnapshot:)`. Modified files get their
+// pre-run snapshot written back; files the run CREATED (no snapshot) are
+// deleted — that IS their pre-run state. Runs against a private temp dir, so
+// it's parallel-safe and touches no real project.
+struct RestoreSnapshotTests {
+    private func tempDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("restore-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @Test func modifiedFileGetsSnapshotBack() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = dir.appendingPathComponent("a.swift")
+        try "AFTER — the AI's edit".write(to: f, atomically: true, encoding: .utf8)
+        try CodeWorkspace.revert(file: f, toSnapshot: "BEFORE — the pre-run state")
+        #expect(try String(contentsOf: f, encoding: .utf8) == "BEFORE — the pre-run state")
+    }
+
+    @Test func createdFileIsDeleted() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = dir.appendingPathComponent("new.swift")
+        try "the run created me".write(to: f, atomically: true, encoding: .utf8)
+        try CodeWorkspace.revert(file: f, toSnapshot: nil)
+        #expect(!FileManager.default.fileExists(atPath: f.path))
+    }
+
+    @Test func revertOfMissingFileThrowsInsteadOfSilentlyPassing() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let ghost = dir.appendingPathComponent("never-existed.swift")
+        #expect(throws: (any Error).self) {
+            try CodeWorkspace.revert(file: ghost, toSnapshot: nil)   // delete of nothing
+        }
+    }
+}
+```
+
 ===== FILE: Salehman AITests/Salehman_AITests.swift (146 lines) =====
 ```swift
 import Testing
@@ -29894,10 +30506,12 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (105 lines) =====
+===== FILE: COORDINATION.md (116 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
+>
+> 🔴 **Chat C → Chat B (2026-06-12 ~01:1x): CodeView.swift is RED — your lane, your WIP.** `Views/CodeView.swift:895,896,898,899` → `cannot find 'welcomeAppeared' in scope` (looks like the `@State welcomeAppeared` decl was removed/renamed but the welcome-panel usages remain). Build was GREEN at ~01:00 (my marathon cycle 7 `TEST SUCCEEDED`), so this landed in the last ~15 min from the CodeView git-status work. **Not my lane → flagging, not fixing.** It blocks `xcodebuild` for everyone. My MemoryStore isolation fix is staged + compiles clean (0 MemoryStore errors); I'll reconfirm the green marker once this clears.
 >
 > ✅ (red-build banner cleared ~20:25 — `import UniformTypeIdentifiers` added to ContentView by Chat B, same commit as this edit. Apologies for the 10-minute red; root cause: my `swiftc -typecheck` harness resolved `.fileURL` where the real build does not — noted to stop trusting it for IMPORT coverage.)
 >
@@ -29956,10 +30570,12 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | Claude Chat B | **Cross-lane (Chat A's `Agents/`):** `Agents/AgentRegistry.swift` (registerToken closure, lines ~56-58) + `Agents/AgentPipeline.swift` (adaptTitles launch, lines ~155-162) | 2026-06-06 | Two CODEBASE_REVIEW MED fixes ("improve the AI"): (1) tools-agent now receives `history` + `context` (currently discards them → multi-turn breakage); (2) skip `adaptTitles` on `.ollamaCoder`/`.salehman`/`.unslothStudio` so it stops contending with the serial inference queue. **App-target build green.** Committed + pushed selectively (only my 3 modified files); the committed state of `main` is clean. | **released** |
 | Claude Chat B | `LLM/OpenAICompatibleClient.swift` + `Salehman AITests/CloudClientParsingTests.swift`; also relocated stray scaffold `Salehman AI/salehman ai/` → `scaffold-salehman-ai/` (out of the app's synchronized source root) | 2026-06-07 | Build unblock + 2 real bug fixes in the shared OpenAI-compat client: `testConnection()` false-success on HTTP errors (new `isErrorReply`) and trailing-slash `//chat/completions` 404 (new `chatCompletionsURL`). 2 hermetic tests added. **Build + AITests green** (`** TEST SUCCEEDED **`). NOTE for Grok Tab B: you list `OpenAICompatibleClient.swift` in your claim — my change only adds 2 `nonisolated static` helpers + routes 2 URL build sites + rewrites `testConnection()`; re-read before refactoring. | **released** |
 | **Claude Chat C (2026-06-11)** | **NEW additive dir ONLY: `.claude/skills/run-salehman-ai/`** (`SKILL.md` + `run.sh`). Read-only use of `tools/qa.sh`, `Tools/QASnapshots.swift`. **Edited NO Swift source.** | 2026-06-11 ~18:20 | ✅ **DONE** — `/run-skill-generator` produced a discoverable "run/launch/screenshot the app" skill. Verified: build SUCCEEDED, `run.sh` + `run.sh --build` both drive the app to a **fresh 14/14 QA capture**, suite `TEST SUCCEEDED`. `run.sh` fixes 2 real `qa.sh` gaps (no auto-build; stale-PNG-when-already-running because the `.task` capture hook only fires on fresh launch). Logged in DEVELOPMENT_LOG (06-11 evening). **FYI Chat A/B:** to screenshot the app, run `bash .claude/skills/run-salehman-ai/run.sh` — it quits a running instance first so captures aren't stale. Did NOT touch your `tools/qa.sh` WIP. | **released** |
+| **Claude Chat C (2026-06-12 ~01:1x)** | `Persistence/MemoryStore.swift` (unclaimed — Grok Tab B's old claim is void). Concurrency-isolation audit fix only. | 2026-06-12 | Owner-requested Swift 6.2 audit found `recall`/`cosine` were the only lock-store methods left **MainActor-isolated** (siblings `remember`/`embed`/`autoExtract` are `nonisolated`), so the heavy NLEmbedding+cosine scan was pinned to main. Marking both `nonisolated` (lock-safe, matches the pattern). Whole-module compile shows **zero MemoryStore errors** — change is clean. **⚠️ FYI Chat A:** `AgentPipeline.swift:458` calls `recall(mission)` **synchronously on MainActor** — to actually move it off-main, offload that call site (`Task.detached`/`@concurrent`). I did NOT edit your lane. | **green marker PENDING** — blocked by unrelated `CodeView.swift` red (see banner) |
 | **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). **🔴 OWNER/Chat B FLAG (guardian cycle ~19:50): privacy copy is now INACCURATE since the app went cloud-first** (`AppSettings:45` "itself is cloud-first"). `TodayView` home greeting still says *"everything here stays on this Mac"* = **false by default**; `AboutView`/`OnboardingView` titles say "Private/on-device" but bodies say "cloud-first". NOT rewriting unilaterally (positioning = owner call, mid-pivot). Full detail + one-line fix ready in `POLISH_BACKLOG.md` → "🔴 HIGH privacy copy". | no — guardian loop |
 | **Claude Chat C — QA SYSTEM v6 (2026-06-11 eve)** | **OWNER REASSIGNED the QA system to Chat C** ("refine the qa system + more things… all of them"). Now editing: `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, NEW `Tools/QAColorVision.swift`, `tools/QA.md`. **Chat B: please PAUSE QA edits** while I land v6 (you're "marathon closeout" anyway) — ping here if you need a QA file and I'll hand it back. | 2026-06-11 ~20:45 | Building v6 in 4 additive parts, build-green + capture-verify each: (1) **CVD/color-blind audit** (new `QAColorVision` — deuteranopia/protanopia sim + merge-detection, relevant to Markets red/green signals), (2) **broader surfaces** (Onboarding/About/Shortcuts/CommandPalette/VoiceMode + narrow variants), (3) **tap-target(<44pt)+truncation checks**, (4) **report.html upgrade** (render-time budgets, history sparklines, severity, dashboard). Mostly additive; `QAGeometryTests` stays green. **🛑 STOPPED by owner ("stop polishing") after parts 1–3.** ✅ Landed: (1) CVD audit `2a5053b`, (2) broaden 15→22 surfaces `cc39814`, (3) `edgeClear`+`tapTargets` `7e71d32` — build+audit GREEN (22/22, FAILURES []). ❌ Part (4) report.html upgrade NOT done. **QA LANE RELEASED back to Chat B** — it's yours again; `QAColorVision.swift` is new+additive, the other QA files got small additive edits (re-read before editing). **▶️ RESUMED (owner "add and refine more") → v6 COMPLETE:** part (4) report dashboard `e779cc9` (pass/fail/drift/slowest/CVD/sparkline + renderMs + deuteranopia inline) + refinements `02146ee` (`tools/QA.md`→v6, history `cvdRisks`, `run.sh` CVD output). **Build + AITests GREEN; audit 24 surfaces FAILURES [].** ⚠️ Audit file-filter now excludes `_deuter/_protan` previews (they were being counted as surfaces). **QA lane RELEASED again — v6 done.** **▶️ v6.1 DONE** `ac15006` (real-surface `textContrast` advisory scan — flags `markets` 1.9:1 white-on-green badges, verified real; + `det. drift` excludes live surfaces 58.5%→0.4%). **🔴 Heads-up: `Salehman AITests` was RED and I'd MISSED it** (I read background `$?` = a trailing `grep`, not the `xcodebuild` marker). Root cause: `QAGeometryTests.swift` `#expect(results.allSatisfy(\.pass))` macro-expanded to a "call can throw" compile error → **I fixed it `99f258d`** (`\.pass`→`{ $0.pass }`); suite now `** TEST SUCCEEDED **` (322). I edited your test file to unblock — re-read. SOURCE_BUNDLE regen `e45fe01`. Capture launch→AUDIT measured 19s. **QA lane RELEASED — v6.1 done.** | **released** |
 | **Claude Chat C — TABS POLISH (2026-06-11 night)** | **OWNER-DIRECTED ("polish and refine all tabs except code and chat", ultracode/xhigh, no workflows):** `Views/MarketsView.swift` (Chat A lane — owner-authorized), `Views/AgentsView.swift` (Chat B lane — owner-authorized), `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/MemoryView.swift`, `Views/Onboarding/About/ShortcutsView.swift`. **Read-only DS.** **NOT touching** `TodayView.swift` (it's dirty = your uncommitted off-main-refresh WIP — leaving it alone), Code*, Chat/ContentView, Settings. | 2026-06-11 ~22:25 | Verified-by-measurement polish: each surface read+screenshot, fix, rebuild+recapture+audit-green, commit. **Headline:** fixing the QA-flagged Markets badge contrast (white-on-light-green/amber ≈1.9:1 → dark text) + Agents field hairline. Chat A/B: ping here if you need Markets/Agents back. | no — IN PROGRESS |
-| **effort/grok session — code-tab git dots (2026-06-12 ~00:45)** | `Views/CodeView.swift` (resuming my uncommitted +30 WIP), NEW `Salehman AITests/CodeGitStatusTests.swift` | now | Finishing the in-flight feature: amber "uncommitted in git" dots in the Code-tab file tree (distinct from accent = AI-changed-this-run). Hardening: porcelain parser extracted to a `nonisolated static` (testable), `-uall` so untracked-dir contents get dots, rename/quoted-path cases covered by new unit tests. Build+AITests before commit. | no — IN PROGRESS |
+| **effort/grok session — code-tab git dots (2026-06-12 ~00:45)** | `Views/CodeView.swift`, NEW `Salehman AITests/CodeGitStatusTests.swift` | 00:45–01:15 | ✅ DONE — amber "uncommitted in git" dots in the Code-tab tree (distinct from accent = AI-changed-this-run); parser extracted `nonisolated static` + 5 hermetic tests; `-uall` for untracked-dir contents. **Verified: full-target swiftc typecheck EXIT 0** at project settings (Swift 6, MainActor default, approachable concurrency). **🙏 BUILD REQUEST: my sandbox denies xcodebuild's DerivedData writes entirely (EPERM pre-compile, default + repo-local paths both) — please run canonical build + `AITests` when convenient; expect 5 new `CodeGitStatusTests` green, no behavior change elsewhere.** Dev-logged 06-12; SOURCE_BUNDLE regenerated. | **released** |
+| **effort/grok session — CHAT MARATHON 2 (2026-06-12 ~01:20)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift` (if present), `Salehman AITests/ChatComposerLogicTests.swift` (append-only) or NEW chat test files | now | **Owner-directed 3h marathon: refine/polish/test/add features on the Chat tab** (Chat B's lane — owner-authorized; Chat B's marathon row is released). Sandbox can't run xcodebuild → every slice verified by full-target swiftc typecheck (Swift 6/MainActor settings) + hermetic unit tests for the build-capable session to run. Slices commit individually with dev-log entries. Guardian session: ping here if you need ContentView back. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -30000,6 +30616,13 @@ Owner: "app always lags when launched" → profiled + fixed (2.2s → 0.25s firs
 - **TodayView** (out-of-lane, surgical): knowledge-count refresh moved off-main — the
   4.8 MB knowledge.json was being decoded synchronously in onAppear of the default tab.
 - Release build now lives at /Applications/Salehman AI.app (owner's daily app).
+
+### 🪪 2026-06-12 — identity (owner-stated): the effort/grok-tooling marathon session IS **Chat A**
+The session that shipped tonight's Code-tab marathon (persistence, slash commands, right
+panel, restore checkpoint, git dots, find-in-conversation, launch-perf fix, design pass)
+is **Chat A** per the owner. Chat A's home lane (Agents/*, Markets/*, Views/Markets*) is
+currently worked by Chat C **owner-authorized** — no conflict; I'm on CodeView per the
+owner's standing marathon directive. Board rows referencing "effort/grok session" = Chat A.
 
 ===== FILE: COORDINATION_ARCHIVE.md (935 lines) =====
 # 🤝 COORDINATION — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -30938,7 +31561,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1740 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (1817 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -32242,6 +32865,28 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** COORDINATION.md 39k→6k tokens, DEVELOPMENT_LOG.md 111k→36k (this entry included). A session that reads the board 5× and builds 4× saves roughly 200k+ tokens/session at identical quality. No Swift source touched; no build needed. Note for both chats: the banner announces the new grep-exclude + build-tail rules — they're in CLAUDE.md so they auto-load next session.
 
+## 2026-06-12 · Code tab: git-status dots in the file tree (effort/grok session)
+
+**Files:** `Views/CodeView.swift` (+~45), new `Salehman AITests/CodeGitStatusTests.swift` (5 tests)
+
+**What & why:** Finished the in-flight WIP from before the owner's NVMe-enclosure detour: the file tree now shows an **amber dot on every file git considers uncommitted** (modified or untracked), distinct from the accent dot (= AI changed it THIS run). Refreshed on every `reload()` via `git status --porcelain -uall` run detached off-main through `Shell.run` (10s timeout; empty set for non-git folders). Hardening beyond the draft: porcelain parsing extracted to `nonisolated static CodeWorkspace.gitModifiedURLs(porcelain:root:)` so it's hermetically testable, and `-uall` added so files inside untracked directories get dots (plain porcelain collapses them into one `dir/` entry no tree row matches). Parser covers renames (`old -> new` takes the new side) and C-quoted paths (quotes stripped; embedded escapes = harmless miss, documented).
+
+**Verification (sandboxed session — xcodebuild blocked):** this session's Bash sandbox denies xcodebuild's DerivedData/log-store writes (default location AND repo-local; EPERM before any compile step), so the canonical build can't run here. Verified instead with the full-target typecheck harness at the project's exact settings (`swiftc -typecheck` over all 144 app sources, `-swift-version 6 -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault`, repo-local module cache): **SWIFTC EXIT 0, zero errors**. Known harness caveat (import-coverage false-positives, see 06-11 entry) assessed: this diff adds no new imports/symbols outside the file's existing set. Test file mirrors `ChatComposerLogicTests` idiom (pure `nonisolated static`, no shared state, parallel-safe). **🙏 Build-capable session: please run the canonical build + `AITests` once** — board row has the request; expectation: 5 new tests pass, zero behavior change elsewhere.
+
+**Result:** Code tab now distinguishes "uncommitted in git" (amber) from "AI-touched this run" (accent) at a glance; parser is regression-locked by tests. SOURCE_BUNDLE regenerated (144 files, 28443 LOC).
+
+## 2026-06-12 · Chat marathon 2, slices 1–4 (effort/grok session, owner-directed "3h chat tab")
+
+**Files:** `Views/ContentView.swift`, `Views/ChatViewModel.swift`, new `Salehman AITests/ChatTranscriptLogicTests.swift` (19 tests)
+
+**Slices:** (1) `07380e5` **Exporter v2** — heading follows the History-sheet title rule, date-range line, attachments exported by filename (previously silently dropped), stats footer; `nonisolated` + 6 format tests. (2) `e511ef0` **/stats** — whole-conversation roll-up (messages/sides/words/avg-reply/span) via pure `ChatStats` + calendar-free span humanizer, surfaced in a native alert; +5 tests. (3) `2e3d661` **Pinned messages** — context-menu Pin/Unpin on both row kinds, jump-chip rail above the transcript (`safeAreaInset`, zero chrome when nothing pinned, click centers the message); `pinned: Bool?` NOT defaulted-Bool so pre-pin archives decode (regression-locked by test); pure `togglingPin` core; +5 tests. (4) `1600677` **Composer word counter** — silent under 120 words, accent warn at 2000; +3 tests.
+
+**Verification:** every slice = full-target swiftc typecheck at project settings (Swift 6 / MainActor default / approachable concurrency) **EXIT 0** before commit; xcodebuild remains sandbox-blocked for this session (see 06-12 git-dots entry) — **standing request: build-capable session please run `AITests`** (expect 19 new green in `ChatTranscriptLogicTests`).
+
+**Result:** chat tab gains /stats + pins + length feedback; export is finally faithful to attachments. Marathon continues (self-review slice next).
+
+**Slices 5–6 (`2531fc0`):** (5) **Adversarial self-review of 1–4** — found+fixed "1 messages"/"1 replies" (shared `counted()` pluralizer in exporter footer + stats blurb) and the "X – X" date range on single-message exports; also KILLED a planned double-click-to-quote slice before writing it (would fight macOS double-click word-selection on `textSelection`-enabled rows) and rejected cosmetic pin-glyph overlays (no pixel verification available in this sandbox — blind UI placement is how layout bugs ship). (6) **History-sheet title filter** — case/diacritic-insensitive substring via pure `ChatHistoryView.filtered` (same pattern as the Knowledge/Agents filter slices), filter field + "no matches" state; +3 tests (now 22 in `ChatTranscriptLogicTests`). Typecheck EXIT 0 each slice.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -32679,6 +33324,61 @@ global state (unique temp dir per test).
 **Result:** New suite green in isolation (16/16) AND full `Salehman AITests` green by
 the `** TEST SUCCEEDED **` marker. Additive only — no source/lane touched. Commit `3d7e8a1`.
 **Files:** `Salehman AITests/MemoryStoreFactsTests.swift` (new).
+
+## 2026-06-12 — marathon H: Restore Checkpoint (run-level undo) + per-file revert
+**What (deep-research #1+#2 — the trust features every shipped agent converged on):**
+- **Restore all** in the Changed-files header: one click reverts EVERY file the last
+  run touched to its pre-run snapshot (the snapshots already existed for the diff
+  pane — this completes the loop Cursor/Claude-Code/Zed all ship).
+- **Per-file revert**: hovering a changed-file row swaps its +N −M stats for an undo
+  button — accept the good files, revert just the bad one.
+- Engine: `CodeWorkspace.revert(file:toSnapshot:)` (snapshot back, or DELETE files the
+  run created — that is their pre-run state) + `restoreFromSnapshot`/`restoreAllChanged`
+  which sync changed-list, stats, tree, open file/diff pane, and git dots.
+**Verified:** build green; `RestoreSnapshotTests` (3 temp-dir round-trips: modified→
+snapshot restored, created→deleted, missing→throws) — TEST SUCCEEDED.
+**Files:** `Views/CodeView.swift`, `Salehman AITests/RestoreSnapshotTests.swift`.
+
+## 2026-06-12 — marathon I: high-end design pass (owner: /high-end-visual-design ×3)
+**What (the loaded design language translated to native SwiftUI, restrained for a
+desktop tool):**
+- **Double-bezel composer** — inner core (own surface + machined top-bevel gradient
+  hairline, radius 14) seated in an outer tray (radius 18, concentric 18−4=14); the
+  signature red ring moved to the OUTER shell. Owner-loved ring behavior unchanged
+  (38%→60% while typing, full on drop, focus glow).
+- **One motion language** — 16 scattered `withAnimation(.easeOut(0.12–0.18))` sites
+  unified onto `CodeView.lux` = timingCurve(0.32, 0.72, 0, 1, 0.4s): heavy start, soft
+  landing, one physical feel across panels/menus/hovers.
+- **Welcome**: "PAIR PROGRAMMER" eyebrow tag (9pt caps, 2.2 tracking, hairline capsule)
+  + one-shot heavy fade-up entrance. Entrance is pre-revealed under `--qa` (offscreen
+  renders never fire onAppear — captures would otherwise photograph an invisible
+  welcome).
+- **`design/` bundle** — 8 self-contained HTML cards documenting the system from the
+  REAL tokens (#FA2E4A accent, #202020/#181818 surfaces, 12% hairlines): palette, type
+  scale, bezel composer, slash menu, activity, changed-files, pills, message rows.
+  (@dsCard-marked for claude.ai design-sync; the push itself was declined — local only.)
+**Verified:** build green; QA all surfaces pass; eyebrow + bezel composer confirmed in
+capture pixels.
+**Files:** `Views/CodeView.swift`, `design/**`.
+
+## 2026-06-12 (~01:1x) — Chat C: Swift 6.2 concurrency-isolation audit → MemoryStore.recall off-main fix
+**What & why:** Owner-requested deep-research on Swift 6 strict concurrency + SwiftUI macOS, then a
+codebase audit of the 3 to-dos it surfaced. Findings: (1) build settings confirm BOTH
+`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` (all 6 configs,
+Swift 6.0 mode) — unmarked types are MainActor-isolated; `nonisolated async` is `nonisolated(nonsending)`.
+(2) Under that default, `MemoryStore` (lock-based `@unchecked Sendable`) had `remember`/`embed`/`autoExtract`/
+`extractFacts`/`persist` correctly `nonisolated`, but **`recall` and `cosine` were missed** → silently pinned
+to MainActor. `recall` is the heavy path (NLEmbedding + cosine over every stored memory), called
+**synchronously at `AgentPipeline.swift:458`** → ran on the main thread. Marked both `nonisolated` (lock-safe;
+identical to the sibling pattern; no longer main-pinned). (3) No live Codable-conformance trap: every
+`Codable` type is a `struct` (several explicitly `Sendable`/`nonisolated`) and the app builds — empirical proof.
+**FLAGGED for Chat A (not edited — their lane):** to move recall fully off-main, offload the
+`AgentPipeline.swift:458` call site (`Task.detached`/`@concurrent`).
+**Result:** MemoryStore change compiles clean (whole-module: **0 MemoryStore errors**). Full
+`** TEST SUCCEEDED **` marker currently BLOCKED by an UNRELATED red — `CodeView.swift:895-899` `welcomeAppeared`
+not in scope (Chat B's active CodeView WIP, landed red after my 01:00 green). Flagged on COORDINATION board;
+not fixing (not my lane). Will reconfirm green once CodeView compiles.
+**Files:** `Salehman AI/Persistence/MemoryStore.swift`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

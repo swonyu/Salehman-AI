@@ -1321,6 +1321,8 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** chat tab gains /stats + pins + length feedback; export is finally faithful to attachments. Marathon continues (self-review slice next).
 
+**Slices 5–6 (`2531fc0`):** (5) **Adversarial self-review of 1–4** — found+fixed "1 messages"/"1 replies" (shared `counted()` pluralizer in exporter footer + stats blurb) and the "X – X" date range on single-message exports; also KILLED a planned double-click-to-quote slice before writing it (would fight macOS double-click word-selection on `textSelection`-enabled rows) and rejected cosmetic pin-glyph overlays (no pixel verification available in this sandbox — blind UI placement is how layout bugs ship). (6) **History-sheet title filter** — case/diacritic-insensitive substring via pure `ChatHistoryView.filtered` (same pattern as the Knowledge/Agents filter slices), filter field + "no matches" state; +3 tests (now 22 in `ChatTranscriptLogicTests`). Typecheck EXIT 0 each slice.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
