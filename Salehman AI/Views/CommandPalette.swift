@@ -28,7 +28,13 @@ struct CommandPalette: View {
             .init(title: "Go to Chat", subtitle: "", icon: "bubble.left.and.bubble.right.fill") { app.selectedTab = .chat },
             .init(title: "Go to Code", subtitle: "Agentic coding workspace", icon: "chevron.left.forwardslash.chevron.right") { app.selectedTab = .code },
             .init(title: "Go to Agents", subtitle: "Your specialist agent team", icon: "person.3.fill") { app.selectedTab = .agents },
-            .init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets },
+        ]
+        // Hidden tabs (owner directive — see `AppTab.hidden`) keep their
+        // palette entry out of search; restore by emptying that set.
+        if !AppTab.hidden.contains(.markets) {
+            c.append(.init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets })
+        }
+        c += [
             .init(title: "Go to Notes", subtitle: "Your notes & tasks scratchpad", icon: "checklist") { app.selectedTab = .scratchpad },
             .init(title: "Go to Knowledge", subtitle: "Chat with your documents", icon: "books.vertical.fill") { app.selectedTab = .knowledge },
             .init(title: "Open Settings", subtitle: "Brains, keys, voice, privacy", icon: "gearshape.fill") { app.showSettingsRequested = true },

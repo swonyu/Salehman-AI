@@ -34,6 +34,20 @@ enum AppTab: String, CaseIterable, Identifiable {
     case today, chat, code, agents, markets, scratchpad, knowledge
     var id: String { rawValue }
 
+    /// Owner directive (2026-06-12): "HIDE THE MARKETS TAB UNTIL FURTHER
+    /// NOTICE." A hidden tab disappears from every navigation surface (tab
+    /// bar, View menu ⌘-number, command palette, shortcuts sheet, Today nav
+    /// card, the tab-bar market pill) — but its view stays compiled and
+    /// programmatically reachable (`app.selectedTab = .markets` still works,
+    /// so the QA harness keeps capturing it). The remaining ⌘-numbers keep
+    /// their tabs (⌘5 simply does nothing) so muscle memory survives the
+    /// restore. **Restore = make this set empty.**
+    nonisolated static let hidden: Set<AppTab> = [.markets]
+
+    /// The user-visible tab roster — navigation surfaces iterate THIS, never
+    /// `allCases`, so a hidden tab vanishes everywhere at once.
+    nonisolated static var visible: [AppTab] { allCases.filter { !hidden.contains($0) } }
+
     var title: String {
         switch self {
         case .today:      return "Today"

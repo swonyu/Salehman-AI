@@ -2137,3 +2137,25 @@ this session's source changes. Verified fresh (greps, not a full read): `enum Me
 "Private when you want it", grey-backdrop `bgTop` (0.11), and `nonisolated func recall` all present.
 **Result:** `SOURCE_BUNDLE.md` = 37,754 lines / 3.0M / 150 swift files (30,342 LOC) + docs. Committed.
 **Files:** `SOURCE_BUNDLE.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:55) — Chat D: Markets tab HIDDEN (owner: "until further notice")
+**What & why:** Owner directive. ONE reversible flag — `AppTab.hidden = [.markets]`
+(+ `AppTab.visible`, the roster every nav surface now iterates) gates ALL Markets
+presence: tab-bar pill (+ label-collapse threshold now tracks visible count), the
+⌘5 View-menu item, the command-palette "Go to Markets" row, the ShortcutsView ⌘5
+row (other ⌘-numbers KEEP their tabs — muscle memory survives restore), TodayView's
+Market stat card (its tap navigates to the hidden tab), and the tab-bar live
+market-status pill. **Deliberately untouched:** MarketsView/StockSage code, alerts,
+monitors, and programmatic navigation (`app.selectedTab = .markets`) — so the QA
+harness still captures the markets surfaces and nothing breaks when restored.
+**Restore = empty `AppTab.hidden`** (one line in AppState.swift).
+**Verified:** build `** BUILD SUCCEEDED **`; full AITests `** TEST SUCCEEDED **`
+(466); fresh QA capture eyes-verified in pixels: Today shows Notes+Knowledge only,
+Shortcuts sheet lists ⌘1–4,6,7 (no ⌘5 row); all drift within budgets (audit
+failures = only the pre-existing `chat_history`, Chat A's to re-adopt). NOT
+adopting baselines (would bake in Chat A's unverified chat drift). Note:
+`window_0_live.png` in qa/snapshots is a STALE Jun-11 19:20 leftover — that
+capture type hasn't refired since; ignore it / QA owner may want to clean it.
+**Files:** `App/AppState.swift`, `App/Salehman_AIApp.swift`, `Views/TabSwitcherBar.swift`,
+`Views/CommandPalette.swift`, `Views/ShortcutsView.swift`, `Views/TodayView.swift`,
+`PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.

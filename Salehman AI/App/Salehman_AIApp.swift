@@ -88,8 +88,10 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("3", modifiers: .command)
                 Button("Agents") { app.selectedTab = .agents }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("Markets") { app.selectedTab = .markets }
-                    .keyboardShortcut("5", modifiers: .command)
+                if !AppTab.hidden.contains(.markets) {
+                    Button("Markets") { app.selectedTab = .markets }
+                        .keyboardShortcut("5", modifiers: .command)
+                }
                 Button("Notes") { app.selectedTab = .scratchpad }
                     .keyboardShortcut("6", modifiers: .command)
                 Button("Knowledge") { app.selectedTab = .knowledge }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 02:48 +03 · Swift files: 150 · Swift LOC: 30342_
+_Generated: 2026-06-12 02:54 +03 · Swift files: 150 · Swift LOC: 30380_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1898,7 +1898,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (60 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (74 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1936,6 +1936,20 @@ enum AppTab: String, CaseIterable, Identifiable {
     case today, chat, code, agents, markets, scratchpad, knowledge
     var id: String { rawValue }
 
+    /// Owner directive (2026-06-12): "HIDE THE MARKETS TAB UNTIL FURTHER
+    /// NOTICE." A hidden tab disappears from every navigation surface (tab
+    /// bar, View menu ⌘-number, command palette, shortcuts sheet, Today nav
+    /// card, the tab-bar market pill) — but its view stays compiled and
+    /// programmatically reachable (`app.selectedTab = .markets` still works,
+    /// so the QA harness keeps capturing it). The remaining ⌘-numbers keep
+    /// their tabs (⌘5 simply does nothing) so muscle memory survives the
+    /// restore. **Restore = make this set empty.**
+    nonisolated static let hidden: Set<AppTab> = [.markets]
+
+    /// The user-visible tab roster — navigation surfaces iterate THIS, never
+    /// `allCases`, so a hidden tab vanishes everywhere at once.
+    nonisolated static var visible: [AppTab] { allCases.filter { !hidden.contains($0) } }
+
     var title: String {
         switch self {
         case .today:      return "Today"
@@ -1962,7 +1976,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/App/Salehman_AIApp.swift (118 lines) =====
+===== FILE: Salehman AI/App/Salehman_AIApp.swift (120 lines) =====
 ```swift
 //
 //  Salehman_AIApp.swift
@@ -2054,8 +2068,10 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("3", modifiers: .command)
                 Button("Agents") { app.selectedTab = .agents }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("Markets") { app.selectedTab = .markets }
-                    .keyboardShortcut("5", modifiers: .command)
+                if !AppTab.hidden.contains(.markets) {
+                    Button("Markets") { app.selectedTab = .markets }
+                        .keyboardShortcut("5", modifiers: .command)
+                }
                 Button("Notes") { app.selectedTab = .scratchpad }
                     .keyboardShortcut("6", modifiers: .command)
                 Button("Knowledge") { app.selectedTab = .knowledge }
@@ -17065,7 +17081,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (121 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (127 lines) =====
 ```swift
 import SwiftUI
 
@@ -17097,7 +17113,13 @@ struct CommandPalette: View {
             .init(title: "Go to Chat", subtitle: "", icon: "bubble.left.and.bubble.right.fill") { app.selectedTab = .chat },
             .init(title: "Go to Code", subtitle: "Agentic coding workspace", icon: "chevron.left.forwardslash.chevron.right") { app.selectedTab = .code },
             .init(title: "Go to Agents", subtitle: "Your specialist agent team", icon: "person.3.fill") { app.selectedTab = .agents },
-            .init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets },
+        ]
+        // Hidden tabs (owner directive — see `AppTab.hidden`) keep their
+        // palette entry out of search; restore by emptying that set.
+        if !AppTab.hidden.contains(.markets) {
+            c.append(.init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets })
+        }
+        c += [
             .init(title: "Go to Notes", subtitle: "Your notes & tasks scratchpad", icon: "checklist") { app.selectedTab = .scratchpad },
             .init(title: "Go to Knowledge", subtitle: "Chat with your documents", icon: "books.vertical.fill") { app.selectedTab = .knowledge },
             .init(title: "Open Settings", subtitle: "Brains, keys, voice, privacy", icon: "gearshape.fill") { app.showSettingsRequested = true },
@@ -24368,7 +24390,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (72 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (81 lines) =====
 ```swift
 import SwiftUI
 
@@ -24387,15 +24409,24 @@ struct ShortcutsView: View {
             .init(keys: "⌘,", label: "Settings"),
             .init(keys: "⌘/", label: "This shortcuts sheet"),
         ]),
-        .init(title: "Navigation", items: [
-            .init(keys: "⌘1", label: "Today"),
-            .init(keys: "⌘2", label: "Chat"),
-            .init(keys: "⌘3", label: "Code"),
-            .init(keys: "⌘4", label: "Agents"),
-            .init(keys: "⌘5", label: "Markets"),
-            .init(keys: "⌘6", label: "Notes"),
-            .init(keys: "⌘7", label: "Knowledge"),
-        ]),
+        .init(title: "Navigation", items: {
+            var nav: [Shortcut] = [
+                .init(keys: "⌘1", label: "Today"),
+                .init(keys: "⌘2", label: "Chat"),
+                .init(keys: "⌘3", label: "Code"),
+                .init(keys: "⌘4", label: "Agents"),
+                .init(keys: "⌘5", label: "Markets"),
+                .init(keys: "⌘6", label: "Notes"),
+                .init(keys: "⌘7", label: "Knowledge"),
+            ]
+            // Hidden tabs (owner directive — see `AppTab.hidden`) drop their
+            // row so this sheet never lists a shortcut that does nothing.
+            // The other ⌘-numbers keep their tabs (⌘5 is simply absent).
+            if AppTab.hidden.contains(.markets) {
+                nav.removeAll { $0.label == "Markets" }
+            }
+            return nav
+        }()),
         .init(title: "Conversation", items: [
             .init(keys: "⌘N", label: "New chat"),
             .init(keys: "⌘J", label: "Hands-free voice"),
@@ -24444,7 +24475,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (176 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (178 lines) =====
 ```swift
 import SwiftUI
 
@@ -24479,7 +24510,7 @@ struct TabSwitcherBar: View {
     @State private var barWidth: CGFloat = 0
     /// Scales with the tab count so adding a 6th/7th tab raises the collapse
     /// point automatically instead of silently re-introducing the clip.
-    private var labelThreshold: CGFloat { CGFloat(AppTab.allCases.count) * 92 + 380 }
+    private var labelThreshold: CGFloat { CGFloat(AppTab.visible.count) * 92 + 380 }
     private var showAllLabels: Bool { barWidth == 0 || barWidth >= labelThreshold }
 
     var body: some View {
@@ -24508,7 +24539,7 @@ struct TabSwitcherBar: View {
 
             // Pills
             HStack(spacing: 4) {
-                ForEach(AppTab.allCases) { tab in pill(tab) }
+                ForEach(AppTab.visible) { tab in pill(tab) }
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
@@ -24519,6 +24550,7 @@ struct TabSwitcherBar: View {
             // Right cluster: live market status pill + Settings gear. Grouped
             // so the rightmost slot reads as one "status + tools" zone.
             HStack(spacing: 8) {
+                if !AppTab.hidden.contains(.markets) {
                 // Live market status — dot + halo (when open) in a soft pill.
                 // Hovering reveals a system tooltip ("Market is closed/open") via
                 // `.help()` (also used as the VoiceOver hint — one modifier, both
@@ -24549,6 +24581,7 @@ struct TabSwitcherBar: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Market")
                 .accessibilityValue(market.session.isOpen ? "Open" : "Closed")
+                }
 
                 // Settings — moved up from the chat header per owner request so it's
                 // reachable from EVERY tab, not just Chat. Uses the existing
@@ -24624,7 +24657,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (183 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (188 lines) =====
 ```swift
 import SwiftUI
 
@@ -24731,11 +24764,16 @@ struct TodayView: View {
                      detail: knowledgeCount == 1 ? "document" : "documents") {
                 app.selectedTab = .knowledge
             }
-            StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
-                     value: market.session.shortLabel,
-                     detail: market.session.isOpen ? "open now" : "closed",
-                     accent: market.session.isOpen ? DS.Palette.success : .white) {
-                app.selectedTab = .markets
+            // Market tile hides with the Markets tab (owner directive — see
+            // `AppTab.hidden`); its tap navigates to a tab that would no
+            // longer exist in the bar.
+            if !AppTab.hidden.contains(.markets) {
+                StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
+                         value: market.session.shortLabel,
+                         detail: market.session.isOpen ? "open now" : "closed",
+                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                    app.selectedTab = .markets
+                }
             }
         }
     }
@@ -31899,7 +31937,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Chat B — perf deep-dive (2026-06-12 ~03:3x, owner: "/deep-research perf + lag spikes, fix them")** | `Views/ContentView.swift`, `Views/ChatHistoryView.swift` | 03:3x | ✅ DONE `b3eacc7` — **root cause: invalidation breadth.** Every keystroke re-ran EVERY settled MessageBubble's body (fresh closures defeat reflection diffing) → fixed with `MessageBubble: Equatable` + `.equatable()` (speech still invalidates via @ObservedObject). Also off-mained two synchronous decodes: `ChatStore.load()` at chat mount (guarded) and History-sheet `archives()` (≤100 file decodes, now `.task` + spinner). Evidence: 0 OS hang reports; launch/streaming/knowledge already fixed in prior rounds; MarkdownText cache already present. Typecheck EXIT 0 (your LLM WIP pinned again). **Streaming bonus: per-token cost now O(1 bubble) instead of O(transcript).** Runtime numbers owed — next QA run's renderMs + a typing `sample` will quantify. | **released** |
 | **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. **✅ SLICE 1 DONE + RELEASED (~02:1x):** seam+tests `446ffd8`, locale fix `3efc758` (staged as a single-hunk patch — your uncommitted hover WIP in ContentView untouched), bundle `e114d6c`. **Final verification: full `Salehman AITests` `** TEST SUCCEEDED **` (455 passed) + app build green + QA `settings` passes (0.33%).** FYI Chat A: `code_samples` baselineDiff 8.83% in the 01:4x capture = your committed design pass needing re-adopt (eyes-verify + `--adopt` on your next cycle). SettingsView + SettingsBrainReadyTests lanes are free again — `Views/SettingsBrainReadiness.swift` is the new pure seam (readiness rules live THERE now; re-read before editing brainReady). | **released** |
 | **Claude Chat D — slice 2: R1 brain-routing seam (2026-06-12 ~02:3x)** | `LLM/LocalLLM.swift` (Chat B lane — owner-directed, Chat B inactive; also old void Grok Tab B claim), NEW `LLM/BrainRouting.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift` (enabling the last blocked suite). **NOT touching** the cloud client files themselves (R3 out of scope), AgentPipeline, BrainAdapter.swift (additive shim stays as-is). | now | **CODEBASE_REVIEW R1 (staged): extract the routing PLAN as a pure seam.** The generate/generateStreaming/chat ladders + freeAuto/freeCoding/cloudCoding/ensemble rosters re-implement the same pin/key/offline gating 8+ ways (the drift class behind the review's confirmed bugs). Plan = pure functions over a `BrainRouteConfig` snapshot (one source of truth, hermetically testable → un-disables `BrainRoutingDispatchTests` with the .auto-never-cloud + offline + free-roster invariants); execution sites keep their exact per-provider quirks (behavior-preserving, verified by full AITests + app build + QA capture per sub-step). No red windows: additive file first, ladders rewired one at a time, build between each. **SCOPE +1 FILE (~02:4x): `LLM/SalehmanEngine.swift`** — the deep-read found **2 real bugs**: (1) 🔴 **Offline-Mode leak** (same class as the fixed WebTools leak): the pinned-cloud cascades in generate/generateStreaming/chat have NO `isOfflineOnly` gate (only `currentBrain` + the orchestration modes gate), so direct callers (Settings ping, StockSage, title gen) hit real cloud HTTP under Offline Mode — and a pinned `.salehman` walks its whole cloud chain incl. the PAID DeepSeek backstop (`SalehmanEngine.generate*` never checks offline). FIXING both layers (dispatch gate + engine gate, loopback-only endpoints offline, matching `generateOnDevice`'s rule) — this is the intended contract per `currentBrain`'s own doc + the disabled test's name. (2) 🟠 **ensemble/deepSeek drift**: `anyBrainReachable` counts DeepSeek but `generateEnsemble`'s roster omits it → DeepSeek-only user sees ensemble 'reachable' but the fan-out is empty. NOT fixing (visible behavior change) — flagged for owner. Unsloth/vLLM REMOTE endpoints under Offline Mode left as-is (currentBrain documents them untouched) — flagged as an open question. **✅ SLICE 2 DONE + RELEASED (~03:0x):** `BrainRouting.swift` landed; all 3 ladders + currentBrain + every roster consume it; 13 `*Allowed` gates deleted; Offline leak FIXED at both layers; `BrainRoutingDispatchTests` enabled (ALL 8 review suites now active). **Verified: build green per step; full AITests `** TEST SUCCEEDED **` (466); QA settings 0.33%/today 0.00% stable.** ⚠️ Chat A: `chat_history` FAILS baselineDiff + `chat_empty`/`chat_live` drift in the 03:0x capture = your committed round-2 choreography — please eyes-verify + re-adopt. **Heads-up to ALL: routing rules now live in `LLM/BrainRouting.swift` ONLY** — change rosters/gating THERE (tests pin them), not in LocalLLM's executors. LLM lane released. | **released** |
-| **Claude Chat D — HIDE MARKETS TAB (2026-06-12 ~03:4x)** | OWNER: "HIDE THE MARKETS TAB UNTIL FURTHER NOTICE." Touching: `App/AppState.swift` (AppTab.hidden/visible — append-only addition), `App/Salehman_AIApp.swift` (⌘5 menu item flag), `Views/TabSwitcherBar.swift` + `Views/RootView.swift` read-only check (Chat A lane — owner-directed), `Views/CommandPalette.swift`, `Views/ShortcutsView.swift` + `Views/TodayView.swift` market card (Chat C lane — owner-directed). | now | ONE reversible flag (`AppTab.hidden = [.markets]`): tab pill, ⌘5 menu, palette row, shortcuts row, Today market card, tab-bar market pill all gated; MarketsView/StockSage code + QA capture path UNTOUCHED (harness still captures the tab programmatically). Restore = empty the set. Build+tests+QA per usual. | no — IN PROGRESS |
+| **Claude Chat D — HIDE MARKETS TAB (2026-06-12 ~03:4x)** | OWNER: "HIDE THE MARKETS TAB UNTIL FURTHER NOTICE." Touching: `App/AppState.swift` (AppTab.hidden/visible — append-only addition), `App/Salehman_AIApp.swift` (⌘5 menu item flag), `Views/TabSwitcherBar.swift` + `Views/RootView.swift` read-only check (Chat A lane — owner-directed), `Views/CommandPalette.swift`, `Views/ShortcutsView.swift` + `Views/TodayView.swift` market card (Chat C lane — owner-directed). | now | ONE reversible flag (`AppTab.hidden = [.markets]`): tab pill, ⌘5 menu, palette row, shortcuts row, Today market card, tab-bar market pill all gated; MarketsView/StockSage code + QA capture path UNTOUCHED (harness still captures the tab programmatically). Restore = empty the set. Build+tests+QA per usual. **✅ DONE + RELEASED (~02:55):** build green, AITests `** TEST SUCCEEDED **` (466), pixels eyes-verified (Today card gone, Shortcuts ⌘5 row gone, numbers preserved). Did NOT adopt baselines — `chat_history` fail is Chat A's unverified drift, not baking it in. FYI: `qa/snapshots/window_0_live.png` is a stale Jun-11 leftover (that capture hasn't refired) — QA owner may want to clean/regen it. | **released** |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -32885,7 +32923,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2132 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2161 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35018,6 +35056,35 @@ App is already well-aligned with 2026 agent-UX (named agents, Memory sheet, Rest
 
 **Result:** session stopped cleanly; tracked working tree clean (all source committed); research preserved.
 **Files:** `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:0x) — Chat C: regenerate SOURCE_BUNDLE (owner request)
+**What & why:** Owner: "regenerate source bundle." Ran `bash tools/bundle_source.sh` so the bundle reflects
+this session's source changes. Verified fresh (greps, not a full read): `enum MemorySort`, About eyebrow +
+"Private when you want it", grey-backdrop `bgTop` (0.11), and `nonisolated func recall` all present.
+**Result:** `SOURCE_BUNDLE.md` = 37,754 lines / 3.0M / 150 swift files (30,342 LOC) + docs. Committed.
+**Files:** `SOURCE_BUNDLE.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:55) — Chat D: Markets tab HIDDEN (owner: "until further notice")
+**What & why:** Owner directive. ONE reversible flag — `AppTab.hidden = [.markets]`
+(+ `AppTab.visible`, the roster every nav surface now iterates) gates ALL Markets
+presence: tab-bar pill (+ label-collapse threshold now tracks visible count), the
+⌘5 View-menu item, the command-palette "Go to Markets" row, the ShortcutsView ⌘5
+row (other ⌘-numbers KEEP their tabs — muscle memory survives restore), TodayView's
+Market stat card (its tap navigates to the hidden tab), and the tab-bar live
+market-status pill. **Deliberately untouched:** MarketsView/StockSage code, alerts,
+monitors, and programmatic navigation (`app.selectedTab = .markets`) — so the QA
+harness still captures the markets surfaces and nothing breaks when restored.
+**Restore = empty `AppTab.hidden`** (one line in AppState.swift).
+**Verified:** build `** BUILD SUCCEEDED **`; full AITests `** TEST SUCCEEDED **`
+(466); fresh QA capture eyes-verified in pixels: Today shows Notes+Knowledge only,
+Shortcuts sheet lists ⌘1–4,6,7 (no ⌘5 row); all drift within budgets (audit
+failures = only the pre-existing `chat_history`, Chat A's to re-adopt). NOT
+adopting baselines (would bake in Chat A's unverified chat drift). Note:
+`window_0_live.png` in qa/snapshots is a STALE Jun-11 19:20 leftover — that
+capture type hasn't refired since; ignore it / QA owner may want to clean it.
+**Files:** `App/AppState.swift`, `App/Salehman_AIApp.swift`, `Views/TabSwitcherBar.swift`,
+`Views/CommandPalette.swift`, `Views/ShortcutsView.swift`, `Views/TodayView.swift`,
+`PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -37484,7 +37551,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
 | `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. Brain-grid readiness reads ONLY cached `@State` key flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
 | `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12): `BrainReadiness` (per-`BrainPreference` reachability rules over cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict), `AnthropicKeyPresentation` (no-leak key subtitle). No UI imports; pinned by `SettingsBrainReadyTests`. |
-| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs**, Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
+| `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs — Markets HIDDEN since 2026-06-12** per owner "until further notice"; one flag `AppTab.hidden` gates the pill, ⌘5, palette/shortcuts rows, Today card + market pill; restore = empty the set), Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |
 | `CodeView.swift` / `CodeSyntaxView.swift` / `FileTree.swift` | **Code tab (⌘3)** — agentic coding workspace (file tree + syntax-highlighted editor). |
 | `AgentsView.swift` | **Agents tab (⌘4)**: live agent status + Autonomous Mode loop. |

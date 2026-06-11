@@ -103,11 +103,16 @@ struct TodayView: View {
                      detail: knowledgeCount == 1 ? "document" : "documents") {
                 app.selectedTab = .knowledge
             }
-            StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
-                     value: market.session.shortLabel,
-                     detail: market.session.isOpen ? "open now" : "closed",
-                     accent: market.session.isOpen ? DS.Palette.success : .white) {
-                app.selectedTab = .markets
+            // Market tile hides with the Markets tab (owner directive — see
+            // `AppTab.hidden`); its tap navigates to a tab that would no
+            // longer exist in the bar.
+            if !AppTab.hidden.contains(.markets) {
+                StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
+                         value: market.session.shortLabel,
+                         detail: market.session.isOpen ? "open now" : "closed",
+                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                    app.selectedTab = .markets
+                }
             }
         }
     }
