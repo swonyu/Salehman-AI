@@ -108,6 +108,7 @@ enum QASnapshots {
         snap(ScratchpadView(),     "notes",        "Notes / scratchpad", .init(width: 1000, height: 700), in: dir)
         snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
         snap(MarketsView(),        "markets",      "Markets tab", .init(width: 1000, height: 740), in: dir)
+        snap(MarketsView(qaSection: .heatmap), "markets_heatmap", "Markets — heatmap sub-section (tile colour-contrast)", .init(width: 1000, height: 640), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)

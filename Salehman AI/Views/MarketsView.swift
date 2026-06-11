@@ -7,7 +7,7 @@ import SwiftUI
 /// (sample seed until a live feed lands — honestly flagged). Sections not yet
 /// built show a clear "coming soon".
 struct MarketsView: View {
-    @State private var section: MarketSection = .watchlist
+    @State private var section: MarketSection
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @State private var briefing = ""
@@ -20,6 +20,10 @@ struct MarketsView: View {
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
+
+    /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
+    /// heatmap) offscreen; normal use defaults to the watchlist.
+    init(qaSection: MarketSection = .watchlist) { _section = State(initialValue: qaSection) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -297,6 +301,9 @@ struct MarketsView: View {
                             Text(String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                         }
+                        // Legibility on saturated tiles: white on a strong green/red is
+                        // borderline — a subtle dark shadow lifts the text on any shade.
+                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
