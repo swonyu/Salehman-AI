@@ -34,6 +34,8 @@ final class MissionProgress: ObservableObject {
     @Published var steps: [Step] = []
     @Published var running = false
     @Published var streamingAnswer = ""   // live final answer as it streams
+    @Published var startedAt: Date?       // when the current run began (drives the
+                                          // Activity panel's elapsed-time readout)
 
     /// Monotonic timestamp of the last `streamingAnswer` publish, for throttling.
     private var lastStreamPushNs: UInt64 = 0
@@ -44,6 +46,7 @@ final class MissionProgress: ObservableObject {
         steps = specs.map { Step(name: $0.name, icon: $0.icon, status: .pending) }
         streamingAnswer = ""
         running = true
+        startedAt = Date()
     }
 
     /// Apply task-adapted titles (name → adapted title).
@@ -79,8 +82,8 @@ final class MissionProgress: ObservableObject {
         lastStreamPushNs = now
         streamingAnswer = text
     }
-    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0 }
-    func clear()  { steps = []; running = false; streamingAnswer = "" }
+    func finish() { running = false; streamingAnswer = ""; lastStreamPushNs = 0; startedAt = nil }
+    func clear()  { steps = []; running = false; streamingAnswer = ""; startedAt = nil }
 }
 
 /// Named tuning thresholds for the pipeline — were inline magic numbers scattered
@@ -197,6 +200,7 @@ enum AgentPipeline {
             if reply.isEmpty {   // Ollama unreachable → fall back to the full cloud engine
                 reply = await SalehmanEngine.generate(prompt: prompt, userPrompt: mission) ?? ""
             }
+            reply = stripNarration(reply)
             if !isErrorReply(reply) {
                 await ConversationStore.shared.add(role: "User", text: mission)
                 await ConversationStore.shared.add(role: "Salehman AI", text: reply)
@@ -221,7 +225,7 @@ enum AgentPipeline {
             }
         }
 
-        let finalAnswer = await SalehmanLeader.finalize(userPrompt: mission, draft: draft)
+        let finalAnswer = stripNarration(await SalehmanLeader.finalize(userPrompt: mission, draft: draft))
 
         // Record the turn HERE — the single chokepoint every mode funnels through —
         // so the short-circuit modes (which `return` before the multi-agent team's
@@ -232,6 +236,49 @@ enum AgentPipeline {
             await ConversationStore.shared.add(role: "Salehman AI", text: finalAnswer)
         }
         return finalAnswer
+    }
+
+    /// Strip the local fine-tune's "think out loud" scaffold. The Q3 model sometimes
+    /// emits a block of meta-reasoning ("You are Salehman AI…", "Interpretation:…",
+    /// "The most likely reading is…") and then puts the ACTUAL reply after a final
+    /// "Response:" line. When that shape is present, keep only what follows the last
+    /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
+    /// Conservative: only fires when a non-empty answer follows the marker, so a normal
+    /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    nonisolated static func stripNarration(_ text: String) -> String {
+        var out = text
+        // 1) Leading scaffold: keep only what follows the final "Response:" line.
+        for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
+            if let r = out.range(of: marker, options: .backwards) {
+                let after = out[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                // Only strip if what's left is a real reply (not itself another
+                // "Interpretation:"-style scaffold, and not trivially short).
+                if after.count >= 2, !after.hasPrefix("Interpretation:"), !after.hasPrefix("You are Salehman") {
+                    out = after
+                    break
+                }
+            }
+        }
+        // 2) Trailing meta: the fine-tune sometimes appends reviewer boilerplate
+        //    after the real answer ("Thoughts on this response? I'm happy to
+        //    rephrase…"), often behind a "---" divider, plus fake markdown
+        //    footnotes ("  [1]: https://…"). Cut from the first such marker.
+        for marker in ["Thoughts on this response", "\nUser: ", "\nSalehman AI: "] {
+            if let r = out.range(of: marker) {
+                out = String(out[..<r.lowerBound])
+            }
+        }
+        // Drop a now-dangling trailing divider and any footnote-link lines.
+        var lines = out.components(separatedBy: "\n")
+        while let last = lines.last?.trimmingCharacters(in: .whitespaces),
+              last.isEmpty || last == "---" || last == "***"
+              || last.range(of: #"^\[\d+\]:\s*\S*$"#, options: .regularExpression) != nil {
+            lines.removeLast()
+            if lines.isEmpty { break }
+        }
+        let cleaned = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Never strip down to nothing — a busted heuristic must not eat the reply.
+        return cleaned.count >= 2 ? cleaned : text
     }
 
     /// True when a draft is an error/off sentinel rather than a real answer, so

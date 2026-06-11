@@ -89,16 +89,12 @@ struct SettingsView: View {
     @State private var copilotTesting = false
     @State private var copilotWorking: Bool? = nil   // nil = untested, true/false = result
 
-    // Live "is the *selected* brain actually answering" check (covers all brains).
-    @State private var activeBrainTesting = false
-    @State private var activeBrainWorking: Bool? = nil
-    /// Number of `testActiveBrain()` runs currently in flight. `activeBrainTesting`
-    /// is the OR of "any run live" — derived from this counter so a superseded
-    /// run that bails (pin changed mid-await) still decrements its own flight
-    /// without prematurely clearing the spinner while a successor is running,
-    /// AND can't leave the spinner stuck-on when no successor starts (e.g. user
-    /// switched local→cloud, where the `.onChange` skips auto-testing).
-    @State private var activeBrainInFlight: Int = 0
+    // Live "is the *selected* brain actually answering" check (covers all
+    // brains). The overlap rules (three triggers can race at the await; a
+    // superseded run must neither publish a stale verdict nor strand — or
+    // prematurely clear — the spinner) live in `ActiveBrainProbe`
+    // (SettingsBrainReadiness.swift), pinned by SettingsBrainReadyTests.
+    @State private var activeBrain = ActiveBrainProbe()
 
     // Polled mirror of MLXSalehmanEngine.shared.state. The engine is an actor
     // (not ObservableObject), so a tiny .task polls it while the section is
@@ -441,7 +437,7 @@ struct SettingsView: View {
             }
         }
         .onChange(of: settings.brainPreference) { _, _ in
-            activeBrainWorking = nil                      // clear stale result on switch
+            activeBrain.invalidate()                      // clear stale result on switch
             if activeBrainIsLocal { Task { await testActiveBrain() } }
         }
     }
@@ -499,69 +495,47 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    /// Whether the given brain preference is reachable right now. Extracted from
-    /// the old vertical `brainRow` so the new compact `brainGridCell` can reuse
-    /// the exact same readiness logic (single source of truth — if reachability
-    /// rules change, only this function needs to). Synchronous + cheap: reads
-    /// in-memory state vars (`appleOK`, `ollamaUp`, `hasCoder`) updated by the
-    /// outer Settings polling and synchronous Keychain `hasKey()` checks.
+    /// Whether the given brain preference is reachable right now. Thin caller
+    /// over the pure `BrainReadiness` seam (SettingsBrainReadiness.swift) —
+    /// the readiness RULES live there, pinned by SettingsBrainReadyTests.
+    /// Reads ONLY cached state: the @State key flags the Save/Clear bindings
+    /// maintain plus the polled `ollamaUp`/`hasCoder` — zero Keychain
+    /// syscalls per body recompute. (CODEBASE_REVIEW HIGH perf fix: the old
+    /// switch here fired live `hasKey()` reads per visible grid cell on
+    /// every recompute — each keystroke and each 5s poll tick paid ~25+
+    /// SecItemCopyMatching calls; `.salehman` alone walked the whole 10-key
+    /// `SalehmanEngine.hasAnyCloud` chain.)
     private func brainReady(_ pref: BrainPreference) -> Bool {
-        switch pref {
-        case .auto:        return ollamaUp && hasCoder
-        case .ollama:      return ollamaUp && hasCoder
-        case .claudeHaiku: return AnthropicClient.isConfigured
-        case .grok:        return GrokClient.hasKey()
-        case .gemini:      return GeminiClient.hasKey()
-        case .groq:        return GroqClient.shared.hasKey()
-        case .mistral:     return MistralClient.shared.hasKey()
-        case .cerebras:    return CerebrasClient.shared.hasKey()
-        case .deepSeek:    return DeepSeekClient.shared.hasKey()
-        case .codex:       return OpenAIClient.hasKey()
-        case .copilot:     return CopilotClient.isAuthed()
-        case .openRouter:  return OpenRouterClient.shared.hasKey()
-        // Ensemble is "ready" if ANY brain is reachable — a local one or any
-        // keyed cloud one. Mirrors `LocalLLM.anyBrainReachable`'s synchronous
-        // half; the Ollama check uses the cached `hasCoder`.
-        case .ensemble:
-            return (ollamaUp && hasCoder)
-                || AnthropicClient.isConfigured || GrokClient.hasKey() || GeminiClient.hasKey()
-                || GroqClient.shared.hasKey() || MistralClient.shared.hasKey()
-                || CerebrasClient.shared.hasKey() || OpenAIClient.hasKey() || CopilotClient.isAuthed()
-                || OpenRouterClient.shared.hasKey()
-        // Free · Auto is ready if any FREE brain or a local brain can answer
-        // (paid brains excluded — this mode never spends).
-        case .freeAuto:
-            return (ollamaUp && hasCoder)
-                || GroqClient.shared.hasKey() || GeminiClient.hasKey()
-                || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
-                || OpenRouterClient.shared.hasKey()
-        // FreeCoding mirrors Free·Auto's readiness plus DeepSeek (opted into the loop).
-        case .freeCoding:
-            return (ollamaUp && hasCoder)
-                || DeepSeekClient.shared.hasKey() || GroqClient.shared.hasKey()
-                || CerebrasClient.shared.hasKey() || MistralClient.shared.hasKey()
-                || OpenRouterClient.shared.hasKey()
-        // Cloud Coding is cloud-ONLY — ready iff any cloud coder key is saved.
-        case .cloudCoding:
-            return DeepSeekClient.shared.hasKey() || CerebrasClient.shared.hasKey()
-                || GroqClient.shared.hasKey() || OpenRouterClient.shared.hasKey()
-                || MistralClient.shared.hasKey()
-        // Salehman is CLOUD-FIRST: reachable when ANY cloud engine is set
-        // (hosted endpoint or any free/paid key) or the user's own Ollama model
-        // is plausibly available (the exact pulled-model check is async at
-        // runtime via `OllamaClient.hasCustomModel`).
-        case .salehman:
-            return SalehmanEngine.hasAnyCloud
-                || (ollamaUp && !settings.customModelName.trimmingCharacters(in: .whitespaces).isEmpty)
-        // Unsloth Studio (and any other local OpenAI-compat server) is reachable
-        // iff the user has set an endpoint URL. We don't probe the URL here —
-        // the dot stays "ready" once configured, and a real call surfaces the
-        // unreachable case via `unavailableMessage`.
-        case .unslothStudio:
-            return UnslothStudio.isConfigured
-        case .vllm:
-            return VLLM.isConfigured
-        }
+        brainReadiness.ready(pref)
+    }
+
+    /// Snapshot of every readiness signal, assembled from cached state only.
+    /// Endpoint checks (`UnslothStudio`/`VLLM.isConfigured`) are UserDefaults
+    /// reads — in-memory, no Keychain. Trade-off vs the old live reads: a key
+    /// saved by something OTHER than this sheet wouldn't repaint the grid —
+    /// but every in-app writer (Save/Clear rows, Copilot sign-in callback)
+    /// already updates its cached flag, which recomputes body anyway, and the
+    /// "N/total set" group badges have trusted these same flags all along.
+    private var brainReadiness: BrainReadiness {
+        BrainReadiness(
+            ollamaUp: ollamaUp,
+            hasCoder: hasCoder,
+            customModelNamed: !settings.customModelName
+                .trimmingCharacters(in: .whitespaces).isEmpty,
+            unslothConfigured: UnslothStudio.isConfigured,
+            vllmConfigured: VLLM.isConfigured,
+            anthropic: anthropicKeySaved,
+            grok: grokKeySaved,
+            gemini: geminiKeySaved,
+            groq: groqKeySaved,
+            mistral: mistralKeySaved,
+            cerebras: cerebrasKeySaved,
+            deepSeek: deepSeekKeySaved,
+            openAI: openAIKeySaved,
+            copilot: copilotAuthed,
+            openRouter: openRouterKeySaved,
+            nvidia: nvidiaKeySaved
+        )
     }
 
     /// Compact selectable cell for the Brain picker grid. Replaces the old
@@ -1426,11 +1400,11 @@ struct SettingsView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            workingBadge(testing: activeBrainTesting, working: activeBrainWorking)
+            workingBadge(testing: activeBrain.testing, working: activeBrain.working)
             Button { Task { await testActiveBrain() } } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.bordered).controlSize(.small).disabled(activeBrainTesting)
+            .buttonStyle(.bordered).controlSize(.small).disabled(activeBrain.testing)
             .help("Test the selected brain").accessibilityLabel("Test the selected brain")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -1453,25 +1427,14 @@ struct SettingsView: View {
     /// legitimate reply that begins with a bracket (code, a JSON array) isn't
     /// mistaken for a failure.
     private func testActiveBrain() async {
-        // Three triggers (.task poll, brain-switch onChange, refresh button) can
-        // overlap at the await below. Each run increments `activeBrainInFlight`
-        // at entry and decrements (via defer) at every exit path, so the spinner
-        // (`activeBrainTesting`) is "any run live." Only the run whose pin still
-        // matches at the end publishes `activeBrainWorking`, so a superseded run
-        // (user switched mid-ping) bails silently — it doesn't write a stale
-        // brain's verdict, and it can neither prematurely clear the spinner
-        // while a successor is still running nor leave it stuck-on when no
-        // successor starts (the bug: `.onChange` only auto-tests local brains,
-        // so a local→cloud switch leaves the superseded local run as the last
-        // one in flight; its decrement is what clears the spinner now).
+        // Three triggers (.task poll, brain-switch onChange, refresh button)
+        // can overlap at the await below; `ActiveBrainProbe` owns the overlap
+        // rules (spinner = any run live; superseded runs exit silently — see
+        // SettingsBrainReadiness.swift, pinned by SettingsBrainReadyTests).
+        // The pin comparison decides "superseded": only the run whose brain
+        // is still selected at the end publishes its verdict.
         let pinned = settings.brainPreference
-        activeBrainInFlight += 1
-        activeBrainTesting = true
-        activeBrainWorking = nil
-        defer {
-            activeBrainInFlight -= 1
-            if activeBrainInFlight == 0 { activeBrainTesting = false }
-        }
+        activeBrain.begin()
         let working: Bool
         if LocalLLM.isEnsembleMode {
             // Ensemble fans out to EVERY reachable brain — firing a real "ping"
@@ -1482,13 +1445,10 @@ struct SettingsView: View {
             working = await LocalLLM.anyBrainReachable()
         } else {
             let reply = await LocalLLM.generate("ping", maxTokens: 5)
-            let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-            working = !(trimmed.isEmpty
-                      || reply == LocalLLM.offMessage
-                      || trimmed.hasPrefix("[Claude Haiku"))
+            working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
         }
-        guard settings.brainPreference == pinned else { return }
-        activeBrainWorking = working
+        activeBrain.finish(verdict: working,
+                           superseded: settings.brainPreference != pinned)
     }
 
     /// Reusable "is this brain actually working" badge: spinner while testing,
@@ -1835,29 +1795,20 @@ struct SettingsView: View {
         anthropicKeySaved ? KeychainStore.read(.anthropicAPIKey) : nil
     }
 
-    /// Subtitle for the key row — shows the saved key's prefix when present
-    /// so the user can verify the family (`sk-ant-api03…` vs an OpenAI
-    /// `sk-…` vs a Grok `xai-…` etc.) without ever exposing the full key.
+    /// Subtitle for the key row — the masking rule is pure in
+    /// `AnthropicKeyPresentation` (SettingsBrainReadiness.swift): echoes the
+    /// 12-char family prefix only when the key IS `sk-ant-…`; a misfiled
+    /// wrong-service key (whose first chars carry secret bytes) masks to
+    /// `sk-…`. No-leak property pinned by SettingsBrainReadyTests.
     private var anthropicSubtitle: String {
-        guard let raw = savedAnthropicKey else {
-            return "Needed only for Claude Haiku. Get one at console.anthropic.com."
-        }
-        // Show enough characters to confirm the family but not the secret —
-        // `sk-ant-api03` is 12 chars and uniquely identifies an Anthropic key.
-        // Only echo the prefix when it IS an Anthropic key; a misfiled
-        // wrong-service key (whose first chars carry secret bytes) shows nothing.
-        let prefix = raw.hasPrefix("sk-ant-") ? String(raw.prefix(12)) : "sk-…"
-        let family = raw.hasPrefix("sk-ant-")
-            ? "Looks like an Anthropic key"
-            : "⚠️ Doesn't start with `sk-ant-` — may be from a different service"
-        return "Saved: \(prefix)…  ·  \(family)"
+        AnthropicKeyPresentation.subtitle(savedKey: savedAnthropicKey)
     }
 
     /// Orange when the prefix doesn't look like an Anthropic key, secondary
     /// otherwise. Drives attention to the "saved the wrong key" failure mode.
     private var anthropicSubtitleColor: Color {
-        guard let raw = savedAnthropicKey else { return .secondary }
-        return raw.hasPrefix("sk-ant-") ? .secondary : .orange
+        AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
+            ? .orange : .secondary
     }
 
     /// Hit Anthropic with a one-token prompt and surface the actual error.

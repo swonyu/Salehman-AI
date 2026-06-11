@@ -13,6 +13,22 @@ struct Attachment: Identifiable {
     let extractedText: String
     var fileURL: URL? = nil       // original file (used for Claude vision on images)
     var isImage: Bool = false     // true for images/screenshots → eligible for cloud vision
+
+    /// Collapse several attachments into ONE for the send pipeline, which
+    /// deliberately stays single-attachment (vision, transcript packing, the
+    /// 📎 bubble line all read one value). A single item passes through
+    /// untouched — keeping its `fileURL`/`isImage` so the vision path still
+    /// fires; a multi-merge is text-only by design. Pure for tests.
+    nonisolated static func merged(_ list: [Attachment]) -> Attachment? {
+        guard let first = list.first else { return nil }
+        guard list.count > 1 else { return first }
+        let body = list
+            .map { "––– \($0.name) (\($0.kind)) –––\n\($0.extractedText)" }
+            .joined(separator: "\n\n")
+        return Attachment(name: list.map(\.name).joined(separator: ", "),
+                          kind: "files", icon: "doc.on.doc",
+                          extractedText: body)
+    }
 }
 
 enum AttachmentLoader {
@@ -28,6 +44,17 @@ enum AttachmentLoader {
         panel.canChooseFiles = true
         panel.message = "Choose a file to attach"
         return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Multi-select variant — the composer now takes several attachments.
+    @MainActor
+    static func pickFiles() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = "Choose files to attach"
+        return panel.runModal() == .OK ? panel.urls : []
     }
 
     /// Turn a file URL into an Attachment, extracting its text appropriately.

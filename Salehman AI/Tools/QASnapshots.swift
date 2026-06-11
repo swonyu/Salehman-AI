@@ -51,6 +51,13 @@ enum QASnapshots {
         }
         let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
+        // Owner-launch protection: a pending request used to make EVERY launch
+        // (Dock, Spotlight…) render ~30 surfaces + run the pixel audit on the main
+        // thread ≈1s in — a big slice of "the app always lags when launched".
+        // Captures now run only on QA-initiated launches (`open … --args --qa`,
+        // which tools/qa.sh passes). A request seen WITHOUT the flag is left in
+        // place, so the next qa.sh launch still fulfills it — never silently eaten.
+        guard ProcessInfo.processInfo.arguments.contains("--qa") else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
             captureAll()
@@ -65,19 +72,35 @@ enum QASnapshots {
     private struct Shot { let name: String; let desc: String; let w: Int; let h: Int; let ok: Bool; let ms: Int }
     private static var shots: [Shot] = []
 
+    /// Structural results (layout geometry + accessibility tree) per surface —
+    /// written to STRUCTURE.json for `QAAudit` to fold into the verdict.
+    private static var structure: [String: QASurfaceStructure] = [:]
+
     static func captureAll() {
         let dir = qaDir.appendingPathComponent("snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         shots.removeAll()
+        structure.removeAll()
+        QAGeometry.enabled = true
+        defer { QAGeometry.enabled = false }
 
         // ── Code tab ─────────────────────────────────────────────────────────
         snap(CodeView(),           "code_tab",     "Code tab — live (welcome, file tree, composer, collapsed panels)", .init(width: 1180, height: 820), in: dir)
         snap(CodeSampleGallery(),  "code_samples", "Code tab — deterministic states (blocks, code, table, Arabic RTL, streaming, agent strip, refusal)", .init(width: 860, height: 1560), in: dir)
         // ── Main chat ────────────────────────────────────────────────────────
+        // The chat renders also feed the GEOMETRY probe: ContentView reports
+        // its reading-column + composer frames, and the audit asserts the
+        // 780pt-centered invariants at both widths.
+        QAGeometry.reset()
         snap(ContentView(),        "chat_live",    "Main chat — LIVE (owner's real history; gitignored)", .init(width: 1000, height: 780), in: dir)
-        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent states", .init(width: 820, height: 1240), in: dir)
+        structure["chat_live", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 1000)
+        snap(ContentView(qaForceEmptyState: true),
+                                   "chat_empty",   "Main chat — first-impression welcome (QA-forced empty state)", .init(width: 1000, height: 780), in: dir)
+        snap(ChatSampleGallery(),  "chat_samples", "Main chat — deterministic message/streaming/agent/hover/approval states", .init(width: 820, height: 1780), in: dir)
         // ── Responsive — narrow widths catch layout breaks (centered column, composer wrap) ──
+        QAGeometry.reset()
         snap(ContentView(),        "chat_narrow",  "Main chat @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        structure["chat_narrow", default: .init()].geo = QAGeometry.chatAssertions(rootWidth: 560)
         snap(CodeView(),           "code_narrow",  "Code tab @ 640pt — responsive / layout-break check", .init(width: 640, height: 760), in: dir)
         // ── Every other tab — flat-canvas restyle spot-check ────────────────
         snap(TodayView(),          "today",        "Today dashboard", .init(width: 1000, height: 740), in: dir)
@@ -85,15 +108,45 @@ enum QASnapshots {
         snap(ScratchpadView(),     "notes",        "Notes / scratchpad", .init(width: 1000, height: 700), in: dir)
         snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
         snap(MarketsView(),        "markets",      "Markets tab", .init(width: 1000, height: 740), in: dir)
+        snap(MarketsView(qaSection: .heatmap), "markets_heatmap", "Markets — heatmap sub-section (tile colour-contrast)", .init(width: 1000, height: 640), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
+        // History sheet renders its EMPTY state offscreen (onAppear never
+        // fires, so the archive list never loads) — deterministic by accident,
+        // and exactly the first-impression surface worth baselining.
+        snap(ChatHistoryView(onRestore: { _ in }), "chat_history", "Conversation-history sheet (empty state)", .init(width: 520, height: 560), in: dir)
         snap(SettingsView(),       "settings",     "Settings sheet", .init(width: 560, height: 640), in: dir)
         // ── Readability probe — every text-style/surface pairing the design
         // language uses, in fixed bands the audit measures for CONTRAST (the
         // invisible-code-text class of bug, caught by eyes in round 1, is now
         // caught by arithmetic every capture).
         snap(ContrastProbe(),      "contrast_probe", "Readability probe — text/surface contrast bands (audited vs WCAG-style ratios)", .init(width: 600, height: CGFloat(ContrastProbe.bands.count) * ContrastProbe.bandHeight), in: dir)
+        // ── QA v6 (Chat C): previously-uncaptured sheets ─────────────────────
+        snap(OnboardingView(onDone: {}),  "onboarding",      "Onboarding — first-run welcome (page 1)", .init(width: 540, height: 600), in: dir)
+        snap(AboutView(onClose: {}),      "about",           "About sheet — identity + capabilities", .init(width: 460, height: 560), in: dir)
+        snap(ShortcutsView(onClose: {}),  "shortcuts",       "Keyboard-shortcuts cheat sheet (⌘/)", .init(width: 380, height: 470), in: dir)
+        snap(CommandPalette(onClose: {}), "command_palette", "Command palette (⌘K)", .init(width: 560, height: 520), in: dir)
+        // VoiceModeView is intentionally NOT captured: its .onAppear runs
+        // session.start() (the mic) — an offscreen QA render must not trigger it.
+        // ── Responsive: narrow widths catch layout breaks on the flexible tabs ──
+        snap(TodayView(),     "today_narrow",     "Today @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(MarketsView(),   "markets_narrow",   "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(KnowledgeView(), "knowledge_narrow", "Knowledge @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+
+        // Bridge layout + accessibility findings to the audit. MERGE, don't
+        // overwrite: `captureLiveWindows` contributes window_* entries (the
+        // only place AX trees are real), and a fresh offscreen capture was
+        // clobbering them (caught when window_0_live lost its axLabels check).
+        let url = dir.appendingPathComponent("STRUCTURE.json")
+        var merged: [String: QASurfaceStructure] =
+            (try? Data(contentsOf: url))
+                .flatMap { try? JSONDecoder().decode([String: QASurfaceStructure].self, from: $0) } ?? [:]
+        merged = merged.filter { $0.key.hasPrefix("window_") }   // keep only live-window entries
+        for (k, v) in structure { merged[k] = v }
+        if let data = try? JSONEncoder().encode(merged) {
+            try? data.write(to: url)
+        }
 
         writeManifest(in: dir)
         buildContactSheet(in: dir)
@@ -105,6 +158,11 @@ enum QASnapshots {
 
         // Self-judge the pictures: AUDIT.json (nonBlank / canvasFlat / baseline
         // diff + heat-maps). The UI-test gate asserts failures == [].
+        // Color-vision pass (Chat C, QA v6): deuteranopia/protanopia previews +
+        // red-green "merge" detection. Runs BEFORE the audit so its cvd.json is
+        // fresh when the audit folds CVD status into report.html.
+        QAColorVision.run(snapshotsDir: dir)
+
         QAAudit.run(snapshotsDir: dir,
                     baselinesDir: qaDir.appendingPathComponent("baselines"))
     }
@@ -135,8 +193,45 @@ enum QASnapshots {
                 ok = (try? png.write(to: dir.appendingPathComponent("\(name).png"))) != nil
             }
         }
-        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height),
-                          ok: ok, ms: Int(Date().timeIntervalSince(start) * 1000)))
+        // Accessibility sweep on the laid-out tree: count interactive elements
+        // and collect the UNLABELED ones (icon-only buttons that lost their
+        // .accessibilityLabel/.help — the audit fails on any).
+        let ax = axScan(host)
+        structure[name, default: .init()].axInteractive = ax.interactive
+        structure[name, default: .init()].axUnlabeled = ax.unlabeled
+        structure[name, default: .init()].axTargets = ax.targets
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        structure[name, default: .init()].renderMs = ms
+        shots.append(Shot(name: name, desc: desc, w: Int(size.width), h: Int(size.height), ok: ok, ms: ms))
+    }
+
+    /// Recursive accessibility-tree walk. Interactive roles must carry a label,
+    /// title, or help text — VoiceOver users get nothing otherwise.
+    static func axScan(_ root: NSView) -> (interactive: Int, unlabeled: [String], targets: [Double]) {
+        var interactive = 0
+        var unlabeled: [String] = []
+        var targets: [Double] = []
+        let interactiveRoles: Set<NSAccessibility.Role> = [
+            .button, .popUpButton, .menuButton, .checkBox, .radioButton, .slider, .link,
+        ]
+        func walk(_ node: Any, depth: Int) {
+            guard depth < 60 else { return }
+            guard let ax = node as? any NSAccessibilityProtocol else { return }
+            if let role = ax.accessibilityRole(), interactiveRoles.contains(role) {
+                interactive += 1
+                let label = (ax.accessibilityLabel() ?? "").trimmingCharacters(in: .whitespaces)
+                let title = (ax.accessibilityTitle() ?? "").trimmingCharacters(in: .whitespaces)
+                let help = (ax.accessibilityHelp() ?? "").trimmingCharacters(in: .whitespaces)
+                if label.isEmpty && title.isEmpty && help.isEmpty {
+                    unlabeled.append(role.rawValue)
+                }
+                let f = ax.accessibilityFrame()
+                if f.width > 0, f.height > 0 { targets.append(Double(min(f.width, f.height))) }
+            }
+            for child in ax.accessibilityChildren() ?? [] { walk(child, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return (interactive, unlabeled, targets)
     }
 
     /// Markdown manifest: what each PNG shows, its size, render status + time, the
@@ -230,18 +325,24 @@ enum QASnapshots {
 struct ContrastProbe: View {
     static let bandHeight: CGFloat = 56
 
-    /// (label, text style, foreground, background, minimum contrast the audit
-    /// enforces). MainActor like the DS tokens it reads; both consumers
+    /// (label, text style, foreground, background, minimum contrast, enforced).
+    /// `enforced=false` = advisory: measured + reported in AUDIT.json/report
+    /// but doesn't fail the gate — used while a fix needs the other session's
+    /// lane. MainActor like the DS tokens it reads; both consumers
     /// (`captureAll`, `QAAudit.contrastChecks`) are MainActor too.
-    static var bands: [(String, CGFloat, Color, Color, Double)] {
+    static var bands: [(String, CGFloat, Color, Color, Double, Bool)] {
         [
-            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5),
-            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0),
-            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5),
-            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0),
-            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5),
-            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0),
-            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0),
+            ("body on canvas",        14,   Color.white.opacity(0.92),      DS.Palette.codeSurface,     4.5, true),
+            ("secondary on canvas",   11,   DS.Palette.textSecondary,       DS.Palette.codeSurface,     3.0, true),
+            ("body on panel",         14,   Color.white.opacity(0.92),      DS.Palette.codeSurfaceSide, 4.5, true),
+            ("secondary on panel",    11,   DS.Palette.textSecondary,       DS.Palette.codeSurfaceSide, 3.0, true),
+            ("body on user block",    13.5, .white,                         Color(white: 0.125 + 0.09), 4.5, true),
+            ("white on accent (send)", 13,  .white,                         DS.Palette.accent,          3.0, true),
+            // v4's first run flagged this at 2.21:1 — root cause was the AUDIT
+            // computing luma in gamma space; with proper sRGB linearization the
+            // true ratio is ≈4.3:1. Enforced with correct math. (The advisory
+            // flag stays available for genuine cross-lane waits.)
+            ("accent on canvas",      13,   DS.Palette.accent,              DS.Palette.codeSurface,     3.0, true),
         ]
     }
 
@@ -318,6 +419,46 @@ private struct ChatSampleGallery: View {
                     .init(name: "Final Output Quality Owner", icon: "checkmark.seal.fill",
                           status: .pending),
                 ])
+            }
+            // States a static render can't reach naturally — forced visible so
+            // they get eyes + baseline protection like everything else.
+            gallerySection("Hover state — floating action pill + reply timing (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Hover actions float on a panel pill — timing, speak, copy, regenerate — without reserving layout.",
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(120),
+                                                   duration: 4.2),
+                              onRegenerate: { _ in },
+                              onQuote: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)   // room for the pill's -4 offset above the row
+            }
+            gallerySection("Failure row — inline retry under the unavailable message") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: LocalLLM.offMessage,
+                                                   isUser: false,
+                                                   timestamp: now.addingTimeInterval(140)),
+                              onRegenerate: { _ in })
+            }
+            gallerySection("User row hover — edit & resend + copy (QA-forced)") {
+                MessageBubble(message: ChatMessage(id: UUID(),
+                                                   text: "Edit this message and resend it — the turn re-opens in the composer.",
+                                                   isUser: true,
+                                                   timestamp: now.addingTimeInterval(150)),
+                              onEdit: { _ in },
+                              qaShowActions: true)
+                    .padding(.top, 14)
+            }
+            gallerySection("Time separator — burst boundary") {
+                TimeSeparator(date: now)
+            }
+            gallerySection("Approval card — the command gate") {
+                ApprovalCard(command: "ls -la ~/Desktop", onRun: {}, onCancel: {}, onAlways: {})
+                    .frame(height: 300)
+                    .clipped()
+            }
+            gallerySection("Scroll-to-latest — solid accent pill") {
+                ScrollToLatestButton(unreadCount: 3) {}
             }
         }
         .padding(28)

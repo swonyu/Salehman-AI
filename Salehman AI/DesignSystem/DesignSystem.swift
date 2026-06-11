@@ -29,15 +29,15 @@ enum DS {
     enum Palette {
         static let accent        = Color(red: 0.98, green: 0.18, blue: 0.29)
         static let accent2       = Color(red: 1.00, green: 0.33, blue: 0.55)
-        static let bgTop         = Color(red: 0.09, green: 0.05, blue: 0.07)
-        static let bgBottom      = Color(red: 0.03, green: 0.02, blue: 0.03)
+        static let bgTop         = Color(red: 0.11, green: 0.11, blue: 0.12)
+        static let bgBottom      = Color(red: 0.04, green: 0.04, blue: 0.045)
         static let surface       = Color.white.opacity(0.07)
         // Code-tab editor surfaces — NEUTRAL grey (no red cast): the chat canvas
         // is lighter, the sidebar/inspector a step darker for depth, like an editor.
         static let codeSurface     = Color(white: 0.125)
         static let codeSurfaceSide = Color(white: 0.095)
         static let surfaceAlt    = Color.white.opacity(0.06)
-        static let modalBG       = Color(red: 0.13, green: 0.09, blue: 0.11)
+        static let modalBG       = Color(red: 0.13, green: 0.13, blue: 0.14)
         static let surfaceStroke = Color.white.opacity(0.12)
         static let hairline      = Color.white.opacity(0.12)
         static let textPrimary   = Color.white
@@ -56,6 +56,7 @@ enum DS {
     // MARK: Typography
     enum Typography {
         static let titleL       = Font.system(size: 28, weight: .bold,     design: .rounded)
+        static let titleXL      = Font.system(size: 30, weight: .bold,     design: .rounded)
         static let titleM       = Font.system(size: 17, weight: .semibold, design: .rounded)
         static let body         = Font.system(size: 14)
         static let mono         = Font.system(size: 13, design: .monospaced)
@@ -77,6 +78,9 @@ enum DS {
         static let magnetic = Animation.interpolatingSpring(stiffness: 220, damping: 18)
         static let stagger   = Animation.timingCurve(0.34, 0.0, 0.66, 1.0, duration: 0.32)
         static let entrance  = Animation.timingCurve(0.22, 0.61, 0.36, 1.0, duration: 0.55)
+        /// The Code tab's signature curve (matches its local `lux`), promoted
+        /// to a shared token so the chat composer/welcome animate identically.
+        static let lux       = Animation.timingCurve(0.32, 0.72, 0.0, 1.0, duration: 0.40)
     }
 
     // MARK: Elevation
@@ -112,6 +116,10 @@ enum DS {
             startPoint: .topLeading, endPoint: .bottomTrailing)
         static let bg = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
+        // Vertical variant for full-screen sheets (Onboarding/About) — straight
+        // top→bottom wash rather than the diagonal app background.
+        static let bgVertical = LinearGradient(colors: [Palette.bgTop, Palette.bgBottom],
+                                               startPoint: .top, endPoint: .bottom)
     }
 }
 
@@ -196,6 +204,18 @@ struct SecondaryButtonStyle: ButtonStyle {
             .background(Color.white.opacity(c.isPressed ? 0.14 : 0.08),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .scaleEffect(c.isPressed ? 0.98 : 1)
+            .animation(DS.Motion.press, value: c.isPressed)
+    }
+}
+
+/// Bare press physics for controls that carry their OWN chrome (capsule pills,
+/// chips, icon buttons): 0.97 settle while pressed, press-curve release — the
+/// `.plain` style with a body. No fill/font opinions, so existing chrome is
+/// untouched. APPEND-ONLY addition (Chat B, 2026-06-12).
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
             .animation(DS.Motion.press, value: c.isPressed)
     }
 }

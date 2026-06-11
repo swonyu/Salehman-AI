@@ -2,11 +2,62 @@ import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import Vision
+
+// MARK: - Screenshot attach (/shot)
+
+/// Finds the user's most recent screenshot and extracts its TEXT on-device
+/// (Vision OCR) — the local 14B has no image input, but error dialogs, terminal
+/// output, and UI text in a screenshot become perfectly good context as text.
+enum ScreenshotGrabber {
+    /// Where macOS saves screenshots (`com.apple.screencapture location` is the
+    /// authority — this owner moved theirs to ~/Pictures/Screenshots; Desktop is
+    /// the fallback).
+    nonisolated static func screenshotsDirectory() -> URL {
+        if let loc = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"),
+           !loc.isEmpty {
+            let url = URL(fileURLWithPath: (loc as NSString).expandingTildeInPath, isDirectory: true)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+    }
+
+    /// Newest image file in `dir` (by modification date). Injectable for tests.
+    nonisolated static func latestScreenshot(in dir: URL) -> URL? {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles])) ?? []
+        return files
+            .filter { exts.contains($0.pathExtension.lowercased()) }
+            .max { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return da < db
+            }
+    }
+
+    /// On-device OCR (accurate mode). Returns recognized lines top-to-bottom,
+    /// empty string when nothing is legible.
+    nonisolated static func ocr(_ url: URL) -> String {
+        guard let img = NSImage(contentsOf: url) else { return "" }
+        var rect = CGRect.zero
+        guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return "" }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: cg)
+        try? handler.perform([request])
+        return (request.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
+    }
+}
 
 // MARK: - Diff model
 
-struct DiffLine: Identifiable {
-    enum Kind { case same, add, remove }
+nonisolated struct DiffLine: Identifiable {
+    nonisolated enum Kind: Equatable { case same, add, remove }
     let id = UUID()
     let kind: Kind
     let text: String
@@ -26,6 +77,45 @@ final class CodeWorkspace: ObservableObject {
     @Published var fileContent: String = ""
     @Published var diff: [DiffLine] = []
     @Published var changedFiles: [URL] = []
+    /// Per-file added/removed line counts for the last run's changes — shown as
+    /// "+N −M" next to each row in the right panel's Changed-files list.
+    @Published var changeStats: [URL: DiffStat] = [:]
+    struct DiffStat: Equatable { let added: Int; let removed: Int }
+
+    /// Files git considers modified/untracked (amber dot in the tree) — refreshed
+    /// on every `reload()`. Distinct from `changedFiles` (THIS RUN's edits, accent
+    /// dot): git dots show everything uncommitted, run dots show what the AI just
+    /// touched. Empty when the project isn't a git repo.
+    @Published var gitModified: Set<URL> = []
+
+    private func refreshGitStatus() async {
+        guard let root = projectRoot else { gitModified = []; return }
+        let modified = await Task.detached(priority: .utility) { () -> Set<URL> in
+            // -uall lists files inside untracked directories individually — without
+            // it git collapses them to one "dir/" entry that no tree row matches.
+            let escaped = root.path.replacingOccurrences(of: "'", with: "'\\''")
+            let res = Shell.run("git -C '\(escaped)' status --porcelain -uall", timeout: 10)
+            guard res.exitCode == 0 else { return [] }
+            return CodeWorkspace.gitModifiedURLs(porcelain: res.output, root: root)
+        }.value
+        gitModified = modified
+    }
+
+    /// Parses `git status --porcelain` output into the set of file URLs with
+    /// uncommitted changes. Renames count as the NEW path; C-quoted paths get
+    /// their quotes stripped (escape sequences inside are left as-is — those
+    /// rows just won't match a tree URL, which is a harmless miss).
+    nonisolated static func gitModifiedURLs(porcelain: String, root: URL) -> Set<URL> {
+        var out: Set<URL> = []
+        for line in porcelain.components(separatedBy: "\n") where line.count > 3 {
+            // porcelain: "XY path" (or "XY old -> new" for renames — take the new side)
+            var path = String(line.dropFirst(3))
+            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
+            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            out.insert(root.appendingPathComponent(path))
+        }
+        return out
+    }
 
     private var snapshots: [URL: String] = [:]
 
@@ -33,6 +123,34 @@ final class CodeWorkspace: ObservableObject {
     /// reopens it on launch instead of making you re-pick every time. (The app
     /// isn't sandboxed, so a plain path round-trips without a security bookmark.)
     private static let rootKey = "code_projectRoot"
+    private static let recentsKey = "code_recentProjects"
+
+    /// MRU project folders (most recent first, existing-on-disk only, max 6) —
+    /// drives the tree header's quick-switcher so changing projects is one click
+    /// instead of a re-pick through the open panel every time.
+    @Published var recentProjects: [URL] = []
+
+    private func noteRecent(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        paths = Array(paths.prefix(6))
+        UserDefaults.standard.set(paths, forKey: Self.recentsKey)
+        recentProjects = paths.filter { FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    /// Switch straight to a known folder (recents menu) — same plumbing as
+    /// `openFolder()` minus the panel.
+    func openProject(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        projectRoot = url
+        Shell.workingDirectory = url
+        UserDefaults.standard.set(url.path, forKey: Self.rootKey)
+        noteRecent(url)
+        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
+        Task { await reload() }
+    }
 
     init() {
         // Under unit tests the test host launches the app; auto-scanning a real repo
@@ -48,6 +166,7 @@ final class CodeWorkspace: ObservableObject {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         projectRoot = url
         Shell.workingDirectory = url
+        noteRecent(url)
         Task { await reload() }
     }
 
@@ -80,11 +199,43 @@ final class CodeWorkspace: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Project"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        projectRoot = url
-        Shell.workingDirectory = url          // terminal + edits now run in the project
-        UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
-        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []
-        Task { await reload() }
+        openProject(at: url)
+    }
+
+    // MARK: Restore checkpoint (revert this run's AI edits)
+
+    /// Disk side of a revert: write the pre-run snapshot back, or — when the run
+    /// CREATED the file (no snapshot) — delete it. Pure function of its inputs;
+    /// unit-tested against a temp directory.
+    nonisolated static func revert(file: URL, toSnapshot snapshot: String?) throws {
+        if let snapshot {
+            try snapshot.write(to: file, atomically: true, encoding: .utf8)
+        } else {
+            try FileManager.default.removeItem(at: file)
+        }
+    }
+
+    /// Revert ONE changed file to its pre-run state (Cursor's "Restore Checkpoint",
+    /// per file). Updates every dependent surface: changed list, stats, tree, the
+    /// open file/diff pane, and the git dots.
+    @discardableResult
+    func restoreFromSnapshot(_ url: URL) -> Bool {
+        let snap = snapshots[url]          // nil ⇒ the run created this file
+        do { try Self.revert(file: url, toSnapshot: snap) } catch { return false }
+        changedFiles.removeAll { $0 == url }
+        changeStats[url] = nil
+        if snap == nil { files.removeAll { $0 == url } }
+        if selectedFile == url {
+            if let snap { fileContent = snap; diff = [] }
+            else { selectedFile = nil; fileContent = ""; diff = [] }
+        }
+        Task { await refreshGitStatus() }
+        return true
+    }
+
+    /// Revert EVERY file the last run touched — the one-click "Restore all".
+    func restoreAllChanged() {
+        for url in changedFiles { restoreFromSnapshot(url) }
     }
 
     /// Scan the project tree OFF the main actor — file enumeration was blocking the
@@ -111,6 +262,7 @@ final class CodeWorkspace: ObservableObject {
             }
             return out.sorted { $0.path < $1.path }
         }.value
+        await refreshGitStatus()
     }
 
     func select(_ url: URL) {
@@ -145,20 +297,29 @@ final class CodeWorkspace: ObservableObject {
         await reload()
         let urls = files
         let before = snapshots
-        let changed = await Task.detached(priority: .utility) { () -> [URL] in
+        let (changed, stats) = await Task.detached(priority: .utility) { () -> ([URL], [URL: DiffStat]) in
             var c: [URL] = []
+            var s: [URL: DiffStat] = [:]
             for u in urls {
                 let now = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
-                if (before[u] ?? "") != now { c.append(u) }
+                let old = before[u] ?? ""
+                guard old != now else { continue }
+                c.append(u)
+                // +N −M for the panel list — same capped LCS as the diff pane,
+                // so the numbers always agree with what the pane shows.
+                let lines = CodeWorkspace.lineDiff(old: old, new: now)
+                s[u] = DiffStat(added: lines.filter { $0.kind == .add }.count,
+                                removed: lines.filter { $0.kind == .remove }.count)
             }
-            return c
+            return (c, s)
         }.value
         changedFiles = changed
+        changeStats = stats
         if let first = changed.first { select(first) }
     }
 
     /// Minimal LCS line-diff. Caps each side so a huge file can't stall the UI.
-    static func lineDiff(old: String, new: String) -> [DiffLine] {
+    nonisolated static func lineDiff(old: String, new: String) -> [DiffLine] {
         let cap = 1500
         let a = Array(old.components(separatedBy: "\n").prefix(cap))
         let b = Array(new.components(separatedBy: "\n").prefix(cap))
@@ -189,6 +350,170 @@ final class CodeWorkspace: ObservableObject {
 /// chat (with code blocks), live red/green diffs of what the agent changed, and
 /// the multi-agent step view — all on top of the existing tool-capable pipeline,
 /// so terminal commands + file edits run through the same approval card.
+/// A `/`-command in the Code composer (Claude-Code style). `template` commands
+/// pre-fill the input with a ready-to-continue prompt; `action` commands run an
+/// in-view operation (new chat, copy) immediately.
+struct SlashCommand: Identifiable {
+    let id: String            // the trigger word, e.g. "tests"
+    let icon: String
+    let blurb: String
+    let kind: Kind
+    enum Kind { case template(String), action(String) }
+    var trigger: String { "/" + id }
+}
+
+/// Press physics for pills and primary actions (design language): the whole
+/// control compresses slightly under the pointer — simulated mass, not a color
+/// swap. GPU-safe (transform only), sprung on the shared lux curve.
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(CodeView.lux, value: configuration.isPressed)
+    }
+}
+
+/// The `/`-command dropdown rendered above the Code composer. Extracted as its own
+/// view so the QA gallery can photograph it deterministically (the inline version
+/// only exists while `input` starts with "/").
+struct SlashMenuView: View {
+    let matches: [SlashCommand]
+    @Binding var hovered: String?
+    var onPick: (SlashCommand) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(matches) { cmd in
+                Button { onPick(cmd) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: cmd.icon).font(.system(size: 12))
+                            .foregroundStyle(DS.Palette.accent).frame(width: 16)
+                        Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
+                        Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if cmd.id == matches.first?.id {
+                            Text("↵").font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(hovered == cmd.id ? Color.white.opacity(0.06) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
+            }
+        }
+        .padding(5)
+        // Inner core: its own surface + machined top bevel…
+        .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        )
+        // …seated in an outer tray carrying the accent ring (double-bezel, 15−4=11).
+        .padding(4)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
+    }
+}
+
+/// One agent step card in the right panel's Activity section. Extracted so the
+/// QA gallery photographs the REAL component in a deterministic running state.
+struct ActivityStepRow: View {
+    let step: MissionProgress.Step
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Self.icon(step.status)
+            Text(step.adapted ?? step.name).font(.system(size: 11.5))
+                .foregroundStyle(step.status == .done ? .secondary : Color.white.opacity(0.9))
+                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // Machined top bevel — each step card reads as a physical tile.
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(LinearGradient(colors: [.white.opacity(0.09), .white.opacity(0.01)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {
+        switch status {
+        case .pending: Image(systemName: "circle").font(.system(size: 9)).foregroundStyle(.secondary)
+        case .running: ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
+        case .done:    Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+        }
+    }
+}
+
+/// One row of the right panel's "Changed files" list. Extracted for the same
+/// reason as `ActivityStepRow` — gallery coverage of the real component.
+struct ChangedFileRow: View {
+    let label: String
+    let isSelected: Bool
+    var stat: CodeWorkspace.DiffStat? = nil
+    var onRestore: (() -> Void)? = nil
+    var onTap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 7) {
+                Image(systemName: "plus.forwardslash.minus").font(.system(size: 9))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.85))
+                Text(label)
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1).truncationMode(.head)
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                Spacer(minLength: 0)
+                // Hover swaps the stats for a per-file undo — accept the good
+                // files, revert just the bad one (Cursor/Zed review pattern).
+                if hovering, let onRestore {
+                    Button(action: onRestore) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Revert this file to its pre-run state")
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                } else if let stat {
+                    // "+12 −3" — git-style change magnitude at a glance.
+                    HStack(spacing: 4) {
+                        if stat.added > 0 {
+                            Text("+\(stat.added)").foregroundStyle(Color.green.opacity(0.85))
+                        }
+                        if stat.removed > 0 {
+                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                        }
+                    }
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(isSelected ? Color.white.opacity(0.06) : .clear,
+                        in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show this file's diff")
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
     @ObservedObject private var progress = MissionProgress.shared
@@ -197,6 +522,14 @@ struct CodeView: View {
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
+    /// Conversation persistence — the chat tab survives relaunches but Code-tab
+    /// messages were pure @State and vanished on every quit (and the QA loop
+    /// relaunches the app all day). Last 100 turns round-trip via JSONFileStore.
+    /// (The store is built inside each off-main task — it's a cheap value and
+    /// JSONFileStore isn't Sendable, so a shared static can't cross actors.)
+    nonisolated private static let historyFile = "code_history.json"
+    @State private var historyLoaded = false
+    @State private var saveDebounce: Task<Void, Never>?
     @State private var input = ""
     @State private var isRunning = false
     @State private var rightPane: RightPane = .file
@@ -205,14 +538,49 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
+    /// Design-language motion: one sprung curve for every Code-tab transition
+    /// (cubic-bezier(0.32, 0.72, 0, 1) — heavy start, soft landing). Replaces the
+    /// scattered `easeOut` micro-durations so all motion shares one physical feel.
+    static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
+    /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
+    /// onAppear, so the capture would otherwise photograph an invisible welcome).
+    @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
+    // the message history with a subtle wash on the current match.
+    @State private var convoSearching = false
+    @State private var convoQuery = ""
+    @State private var convoMatchIndex = 0
+    @FocusState private var convoSearchFocused: Bool
+
+    /// % of the local model's history window this conversation occupies (chars vs
+    /// `AgentPipeline.localHistoryCharBudget` — the same budget the trim uses, so
+    /// the meter and the trimming can never disagree).
+    private var contextPct: Int {
+        let chars = messages.reduce(0) { $0 + $1.text.count + 16 }
+        return Int((Double(chars) / Double(AgentPipeline.localHistoryCharBudget) * 100).rounded())
+    }
+
+    private var convoMatches: [UUID] {
+        let q = convoQuery.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return [] }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
+    }
+    private var currentConvoMatch: UUID? {
+        guard convoSearching, !convoMatches.isEmpty else { return nil }
+        return convoMatches[min(convoMatchIndex, convoMatches.count - 1)]
+    }
     @State private var localServingModel: String?  // which local model serves .salehman (no-cloud case)
     @State private var lastTokPerSec: Double?       // speed of the last local reply (display only)
     @State private var hoveredFile: URL?            // file-tree row under the pointer
+    @State private var hoveredSlash: String?        // `/`-menu row under the pointer
     @State private var atBottom = true              // chat scrolled to the end (hides the jump button)
     // Inspector (File/Diff pane) collapse — persisted so it stays out of the way
     // across launches. Auto-expands when a file is selected or a run leaves diffs.
     @AppStorage("code_inspectorCollapsed") private var inspectorCollapsed = false
     @AppStorage("code_treeCollapsed") private var treeCollapsed = false
+    // The right sidebar: Activity (what Salehman is doing) on top + Files & Diffs at
+    // the bottom. Closable to a slim strip; auto-opens when a file/diff appears.
+    @AppStorage("code_rightPanelCollapsed") private var rightPanelCollapsed = false
     @State private var fileFilter = ""   // live filter for the file list
     @State private var expandedDirs: Set<String> = []   // open folders in the tree
     // Find-in-file (the open file) + scroll target shared with diff-jump.
@@ -248,21 +616,18 @@ struct CodeView: View {
                     treeReopenStrip
                 }
 
-                VSplitView {
-                    chatPane
-                        .frame(minHeight: 220)
-                    // Collapsible: the inspector used to be pinned at minHeight 160 —
-                    // permanently eating half the tab even when empty ("I can't even
-                    // minimize it"). Collapsed = a slim reopen bar; auto-expands when
-                    // a file is selected or a run produces diffs.
-                    if inspectorCollapsed {
-                        inspectorReopenBar
-                    } else {
-                        inspectorPane
-                            .frame(minHeight: 160)
-                    }
+                chatPane
+                    .frame(minWidth: 420)
+
+                // Right sidebar — Activity (live agent steps) on top, the Files & Diffs
+                // inspector at the bottom. Closable to a slim strip; auto-opens when a
+                // file is selected or a run produces diffs.
+                if !rightPanelCollapsed {
+                    rightPanel
+                        .frame(minWidth: 280, idealWidth: 360, maxWidth: 480)
+                } else {
+                    rightReopenStrip
                 }
-                .frame(minWidth: 420)
             }
             // Opaque flat surface (covers the app's glow blobs) — the Code tab
             // reads like a clean editor, not a mood piece. Neutral GREY, no red cast.
@@ -282,8 +647,40 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
-        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…).
-        .onChange(of: ws.selectedFile) { _, sel in revealInTree(sel) }
+        // Restore the last session's conversation once (off-main decode; tiny file).
+        .onAppear {
+            guard !historyLoaded else { return }
+            historyLoaded = true
+            Task.detached(priority: .utility) {
+                let saved = Self.sanitizedHistory(
+                    JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: []))
+                if !saved.isEmpty {
+                    await MainActor.run { if messages.isEmpty { messages = saved } }
+                }
+            }
+        }
+        // Persist on every change, debounced — a streaming run appends in bursts;
+        // one write ~0.8s after the last mutation is plenty.
+        .onChange(of: messages) { _, snapshot in
+            guard historyLoaded else { return }
+            saveDebounce?.cancel()
+            let tail = Array(snapshot.suffix(100))
+            saveDebounce = Task.detached(priority: .utility) {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard !Task.isCancelled else { return }
+                try? JSONFileStore<[ChatMessage]>(filename: Self.historyFile).save(tail)
+            }
+        }
+        // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…),
+        // and pop the right panel open so the file/diff is actually visible.
+        .onChange(of: ws.selectedFile) { _, sel in
+            revealInTree(sel)
+            if sel != nil { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+        }
+        // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
+        .onChange(of: ws.changedFiles) { _, files in
+            if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+        }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
             Group {
@@ -293,8 +690,15 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
-                Button("") { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed.toggle() } }
+                Button("") { withAnimation(CodeView.lux) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("") { withAnimation(CodeView.lux) { rightPanelCollapsed.toggle() } }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("") {
+                    withAnimation(CodeView.lux) { convoSearching = true }
+                    convoSearchFocused = true
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
             }
             .opacity(0).frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -322,11 +726,25 @@ struct CodeView: View {
     private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: ws.openFolder) {
+                // Click = open panel; the chevron lists recent projects (one-click switch).
+                Menu {
+                    ForEach(ws.recentProjects.filter { $0 != ws.projectRoot }, id: \.self) { url in
+                        Button { ws.openProject(at: url) } label: {
+                            Label(url.lastPathComponent, systemImage: "clock.arrow.circlepath")
+                        }
+                        .help(url.path)
+                    }
+                    if ws.recentProjects.count > 1 { Divider() }
+                    Button { ws.openFolder() } label: {
+                        Label("Open Folder…", systemImage: "folder.badge.plus")
+                    }
+                } label: {
                     Label("Open Folder", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .semibold))
+                } primaryAction: {
+                    ws.openFolder()
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.button).buttonStyle(.plain).fixedSize()
                 .foregroundStyle(DS.Palette.accent)
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 Spacer()
@@ -338,13 +756,13 @@ struct CodeView: View {
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                             .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
                     }
-                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
-                    Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = true } } label: {
+                    Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -403,7 +821,7 @@ struct CodeView: View {
                                 FileTreeRow(node: node, depth: 0, expanded: $expandedDirs, ws: ws) { url in
                                     ws.select(url)
                                     rightPane = ws.changedFiles.contains(url) ? .diff : .file
-                                    inspectorCollapsed = false
+                                    rightPanelCollapsed = false
                                 }
                             }
                         }
@@ -464,7 +882,7 @@ struct CodeView: View {
         return Button {
             ws.select(url)
             rightPane = changed ? .diff : .file
-            inspectorCollapsed = false   // user asked to see a file — bring the pane back
+            rightPanelCollapsed = false   // user asked to see a file — bring the panel back
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon.symbol)
@@ -475,7 +893,12 @@ struct CodeView: View {
                     .lineLimit(1).truncationMode(.head)
                 Spacer(minLength: 0)
                 if changed {
+                    // Accent dot: the AI changed this file THIS run.
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                } else if ws.gitModified.contains(url) {
+                    // Amber dot: uncommitted in git (modified/untracked).
+                    Circle().fill(Color.orange.opacity(0.75)).frame(width: 5, height: 5)
+                        .help("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
@@ -514,14 +937,29 @@ struct CodeView: View {
                 HStack(spacing: 10) {
                     if treeCollapsed {
                         headerIcon("sidebar.left", "Show the file tree") {
-                            withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false }
+                            withAnimation(CodeView.lux) { treeCollapsed = false }
                         }
+                    }
+                    // Context meter — the local 14B sees only ~9k chars of history;
+                    // beyond that the OLDEST turns silently drop. Surfacing it
+                    // answers "why did it forget" before the question is asked.
+                    if contextPct >= 50 {
+                        Text("ctx \(min(contextPct, 100))%")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                            .help(contextPct >= 100
+                                  ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
+                                  : "How much of the local model's history window this conversation uses.")
                     }
                     if let tps = lastTokPerSec {
                         HStack(spacing: 3) {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
+                        .padding(.horizontal, 7).padding(.vertical, 2.5)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
                     }
@@ -548,10 +986,22 @@ struct CodeView: View {
             }
 
             ScrollViewReader { proxy in
+              VStack(spacing: 0) {
+                if convoSearching { convoSearchBar(proxy) }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         if messages.isEmpty && !isRunning {
                             welcome
+                                // Heavy fade-up entrance (one-shot). Pre-revealed on
+                                // QA launches: onAppear never fires in offscreen
+                                // hosted renders, so captures would photograph an
+                                // invisible welcome without the --qa short-circuit.
+                                .opacity(welcomeAppeared ? 1 : 0)
+                                .offset(y: welcomeAppeared ? 0 : 16)
+                                .onAppear {
+                                    guard !welcomeAppeared else { return }
+                                    withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
+                                }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
                             if i > 0, msg.timestamp.timeIntervalSince(messages[i-1].timestamp) > 900 {
@@ -561,6 +1011,9 @@ struct CodeView: View {
                                     .padding(.vertical, 2)
                             }
                             codeBubble(msg)
+                                .background(currentConvoMatch == msg.id
+                                            ? DS.Palette.accent.opacity(0.08) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
                                 .id(msg.id)
                         }
                         if isRunning {
@@ -606,11 +1059,127 @@ struct CodeView: View {
                         .accessibilityLabel("Jump to the latest message")
                     }
                 }
+              }
             }
 
+            // Same centered 780 reading column as the messages — so the composer lines
+            // up under the conversation instead of stretching full-width (which read as
+            // "off-centre" on a wide window).
             inputBar
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
         }
         .background(Color.clear)
+    }
+
+    /// Replies recorded BEFORE `stripNarration` existed still carry the fine-tune's
+    /// leaked scaffold ("Thoughts on this response?", fake footnotes…). Applied to
+    /// assistant turns whenever history loads, so old garbage doesn't resurface —
+    /// the next save then persists the cleaned text. Pure + testable.
+    nonisolated static func sanitizedHistory(_ saved: [ChatMessage]) -> [ChatMessage] {
+        saved.map { m in
+            guard !m.isUser else { return m }
+            let clean = AgentPipeline.stripNarration(m.text)
+            guard clean != m.text else { return m }
+            return ChatMessage(id: m.id, text: clean, isUser: false,
+                               timestamp: m.timestamp, imagePath: m.imagePath,
+                               duration: m.duration)
+        }
+    }
+
+    /// The find-in-conversation strip (⌥⌘F): query, live "n/total", ↑↓ jumps, Esc/✕ closes.
+    private func convoSearchBar(_ proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+            TextField("Find in conversation…", text: $convoQuery)
+                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .focused($convoSearchFocused)
+                .onSubmit { jumpToMatch(convoMatchIndex + 1, proxy) }
+                .onKeyPress(.escape) { closeConvoSearch(); return .handled }
+            if !convoMatches.isEmpty {
+                Text("\(min(convoMatchIndex, convoMatches.count - 1) + 1)/\(convoMatches.count)")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if convoQuery.count >= 2 {
+                Text("0 results").font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+            }
+            Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+            Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(DS.Palette.codeSurfaceSide)
+        // Top-bevel hairline: the find strip is a fixed tool surface, not chat.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [.white.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
+        }
+        .overlay(alignment: .bottom) { Divider().overlay(DS.Palette.hairline.opacity(0.4)) }
+        .onChange(of: convoQuery) { _, _ in
+            convoMatchIndex = 0
+            if let first = convoMatches.first { withAnimation { proxy.scrollTo(first, anchor: .center) } }
+        }
+    }
+
+    private func jumpToMatch(_ index: Int, _ proxy: ScrollViewProxy) {
+        guard !convoMatches.isEmpty else { return }
+        let n = convoMatches.count
+        convoMatchIndex = ((index % n) + n) % n   // wrap both directions
+        withAnimation { proxy.scrollTo(convoMatches[convoMatchIndex], anchor: .center) }
+    }
+
+    private func closeConvoSearch() {
+        withAnimation(CodeView.lux) { convoSearching = false }
+        convoQuery = ""; convoMatchIndex = 0
+        inputFocused = true
+    }
+
+    // MARK: - Slash commands (type `/` in the composer)
+    // (internal, not private: the QA gallery photographs the menu with this list)
+    static let slashCommands: [SlashCommand] = [
+        .init(id: "explain",  icon: "text.magnifyingglass", blurb: "Explain how it works",   kind: .template("Explain how this works, step by step:\n\n")),
+        .init(id: "fix",      icon: "ladybug",              blurb: "Find and fix a bug",      kind: .template("Find and fix the bug in this:\n\n")),
+        .init(id: "tests",    icon: "checkmark.diamond",    blurb: "Write unit tests",        kind: .template("Write thorough unit tests for this:\n\n")),
+        .init(id: "refactor", icon: "wand.and.stars",       blurb: "Refactor for clarity",    kind: .template("Refactor this for clarity and simplicity, keeping behaviour identical:\n\n")),
+        .init(id: "review",   icon: "magnifyingglass",      blurb: "Review for issues",       kind: .template("Review this for bugs, edge cases, and improvements:\n\n")),
+        .init(id: "docs",     icon: "doc.text",             blurb: "Add documentation",       kind: .template("Write clear doc comments for this:\n\n")),
+        .init(id: "shot",     icon: "camera.viewfinder",    blurb: "Attach your latest screenshot (on-device OCR)", kind: .action("shot")),
+        .init(id: "clear",    icon: "square.and.pencil",    blurb: "Start a new chat",        kind: .action("clear")),
+        .init(id: "copy",     icon: "doc.on.doc",           blurb: "Copy chat as Markdown",   kind: .action("copy")),
+    ]
+    /// The `/` menu shows only while the FIRST token is being typed (a leading `/`,
+    /// no space/newline yet) — so "/tests write…" or normal text never triggers it.
+    private var slashActive: Bool {
+        input.hasPrefix("/") && !input.contains(" ") && !input.contains("\n")
+    }
+    private var slashMatches: [SlashCommand] {
+        guard slashActive else { return [] }
+        let q = input.dropFirst().lowercased()
+        return Self.slashCommands.filter { q.isEmpty || $0.id.hasPrefix(q) }
+    }
+    private func applySlash(_ cmd: SlashCommand) {
+        switch cmd.kind {
+        case .template(let t):
+            input = t
+            inputFocused = true
+        case .action(let a):
+            input = ""
+            switch a {
+            case "shot": attachLatestScreenshot()
+            case "clear": if !isRunning { withAnimation { messages.removeAll() } }
+            case "copy":
+                let md = messages
+                    .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
+                    .joined(separator: "\n\n---\n\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(md, forType: .string)
+            default: break
+            }
+        }
     }
 
     /// Tappable starter prompts (icon + text) shown on the empty Code conversation.
@@ -622,6 +1191,12 @@ struct CodeView: View {
 
     private var welcome: some View {
         VStack(spacing: 14) {
+            // Eyebrow tag (design-language): microscopic tracked caps above the hero.
+            Text("PAIR PROGRAMMER")
+                .font(.system(size: 9, weight: .semibold)).tracking(2.2)
+                .foregroundStyle(.secondary.opacity(0.85))
+                .padding(.horizontal, 10).padding(.vertical, 3.5)
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -638,17 +1213,23 @@ struct CodeView: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 ForEach(welcomeExamples, id: \.text) { ex in
+                    // Island architecture: the icon never sits naked next to the
+                    // text — it's seated in its own circular wrapper, flush with
+                    // the capsule's leading padding. Press = physical compression.
                     Button { input = ex.text } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: ex.icon).font(.system(size: 10.5))
+                        HStack(spacing: 7) {
+                            Image(systemName: ex.icon).font(.system(size: 9.5))
                                 .foregroundStyle(DS.Palette.accent)
+                                .frame(width: 19, height: 19)
+                                .background(DS.Palette.accent.opacity(0.13), in: Circle())
                             Text(ex.text).font(.system(size: 11.5, weight: .medium))
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .padding(.leading, 5).padding(.trailing, 13).padding(.vertical, 5)
                         .background(Color.white.opacity(0.06), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
                 }
             }
@@ -657,8 +1238,31 @@ struct CodeView: View {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
                 shortcutHint("⌘L", "Ask")
+                shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
+
+            // Recent projects — one click back into anything you worked on lately
+            // (the tree may be collapsed, so the welcome carries its own way in).
+            let recents = ws.recentProjects.filter { $0 != ws.projectRoot }.prefix(3)
+            if !recents.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.7))
+                    ForEach(Array(recents), id: \.self) { url in
+                        Button { ws.openProject(at: url) } label: {
+                            Text(url.lastPathComponent)
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.white.opacity(0.05), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help(url.path)
+                    }
+                }
+                .padding(.top, 10)
+            }
             // The 14B's home: show when the owner's own model is serving locally.
             if let m = localServingModel {
                 HStack(spacing: 5) {
@@ -670,7 +1274,10 @@ struct CodeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 46)
+        // Fill the scroll viewport and center — the hero used to ride high
+        // over a large void (QA renders). containerRelativeFrame sizes the
+        // empty state to the visible area, like the main chat's welcome.
+        .containerRelativeFrame(.vertical, alignment: .center)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -720,11 +1327,7 @@ struct CodeView: View {
 
     @ViewBuilder
     private func stepIcon(_ status: MissionProgress.Status) -> some View {
-        switch status {
-        case .pending: Image(systemName: "circle").font(.system(size: 9)).foregroundStyle(.secondary)
-        case .running: ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
-        case .done:    Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
-        }
+        ActivityStepRow.icon(status)
     }
 
     private func codeBubble(_ msg: ChatMessage) -> some View {
@@ -775,25 +1378,66 @@ struct CodeView: View {
     private var inputBar: some View {
         VStack(spacing: 6) {
             if let att = attachedFile {
-                HStack(spacing: 6) {
-                    Image(systemName: "paperclip").font(.system(size: 10))
+                HStack(spacing: 7) {
+                    // Screenshots show a real thumbnail in a machined micro-tile;
+                    // other files keep the paperclip.
+                    if ["png", "jpg", "jpeg", "heic"].contains(att.pathExtension.lowercased()),
+                       let thumb = NSImage(contentsOf: att) {
+                        Image(nsImage: thumb)
+                            .resizable().aspectRatio(contentMode: .fill)
+                            .frame(width: 26, height: 18)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    } else {
+                        Image(systemName: "paperclip").font(.system(size: 10))
+                    }
                     Text(att.lastPathComponent).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                    Button { attachedFile = nil; attachedText = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
+                    if attachedText.hasPrefix("[Text recognized") {
+                        Text("OCR").font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(DS.Palette.accent)
+                            .padding(.horizontal, 5).padding(.vertical, 1.5)
+                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1))
+                    }
+                    Button { attachedFile = nil; attachedText = "" } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .frame(width: 16, height: 16)
+                            .background(Color.white.opacity(0.08), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(LuxPressStyle())
                     Spacer()
                 }
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 5)
+                .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            // Slash-command menu — appears above the composer while typing `/…`.
+            // `↵` picks the top row; clicking a row runs it. Templates pre-fill the
+            // input; actions (clear/copy) run immediately.
+            if !slashMatches.isEmpty {
+                SlashMenuView(matches: slashMatches, hovered: $hoveredSlash, onPick: applySlash)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             VStack(spacing: 9) {
                 // Text first — full width, comfortable, nothing competing with it.
-                TextField("Ask Salehman to build, fix, or explain…", text: $input, axis: .vertical)
+                TextField("Ask Salehman to build, fix, or explain…   ( / for commands )", text: $input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13.5))
                     .lineLimit(1...6)
                     .focused($inputFocused)
-                    .onSubmit(send)
+                    // Enter picks the top `/`-command when the menu is open; otherwise sends.
+                    .onSubmit { if let top = slashMatches.first { applySlash(top) } else { send() } }
+                    // Esc dismisses the `/` menu (clears the half-typed trigger).
+                    .onKeyPress(.escape) {
+                        guard slashActive else { return .ignored }
+                        input = ""
+                        return .handled
+                    }
                     // Focusing the input = intent to send: pre-load the local model
                     // (a 14B takes seconds to come into RAM) while the user types.
                     .onChange(of: inputFocused) { _, focused in
@@ -807,6 +1451,12 @@ struct CodeView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Attach a file as context")
                         .accessibilityLabel("Attach a file as context")
+                    Button { attachLatestScreenshot() } label: {
+                        Image(systemName: "camera.viewfinder").font(.system(size: 13))
+                    }
+                    .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
+                    .help("Attach your latest screenshot — its text is read on-device (OCR) so the model can use it")
+                    .accessibilityLabel("Attach your latest screenshot")
                     Spacer()
                     Button {
                         // Explicit body, not `action: isRunning ? stop : send`: unifying
@@ -820,31 +1470,42 @@ struct CodeView: View {
                                 : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
                             .frame(width: 27, height: 27)
                             .background(
-                                isRunning ? AnyShapeStyle(Color.red.opacity(0.85))
+                                isRunning ? AnyShapeStyle(DS.Palette.accent.opacity(0.85))
                                     : (input.trimmingCharacters(in: .whitespaces).isEmpty
                                         ? AnyShapeStyle(Color.white.opacity(0.10))
                                         : AnyShapeStyle(DS.Palette.accent)),
                                 in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .disabled(!isRunning && input.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityLabel(isRunning ? "Stop generating" : "Send")
                 }
             }
             .padding(.horizontal, 13).padding(.top, 11).padding(.bottom, 9)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+            // DOUBLE-BEZEL composer (design-language pass): an inner core with its
+            // own surface + machined top-bevel highlight, seated in an outer tray.
+            // Concentric radii (18 outer − 4 padding = 14 inner) read as hardware.
+            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .padding(4)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             // The signature red ring (owner request — matches the main chat's input):
-            // always visible, warms while typing, full-strength on file drop.
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+            // always visible, warms while typing, full-strength on file drop. Now on
+            // the OUTER shell so the bezel sits inside it.
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
                 isDropTargeted ? DS.Palette.accent
                     : DS.Palette.accent.opacity(
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(.easeOut(duration: 0.18), value: input.isEmpty)
-            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
-            .animation(.easeOut(duration: 0.2), value: inputFocused)
+            .animation(Self.lux, value: input.isEmpty)
+            .animation(Self.lux, value: isDropTargeted)
+            .animation(Self.lux, value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -861,7 +1522,9 @@ struct CodeView: View {
         .frame(maxWidth: 780)
         .frame(maxWidth: .infinity)
         .padding(10)
-        .background(.ultraThinMaterial)
+        // Flat — the last translucent bar in the app (design language; every
+        // other surface went opaque in the restyle).
+        .background(DS.Palette.codeSurface)
     }
 
     /// Quick controls (brain / effort / toggles) — the Code-tab equivalent of the
@@ -880,9 +1543,15 @@ struct CodeView: View {
             Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
         } label: {
             HStack(spacing: 4) {
+                // EXPLICIT child styles: the QA render proved Menu-level tint
+                // quiets Image-only labels but NOT label text — explicit styles
+                // on the children are what actually win (same mechanism that
+                // keeps `· salehman14b` accent below).
                 Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text(settings.brainPreference.title)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's
@@ -903,6 +1572,11 @@ struct CodeView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundStyle(.secondary)
+        // Tint-leak fix (QA renders): the global app accent paints Menu labels
+        // straight through foregroundStyle — quiet local tint instead. The
+        // deliberate `· salehman14b` accent child keeps its EXPLICIT style;
+        // AppKit popups ignore SwiftUI tint, so the menu items are unaffected.
+        .tint(Color.white.opacity(0.55))
         .help("Active brain — tap to switch brain, effort & toggles")
         .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
         // Refresh the serving-model suffix when the tab appears or the brain changes.
@@ -925,7 +1599,7 @@ struct CodeView: View {
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { treeCollapsed = false } } label: {
+            Button { withAnimation(CodeView.lux) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
@@ -957,10 +1631,224 @@ struct CodeView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
+    // MARK: Right sidebar — Activity (top) + Files & Diffs (bottom), closable
+
+    /// The whole right panel: a header with a close button, an Activity feed of the
+    /// live agent steps, and the Files & Diffs inspector below it (resizable split).
+    private var rightPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
+                    .foregroundStyle(DS.Palette.accent)
+                Text("ACTIVITY").font(.system(size: 10, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(.secondary)
+                if isRunning && !progress.steps.isEmpty {
+                    Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                // Live elapsed readout — long local runs are minutes of silence
+                // otherwise; a ticking clock shows the run is alive.
+                if isRunning, let t0 = progress.startedAt {
+                    TimelineView(.periodic(from: t0, by: 1)) { ctx in
+                        HStack(spacing: 6) {
+                            Text(elapsedLabel(since: t0, now: ctx.date))
+                            // Live throughput estimate while the answer streams
+                            // (chars/4 ≈ tokens; average since run start — honest,
+                            // not a fake instantaneous number).
+                            if !progress.streamingAnswer.isEmpty {
+                                let secs = max(1, ctx.date.timeIntervalSince(t0))
+                                Text(String(format: "≈%.0f tok/s",
+                                            Double(progress.streamingAnswer.count) / 4 / secs))
+                            }
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary.opacity(0.85))
+                    }
+                }
+                Spacer()
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Close this panel").accessibilityLabel("Close the activity panel")
+            }
+            .padding(.horizontal, 10).frame(height: 34)
+            Divider().overlay(DS.Palette.hairline.opacity(0.5))
+            VSplitView {
+                VStack(spacing: 0) {
+                    activitySection.frame(minHeight: 90)
+                    if !ws.changedFiles.isEmpty { changedFilesList }
+                }
+                inspectorPane.frame(minHeight: 150)
+            }
+        }
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// `/shot` and the camera button: grab the newest screenshot, OCR it
+    /// off-main, and attach the recognized TEXT (the local model has no image
+    /// input — its words are the useful part).
+    private func attachLatestScreenshot() {
+        guard let shot = ScreenshotGrabber.latestScreenshot(in: ScreenshotGrabber.screenshotsDirectory()) else {
+            attachedFile = nil
+            attachedText = ""
+            input = ""
+            withAnimation(Self.lux) {
+                messages.append(ChatMessage(id: UUID(),
+                    text: "No screenshots found in \(ScreenshotGrabber.screenshotsDirectory().path).",
+                    isUser: false, timestamp: Date()))
+            }
+            return
+        }
+        attachedFile = shot
+        attachedText = "(reading screenshot…)"
+        Task.detached(priority: .userInitiated) {
+            let text = ScreenshotGrabber.ocr(shot)
+            await MainActor.run {
+                guard attachedFile == shot else { return }   // user swapped attachments meanwhile
+                attachedText = text.isEmpty
+                    ? "[Screenshot \(shot.lastPathComponent) — no legible text found by OCR]"
+                    : "[Text recognized on-device from screenshot \(shot.lastPathComponent)]\n\(text)"
+                inputFocused = true
+            }
+        }
+    }
+
+    /// "12s" / "2m 05s" — the Activity header's run clock.
+    private func elapsedLabel(since start: Date, now: Date) -> String {
+        let s = max(0, Int(now.timeIntervalSince(start)))
+        return s < 60 ? "\(s)s" : String(format: "%dm %02ds", s / 60, s % 60)
+    }
+
+    /// Clickable list of the files the last run touched — one tap opens its diff.
+    private var changedFilesList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().overlay(DS.Palette.hairline.opacity(0.5))
+            HStack(spacing: 6) {
+                Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                Text("CHANGED FILES").font(.system(size: 10, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(.secondary)
+                Text("\(ws.changedFiles.count)")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                Spacer()
+                // The run-level safety net: one click reverts EVERY AI edit from
+                // this run (your own edits in other files are untouched).
+                Button { withAnimation(CodeView.lux) { ws.restoreAllChanged() } } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
+                        Text("Restore all").font(.system(size: 9.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Revert every file this run changed back to its pre-run state")
+                .disabled(isRunning)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(ws.changedFiles, id: \.self) { url in
+                        ChangedFileRow(label: relativePath(url),
+                                       isSelected: ws.selectedFile == url,
+                                       stat: ws.changeStats[url],
+                                       onRestore: { withAnimation(CodeView.lux) { _ = ws.restoreFromSnapshot(url) } }) {
+                            ws.select(url)
+                            rightPane = .diff
+                        }
+                    }
+                }
+                .padding(.horizontal, 5).padding(.bottom, 6)
+            }
+            .frame(maxHeight: 110)
+        }
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
+    /// The Activity feed: live agent steps as cards while running, a friendly idle
+    /// state otherwise. (Row + idle extracted into helpers so the type-checker can
+    /// handle the body in reasonable time.)
+    @ViewBuilder private var activitySection: some View {
+        if isRunning && !progress.steps.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(progress.steps) { activityStepRow($0) }
+                }
+                .padding(10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DS.Palette.codeSurfaceSide)
+        } else {
+            activityIdle
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(DS.Palette.codeSurfaceSide)
+        }
+    }
+
+    private func activityStepRow(_ step: MissionProgress.Step) -> some View {
+        ActivityStepRow(step: step)
+    }
+
+    @ViewBuilder private var activityIdle: some View {
+        VStack(spacing: 8) {
+            Image(systemName: isRunning ? "ellipsis.circle" : "checkmark.circle")
+                .font(.system(size: 22, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
+            Text(isRunning ? "Working…" : "No activity yet")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            if !isRunning {
+                Text("Run a task and the steps appear here.")
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                // Last local run's engine + measured speed — the "is my model
+                // fast right now" answer lives where the run activity lives.
+                if let stats = OllamaClient.lastStats {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill").font(.system(size: 8))
+                        Text("\(stats.model) · \(String(format: "%.0f tok/s", stats.tps))")
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.75))
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    /// Slim right-edge strip shown while the panel is closed — one click reopens it.
+    private var rightReopenStrip: some View {
+        VStack(spacing: 14) {
+            Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+                Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
+            .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
+            if !ws.changedFiles.isEmpty {
+                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10.5))
+                        .frame(width: 24, height: 22).contentShape(Rectangle())
+                        .overlay(alignment: .topTrailing) {
+                            Circle().fill(DS.Palette.accent).frame(width: 5, height: 5).offset(x: 1, y: -1)
+                        }
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent.opacity(0.85))
+                .help("\(ws.changedFiles.count) changed file\(ws.changedFiles.count == 1 ? "" : "s")")
+                .accessibilityLabel("\(ws.changedFiles.count) changed files")
+            }
+            Spacer()
+        }
+        .padding(.top, 10).frame(width: 26).frame(maxHeight: .infinity)
+        .background(DS.Palette.codeSurfaceSide)
+    }
+
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = false }
+            withAnimation(CodeView.lux) { inspectorCollapsed = false }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
@@ -1021,23 +1909,33 @@ struct CodeView: View {
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { inspectorCollapsed = true }
+                    withAnimation(CodeView.lux) { rightPanelCollapsed = true }
                 } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                    Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Hide this panel (it comes back when a run has diffs)")
-                .accessibilityLabel("Hide the files and diffs panel")
+                .help("Close the panel (it comes back when a run has diffs)")
+                .accessibilityLabel("Close the activity and files panel")
             }
             .padding(10)
             Divider().overlay(DS.Palette.hairline)
 
             if ws.selectedFile == nil {
-                VStack(spacing: 9) {
+                VStack(spacing: 11) {
+                    Text("FILES & DIFFS")
+                        .font(.system(size: 8.5, weight: .semibold)).tracking(2.0)
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 24, weight: .light))
+                        .font(.system(size: 23, weight: .light))
                         .foregroundStyle(.secondary.opacity(0.55))
+                        .frame(width: 52, height: 52)
+                        .background(Color.white.opacity(0.03), in: Circle())
+                        .overlay(Circle().stroke(LinearGradient(
+                            colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1238,11 +2136,11 @@ struct CodeView: View {
         if attached.isEmpty, AgentPipeline.isTrivialMission(text) {
             mission = text
         } else {
-            mission = """
-            \(projectLine)You are Salehman in CODING mode — an elite pair-programmer. Use the terminal and file edits to ACTUALLY do the work in the project folder (don't just describe it). Be precise and complete.
-
-            Task: \(text)\(attached)
-            """
+            // NO "You are Salehman in CODING mode…" preamble. The model already gets
+            // the Salehman system prompt + its tools as specs; repeating the persona
+            // inside the message made the fine-tune NARRATE its instructions back
+            // ("How should Salehman respond?"). Just project context + the task.
+            mission = "\(projectLine)\(text)\(attached)"
         }
         attachedFile = nil; attachedText = ""
 
@@ -1259,7 +2157,7 @@ struct CodeView: View {
             }
             await ws.refreshAfterRun()                   // off-main post-run diff
             await MainActor.run {
-                if !ws.changedFiles.isEmpty { rightPane = .diff; inspectorCollapsed = false }
+                if !ws.changedFiles.isEmpty { rightPane = .diff; rightPanelCollapsed = false }
             }
         }
     }
@@ -1384,6 +2282,13 @@ struct CodeMessageRow: View {
                     .padding(.horizontal, 13).padding(.vertical, 8)
                     .background(Color.white.opacity(0.09),
                                 in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    // Machined tile: the same top-bevel hairline as the composer
+                    // core, so user turns read as physical objects in the flow.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    )
             }
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -1409,6 +2314,12 @@ struct CodeMessageRow: View {
                 .opacity(hovering ? 1 : 0)
                 .animation(.easeOut(duration: 0.12), value: hovering)
             }
+            // Make the ENTIRE row (text + the empty gap + the button area) a single
+            // solid hover target. Without this, the transparent space between the
+            // text and the top-right buttons isn't hit-testable, so moving the cursor
+            // toward the buttons reads as "left the row" and they vanish before you
+            // can click them.
+            .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }
     }
@@ -1491,6 +2402,32 @@ struct CodeSampleGallery: View {
             }
             sec("Refusal — honest, no hedging") {
                 CodeMessageRow(msg: .init(id: UUID(), text: "No — I can't promise bug-free code; that wouldn't be honest for anything non-trivial. What I *will* do: run the tests, read the diff, and tell you exactly what I verified.", isUser: false, timestamp: now))
+            }
+            sec("Slash-command menu — type / in the composer (↵ picks the top row)") {
+                SlashMenuView(matches: CodeView.slashCommands,
+                              hovered: .constant("fix"),
+                              onPick: { _ in })
+                    .frame(maxWidth: 520, alignment: .leading)
+            }
+            sec("Right panel — run in flight (Activity cards + changed files)") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ActivityStepRow(step: .init(name: "Reasoning Strategist", icon: "brain.head.profile",
+                                                status: .done, adapted: "Map the auth module's entry points"))
+                    ActivityStepRow(step: .init(name: "Code Surgeon", icon: "scissors",
+                                                status: .running, adapted: "Code Surgeon · tool round 3/8"))
+                    ActivityStepRow(step: .init(name: "Verifier", icon: "checkmark.seal",
+                                                status: .pending))
+                    Divider().padding(.vertical, 4)
+                    ChangedFileRow(label: "Sources/Auth/LoginFlow.swift", isSelected: true,
+                                   stat: .init(added: 24, removed: 9), onTap: {})
+                    ChangedFileRow(label: "Sources/Auth/TokenStore.swift", isSelected: false,
+                                   stat: .init(added: 6, removed: 0), onTap: {})
+                    ChangedFileRow(label: "Tests/AuthTests.swift", isSelected: false,
+                                   stat: .init(added: 41, removed: 2), onTap: {})
+                }
+                .frame(maxWidth: 360, alignment: .leading)
+                .padding(8)
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10))
             }
         }
         .padding(26)

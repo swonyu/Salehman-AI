@@ -31,7 +31,7 @@ struct TabSwitcherBar: View {
     @State private var barWidth: CGFloat = 0
     /// Scales with the tab count so adding a 6th/7th tab raises the collapse
     /// point automatically instead of silently re-introducing the clip.
-    private var labelThreshold: CGFloat { CGFloat(AppTab.allCases.count) * 92 + 380 }
+    private var labelThreshold: CGFloat { CGFloat(AppTab.visible.count) * 92 + 380 }
     private var showAllLabels: Bool { barWidth == 0 || barWidth >= labelThreshold }
 
     var body: some View {
@@ -60,7 +60,7 @@ struct TabSwitcherBar: View {
 
             // Pills
             HStack(spacing: 4) {
-                ForEach(AppTab.allCases) { tab in pill(tab) }
+                ForEach(AppTab.visible) { tab in pill(tab) }
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
@@ -71,6 +71,7 @@ struct TabSwitcherBar: View {
             // Right cluster: live market status pill + Settings gear. Grouped
             // so the rightmost slot reads as one "status + tools" zone.
             HStack(spacing: 8) {
+                if !AppTab.hidden.contains(.markets) {
                 // Live market status — dot + halo (when open) in a soft pill.
                 // Hovering reveals a system tooltip ("Market is closed/open") via
                 // `.help()` (also used as the VoiceOver hint — one modifier, both
@@ -101,6 +102,7 @@ struct TabSwitcherBar: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Market")
                 .accessibilityValue(market.session.isOpen ? "Open" : "Closed")
+                }
 
                 // Settings — moved up from the chat header per owner request so it's
                 // reachable from EVERY tab, not just Chat. Uses the existing

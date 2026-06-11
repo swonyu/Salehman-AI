@@ -6,6 +6,7 @@ struct AgentsView: View {
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var directCommand: String = ""
+    @State private var agentSearch: String = ""
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -129,8 +130,11 @@ struct AgentsView: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 9)
                     .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
+                    .accessibilityLabel("Direct command to agents")
 
                 Button("Send") {
                     Task { await sendDirectCommand() }
@@ -151,12 +155,40 @@ struct AgentsView: View {
     }
 
     private var agentsGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
-            ForEach(AgentDefinitions.pipeline) { spec in
-                AgentCard(spec: spec,
-                          isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
+        let agents = AgentFilter.matching(AgentDefinitions.pipeline, query: agentSearch)
+        return VStack(alignment: .leading, spacing: DS.Space.md) {
+            agentSearchRow
+            if agents.isEmpty {
+                Text("No agents match “\(agentSearch)”.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 20)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
+                    ForEach(agents) { spec in
+                        AgentCard(spec: spec,
+                                  isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
+                    }
+                }
             }
         }
+    }
+
+    private var agentSearchRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Filter agents…", text: $agentSearch)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Filter agents")
+            if !agentSearch.isEmpty {
+                Button { agentSearch = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     /// Toggle between starting and stopping the autonomous loop.
@@ -281,5 +313,15 @@ private struct AgentCard: View {
                         lineWidth: 1)
         )
         .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+    }
+}
+
+/// Pure agent-grid filter (Chat C feature): case-insensitive match on the agent's
+/// name OR its role text. Empty query → the whole pipeline. Pure → unit-tested.
+enum AgentFilter {
+    static func matching(_ specs: [AgentSpec], query: String) -> [AgentSpec] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return specs }
+        return specs.filter { $0.name.lowercased().contains(q) || $0.role.lowercased().contains(q) }
     }
 }

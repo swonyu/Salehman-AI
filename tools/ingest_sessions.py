@@ -13,6 +13,9 @@ Flags:
 Safe to run while the app is open: save_json uses atomic rename.
 """
 
+# Apple's /usr/bin/python3 is 3.9 — defer PEP 604/585 annotations (launchd runs this with it)
+from __future__ import annotations
+
 import json
 import re
 import sys

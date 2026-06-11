@@ -7,7 +7,8 @@ import SwiftUI
 /// (sample seed until a live feed lands — honestly flagged). Sections not yet
 /// built show a clear "coming soon".
 struct MarketsView: View {
-    @State private var section: MarketSection = .watchlist
+    @State private var section: MarketSection
+    @State private var sort: MarketSort = .feed
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @State private var briefing = ""
@@ -20,6 +21,10 @@ struct MarketsView: View {
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
+
+    /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
+    /// heatmap) offscreen; normal use defaults to the watchlist.
+    init(qaSection: MarketSection = .watchlist) { _section = State(initialValue: qaSection) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -140,7 +145,7 @@ struct MarketsView: View {
             Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 8)
             Text(s.recommendation.rawValue)
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(s.recommendation))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(recColor(s.recommendation), in: Capsule())
         }
@@ -297,6 +302,9 @@ struct MarketsView: View {
                             Text(String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                         }
+                        // Legibility on saturated tiles: white on a strong green/red is
+                        // borderline — a subtle dark shadow lifts the text on any shade.
+                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
@@ -325,7 +333,22 @@ struct MarketsView: View {
             if store.symbols.isEmpty {
                 emptyState
             } else {
-                ForEach(store.symbols) { signalCard($0) }
+                HStack {
+                    Spacer()
+                    Menu {
+                        ForEach(MarketSort.allCases) { s in
+                            Button { sort = s } label: {
+                                Label(s.title, systemImage: sort == s ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Label("Sort: \(sort.title)", systemImage: "arrow.up.arrow.down")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Sort watchlist")
+                }
+                ForEach(sort.apply(store.symbols)) { signalCard($0) }
             }
         }
     }
@@ -353,7 +376,7 @@ struct MarketsView: View {
             if let signal {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(signal.recommendation.rawValue)
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(signal.recommendation))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(recColor(signal.recommendation), in: Capsule())
                     // "Strength %" only makes sense for an actual buy/sell signal —
@@ -380,6 +403,17 @@ struct MarketsView: View {
         case .strongBuy, .buy:   return DS.Palette.successSoft
         case .hold:              return DS.Palette.warningSoft
         case .sell, .strongSell: return DS.Palette.danger
+        }
+    }
+
+    /// Badge text colour for legibility. The buy/hold badges sit on LIGHT pastel
+    /// backgrounds (successSoft/warningSoft), where white text is only ~1.9:1 (the
+    /// QA textContrast scan flagged exactly this) — use a dark ink there; white
+    /// still reads on the darker red sell badge.
+    private func recTextColor(_ r: StockSageRecommendation) -> Color {
+        switch r {
+        case .sell, .strongSell: return .white
+        default:                 return Color(white: 0.12)
         }
     }
 
@@ -440,6 +474,42 @@ enum MarketSection: String, CaseIterable, Identifiable {
         case .portfolio: return "Portfolio"
         case .alerts:    return "Alerts"
         case .briefing:  return "Briefing"
+        }
+    }
+}
+
+/// Watchlist ordering (Chat C feature). `apply` is pure → unit-tested.
+enum MarketSort: String, CaseIterable, Identifiable {
+    case feed, change, signal, symbol
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .feed:   return "Default"
+        case .change: return "Top gainers"
+        case .signal: return "Strongest signal"
+        case .symbol: return "A–Z"
+        }
+    }
+    /// Rank for the "strongest signal" sort: strong > buy/sell > hold.
+    static func rank(_ r: StockSageRecommendation) -> Int {
+        switch r {
+        case .strongBuy, .strongSell: return 2
+        case .buy, .sell:             return 1
+        case .hold:                   return 0
+        }
+    }
+    func apply(_ syms: [StockSageSymbol]) -> [StockSageSymbol] {
+        switch self {
+        case .feed:   return syms
+        case .symbol: return syms.sorted { $0.symbol.localizedCaseInsensitiveCompare($1.symbol) == .orderedAscending }
+        case .change: return syms.sorted { ($0.latest?.changePercent ?? 0) > ($1.latest?.changePercent ?? 0) }
+        case .signal:
+            return syms.sorted { a, b in
+                let ra = StockSageSignalEngine.generateSignal(for: a).map { MarketSort.rank($0.recommendation) } ?? -1
+                let rb = StockSageSignalEngine.generateSignal(for: b).map { MarketSort.rank($0.recommendation) } ?? -1
+                if ra != rb { return ra > rb }
+                return abs(a.latest?.changePercent ?? 0) > abs(b.latest?.changePercent ?? 0)
+            }
         }
     }
 }

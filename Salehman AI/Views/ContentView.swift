@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers   // UTType.fileURL for the composer's drag-and-drop
 
 // MARK: - Theme
 // Legacy brand surface — now a thin forwarding layer over the `DS` design
@@ -14,18 +15,48 @@ enum Theme {
 }
 
 struct ContentView: View {
+    /// QA only: render the empty-state welcome even when history exists, so
+    /// captures can picture the first-impression surface (live renders always
+    /// carry the owner's history, hiding it otherwise).
+    var qaForceEmptyState = false
+    /// Unsent-draft persistence key (restored on appear, written per keystroke).
+    private static let draftKey = "chat.composerDraft"
     @State private var mission: String = ""
+    /// Hover highlight in the `/`-command menu (id of the hovered row).
+    @State private var hoveredChatSlash: String? = nil
+    /// Keyboard selection in the `/`-command menu (↑/↓ move it, ↵ picks it).
+    /// Clamped against the CURRENT matches at use-time; reset when typing
+    /// changes the query.
+    @State private var slashSelection = 0
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
+    /// Archived-conversation count for the welcome's history link (probed once
+    /// per empty-state appearance, like `localModelReady`).
+    @State private var archiveCount = 0
     @StateObject private var vm = ChatViewModel()
     @FocusState private var inputFocused: Bool
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var brainStatus = BrainStatus.shared
-    @State private var attachment: Attachment?
-    @State private var loadingAttachment = false
+    /// Pending attachments (multi: each gets a chip; merged into one synthetic
+    /// Attachment at submit so the send pipeline stays single-attachment).
+    @State private var attachments: [Attachment] = []
+    /// In-flight attachment loads. A COUNTER, not a Bool: a multi-file drop
+    /// runs one async load per file, and the first finisher must not clear the
+    /// "loading" state while siblings are still reading (that briefly enabled
+    /// Send with half the files attached).
+    @State private var attachmentLoads = 0
+    private var loadingAttachment: Bool { attachmentLoads > 0 }
     @State private var showSettings = false
+    @State private var showHistory = false
+    @State private var showStats = false
+    @State private var statsBlurb = ""
+    /// Welcome entrance choreography (Code-tab parity): pre-revealed on QA
+    /// launches — offscreen renders never fire onAppear, so captures would
+    /// otherwise photograph an invisible welcome.
+    @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
@@ -45,6 +76,11 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    // Composer parity with the Code tab (owner: "same colors"): drop-target
+    // state for the signature ring, and which local model serves `.salehman`
+    // when no cloud is configured (the "· salehman14b" badge).
+    @State private var isDropTargeted = false
+    @State private var servingModel: String?
 
     private struct Suggestion: Hashable {
         let icon: String
@@ -53,15 +89,17 @@ struct ContentView: View {
         let prompt: String
     }
 
+    // Subtitle copy sized to FIT the bento cards — the QA welcome render
+    // showed "hardware,…" / "heaviest fold…" truncation at the old lengths.
     private let suggestions: [Suggestion] = [
         .init(icon: "desktopcomputer", title: "Inspect this Mac",
-              subtitle: "macOS version, hardware, uptime",
+              subtitle: "macOS, hardware, uptime",
               prompt: "What macOS version am I running, and give me a quick hardware summary."),
         .init(icon: "folder", title: "Find files",
-              subtitle: "List what's on the Desktop",
+              subtitle: "What's on the Desktop",
               prompt: "List the files on my Desktop, grouped by kind."),
         .init(icon: "internaldrive", title: "Storage health",
-              subtitle: "Free space + heaviest folders",
+              subtitle: "Free space + big folders",
               prompt: "How much free disk space do I have, and what are the heaviest folders in my home directory?"),
         .init(icon: "photo.on.rectangle", title: "Change my wallpaper",
               subtitle: "Pick from a few options",
@@ -74,16 +112,17 @@ struct ContentView: View {
             // no translucent stacking — same shade as the Code tab's canvas.
             DS.Palette.codeSurface.ignoresSafeArea()
 
-            // Global red tint when Unrestricted Mode is active.
-            if settings.unrestrictedTools {
-                Color.red.opacity(0.03).ignoresSafeArea()
-            }
+            // Unrestricted Mode is signalled by the banner + header indicator
+            // ONLY — never by tinting the canvas. A full-canvas wash (even 3%)
+            // shifts every neutral grey warm and visibly breaks the color
+            // parity with the Code tab.
 
             VStack(spacing: 0) {
-                // Warning banner appears above the normal header when active.
-                if settings.unrestrictedTools {
-                    unrestrictedBanner
-                }
+                // No warning strip above the header (Code-tab parity — its top
+                // is clean, and commands run unrestricted from BOTH tabs, so a
+                // chat-only banner was never the real guard). The persistent
+                // mode signal is the pulsing header indicator; its tooltip
+                // carries the warning and clicking it opens Settings.
                 // No-cloud-key notice: the selected brain is silently on the slow
                 // local fallback (or unavailable). Tap "Add key" → Settings.
                 if LocalLLM.lacksCloudKey && !dismissedCloudHint {
@@ -97,9 +136,11 @@ struct ContentView: View {
                     // Input pill aligns to the same 780pt reading column as the
                     // transcript (design language).
                     .frame(maxWidth: 780)
+                    .qaGeometry("chat.input")
                     .frame(maxWidth: .infinity)
             }
         }
+        .coordinateSpace(name: "qaRoot")
         .preferredColorScheme(.dark)
         .overlay {
             if let pending = approval.pending, !settings.unrestrictedTools {
@@ -113,6 +154,10 @@ struct ContentView: View {
         .animation(DS.Motion.spring, value: approval.pending?.id)
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showLive) { LiveTranscriptionView(onAsk: { submit($0) }) }
+        .sheet(isPresented: $showHistory) { ChatHistoryView(onRestore: restoreArchive) }
+        .alert("Conversation stats", isPresented: $showStats) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(statsBlurb) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -121,9 +166,31 @@ struct ContentView: View {
             Text("Save the current message as a reusable prompt.")
         }
         .onAppear {
-            if vm.messages.isEmpty { vm.messages = ChatStore.load() }
+            // History decode runs OFF-main (it's a full-file JSON decode that
+            // grows with the conversation — decoding it synchronously here was
+            // a mount hitch on ⌘2). Guarded re-check: don't clobber a
+            // conversation the user started while the load was in flight.
+            if vm.messages.isEmpty {
+                Task {
+                    let loaded = await Task.detached(priority: .userInitiated) {
+                        ChatStore.load()
+                    }.value
+                    if vm.messages.isEmpty { vm.messages = loaded }
+                }
+            }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
+            // Restore an unsent draft (quitting mid-thought shouldn't eat it).
+            if mission.isEmpty {
+                mission = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
+            }
+        }
+        .onChange(of: mission) { _, draft in
+            // Persist every keystroke (tiny string, no debounce needed);
+            // sending clears `mission`, which clears the stored draft too.
+            UserDefaults.standard.set(draft, forKey: Self.draftKey)
+            // Typing changes the slash query → selection restarts at the top.
+            slashSelection = 0
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -161,20 +228,27 @@ struct ContentView: View {
                 // while running (was a flat off-brand purple dot — the most
                 // visible "AI is working" affordance in the chrome).
                 if settings.unrestrictedTools {
-                    // Red pulsing halo for Unrestricted Mode (alive / "always on" signal)
+                    // Pulsing halo for Unrestricted Mode (alive / "always on"
+                    // signal). Brand accent, NOT system red — system red is
+                    // orange-leaning and clashes with the crimson everywhere
+                    // else on the screen.
                     ZStack {
-                        Circle().fill(Color.red.opacity(0.4))
+                        Circle().fill(DS.Palette.accent.opacity(0.4))
                             .frame(width: 22, height: 22)
                             .blur(radius: 5)
                             .scaleEffect(unrestrictedPulse ? 1.45 : 1.0)
                             .opacity(unrestrictedPulse ? 0.6 : 0.4)
-                        Circle().fill(Color.red)
+                        Circle().fill(DS.Palette.accent)
                             .frame(width: 7, height: 7)
-                            .shadow(color: Color.red.opacity(0.6), radius: 3)
+                            .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
                     }
-                    Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Color.red)
+                    Button { app.showSettingsRequested = true } label: {
+                        Text(vm.isRunning ? "UNRESTRICTED • Thinking…" : "UNRESTRICTED")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unrestricted Mode — runs commands without asking; catastrophic commands are still blocked. Click to manage in Settings.")
                 } else {
                     BrainStatusDot(isRunning: vm.isRunning, color: brainStatus.dotColor)
                     // AI status shown as a per-brain GLYPH, not a text label: the
@@ -225,6 +299,11 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            // Quiet chrome: the global app accent tints Menu labels even
+            // through foregroundStyle (QA renders caught the icon glowing
+            // red) — a local secondary tint keeps it calm. AppKit popups
+            // ignore SwiftUI tint, so the dropdown itself is unaffected.
+            .tint(Color.white.opacity(0.55))
             .frame(width: 30)
             .disabled(vm.messages.isEmpty)
             .help("Export this conversation")
@@ -248,29 +327,19 @@ struct ContentView: View {
             // ContentView still owns the `.sheet`; AppState.showSettingsRequested
             // is the bridge that opens it.)
 
+            // Conversation history (archives; new chat archives, never erases)
+            CircleIconButton(systemName: "clock.arrow.circlepath",
+                             help: "Conversation history",
+                             accessibilityLabel: "Conversation history") { showHistory = true }
+
             // New chat
             CircleIconButton(systemName: "square.and.pencil", help: "New chat") { newChat() }
 
-            if settings.unrestrictedTools {
-                // Prominent Unrestricted Mode badge (red, tappable to exit the mode)
-                Button {
-                    settings.unrestrictedTools = false
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("UNRESTRICTED")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .help("Unrestricted Mode is active — tap to disable")
-            } else {
+            // Chrome diet (QA round): the header used to ALSO show a red
+            // UNRESTRICTED capsule here — three red signals at once with the
+            // banner + left status. The banner owns the warning and the
+            // Disable action; the left status slot shows the mode.
+            if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
             }
@@ -281,25 +350,9 @@ struct ContentView: View {
         .background(DS.Palette.codeSurfaceSide)
     }
 
-    // Prominent warning banner for Unrestricted Mode (global red tint + clear call-to-action).
-    private var unrestrictedBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12, weight: .bold))
-            Text("UNRESTRICTED MODE ACTIVE — the assistant runs commands without asking. Catastrophic commands are still blocked. Use with caution.")
-                .font(.caption.weight(.semibold))
-            Spacer()
-            Button("Disable") { settings.unrestrictedTools = false }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .tint(.red)
-                .font(.caption)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 5)
-        .background(Color.red.opacity(0.12))
-        .foregroundStyle(Color.red)
-    }
+    // (The full-width Unrestricted warning banner was retired for Code-tab
+    // parity — see the note in `body`. Disable lives in Settings; the header
+    // indicator's tooltip carries the warning copy.)
 
     // MARK: Conversation
     private var filteredMessages: [ChatMessage] {
@@ -314,25 +367,43 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        if vm.messages.isEmpty && !vm.isRunning {
+                        if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
-                                .padding(.top, 60)
                                 .padding(.horizontal, 24)
                         } else {
                             // Reading rhythm: 10pt within a same-sender burst,
                             // +14 leading a new burst (= 24 between speakers) —
                             // document-flow replies need more air than the old
                             // bubble stacks did.
-                            LazyVStack(spacing: 10) {
+                            //
+                            // Lazy in normal use; EAGER during QA captures —
+                            // LazyVStack never materializes rows in an
+                            // offscreen render, which left chat_live.png with
+                            // a blank transcript (QA round-2 finding).
+                            transcriptStack {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if needsSeparator(prev: prev, curr: msg) {
+                                    if Self.needsSeparator(prev: prev, curr: msg) {
                                         TimeSeparator(date: msg.timestamp)
                                     }
-                                    let isFirst = isFirstInGroup(idx: idx, list: list)
+                                    let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
-                                                  onRegenerate: vm.regenerate)
+                                                  onRegenerate: vm.regenerate,
+                                                  onEdit: { m in
+                                                      if let text = vm.extractForEdit(m) {
+                                                          mission = text
+                                                          inputFocused = true
+                                                      }
+                                                  },
+                                                  onQuote: { text in
+                                                      let q = Self.quoted(text)
+                                                      mission = mission.isEmpty ? q + "\n\n"
+                                                                                : mission + "\n" + q + "\n"
+                                                      inputFocused = true
+                                                  },
+                                                  onTogglePin: { vm.togglePin($0) })
+                                        .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -351,6 +422,7 @@ struct ContentView: View {
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
                             .frame(maxWidth: 780)
+                            .qaGeometry("chat.column")
                             .frame(maxWidth: .infinity)
                         }
                     }
@@ -378,6 +450,12 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                // Pinned-message jump chips ride ABOVE the transcript as an
+                // inset (not inside the scroll) so they're always reachable;
+                // zero chrome when nothing is pinned.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                }
             }
         }
     }
@@ -388,23 +466,101 @@ struct ContentView: View {
     // a 5-min window. Separator inserts on a >30-min gap or a different
     // calendar day. All read from `filteredMessages` so hidden/system vm.messages
     // never create phantom group breaks.
-    private func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
+    // Transcript cadence rules — `nonisolated static` so tests pin them (a
+    // silent change here reshapes every conversation's rhythm with no error).
+    nonisolated static func needsSeparator(prev: ChatMessage?, curr: ChatMessage) -> Bool {
         guard let prev else { return false }
         let cal = Calendar.current
         if !cal.isDate(prev.timestamp, inSameDayAs: curr.timestamp) { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 30 * 60
     }
-    private func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
+    nonisolated static func isFirstInGroup(idx: Int, list: [ChatMessage]) -> Bool {
         guard idx > 0 else { return true }
         let prev = list[idx - 1]; let curr = list[idx]
         if prev.isUser != curr.isUser { return true }
         return curr.timestamp.timeIntervalSince(prev.timestamp) > 5 * 60
     }
+    /// Brain / Effort quick controls in the composer — Code-tab parity. One
+    /// menu: the Brain picker, the real Effort dial, the team-size mode, and
+    /// the big toggles, plus the live "which local model serves" badge (the
+    /// owner's fine-tune gets the accent; a fallback coder stays grey).
+    private var chatControlsMenu: some View {
+        Menu {
+            Picker("Brain", selection: $settings.brainPreference) {
+                ForEach(BrainPreference.selectableCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Effort", selection: $settings.salehmanEffort) {
+                ForEach(Effort.allCases) { Text($0.displayName).tag($0) }
+            }
+            Picker("Team", selection: $settings.responseMode) {
+                ForEach(AppSettings.ResponseMode.allCases) { Text($0.title).tag($0) }
+            }
+            Divider()
+            Toggle("Auto-continue", isOn: $settings.autoContinue)
+            Toggle("Web access", isOn: $settings.webAccess)
+            Toggle("Unrestricted", isOn: $settings.unrestrictedTools)
+        } label: {
+            HStack(spacing: 4) {
+                // Explicit child styles — Menu-level tint quiets images but
+                // NOT label text (proven in the Code tab's QA renders).
+                Image(systemName: "slider.horizontal.3").font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                Text(settings.brainPreference.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+                if let m = servingModel {
+                    Text("· \(m)")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
+                                         ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tint(Color.white.opacity(0.55))
+        .help("Active brain — tap to switch brain, effort & toggles")
+        .accessibilityLabel("Active brain \(settings.brainPreference.title) — tap to change")
+        .accessibilityIdentifier("chat.composer.controls")
+        .task(id: settings.brainPreference) { await refreshServingModel() }
+    }
+
+    /// Which local model would serve `.salehman` right now (nil when a cloud
+    /// is configured — cloud-first means the floor isn't what answers). Same
+    /// probe as the Code tab so the two badges can never disagree.
+    private func refreshServingModel() async {
+        guard settings.brainPreference == .salehman, !SalehmanEngine.hasAnyCloud else {
+            servingModel = nil; return
+        }
+        servingModel = await OllamaClient.activeChatModel()
+    }
+
+    /// Transcript container: Lazy normally (long histories), eager VStack
+    /// during QA captures so offscreen renders actually show the rows.
+    @ViewBuilder
+    private func transcriptStack<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        if QAGeometry.enabled {
+            VStack(spacing: 10) { content() }
+        } else {
+            LazyVStack(spacing: 10) { content() }
+        }
+    }
+
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Find in conversation…", text: $searchQuery)
                 .textFieldStyle(.plain)
+                // Esc closes search without reaching for the Done button.
+                .onKeyPress(.escape) {
+                    withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" }
+                    return .handled
+                }
             if !searchQuery.isEmpty {
                 Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -428,67 +584,389 @@ struct ContentView: View {
     }
 
     // MARK: Empty state
+    // Composition mirrors the Code tab's welcome 1:1 (owner: "make it look
+    // similar to this tab") — flat 60pt disc hero (no glow halos), 19pt title,
+    // short muted explainer, ONE row of capsule starter pills, shortcut chips,
+    // then an honest status line in the Code tab's "model · local · ready"
+    // slot. Same vertical centering. Token values are copied from
+    // CodeView.welcome — if you change one side, change the other.
     private var emptyState: some View {
-        VStack(spacing: 26) {
-            // Hero logo — twin glow halos with a slow "breathing" scale on the
-            // brand tile. The landing moment keeps its glow (design language
-            // allows it on landing surfaces); everything else stays flat.
-            EmptyStateLogo()
-
-            VStack(spacing: 10) {
-                // Live eyebrow: flips to "your 14B is live" once the fine-tuned
-                // model is actually pulled in Ollama — same probe the Settings
-                // row uses, so the two never disagree.
-                Eyebrow(text: localModelReady
-                        ? "Salehman AI · your 14B is live"
-                        : "Salehman AI · On-device")
-                Text(greetingLine)
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                Text("Ask me anything, or let me run things on your Mac.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            // 2×2 Bento of rich SuggestionCards.
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)],
-                      spacing: 12) {
-                ForEach(suggestions, id: \.self) { s in
-                    SuggestionCard(icon: s.icon, title: s.title, subtitle: s.subtitle) {
-                        submit(s.prompt)
+        VStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(DS.Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(DS.Palette.accent.opacity(0.12), in: Circle())
+                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+            Text(greetingLine)
+                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+            Text("Ask me anything, or let me run things on your Mac — inspect it, find files, check storage, tidy things up.")
+                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(suggestions.prefix(3), id: \.self) { s in
+                    Button { submit(s.prompt) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: s.icon).font(.system(size: 10.5))
+                                .foregroundStyle(DS.Palette.accent)
+                            Text(s.title).font(.system(size: 11.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(
+                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
                     }
+                    .buttonStyle(PressableStyle())
+                    .foregroundStyle(Color.white.opacity(0.88))
+                    // Magnetic hover (GPU-safe: transform + hairline only).
+                    .scaleEffect(hoveredSuggestion == s.title ? 1.04 : 1)
+                    .animation(DS.Motion.lux, value: hoveredSuggestion)
+                    .onHover { hoveredSuggestion = $0 ? s.title
+                               : (hoveredSuggestion == s.title ? nil : hoveredSuggestion) }
                 }
             }
-            .frame(maxWidth: 560)
-            .padding(.top, 4)
+            .padding(.top, 6)
+            HStack(spacing: 16) {
+                welcomeShortcutHint("⌘N", "New chat")
+                welcomeShortcutHint("⌘F", "Find")
+                welcomeShortcutHint("⌘J", "Voice")
+            }
+            .padding(.top, 10)
+            // Honest status, Code-tab position (replaces the old eyebrow
+            // capsule — the Code welcome has no eyebrow): offline mode wins,
+            // else the live fine-tune when it's actually pulled.
+            if settings.offlineOnly || localModelReady {
+                HStack(spacing: 5) {
+                    Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
+                    Text(settings.offlineOnly ? "Offline only" : "Your 14B · local · ready")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
+            // Quiet door back into archived conversations — the welcome is
+            // exactly where "wait, where did my chat go?" happens. Hidden in
+            // QA captures (the .task probe never runs offscreen), so no
+            // baseline churn.
+            if archiveCount > 0 {
+                Button { showHistory = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 10))
+                        Text("\(archiveCount) earlier conversation\(archiveCount == 1 ? "" : "s")")
+                            .font(.system(size: 10.5))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+                .help("Browse and restore archived conversations")
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.bottom, 40)
-        .task { localModelReady = await OllamaClient.hasCustomModel() }
+        // Entrance: same heavy fade-up the Code welcome performs (lux curve,
+        // 16pt rise, 0.05s settle delay). QA launches skip it via the
+        // pre-revealed state above.
+        .opacity(welcomeAppeared ? 1 : 0)
+        .offset(y: welcomeAppeared ? 0 : 16)
+        .onAppear {
+            guard !welcomeAppeared else { return }
+            withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+        }
+        // The chat viewport starts 55pt lower than the Code tab's (header row
+        // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
+        // in chat_empty.png spans y=0–54; Code has no header), so a plain
+        // viewport-center sits visibly LOWER than Code's welcome (owner: "its
+        // not centered"). Centering content+55pt of bottom padding lifts the
+        // block by 27.5pt — both welcomes land at the same optical height.
+        // Padding, not offset: short windows keep clean scrolling, no clipping.
+        .padding(.bottom, 55)
+        // Fill the scroll viewport and center, exactly like CodeView.welcome.
+        .containerRelativeFrame(.vertical, alignment: .center)
+        .task {
+            localModelReady = await OllamaClient.hasCustomModel()
+            archiveCount = ChatStore.archives().count
+        }
+    }
+
+    /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
+    /// welcome footer so the two landing surfaces speak the same language.
+    private func welcomeShortcutHint(_ key: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Composer controls-row pieces (extracted for type-checker budget)
+    /// Draft-length readout — invisible until the draft is genuinely long
+    /// (zero chrome at rest), accent past the soft budget.
+    @ViewBuilder private var composerCountBadge: some View {
+        if let count = Self.composerCount(mission) {
+            Text(count.label)
+                .font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .help(count.warn ? "Very long message — consider splitting it or attaching a file"
+                                 : "Draft length")
+                .accessibilityIdentifier("chat.composer.count")
+        }
+    }
+
+    /// Mic (dictation) — quiet inline icon; red while listening.
+    private var micButton: some View {
+        Button { speechIn.toggle() } label: {
+            Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .help("Dictate with your voice")
+        .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
+        .accessibilityIdentifier("chat.composer.mic")
+    }
+
+    /// Stop while generating, otherwise Send — the composer's one strong-color
+    /// element (solid accent when sendable).
+    @ViewBuilder private var sendOrStopButton: some View {
+        if vm.isRunning {
+            Button { vm.stop() } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(DS.Palette.accent.opacity(0.85), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .help("Stop generating (⌘.)")
+            .accessibilityLabel("Stop generating")
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            Button { submit(mission) } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(canSend ? .white : .secondary)
+                    .frame(width: 26, height: 26)
+                    .background(canSend ? AnyShapeStyle(DS.Palette.accent)
+                                        : AnyShapeStyle(Color.white.opacity(0.08)),
+                                in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .disabled(!canSend)
+            .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
+            .accessibilityLabel("Send")
+            .accessibilityIdentifier("chat.composer.send")
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    // MARK: Pinned messages
+    private var pinnedMessages: [ChatMessage] { vm.messages.filter { $0.pinned == true } }
+
+    /// First line of a pinned message, trimmed to chip width. Pure for tests.
+    nonisolated static func pinPreview(_ text: String, max: Int = 40) -> String {
+        let first = text.components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return first.count <= max ? first
+            : String(first.prefix(max)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Composer length readout: nil below the noise floor (short drafts get
+    /// no chrome), then "N words" with `warn` past the soft budget. Words
+    /// rather than characters — that's how people gauge prompts. Pure for tests.
+    nonisolated static func composerCount(_ text: String,
+                                          floor: Int = 120,
+                                          budget: Int = 2_000) -> (label: String, warn: Bool)? {
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        guard words >= floor else { return nil }
+        return ("\(words) words", words >= budget)
+    }
+
+    /// Horizontal chip rail: click a chip to jump to (and center) its message.
+    /// A chip whose message is search-filtered out scrolls nowhere — harmless.
+    private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(DS.Palette.accent)
+                    .accessibilityHidden(true)
+                ForEach(pinnedMessages) { m in
+                    Button {
+                        withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
+                    } label: {
+                        Text(Self.pinPreview(m.text))
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Color.white.opacity(0.06), in: Capsule())
+                    }
+                    .buttonStyle(PressableStyle())
+                    .help(m.text)
+                    .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 6)
+        }
+        .frame(maxWidth: 780)
+        .accessibilityIdentifier("chat.pinnedstrip")
+    }
+
+    /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
+    /// (blank lines too, so multi-paragraph quotes stay one block). Pure for
+    /// tests.
+    nonisolated static func quoted(_ text: String) -> String {
+        text.components(separatedBy: "\n")
+            .map { "> " + $0 }
+            .joined(separator: "\n")
     }
 
     /// Time-aware greeting — the same buckets the Today tab uses, so the two
-    /// landing surfaces always agree about the time of day.
-    private var greetingLine: String {
-        switch Calendar.current.component(.hour, from: Date()) {
+    /// landing surfaces always agree about the time of day. Pure on `hour` so
+    /// tests can pin every bucket boundary without faking the clock.
+    nonisolated static func greeting(hour: Int) -> String {
+        switch hour {
         case 5..<12:  return "Good morning, Saleh"
         case 12..<17: return "Good afternoon, Saleh"
         case 17..<22: return "Good evening, Saleh"
         default:      return "Working late, Saleh?"
         }
     }
+    private var greetingLine: String {
+        Self.greeting(hour: Calendar.current.component(.hour, from: Date()))
+    }
+
+    // MARK: Slash commands (type `/` in the composer — Code-tab parity)
+    private static let chatSlashCommands: [ChatSlashCommand] = [
+        .init(id: "summarize", icon: "list.bullet.rectangle",
+              blurb: "Summarize this conversation",
+              kind: .template("Summarize our conversation so far — key points, decisions, and open questions.")),
+        .init(id: "continue", icon: "arrow.forward",
+              blurb: "Ask it to keep going",
+              kind: .template("Continue.")),
+        .init(id: "clear", icon: "square.and.pencil",
+              blurb: "New chat (this one is archived)",
+              kind: .action("clear")),
+        .init(id: "copy", icon: "doc.on.clipboard",
+              blurb: "Copy conversation as Markdown",
+              kind: .action("copy")),
+        .init(id: "export", icon: "square.and.arrow.down",
+              blurb: "Save conversation as Markdown…",
+              kind: .action("export")),
+        .init(id: "find", icon: "magnifyingglass",
+              blurb: "Find in conversation",
+              kind: .action("find")),
+        .init(id: "voice", icon: "waveform.badge.mic",
+              blurb: "Open live voice mode",
+              kind: .action("voice")),
+        .init(id: "history", icon: "clock.arrow.circlepath",
+              blurb: "Browse archived conversations",
+              kind: .action("history")),
+        .init(id: "stats", icon: "chart.bar",
+              blurb: "Conversation statistics",
+              kind: .action("stats")),
+    ]
+    /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
+    /// the prompt body. Builtins win id collisions; duplicate slugs keep the
+    /// first prompt (ForEach needs unique ids); unsluggable titles are skipped.
+    private var promptSlashCommands: [ChatSlashCommand] {
+        var seen = Set(Self.chatSlashCommands.map(\.id))
+        return library.prompts.compactMap { p in
+            let s = ChatSlashCommand.slug(p.title)
+            guard !s.isEmpty, seen.insert(s).inserted else { return nil }
+            return ChatSlashCommand(id: s, icon: "text.book.closed",
+                                    blurb: "Saved prompt", kind: .template(p.text))
+        }
+    }
+    private var chatSlashMatches: [ChatSlashCommand] {
+        ChatSlashCommand.matches(for: mission, in: Self.chatSlashCommands + promptSlashCommands)
+    }
+    private func applyChatSlash(_ cmd: ChatSlashCommand) {
+        switch cmd.kind {
+        case .template(let t):
+            mission = t
+            inputFocused = true
+        case .action(let a):
+            mission = ""
+            switch a {
+            case "clear":  newChat()
+            case "copy":   ChatExporter.copyToPasteboard(vm.messages)
+            case "export": ChatExporter.savePanel(vm.messages)
+            case "find":    withAnimation(DS.Motion.snappy) { searching = true }
+            case "voice":   showLive = true
+            case "history": showHistory = true
+            case "stats":
+                statsBlurb = ChatStats.summarize(vm.messages).blurb
+                showStats = true
+            default: break
+            }
+        }
+    }
 
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
-            // Pending attachment chip
+            // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
-                attachmentChip(icon: "hourglass", title: "Reading attachment…", removable: false)
-            } else if let att = attachment {
-                attachmentChip(icon: att.icon, title: "\(att.name) · \(att.kind)", removable: true)
+                attachmentChip(icon: "hourglass", title: "Reading attachment…")
+            }
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { att in
+                            attachmentChip(icon: att.icon,
+                                           title: "\(att.name) · \(att.kind)",
+                                           onRemove: { attachments.removeAll { $0.id == att.id } })
+                        }
+                    }
+                }
+            }
+
+            // Slash-command menu — floats above the composer while typing `/…`
+            // (Code-tab parity, same matcher rules; pinned by
+            // ChatComposerLogicTests). `↵` picks the top row.
+            if !chatSlashMatches.isEmpty {
+                let selected = chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)].id
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(chatSlashMatches) { cmd in
+                        Button { applyChatSlash(cmd) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: cmd.icon).font(.system(size: 12))
+                                    .foregroundStyle(DS.Palette.accent).frame(width: 16)
+                                Text(cmd.trigger).font(.system(size: 12.5, weight: .medium))
+                                Text(cmd.blurb).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                if cmd.id == selected {
+                                    Text("↵").font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                            }
+                            .padding(.horizontal, 11).padding(.vertical, 7)
+                            .background(cmd.id == selected || hoveredChatSlash == cmd.id
+                                        ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
+                    }
+                }
+                .padding(5)
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .frame(maxWidth: 520, alignment: .leading)
+                .transition(.scale(scale: 0.97, anchor: .bottom)
+                    .combined(with: .opacity)
+                    .combined(with: .move(edge: .bottom)))
+                .accessibilityIdentifier("chat.composer.slashmenu")
             }
 
             // ONE unified composer, Claude layout (matches the Code tab's
@@ -497,16 +975,56 @@ struct ContentView: View {
             // halving the old left-side chrome), then mic and send at the
             // trailing edge.
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                TextField(speechIn.isListening ? "Listening… speak now"
+                          : "Message Salehman AI…   ( / for commands )",
+                          text: $mission, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...8)
                     .focused($inputFocused)
-                    .onSubmit { submit(mission) }
+                    // Enter picks the SELECTED `/`-command while the menu is
+                    // open (↑/↓ move the selection); otherwise sends.
+                    .onSubmit {
+                        if !chatSlashMatches.isEmpty {
+                            applyChatSlash(chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)])
+                        } else { submit(mission) }
+                    }
+                    // ↑: move the slash selection when the menu is open; in an
+                    // EMPTY composer, recall the last message (no conflict —
+                    // an open menu implies a non-empty composer).
+                    .onKeyPress(.upArrow) {
+                        if !chatSlashMatches.isEmpty {
+                            slashSelection = max(0, min(slashSelection, chatSlashMatches.count - 1) - 1)
+                            return .handled
+                        }
+                        guard mission.isEmpty,
+                              let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
+                        mission = last
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard !chatSlashMatches.isEmpty else { return .ignored }
+                        slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
+                        return .handled
+                    }
+                    // Esc: stop a running generation first; otherwise dismiss a
+                    // dangling slash query. Plain Esc with idle composer stays
+                    // with the system (sheets, focus).
+                    .onKeyPress(.escape) {
+                        if vm.isRunning { vm.stop(); return .handled }
+                        if !chatSlashMatches.isEmpty { mission = ""; return .handled }
+                        return .ignored
+                    }
                     .accessibilityIdentifier("chat.composer.field")
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 8) {
+                    // Brain / Effort quick controls — Code-tab parity: switch
+                    // the brain, the Effort dial, and the big toggles without
+                    // opening Settings. Shows which LOCAL model serves when
+                    // Salehman has no cloud configured.
+                    chatControlsMenu
+
                     Menu {
                         Section("Attach") {
                             Button { Task { await attachFile() } } label: {
@@ -542,6 +1060,9 @@ struct ContentView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    // Same tint-leak fix as the export menu: keep the + quiet —
+                    // send is the composer's ONE strong-color element.
+                    .tint(Color.white.opacity(0.55))
                     .frame(width: 26)
                     .help("Attach files/images or insert a saved prompt")
                     .accessibilityLabel("Attach files, images, or insert a saved prompt")
@@ -549,110 +1070,127 @@ struct ContentView: View {
 
                     Spacer(minLength: 0)
 
-                    // Mic (dictation) — quiet inline icon; red while listening.
-                    Button { speechIn.toggle() } label: {
-                        Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(speechIn.isListening ? .red : .secondary)
-                            .frame(width: 26, height: 26)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Dictate with your voice")
-                    .accessibilityLabel(speechIn.isListening ? "Stop dictation" : "Dictate with your voice")
-                    .accessibilityIdentifier("chat.composer.mic")
-
-                    // Stop while generating, otherwise Send — the composer's
-                    // one strong-color element (solid accent when sendable).
-                    if vm.isRunning {
-                        Button { vm.stop() } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 26, height: 26)
-                                .background(Color.red.opacity(0.85), in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Stop generating (⌘.)")
-                        .accessibilityLabel("Stop generating")
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        Button { submit(mission) } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(canSend ? .white : .secondary)
-                                .frame(width: 26, height: 26)
-                                .background(canSend ? AnyShapeStyle(DS.Palette.accent)
-                                                    : AnyShapeStyle(Color.white.opacity(0.08)),
-                                            in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!canSend)
-                        .help("Send")
-                        .accessibilityLabel("Send")
-                        .accessibilityIdentifier("chat.composer.send")
-                        .transition(.scale.combined(with: .opacity))
-                    }
+                    // Count badge, mic, and send/stop are EXTRACTED subviews —
+                    // Chat D measured the real build tripping the Swift 6
+                    // type-checker timeout on this row's single expression
+                    // (bare swiftc doesn't reproduce it — known harness gap).
+                    composerCountBadge
+                    micButton
+                    sendOrStopButton
                 }
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            // Quiet flat composer (design language). Focus = a solid accent
-            // hairline — visible on the flat canvas without glow chrome.
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // CODE-TAB PARITY (owner: "same colors as code tab"): the Code
+            // composer's DOUBLE-BEZEL, mirrored exactly — inner core (white
+            // 0.045, r14 continuous, top-lit gradient hairline) seated in an
+            // outer tray (white 0.03, r18 = 14+4 concentric) that carries the
+            // signature accent ring (0.38 rest → 0.60 typing → full on drop)
+            // and the focus glow. Motion: DS.Motion.lux (Code's curve).
+            .background(Color.white.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(inputFocused ? Theme.accent.opacity(0.7) : Color.white.opacity(0.10),
-                            lineWidth: inputFocused ? 1.5 : 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
             )
-            .animation(DS.Motion.smooth, value: inputFocused)
+            .padding(4)
+            .background(Color.white.opacity(0.03),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
+                isDropTargeted ? DS.Palette.accent
+                    : DS.Palette.accent.opacity(
+                        mission.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
+                lineWidth: isDropTargeted ? 1.5 : 1))
+            .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
+            .animation(DS.Motion.lux, value: mission.isEmpty)
+            .animation(DS.Motion.lux, value: isDropTargeted)
+            .animation(DS.Motion.lux, value: inputFocused)
+            // While a file hovers, say what will happen — the full-accent ring
+            // alone doesn't explain itself.
+            .overlay {
+                if isDropTargeted {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperclip")
+                        Text("Drop to attach as context")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent.opacity(0.92), in: Capsule())
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                }
+            }
+            // Drag a file anywhere onto the composer to attach it as context —
+            // same affordance the Code tab's input has.
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                guard !providers.isEmpty else { return false }
+                for provider in providers {
+                    _ = provider.loadDataRepresentation(forTypeIdentifier: "public.file-url") { data, _ in
+                        guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                        Task { @MainActor in
+                            attachmentLoads += 1
+                            attachments.append(await AttachmentLoader.load(url: url))
+                            attachmentLoads -= 1
+                        }
+                    }
+                }
+                return true
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         // Flat — the input row sits directly on the chat canvas.
         .background(DS.Palette.codeSurface)
         .animation(DS.Motion.snappy, value: vm.isRunning)
+        // Drives the slash-menu island's enter/exit transition (lux). Bound to
+        // the EMPTY flip only — row updates while typing stay instant.
+        .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
     }
 
-    private func attachmentChip(icon: String, title: String, removable: Bool) -> some View {
+    private func attachmentChip(icon: String, title: String,
+                                onRemove: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(Theme.accent)
-            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
-            if removable {
-                Button { attachment = nil } label: {
+            Text(title).font(.caption).foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1).truncationMode(.middle)
+            if let onRemove {
+                Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Remove attachment")
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Chips size to content now (they sit in a horizontal row), but a
+        // single long filename still shouldn't span the whole composer.
+        .frame(maxWidth: 360, alignment: .leading)
     }
 
     private var canSend: Bool {
         guard !vm.isRunning, !loadingAttachment else { return false }
-        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil
+        return !mission.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     // MARK: Attachment actions
     @MainActor private func attachFile() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
-        loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
-        loadingAttachment = false
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
+        attachmentLoads += 1
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+        attachmentLoads -= 1
         inputFocused = true
     }
 
     @MainActor private func attachImage() async {
-        guard let url = AttachmentLoader.pickFile() else { return }
-        loadingAttachment = true
-        attachment = await AttachmentLoader.load(url: url)
-        loadingAttachment = false
+        let urls = AttachmentLoader.pickFiles()
+        guard !urls.isEmpty else { return }
+        attachmentLoads += 1
+        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+        attachmentLoads -= 1
         inputFocused = true
     }
 
@@ -661,11 +1199,11 @@ struct ContentView: View {
     /// copy a picture, then attach it here (the "I can't paste pictures" fix).
     @MainActor private func pasteImage() async {
         let pb = NSPasteboard.general
-        // 1) A copied file URL.
-        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], let url = urls.first {
-            loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: url)
-            loadingAttachment = false; inputFocused = true; return
+        // 1) Copied file URLs (all of them — Finder multi-copy works).
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
+            attachmentLoads += 1
+            for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+            attachmentLoads -= 1; inputFocused = true; return
         }
         // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.
         if let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation,
@@ -674,25 +1212,25 @@ struct ContentView: View {
             let tmp = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pasted-\(UUID().uuidString).png")
             try? png.write(to: tmp)
-            loadingAttachment = true
-            attachment = await AttachmentLoader.load(url: tmp)
-            loadingAttachment = false; inputFocused = true
+            attachmentLoads += 1
+            attachments.append(await AttachmentLoader.load(url: tmp))
+            attachmentLoads -= 1; inputFocused = true
         }
     }
 
     @MainActor private func attachLastScreenshot() async {
-        loadingAttachment = true
+        attachmentLoads += 1
         if let url = AttachmentLoader.lastScreenshot() {
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
             // No saved screenshot found — capture the screen right now instead.
-            attachment = await AttachmentLoader.load(url: url)
+            attachments.append(await AttachmentLoader.load(url: url))
         } else {
-            attachment = Attachment(name: "No screenshot found", kind: "note",
-                                    icon: "exclamationmark.triangle",
-                                    extractedText: "Could not find a recent screenshot.")
+            attachments.append(Attachment(name: "No screenshot found", kind: "note",
+                                          icon: "exclamationmark.triangle",
+                                          extractedText: "Could not find a recent screenshot."))
         }
-        loadingAttachment = false
+        attachmentLoads -= 1
         inputFocused = true
     }
 
@@ -704,21 +1242,45 @@ struct ContentView: View {
     // MARK: New chat / stop
     // MARK: Send / chat actions — the conversation now lives in `vm` (ChatViewModel).
 
-    /// Send the composed input through `vm`, then clear the view's input + attachment.
+    /// Send the composed input through `vm`, then clear the view's input +
+    /// attachments. Several files collapse into one synthetic Attachment
+    /// (`Attachment.merged`) so the send pipeline stays single-attachment.
     private func submit(_ text: String, recordUser: Bool = true) {
         guard !loadingAttachment else { return }
-        let att = attachment
+        let att = Attachment.merged(attachments)
         inputFocused = true
         vm.send(text: text, attachment: att, recordUser: recordUser)
         mission = ""
-        attachment = nil
+        attachments.removeAll()
     }
 
     /// New chat: clear the conversation (vm) + the view's search UI.
     private func newChat() {
+        // Archive the conversation instead of erasing it — flush the debounce
+        // first so the disk copy matches what's on screen, then snapshot it
+        // into the history archive. Restorable from the clock icon / /history.
+        ChatStore.flushSave()
+        ChatStore.archiveCurrent()
         vm.startNewChat()
         searching = false
         searchQuery = ""
+    }
+
+    /// Replace the live conversation with an archived one. Symmetric with
+    /// `newChat`: the current conversation is archived first, and the restored
+    /// archive file is removed (it IS the live conversation now — keeping it
+    /// would duplicate on the next archive pass).
+    private func restoreArchive(_ item: ChatStore.ArchivedChat) {
+        // Never swap the transcript under a streaming task — cancel it first
+        // (the same graceful stop the composer's stop button uses).
+        vm.stop()
+        ChatStore.flushSave()
+        ChatStore.archiveCurrent()
+        let restored = ChatStore.loadArchive(item.id)
+        guard !restored.isEmpty else { return }
+        ChatStore.deleteArchive(item.id)
+        withAnimation(DS.Motion.spring) { vm.messages = restored }
+        showHistory = false
     }
 }
 
@@ -837,7 +1399,7 @@ struct ScrollToLatestButton: View {
             // the transcript, so it still reads as actionable.
             .background(DS.Palette.accent, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .accessibilityLabel(unreadCount > 0
             ? "\(unreadCount) new \(unreadCount == 1 ? "message" : "messages"), scroll to latest"
             : "Scroll to latest")
@@ -851,6 +1413,14 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Seconds the reply took to generate (assistant messages only; optional
+    /// so history persisted before this field decodes unchanged). Surfaced in
+    /// the hover pill — zero chrome at rest.
+    var duration: Double? = nil
+    /// Pinned by the user (context menu). Optional, not Bool-with-default:
+    /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
+    /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
+    var pinned: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -875,6 +1445,86 @@ enum ChatStore {
     nonisolated static func save(_ messages: [ChatMessage]) {
         guard let data = try? JSONEncoder().encode(messages) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    // MARK: Archive (conversation history)
+    // New chats ARCHIVE the old conversation instead of erasing it. Archives
+    // are sibling JSONs in `chats/` using the same [ChatMessage] coding as the
+    // live file, so restore is a plain load.
+
+    /// One archived conversation, summarized for the History sheet.
+    struct ArchivedChat: Identifiable {
+        let id: URL          // archive file
+        let title: String
+        let date: Date       // last activity (newest message timestamp)
+        let messageCount: Int
+    }
+
+    nonisolated private static var archiveDir: URL {
+        let dir = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("chats", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// First user line, trimmed to a list-row title. Pure for tests.
+    nonisolated static func archiveTitle(for messages: [ChatMessage]) -> String {
+        let firstLine = messages.first(where: { $0.isUser })?.text
+            .components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return firstLine.isEmpty ? "Conversation" : String(firstLine.prefix(60))
+    }
+
+    /// Snapshot the CURRENT (on-disk) conversation into the archive. No-op for
+    /// an empty conversation. Caller flushes the debounce first.
+    nonisolated static func archiveCurrent() {
+        let msgs = load()
+        guard !msgs.isEmpty, let data = try? JSONEncoder().encode(msgs) else { return }
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        try? data.write(to: archiveDir.appendingPathComponent("chat_\(stamp).json"),
+                        options: .atomic)
+        pruneArchives()
+    }
+
+    /// Keep the newest 100 archives — the timestamped filenames sort
+    /// chronologically, so name order IS age order. Unbounded growth would
+    /// slowly bloat `archives()` (it decodes every file to summarize it).
+    nonisolated private static func pruneArchives(keep: Int = 100) {
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: archiveDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }   // newest first
+        for stale in files.dropFirst(keep) {
+            try? FileManager.default.removeItem(at: stale)
+        }
+    }
+
+    /// All archived conversations, newest activity first.
+    nonisolated static func archives() -> [ArchivedChat] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: archiveDir, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> ArchivedChat? in
+                guard let data = try? Data(contentsOf: url),
+                      let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data),
+                      !msgs.isEmpty else { return nil }
+                return ArchivedChat(id: url,
+                                    title: archiveTitle(for: msgs),
+                                    date: msgs.map(\.timestamp).max() ?? .distantPast,
+                                    messageCount: msgs.count)
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    nonisolated static func loadArchive(_ url: URL) -> [ChatMessage] {
+        guard let data = try? Data(contentsOf: url),
+              let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return [] }
+        return msgs
+    }
+
+    nonisolated static func deleteArchive(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 
     // Debounced save: coalesce rapid message-array changes (typing, streaming
@@ -920,15 +1570,46 @@ enum ChatStore {
 }
 
 // MARK: - Markdown export
+
+/// "1 message" / "3 messages" — exporter + stats share it. Pass the plural
+/// explicitly for irregulars ("reply"/"replies").
+private nonisolated func counted(_ n: Int, _ singular: String, _ plural: String? = nil) -> String {
+    "\(n) \(n == 1 ? singular : (plural ?? singular + "s"))"
+}
+
 enum ChatExporter {
-    static func markdown(_ messages: [ChatMessage]) -> String {
+    /// Markdown for the whole conversation. Title follows the History sheet's
+    /// rule (first user line), then the date range, per-message blocks with
+    /// attachments noted by filename (they were silently dropped before), and
+    /// a stats footer. `nonisolated` + pure on its inputs so tests can pin the
+    /// format hermetically; date strings stay locale-formatted, so tests
+    /// assert structure, not exact dates.
+    nonisolated static func markdown(_ messages: [ChatMessage]) -> String {
         let df = DateFormatter()
         df.dateStyle = .medium; df.timeStyle = .short
-        var out = "# Salehman AI — Conversation\n\n"
+        var out = "# \(ChatStore.archiveTitle(for: messages))\n\n"
+        // Range needs two ends — a single message would render "X – X".
+        if messages.count > 1,
+           let first = messages.map(\.timestamp).min(),
+           let last = messages.map(\.timestamp).max() {
+            out += "_\(df.string(from: first)) – \(df.string(from: last))_\n\n"
+        }
+        out += "---\n\n"
         for m in messages {
             let who = m.isUser ? "You" : "Salehman AI"
-            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n\(m.text)\n\n---\n\n"
+            out += "**\(who)** · \(df.string(from: m.timestamp))\n\n"
+            if let path = m.imagePath {
+                out += "📎 `\(URL(fileURLWithPath: path).lastPathComponent)`\n\n"
+            }
+            out += "\(m.text)\n\n---\n\n"
         }
+        let words = messages.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        var footer = "_\(counted(messages.count, "message")) · \(counted(words, "word"))"
+        let replies = messages.compactMap(\.duration)
+        if !replies.isEmpty {
+            footer += String(format: " · avg reply %.1fs", replies.reduce(0, +) / Double(replies.count))
+        }
+        out += footer + "_\n"
         return out
     }
 
@@ -938,10 +1619,27 @@ enum ChatExporter {
         NSPasteboard.general.setString(markdown(messages), forType: .string)
     }
 
+    /// Suggested export filename: conversation title + last-activity date,
+    /// scrubbed of path/filesystem-hostile characters. Pure for tests.
+    nonisolated static func exportFilename(for messages: [ChatMessage]) -> String {
+        let raw = ChatStore.archiveTitle(for: messages)
+        let banned = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        let safe = raw.components(separatedBy: banned).joined()
+            .trimmingCharacters(in: .whitespaces)
+        let df = DateFormatter()
+        // Fixed-format dates need the POSIX locale: a bare DateFormatter
+        // follows the DEVICE locale+calendar, so on a Hijri-calendar Mac
+        // (this machine) "yyyy-MM-dd" rendered 1447-era dates in filenames.
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+        let date = messages.map(\.timestamp).max() ?? Date()
+        return "\(safe.isEmpty ? "Conversation" : safe) — \(df.string(from: date)).md"
+    }
+
     @MainActor static func savePanel(_ messages: [ChatMessage]) {
         guard !messages.isEmpty else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Salehman AI Conversation.md"
+        panel.nameFieldStringValue = exportFilename(for: messages)
         panel.canCreateDirectories = true
         panel.title = "Export Conversation"
         if panel.runModal() == .OK, let url = panel.url {
@@ -950,10 +1648,91 @@ enum ChatExporter {
     }
 }
 
+// MARK: - Conversation stats
+/// Whole-conversation roll-up behind the `/stats` command — the per-reply
+/// hover pill answers "how fast was THIS reply"; this answers "what has this
+/// conversation been". Pure + nonisolated so tests pin the math and format.
+struct ChatStats: Equatable {
+    let messages: Int
+    let yours: Int
+    let replies: Int
+    let words: Int
+    let avgReplySeconds: Double?     // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+
+    nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
+        let yours = msgs.filter(\.isUser).count
+        let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let durations = msgs.compactMap(\.duration)
+        let stamps = msgs.map(\.timestamp)
+        var span: TimeInterval? = nil
+        if msgs.count > 1, let a = stamps.min(), let b = stamps.max() {
+            span = b.timeIntervalSince(a)
+        }
+        return ChatStats(
+            messages: msgs.count, yours: yours, replies: msgs.count - yours,
+            words: words,
+            avgReplySeconds: durations.isEmpty ? nil
+                : durations.reduce(0, +) / Double(durations.count),
+            spanSeconds: span)
+    }
+
+    /// "45s", "5m", "1h 20m", "2d 3h" — calendar-free span humanizer.
+    nonisolated static func human(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        if s < 60 { return "\(s)s" }
+        let m = s / 60
+        if m < 60 { return "\(m)m" }
+        let h = m / 60
+        if h < 24 { return m % 60 == 0 ? "\(h)h" : "\(h)h \(m % 60)m" }
+        let d = h / 24
+        return h % 24 == 0 ? "\(d)d" : "\(d)d \(h % 24)h"
+    }
+
+    /// Two-line summary for the `/stats` alert. `%.1f` via `String(format:)`
+    /// is locale-independent, so tests can pin the exact string.
+    nonisolated var blurb: String {
+        let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
+        var tail = counted(words, "word")
+        if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
+        if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
+        return head + "\n" + tail
+    }
+}
+
 // MARK: - Message Bubble
-struct MessageBubble: View {
+struct MessageBubble: View, Equatable {
+    /// Equality gates body re-evaluation (used via `.equatable()` at the
+    /// transcript call site): ContentView's body re-runs on EVERY keystroke /
+    /// hover flip, handing each bubble fresh closures — reflection-based
+    /// diffing can't prove them unchanged, so every settled bubble re-ran its
+    /// body (markdown-cache lookups + full tree diff × N messages) per
+    /// keystroke. Comparing just message + qaShowActions skips all of it;
+    /// speech-state updates still flow via @ObservedObject (dynamic-property
+    /// invalidation bypasses ==, by design — SpeechOut publishes only
+    /// speakingID, twice per read-aloud, so the bypass is cheap).
+    ///
+    /// ⚠️ MAINTENANCE (verified failure mode, Airbnb eng. blog): if you ADD a
+    /// stored property that affects rendering, you MUST add it here — a stale
+    /// == silently freezes that property's UI. Closures stay excluded (that's
+    /// the point); `.equatable()` at the call site is REQUIRED, conformance
+    /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
+    static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+    }
+
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
+    /// Edit-and-resend on user rows: the view model truncates the transcript
+    /// from this message and the composer reloads its text. nil hides the action.
+    var onEdit: ((ChatMessage) -> Void)? = nil
+    /// Quote an assistant reply into the composer (`> `-prefixed). nil hides it.
+    var onQuote: ((String) -> Void)? = nil
+    /// Pin/unpin this message (context menu, either side). nil hides it.
+    var onTogglePin: ((ChatMessage) -> Void)? = nil
+    /// QA only: render the hover action pill as if the pointer were on the
+    /// row, so static captures (which can't hover) can see and baseline it.
+    var qaShowActions: Bool = false
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
@@ -966,14 +1745,19 @@ struct MessageBubble: View {
     }
 
     var body: some View {
+        // QA captures bypass the entry animation: `onAppear` never fires in an
+        // offscreen NSHostingView render, so `appeared` stays false and every
+        // bubble rendered fully transparent (caught when the gallery's message
+        // section went blank after the hosted-path switch).
+        let visible = appeared || QAGeometry.enabled
         bubbleRow
-            .opacity(appeared ? 1 : 0)
+            .opacity(visible ? 1 : 0)
             // Settle to 0 (crisp). The bubble ENTERS blurred and clears as it
             // arrives — the inverse of this had every settled bubble stuck at
             // radius 6, leaving the whole transcript permanently blurry.
             // 8pt rise (was 14): present, not theatrical.
-            .blur(radius: appeared ? 0 : 4)
-            .offset(y: appeared ? 0 : 8)
+            .blur(radius: visible ? 0 : 4)
+            .offset(y: visible ? 0 : 8)
             .onAppear {
                 // Skip the entry choreography on cells SwiftUI is reusing during
                 // a scroll redraw — only animate the first time this bubble's
@@ -1007,18 +1791,108 @@ struct MessageBubble: View {
         Group {
             if message.isUser { userRow } else { assistantRow }
         }
+        // Right-click mirrors the hover pill — the native path for users who
+        // reach for the context menu before discovering hover affordances.
+        .contextMenu {
+            Button { copyText() } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if onTogglePin != nil {
+                Button { onTogglePin?(message) } label: {
+                    Label(message.pinned == true ? "Unpin" : "Pin",
+                          systemImage: message.pinned == true ? "pin.slash" : "pin")
+                }
+            }
+            if message.isUser {
+                if onEdit != nil {
+                    Button { onEdit?(message) } label: {
+                        Label("Edit & Resend", systemImage: "pencil")
+                    }
+                }
+            } else {
+                if onQuote != nil {
+                    Button { onQuote?(displayedText) } label: {
+                        Label("Quote in Composer", systemImage: "text.quote")
+                    }
+                }
+                Button { speech.toggle(message.text, id: message.id) } label: {
+                    Label(speech.speakingID == message.id ? "Stop Speaking" : "Read Aloud",
+                          systemImage: "speaker.wave.2")
+                }
+                if onRegenerate != nil {
+                    Button { onRegenerate?(message) } label: {
+                        Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+        }
         .onHover { hovering = $0 }
+    }
+
+    /// Splits a composed message into the leading markdown quote block (the
+    /// `> `-prefixed lines quote-reply inserts) and the body beneath it.
+    /// nil when the text doesn't OPEN with a quote. Pure for tests.
+    nonisolated static func splitLeadingQuote(_ text: String) -> (quote: String, body: String)? {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.first?.hasPrefix(">") == true else { return nil }
+        var quote: [String] = [], rest: [String] = []
+        var inQuote = true
+        for line in lines {
+            if inQuote, line.hasPrefix(">") {
+                quote.append(String(line.dropFirst(line.hasPrefix("> ") ? 2 : 1)))
+            } else {
+                inQuote = false
+                rest.append(line)
+            }
+        }
+        let q = quote.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return nil }
+        return (q, rest.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Quoted reply rendered as a real quote block (accent rail + dimmed text)
+    /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
+    private func quoteCard(_ quote: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(DS.Palette.accent.opacity(0.55))
+                .frame(width: 2)
+            Text(quote)
+                .font(.system(size: 12))
+                .lineSpacing(1.2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(6)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(Color.white.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// User text, split into quote card + body when the message opens with a
+    /// quote. Extracted subview (type-checker budget discipline).
+    @ViewBuilder private var userTextBlock: some View {
+        if let split = Self.splitLeadingQuote(message.text) {
+            quoteCard(split.quote)
+            if !split.body.isEmpty {
+                Text(split.body)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+            }
+        } else {
+            Text(message.text)
+                .font(.system(size: 13.5))
+                .lineSpacing(1.5)
+                .textSelection(.enabled)
+                .foregroundStyle(.white)
+        }
     }
 
     private var userRow: some View {
         HStack {
             Spacer(minLength: 60)
             VStack(alignment: .leading, spacing: 8) {
-                Text(message.text)
-                    .font(.system(size: 13.5))
-                    .lineSpacing(1.5)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.white)
+                userTextBlock
                 if let path = message.imagePath {
                     CachedImage(path: path)
                         .frame(maxWidth: 360, maxHeight: 360)
@@ -1036,15 +1910,22 @@ struct MessageBubble: View {
             // Same floating-pill pattern as assistant rows — no reserved
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
-                actionButton("doc.on.doc", "Copy") { copyText() }
-                    .padding(.horizontal, 3).padding(.vertical, 1)
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    .offset(y: -10)
-                    .opacity(hovering ? 1 : 0)
-                    .animation(DS.Motion.fade, value: hovering)
+                HStack(spacing: 2) {
+                    if onEdit != nil {
+                        actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
+                            onEdit?(message)
+                        }
+                    }
+                    actionButton("doc.on.doc", "Copy") { copyText() }
+                }
+                .padding(.horizontal, 3).padding(.vertical, 1)
+                .background(DS.Palette.codeSurfaceSide,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .offset(y: -10)
+                .opacity(hovering || qaShowActions ? 1 : 0)
+                .animation(DS.Motion.fade, value: hovering)
             }
         }
     }
@@ -1054,6 +1935,18 @@ struct MessageBubble: View {
             MarkdownText(text: displayedText)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
+            // Failure rows get an INLINE retry — hover-regenerate exists but
+            // isn't discoverable when the user is staring at an error.
+            if message.text == LocalLLM.offMessage, onRegenerate != nil {
+                Button { onRegenerate?(message) } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DS.Palette.accent)
+                .help("Re-run your last message")
+                .padding(.top, 2)
+            }
             if let path = message.imagePath {
                 CachedImage(path: path)
                     .frame(maxWidth: 360, maxHeight: 360)
@@ -1067,11 +1960,28 @@ struct MessageBubble: View {
         // measure), readable over any content thanks to its own flat panel.
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 2) {
+                // Reply timing — metadata only on demand (hover), zero chrome
+                // at rest. "4.2s" for quick replies, "1m 12s" past a minute.
+                if let d = message.duration {
+                    Text(d < 60 ? String(format: "%.1fs", d)
+                                : "\(Int(d) / 60)m \(Int(d) % 60)s")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        // Full stats on demand (the pill only renders on
+                        // hover, so the word count split is effectively free).
+                        .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
+                }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
                     speech.toggle(message.text, id: message.id)
                 }
                 actionButton("doc.on.doc", "Copy") { copyText() }
+                if onQuote != nil {
+                    actionButton("text.quote", "Quote in your next message") {
+                        onQuote?(displayedText)
+                    }
+                }
                 if onRegenerate != nil {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }
@@ -1082,7 +1992,7 @@ struct MessageBubble: View {
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
-            .opacity(hovering ? 1 : 0)
+            .opacity(hovering || qaShowActions ? 1 : 0)
             .animation(DS.Motion.fade, value: hovering)
         }
     }
@@ -1199,7 +2109,7 @@ private struct BrainStatusDot: View {
                 .frame(width: 7, height: 7)
                 .shadow(color: active.opacity(0.6), radius: 3)
         }
-        .animation(.easeInOut(duration: 0.25), value: isRunning)
+        .animation(DS.Motion.fade, value: isRunning)
         // Only run the repeating pulse WHILE generating. `pulse` is used solely under
         // `isRunning`, so when idle (the common case) we cancel it — otherwise this
         // always-visible header dot redraws every frame forever (idle CPU/GPU + battery
@@ -1214,35 +2124,9 @@ private struct BrainStatusDot: View {
     }
 }
 
-/// Empty-state hero logo with a slow "breathing" scale on the brand tile.
-/// Extracted into its own subview so the animation `@State` is scoped to the
-/// empty state and doesn't survive once the user starts chatting.
-private struct EmptyStateLogo: View {
-    @State private var breathing = false
-
-    var body: some View {
-        ZStack {
-            Circle().fill(Theme.accent.opacity(0.18))
-                .frame(width: 130, height: 130).blur(radius: 40)
-            Circle().fill(Theme.accent2.opacity(0.16))
-                .frame(width: 110, height: 110).blur(radius: 36)
-                .offset(x: 18, y: 8)
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 72, height: 72)
-                    .shadow(color: Theme.accent.opacity(0.55), radius: 22, y: 8)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .scaleEffect(breathing ? 1.045 : 1.0)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 3.5).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
-    }
-}
+// (EmptyStateLogo — the 130pt twin-halo breathing orb — was deleted when the
+// chat welcome adopted the Code tab's flat 60pt disc hero. The disc is inline
+// in `emptyState`; it has no animation state, so no subview is needed.)
 
 // MARK: - Agent Run View (live multi-agent progress)
 struct AgentRunView: View {
@@ -1360,11 +2244,16 @@ struct ApprovalCard: View {
     let onRun: () -> Void
     let onCancel: () -> Void
     let onAlways: () -> Void
+    /// Entrance choreography state; QA's offscreen renders never fire
+    /// onAppear, so captures use the pre-revealed path.
+    @State private var appeared = false
 
     var body: some View {
+        let visible = appeared || QAGeometry.enabled
         ZStack {
             Color.black.opacity(0.5).ignoresSafeArea()
                 .onTapGesture { onCancel() }
+                .opacity(visible ? 1 : 0)
 
             VStack(spacing: 0) {
                 // Top
@@ -1420,7 +2309,7 @@ struct ApprovalCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .accessibilityHint("Disables the approval prompt for all future commands")
                 }
                 .padding(.horizontal, 20)
@@ -1429,12 +2318,58 @@ struct ApprovalCard: View {
             .frame(width: 380)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
-            // Raised modal surface, deliberately a hair LIGHTER than the canvas
-            // so it reads as "lifted" over the scrim. Warm-shifted to match the
-            // Apple-Music palette (was a cold-indigo 0.10/0.11/0.16 literal).
-            .background(DS.Palette.modalBG, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            // DOUBLE-BEZEL modal (DS.Bezel tokens): the warm modalBG core keeps
+            // its "lifted over the scrim" read, now seated in the canonical
+            // shell tray with the top-lit core highlight.
+            .background(DS.Palette.modalBG,
+                        in: RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5))
+            .padding(DS.Bezel.shellPadding)
+            .background(DS.Bezel.shellFill,
+                        in: RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(DS.Bezel.shellStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+            // Entrance: settle up from 0.96 on lux — mass, not a pop.
+            .scaleEffect(visible ? 1 : 0.96)
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                guard !appeared else { return }
+                withAnimation(DS.Motion.lux) { appeared = true }
+            }
         }
+    }
+}
+
+/// A `/`-command for the chat composer (Code-tab parity). Internal (not
+/// private) so `ChatComposerLogicTests` can pin the matcher hermetically.
+struct ChatSlashCommand: Identifiable {
+    enum Kind { case template(String), action(String) }
+    let id: String          // trigger without the slash, e.g. "copy"
+    let icon: String
+    let blurb: String
+    let kind: Kind
+    var trigger: String { "/" + id }
+
+    /// The menu shows only while the FIRST token is being typed: a leading
+    /// `/`, no space/newline yet — so "/tests write…" or normal prose never
+    /// triggers it. Empty query (just "/") matches everything. Pure on its
+    /// inputs; the single source of truth for both the menu and ↵-pick.
+    nonisolated static func matches(for input: String,
+                                    in commands: [ChatSlashCommand]) -> [ChatSlashCommand] {
+        guard input.hasPrefix("/"), !input.contains(" "), !input.contains("\n") else { return [] }
+        let q = input.dropFirst().lowercased()
+        return commands.filter { q.isEmpty || $0.id.hasPrefix(q) }
+    }
+
+    /// Slug a saved-prompt title into a slash trigger: lowercased, spaces →
+    /// dashes, everything else non-alphanumeric dropped ("Fix my Code!" →
+    /// "fix-my-code"). Empty result = title unusable as a trigger. Pure for
+    /// tests.
+    nonisolated static func slug(_ title: String) -> String {
+        String(title.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" })
     }
 }

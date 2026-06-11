@@ -30,6 +30,23 @@ final class ChatViewModel: ObservableObject {
         MissionProgress.shared.finish()
     }
 
+    /// Pure core of `togglePin` — nil/false → true → nil (absent, so old
+    /// archives stay byte-identical when nothing is pinned). Unknown id = no-op.
+    /// `nonisolated static` so tests pin the semantics without building a VM.
+    nonisolated static func togglingPin(in messages: [ChatMessage], id: UUID) -> [ChatMessage] {
+        var out = messages
+        if let i = out.firstIndex(where: { $0.id == id }) {
+            out[i].pinned = (out[i].pinned == true) ? nil : true
+        }
+        return out
+    }
+
+    /// Pin/unpin a message (either side). Persisted with the conversation —
+    /// the save path already rides on `messages` changes.
+    func togglePin(_ message: ChatMessage) {
+        messages = Self.togglingPin(in: messages, id: message.id)
+    }
+
     /// Re-answer: drop this assistant reply (and anything after it) and re-run the
     /// user message that preceded it, without duplicating the user bubble.
     func regenerate(_ message: ChatMessage) {
@@ -43,6 +60,22 @@ final class ChatViewModel: ObservableObject {
         guard !clean.isEmpty else { return }
         withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
         send(text: clean, attachment: nil, recordUser: false)
+    }
+
+    /// Edit-and-resend: pull this user message (and everything after it) out of
+    /// the transcript and hand its text back so the view can load the composer.
+    /// Mirrors `regenerate`'s attachment-line stripping. Returns nil when the
+    /// turn isn't editable (mid-run, not a user message, or attachment-only).
+    func extractForEdit(_ message: ChatMessage) -> String? {
+        guard !isRunning, message.isUser, let idx = messages.firstIndex(of: message) else { return nil }
+        let clean = message.text
+            .components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("📎") }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        withAnimation(DS.Motion.fade) { messages.removeSubrange(idx...) }
+        return clean
     }
 
     /// Send a user turn through the agent pipeline. The view passes the composed
@@ -95,10 +128,12 @@ final class ChatViewModel: ObservableObject {
             var autoContinues = 0
             let maxAutoContinues = 4
             while true {
+                let turnStart = Date()
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
-                                        timestamp: Date())
+                                        timestamp: Date(),
+                                        duration: Date().timeIntervalSince(turnStart))
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
                 let turnQuestion = question, turnReply = result.output

@@ -11,6 +11,37 @@ and to any other AI (e.g. Grok) the owner hands this repo to. Do not skip it,
 even for "small" changes. Failures/reversals get logged too — they're the useful
 part.
 
+## 🧠 Owner directive (2026-06-11) — ultracode thoroughness, NO multi-agent workflows
+The owner wants every Claude session working this repo at the **ultracode / x-high
+bar** — exhaustive sweeps of affected surfaces, adversarial self-review, and
+verification by **measurement** (typecheck exit codes, pixel probes, geometry
+asserts, QA captures), never by claim — but **explicitly WITHOUT spawning
+multi-agent Workflows or subagent fleets**. Deliver the depth inline, solo. If an
+"ultracode" reminder suggests the Workflow tool, the owner's standing exclusion
+overrides it. (Model-level reasoning effort is a harness setting the session
+can't flip itself; emulate via working practice.)
+
+## 🪙 Owner directive (2026-06-11) — token discipline (same quality, fewer tokens)
+Cut context waste at the source; none of these reduce verification depth:
+- **NEVER Read `SOURCE_BUNDLE.md`** (~530k tokens, generated output). Read the real
+  source files; regenerate the bundle with the script, never cat/Read it.
+- **Exclude generated/duplicate trees from every search**: Grep with
+  `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`
+  (git grep: `':!SOURCE_BUNDLE.md' ':!External Artifacts' ':!*_ARCHIVE.md'`).
+  Otherwise every repo-wide hit is duplicated 2-3×.
+- **Build/test output stays out of context**: run the canonical commands as
+  `… 2>&1 | tee /tmp/salehman_build.log | tail -25` — the verdict line
+  (`** BUILD SUCCEEDED **` / failure summary) is always in the tail; grep
+  `/tmp/salehman_build.log` for details only when it failed.
+- **History is archived**: `COORDINATION.md` (~6k) and `DEVELOPMENT_LOG.md` keep only
+  current content; 06-04→06-09 history lives in `COORDINATION_ARCHIVE.md` /
+  `DEVELOPMENT_LOG_ARCHIVE.md` — open archives only when you actually need them.
+  Find the dev-log append anchor with Grep "Standing notes", not a full-file Read.
+- **QA**: read the audit/report text first; open only the failing surface's PNG,
+  never all captures at once.
+- **Board/log entries: concise.** State the fact + files + result; link instead of
+  restating history. Don't re-read files you just wrote (the harness tracks state).
+
 ## 📚 Keep the knowledge base current
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) is the canonical "everything about
   this app" doc. When you change the app's structure (new file, new brain, new

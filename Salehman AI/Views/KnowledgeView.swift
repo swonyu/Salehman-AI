@@ -28,6 +28,8 @@ struct KnowledgeView: View {
     @State private var pasteTitle = ""
     @State private var pasteBody = ""
     @State private var detailDoc: KnowledgeDoc?
+    @State private var docSort: KnowledgeSort = .recent
+    @State private var docFilter = ""
 
     var body: some View {
         ScrollView {
@@ -64,7 +66,7 @@ struct KnowledgeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -98,6 +100,7 @@ struct KnowledgeView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
@@ -142,15 +145,57 @@ struct KnowledgeView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 30)
         } else {
+            let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
-                VStack(spacing: 1) {
-                    ForEach(docs) { doc in docRow(doc) }
+                HStack {
+                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if docs.count > 1 {
+                        Menu {
+                            ForEach(KnowledgeSort.allCases) { s in
+                                Button { docSort = s } label: {
+                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
+                                }
+                            }
+                        } label: {
+                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                    }
                 }
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                if docs.count > 10 { docFilterRow }
+                if shown.isEmpty {
+                    Text("No documents match “\(docFilter)”.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 20)
+                } else {
+                    VStack(spacing: 1) {
+                        ForEach(shown) { doc in docRow(doc) }
+                    }
+                    .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                }
             }
         }
+    }
+
+    private var docFilterRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField("Find a document…", text: $docFilter)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .accessibilityLabel("Find a document")
+            if !docFilter.isEmpty {
+                Button { docFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
@@ -275,6 +320,28 @@ struct KnowledgeView: View {
         """
         answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
         asking = false
+    }
+}
+
+/// Document ordering for the Knowledge list (Chat C feature). Pure `apply` → tested.
+enum KnowledgeSort: String, CaseIterable, Identifiable {
+    case recent, name, passages
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent:   return "Recent"
+        case .name:     return "Name (A–Z)"
+        case .passages: return "Most passages"
+        }
+    }
+    func apply(_ docs: [KnowledgeDoc], filter q: String = "") -> [KnowledgeDoc] {
+        let needle = q.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = needle.isEmpty ? docs : docs.filter { $0.name.lowercased().contains(needle) }
+        switch self {
+        case .recent:   return matched.sorted { $0.addedAt > $1.addedAt }
+        case .name:     return matched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .passages: return matched.sorted { $0.chunkCount > $1.chunkCount }
+        }
     }
 }
 

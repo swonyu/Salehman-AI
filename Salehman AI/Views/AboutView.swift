@@ -6,6 +6,10 @@ import SwiftUI
 /// honest after every Xcode version bump (no source change needed).
 struct AboutView: View {
     let onClose: () -> Void
+    // Entrance choreography — settled under `--qa` so offscreen snapshots capture
+    // the final frame, not a mid-animation pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredCap: UUID?
 
     /// Major capability rows. Edit when a new feature surfaces — this is the
     /// "what can it do" answer shown to the user.
@@ -18,7 +22,7 @@ struct AboutView: View {
 
     private let capabilities: [Capability] = [
         .init(icon: "lock.shield.fill",
-              title: "Private, on-device",
+              title: "Private when you want it",
               body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Many brains, one Salehman",
@@ -43,9 +47,16 @@ struct AboutView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
+
+            // Ambient brand glow behind the header — soft depth on the flat canvas.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.16))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: -120, y: -210)
+                .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 // Header — brand tile + identity + close.
@@ -55,6 +66,13 @@ struct AboutView: View {
                             .fill(DS.Gradient.brand)
                             .frame(width: 52, height: 52)
                             .dsShadow(DS.Elevation.accentGlow(0.45))
+                            // Top-lit edge highlight → the tile reads dimensional.
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: 1)
+                            )
                         Image(systemName: "sparkles")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.white)
@@ -75,10 +93,17 @@ struct AboutView: View {
                     .accessibilityLabel("Close")
                 }
 
-                Text("Your private, on-device AI — built by Saleh. Many brains, real tools, your own model.")
+                Text("Your AI — cloud-first with a local fallback, built by Saleh. Many brains, real tools, your own model.")
                     .font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // Editorial section label → rhythm before the list.
+                Text("WHAT IT DOES")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(DS.Palette.accent)
+                    .padding(.top, 2)
 
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
@@ -90,7 +115,7 @@ struct AboutView: View {
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 300)
 
                 // Footer — small attribution + the one keyboard hint.
                 HStack {
@@ -100,14 +125,19 @@ struct AboutView: View {
                 }
             }
             .padding(DS.Space.xl)
+            // Card drifts up + fades in on first frame.
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 14)
         }
         .frame(width: 460, height: 560)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("About Salehman AI")
     }
 
     private func capabilityRow(_ cap: Capability) -> some View {
-        HStack(alignment: .top, spacing: DS.Space.md) {
+        let isHovered = hoveredCap == cap.id
+        return HStack(alignment: .top, spacing: DS.Space.md) {
             Image(systemName: cap.icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -122,5 +152,14 @@ struct AboutView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
+        // Hover highlight — a premium macOS row affordance (research: hover states).
+        .background(isHovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(DS.Motion.smooth) {
+                if hovering { hoveredCap = cap.id }
+                else if hoveredCap == cap.id { hoveredCap = nil }
+            }
+        }
     }
 }

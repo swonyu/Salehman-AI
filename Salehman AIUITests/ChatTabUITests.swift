@@ -59,6 +59,27 @@ nonisolated final class ChatTabUITests: XCTestCase {
         XCTAssertFalse(searchField.waitForExistence(timeout: 1), "Done should close the search bar")
     }
 
+    /// The composer's quick-controls menu (Code-tab parity) carries the Brain
+    /// and Effort pickers plus the big toggles — switching brains must never
+    /// require opening Settings again.
+    @MainActor
+    func testChatControlsMenuHasBrainAndEffort() throws {
+        let app = launchToChat()
+        let controls = app.popUpButtons["chat.composer.controls"].firstMatch.exists
+            ? app.popUpButtons["chat.composer.controls"].firstMatch
+            : app.menuButtons["chat.composer.controls"].firstMatch
+        XCTAssertTrue(controls.waitForExistence(timeout: 3), "Quick-controls menu should exist in the composer")
+        controls.click()
+        XCTAssertTrue(app.menuItems["Brain"].waitForExistence(timeout: 3)
+                      || app.menuItems["Salehman"].exists,
+                      "Controls menu must contain the Brain picker")
+        XCTAssertTrue(app.menuItems["Effort"].exists
+                      || app.menuItems["Instant"].exists
+                      || app.menuItems["Balanced"].exists,
+                      "Controls menu must contain the Effort picker")
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
     /// The composer's unified + menu carries BOTH sections (attachments and
     /// prompts) — the two-circles era must not regress back.
     @MainActor
@@ -74,6 +95,59 @@ nonisolated final class ChatTabUITests: XCTestCase {
         XCTAssertTrue(app.menuItems["Save current as prompt…"].exists,
                       "+ menu must contain the prompt actions")
         app.typeKey(.escape, modifierFlags: [])   // close the menu
+    }
+
+    /// Typing `/` opens the slash-command menu; narrowing + ↵ fills the
+    /// template into the composer (the matcher contract is unit-tested in
+    /// ChatComposerLogicTests — this verifies the UI wiring end-to-end).
+    @MainActor
+    func testSlashMenuAppearsAndReturnPicksTopCommand() throws {
+        let app = launchToChat()
+        let field = app.textFields["chat.composer.field"]
+        field.click()
+        field.typeText("/")
+        XCTAssertTrue(app.staticTexts["/summarize"].waitForExistence(timeout: 3),
+                      "Typing / should open the slash menu with /summarize visible")
+
+        field.typeText("su")          // narrows to /summarize
+        field.typeKey(.return, modifierFlags: [])
+        let value = field.value as? String ?? ""
+        XCTAssertTrue(value.contains("Summarize our conversation"),
+                      "↵ on /su should fill the summarize template, got: \(value)")
+
+        // Leave the composer clean for the next test.
+        field.typeKey("a", modifierFlags: .command)
+        field.typeKey(.delete, modifierFlags: [])
+    }
+
+    /// Esc dismisses a dangling slash query instead of leaving half a command
+    /// in the composer.
+    @MainActor
+    func testEscDismissesSlashMenu() throws {
+        let app = launchToChat()
+        let field = app.textFields["chat.composer.field"]
+        field.click()
+        field.typeText("/")
+        XCTAssertTrue(app.staticTexts["/copy"].waitForExistence(timeout: 3),
+                      "Typing / should open the slash menu")
+        field.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(app.staticTexts["/copy"].waitForExistence(timeout: 1),
+                       "Esc should dismiss the slash menu")
+    }
+
+    /// The header clock opens the Conversations (history) sheet; Done closes
+    /// it. Content-agnostic: archives may or may not exist on this machine.
+    @MainActor
+    func testHistorySheetOpensAndCloses() throws {
+        let app = launchToChat()
+        let clock = app.buttons["Conversation history"].firstMatch
+        XCTAssertTrue(clock.waitForExistence(timeout: 3), "Header should offer Conversation history")
+        clock.click()
+        XCTAssertTrue(app.staticTexts["Conversations"].waitForExistence(timeout: 3),
+                      "History sheet should open with its title")
+        app.buttons["Done"].firstMatch.click()
+        XCTAssertFalse(app.staticTexts["Conversations"].waitForExistence(timeout: 1),
+                       "Done should dismiss the history sheet")
     }
 
     /// View ▸ Capture QA Snapshots renders every surface to qa/snapshots/*.png —

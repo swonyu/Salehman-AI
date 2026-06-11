@@ -510,7 +510,10 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
     /// offline use. (Every other case still functions if set directly — e.g. by the
     /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
-    static var selectableCases: [BrainPreference] { [.salehman, .auto] }
+    // Salehman + Auto, plus the custom-server brain so you can point the app at your
+    // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
+    // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
+    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio] }
 
     var title: String {
         switch self {
@@ -531,7 +534,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .openRouter:  return "OpenRouter (Cloud · free models)"
         case .ensemble:    return "All Brains at Once"
         case .salehman:    return "Salehman AI"
-        case .unslothStudio: return "Unsloth Studio (local server)"
+        case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
         }
     }
@@ -554,7 +557,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
         case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a DeepSeek critique pass"
-        case .unslothStudio: return "Local · your fine-tuned model served by Unsloth Studio (or mlx_lm.server / LM Studio) over OpenAI-compatible HTTP · no key needed"
+        case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
     }

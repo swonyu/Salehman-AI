@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// The app's shared dark gradient + soft accent glows. State-free so SwiftUI
+/// The app's shared dark gradient + soft neutral glows. State-free so SwiftUI
 /// keeps it stable across body redraws, and `drawingGroup()`-cached. Promoted out
 /// of ContentView so every tab shares one cheap background instead of each
 /// drawing its own glows.
 struct BackgroundView: View {
-    /// The two big accent glows, isolated into their own `.drawingGroup()` so
+    /// The two big ambient glows, isolated into their own `.drawingGroup()` so
     /// the 90 px blur convolution rasterizes ONCE into a cached texture instead
     /// of every time anything above this view invalidates. The (free) gradient
     /// then composites natively on top — pulling `.drawingGroup()` off the
@@ -13,9 +13,9 @@ struct BackgroundView: View {
     /// state-free → the cached texture survives all parent redraws.
     private var glows: some View {
         ZStack {
-            Circle().fill(Theme.accent.opacity(0.09)).frame(width: 480).blur(radius: 90)
+            Circle().fill(Color.white.opacity(0.05)).frame(width: 480).blur(radius: 90)
                 .offset(x: -220, y: -260)
-            Circle().fill(Theme.accent2.opacity(0.08)).frame(width: 420).blur(radius: 90)
+            Circle().fill(Color.white.opacity(0.035)).frame(width: 420).blur(radius: 90)
                 .offset(x: 260, y: 300)
         }
         .drawingGroup()

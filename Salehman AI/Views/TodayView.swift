@@ -40,15 +40,25 @@ struct TodayView: View {
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
     }
 
-    private func refresh() { knowledgeCount = KnowledgeStore.shared.allDocuments().count }
+    /// Off-main: the FIRST touch of `KnowledgeStore.shared` decodes the whole
+    /// knowledge.json vault (≈5 MB JSON) in its init — doing that synchronously in
+    /// `onAppear` of the DEFAULT tab made every cold launch hitch on the main
+    /// thread. The store is lock-guarded, so a detached first touch is safe; the
+    /// count hops back to main when ready.
+    private func refresh() {
+        Task.detached(priority: .utility) {
+            let n = KnowledgeStore.shared.allDocuments().count
+            await MainActor.run { knowledgeCount = n }
+        }
+    }
 
     // MARK: Sections
 
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
-                .font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text("Welcome back to Salehman AI — everything here stays on this Mac.")
+                .font(DS.Typography.titleXL).foregroundStyle(.white)
+            Text("Welcome back to Salehman AI — many brains, real tools, your own model.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,7 +69,7 @@ struct TodayView: View {
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).tracking(0.8)
+            Eyebrow(text: title)
             content()
         }
     }
@@ -93,11 +103,16 @@ struct TodayView: View {
                      detail: knowledgeCount == 1 ? "document" : "documents") {
                 app.selectedTab = .knowledge
             }
-            StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
-                     value: market.session.shortLabel,
-                     detail: market.session.isOpen ? "open now" : "closed",
-                     accent: market.session.isOpen ? DS.Palette.success : .white) {
-                app.selectedTab = .markets
+            // Market tile hides with the Markets tab (owner directive — see
+            // `AppTab.hidden`); its tap navigates to a tab that would no
+            // longer exist in the bar.
+            if !AppTab.hidden.contains(.markets) {
+                StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
+                         value: market.session.shortLabel,
+                         detail: market.session.isOpen ? "open now" : "closed",
+                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                    app.selectedTab = .markets
+                }
             }
         }
     }
@@ -115,7 +130,7 @@ private struct ActionTile: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
                         .fill(DS.Palette.accent.opacity(0.16)).frame(width: 40, height: 40)
                     Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 }
@@ -151,7 +166,7 @@ private struct StatTile: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary.opacity(hovering ? 0.9 : 0.35))

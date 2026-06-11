@@ -93,7 +93,72 @@ struct PaidBrainHidingTests {
         // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
-        #expect(BrainPreference.selectableCases == [.salehman, .auto])
+        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
+    }
+}
+
+// MARK: - stripNarration (Q3 local model "think out loud" scaffold removal)
+//
+// The local Q3 fine-tune sometimes emits meta-reasoning ("You are Salehman AI…",
+// "Interpretation:…") then the real reply after a final "Response:". The stripper
+// keeps only the real reply — and must NOT touch normal answers. Caught live
+// 2026-06-11 when "hi" dumped the entire agent prompt into the chat.
+struct StripNarrationTests {
+    @Test func keepsOnlyTextAfterFinalResponse() {
+        let leak = "You are Salehman AI in this conversation.\nThe most likely reading is greeting.\n\nResponse:\nGot it. What do you need?"
+        #expect(AgentPipeline.stripNarration(leak) == "Got it. What do you need?")
+    }
+    @Test func normalReplyUntouched() {
+        let ok = "Good code is correct, readable, and testable."
+        #expect(AgentPipeline.stripNarration(ok) == ok)
+        // A reply that merely mentions the word is not a scaffold (no "\nResponse:").
+        let mentions = "The server returns a Response object you can inspect."
+        #expect(AgentPipeline.stripNarration(mentions) == mentions)
+    }
+    @Test func doesNotStripToAnotherScaffold() {
+        // If what follows is itself scaffold, leave the whole thing for the rescue path.
+        let nested = "Reasoning…\nResponse:\nInterpretation: still analyzing"
+        #expect(AgentPipeline.stripNarration(nested) == nested)
+    }
+
+    // Trailing meta — the fine-tune appends reviewer boilerplate + fake footnotes
+    // after the real answer (caught live 2026-06-12: "Thoughts on this response?
+    // I'm happy to rephrase…" + "[1]: https://github.com/…" after a greeting).
+    @Test func cutsTrailingReviewerMetaAndFootnotes() {
+        let leak = """
+        Hi — what do you want to work on today?
+
+        ---
+
+        Thoughts on this response? I'm happy to rephrase / add more detail.
+
+          [1]: https://github.com/SalehmanAI/MLX-Studio
+        """
+        #expect(AgentPipeline.stripNarration(leak) == "Hi — what do you want to work on today?")
+    }
+    @Test func cutsSelfContinuedDialogue() {
+        let leak = "Sure, here's the plan.\nUser: hi\nSalehman AI: Hi again!"
+        #expect(AgentPipeline.stripNarration(leak) == "Sure, here's the plan.")
+    }
+    @Test func neverStripsToNothing() {
+        // A reply that is ONLY meta must come back unchanged, not empty.
+        let onlyMeta = "Thoughts on this response? Happy to rephrase."
+        #expect(AgentPipeline.stripNarration(onlyMeta) == onlyMeta)
+    }
+
+    // History sanitization on load (CodeView) — assistant turns are cleaned,
+    // user turns are NEVER touched (a user might legitimately paste leak text).
+    @Test func historySanitizerCleansAssistantOnly() {
+        let t = Date()
+        let leak = "Hi!\n\nThoughts on this response? Happy to rephrase.\n\n  [1]: https://x"
+        let saved = [
+            ChatMessage(id: UUID(), text: leak, isUser: true,  timestamp: t),   // user: untouched
+            ChatMessage(id: UUID(), text: leak, isUser: false, timestamp: t),   // assistant: cleaned
+        ]
+        let out = CodeView.sanitizedHistory(saved)
+        #expect(out[0].text == leak)
+        #expect(out[1].text == "Hi!")
+        #expect(out[1].id == saved[1].id)   // identity survives the rewrite
     }
 }
 

@@ -7,25 +7,30 @@ import SwiftUI
 struct OnboardingView: View {
     let onDone: () -> Void
     @State private var page = 0
+    @State private var ctaHover = false
+    // Entrance choreography. Starts settled under `--qa` so offscreen snapshots
+    // capture the final frame, not a mid-animation pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private struct Page: Identifiable {
         let id = UUID()
         let icon: String
+        let eyebrow: String
         let title: String
         let body: String
     }
 
     private let pages: [Page] = [
-        .init(icon: "sparkles",
+        .init(icon: "sparkles", eyebrow: "WELCOME",
               title: "Meet Salehman",
               body: "Your personal AI — sharp, fast, and entirely yours. Let's get you set up in a few seconds."),
-        .init(icon: "lock.shield.fill",
+        .init(icon: "lock.shield.fill", eyebrow: "PRIVACY",
               title: "Private by design",
               body: "Salehman runs cloud-first on free big models, with a local fallback. Turn on Offline Mode to keep everything on this Mac."),
-        .init(icon: "brain.head.profile",
+        .init(icon: "brain.head.profile", eyebrow: "YOUR BRAINS",
               title: "Choose your brain — or many",
               body: "Pin one model, or check several and Salehman rotates through them, one per message. Free local brains, your own custom model, or the cloud — your call."),
-        .init(icon: "wrench.and.screwdriver.fill",
+        .init(icon: "wrench.and.screwdriver.fill", eyebrow: "CAPABILITIES",
               title: "It can actually do things",
               body: "With your approval, Salehman runs terminal commands, searches the web, transcribes audio, and works as a team of agents on bigger tasks."),
     ]
@@ -34,9 +39,23 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.Palette.bgTop, DS.Palette.bgBottom],
-                           startPoint: .top, endPoint: .bottom)
+            DS.Gradient.bgVertical
                 .ignoresSafeArea()
+
+            // Ambient brand glow — soft, blurred depth behind the hero tile so the
+            // flat canvas reads as lit, not painted. Two orbs = layered atmosphere.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.18))
+                .frame(width: 340, height: 340)
+                .blur(radius: 100)
+                .offset(y: -130)
+                .allowsHitTesting(false)
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.07))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 150, y: 180)
+                .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 Spacer()
@@ -47,13 +66,30 @@ struct OnboardingView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 88, height: 88)
                         .dsShadow(DS.Elevation.accentGlow(0.5))
+                        // Top-lit edge highlight → the tile gains dimension instead
+                        // of reading as a flat swatch.
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
+                                                       startPoint: .top, endPoint: .bottom),
+                                        lineWidth: 1)
+                        )
                     Image(systemName: pages[page].icon)
                         .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(.white)
                         .id("icon\(page)")
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 26)
+
+                // Editorial eyebrow — gives each page a sense of place + rhythm.
+                Text(pages[page].eyebrow)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .tracking(2.5)
+                    .foregroundStyle(DS.Palette.accent)
+                    .padding(.bottom, 10)
+                    .id("eyebrow\(page)")
+                    .transition(.opacity)
 
                 Text(pages[page].title)
                     .font(.system(size: 27, weight: .bold, design: .rounded))
@@ -102,10 +138,13 @@ struct OnboardingView: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 26).padding(.vertical, 11)
                             .background(DS.Gradient.brand, in: Capsule())
-                            .dsShadow(DS.Elevation.accentGlow(0.4))
+                            .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
+                            .scaleEffect(ctaHover ? 1.035 : 1)
+                            .brightness(ctaHover ? 0.06 : 0)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
+                    .onHover { hovering in withAnimation(DS.Motion.smooth) { ctaHover = hovering } }
                 }
 
                 Button("Skip") { onDone() }
@@ -115,8 +154,12 @@ struct OnboardingView: View {
                     .padding(.top, 14)
             }
             .padding(44)
+            // Whole card drifts up + fades in on first frame.
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 16)
         }
         .frame(width: 540, height: 600)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Welcome to Salehman, step \(page + 1) of \(pages.count)")
     }

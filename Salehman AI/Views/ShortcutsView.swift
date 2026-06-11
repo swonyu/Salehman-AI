@@ -15,15 +15,24 @@ struct ShortcutsView: View {
             .init(keys: "⌘,", label: "Settings"),
             .init(keys: "⌘/", label: "This shortcuts sheet"),
         ]),
-        .init(title: "Navigation", items: [
-            .init(keys: "⌘1", label: "Today"),
-            .init(keys: "⌘2", label: "Chat"),
-            .init(keys: "⌘3", label: "Code"),
-            .init(keys: "⌘4", label: "Agents"),
-            .init(keys: "⌘5", label: "Markets"),
-            .init(keys: "⌘6", label: "Notes"),
-            .init(keys: "⌘7", label: "Knowledge"),
-        ]),
+        .init(title: "Navigation", items: {
+            var nav: [Shortcut] = [
+                .init(keys: "⌘1", label: "Today"),
+                .init(keys: "⌘2", label: "Chat"),
+                .init(keys: "⌘3", label: "Code"),
+                .init(keys: "⌘4", label: "Agents"),
+                .init(keys: "⌘5", label: "Markets"),
+                .init(keys: "⌘6", label: "Notes"),
+                .init(keys: "⌘7", label: "Knowledge"),
+            ]
+            // Hidden tabs (owner directive — see `AppTab.hidden`) drop their
+            // row so this sheet never lists a shortcut that does nothing.
+            // The other ⌘-numbers keep their tabs (⌘5 is simply absent).
+            if AppTab.hidden.contains(.markets) {
+                nav.removeAll { $0.label == "Markets" }
+            }
+            return nav
+        }()),
         .init(title: "Conversation", items: [
             .init(keys: "⌘N", label: "New chat"),
             .init(keys: "⌘J", label: "Hands-free voice"),
@@ -47,9 +56,8 @@ struct ShortcutsView: View {
             .padding(.bottom, DS.Space.md)
 
             ForEach(groups) { group in
-                Text(group.title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    .tracking(0.8).padding(.top, DS.Space.sm).padding(.bottom, 4)
+                Eyebrow(text: group.title)
+                    .padding(.top, DS.Space.sm).padding(.bottom, 4)
                 ForEach(group.items) { s in
                     HStack {
                         Text(s.label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.9))
