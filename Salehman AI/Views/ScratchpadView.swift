@@ -82,12 +82,18 @@ struct ScratchpadView: View {
         addFocused = true
     }
 
+    /// Active tasks first, completed sunk to the bottom — each group keeps its
+    /// insertion order (stable partition, presentational only; no data mutation).
+    private var orderedTasks: [TaskItem] {
+        store.tasks.filter { !$0.done } + store.tasks.filter { $0.done }
+    }
+
     private var tasksList: some View {
         Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
             } else {
-                listCard { ForEach(store.tasks) { taskRow($0) } }
+                listCard { ForEach(orderedTasks) { taskRow($0) } }
             }
         }
     }
