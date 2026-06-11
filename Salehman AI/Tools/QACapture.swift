@@ -84,6 +84,10 @@ enum QACapture {
     static func checkAndRun() {
         let request = qaDir.appendingPathComponent("WINDOW_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
+        // QA-initiated launches only (`--args --qa`) — same owner-launch
+        // protection as QASnapshots.checkAndRun; the request is left for the
+        // next qa launch rather than consumed.
+        guard ProcessInfo.processInfo.arguments.contains("--qa") else { return }
         Task { @MainActor in
             // Let the main window actually appear + first layout settle.
             try? await Task.sleep(nanoseconds: 2_000_000_000)

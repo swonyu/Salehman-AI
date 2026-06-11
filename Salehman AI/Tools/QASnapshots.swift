@@ -51,6 +51,13 @@ enum QASnapshots {
         }
         let request = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")
         guard FileManager.default.fileExists(atPath: request.path) else { return }
+        // Owner-launch protection: a pending request used to make EVERY launch
+        // (Dock, Spotlight…) render ~30 surfaces + run the pixel audit on the main
+        // thread ≈1s in — a big slice of "the app always lags when launched".
+        // Captures now run only on QA-initiated launches (`open … --args --qa`,
+        // which tools/qa.sh passes). A request seen WITHOUT the flag is left in
+        // place, so the next qa.sh launch still fulfills it — never silently eaten.
+        guard ProcessInfo.processInfo.arguments.contains("--qa") else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
             captureAll()

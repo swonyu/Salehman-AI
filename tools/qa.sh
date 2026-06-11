@@ -21,7 +21,9 @@ before=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
 [ "${1:-}" = "--adopt" ] && touch "$QA/ADOPT_BASELINES"
 touch "$QA/SNAPSHOT_REQUEST"
 echo "→ launching app to fulfill the snapshot request…"
-open "$APP"
+# `--qa` marks this as a QA-initiated launch — the in-app capture hooks only run
+# with it, so a pending request can never slow the owner's normal Dock launches.
+open "$APP" --args --qa
 
 audit_before=$(stat -f %m "$SNAPS/AUDIT.json" 2>/dev/null || echo 0)
 echo -n "→ waiting for fresh capture"

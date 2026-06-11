@@ -1353,3 +1353,29 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
     failed commands (exit 127), confusing Grok and wasting turns.
   Result: Both fixes verified. --auto shows in --help. Grok's patch attempts all
     failed (quote escaping in python3 -c); applied directly.
+
+## 2026-06-11 (night) — launch lag fixed: 2.2s → 0.25s first-3s CPU (~9×)
+**Owner:** "app always lags when its launched." Profiled (sample of first 3 s): main
+thread pegged in AttributeGraph/metadata building the SwiftUI tree. Three causes, three fixes:
+1. **Chat tree built at launch for nothing** — ContentView (the heaviest surface) was
+   always-mounted while the default tab is Today. Now lazy like every other tab
+   (`visitedChat`), with a RootView **mount-and-re-pulse**: a Settings/Live/New-chat/
+   search signal arriving while the chat is unmounted mounts it, swallows the flag, and
+   re-fires it 0.4 s later so the fresh `onChange` observers see the transition (0.1 s
+   was too tight — the sheet missed once in testing; 0.4 s verified in pixels).
+2. **knowledge.json (4.8 MB) decoded synchronously on main** — `KnowledgeStore.shared`
+   first touch happened in TodayView.onAppear (default tab!). Count refresh now
+   `Task.detached`; the store is lock-guarded so off-main first touch is safe.
+3. **QA captures taxed normal launches** — a pending `qa/SNAPSHOT_REQUEST` made ANY
+   launch render ~30 surfaces + audit ≈1 s in (and the parity watcher re-plants
+   requests all day). Capture hooks now require the `--qa` launch argument
+   (`open … --args --qa`, which tools/qa.sh passes); a request without the flag is left
+   in place, never eaten. **QA-owner note: any direct `open` in watchers must add
+   `--args --qa`.**
+**Also:** Release build installed to **/Applications/Salehman AI.app** — the owner had
+been daily-driving the Debug build from DerivedData.
+**Measured:** first-3s CPU 2.16s→0.27s (Debug), 2.32s→0.24s (Release). Verified in
+pixels: Settings opens from Today (re-pulse), chat mounts on ⌘2, QA loop green under
+--qa, all audit surfaces pass.
+**Files:** Views/RootView.swift, Views/TodayView.swift, Tools/QASnapshots.swift,
+Tools/QACapture.swift, tools/qa.sh.

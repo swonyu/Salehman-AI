@@ -40,7 +40,17 @@ struct TodayView: View {
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
     }
 
-    private func refresh() { knowledgeCount = KnowledgeStore.shared.allDocuments().count }
+    /// Off-main: the FIRST touch of `KnowledgeStore.shared` decodes the whole
+    /// knowledge.json vault (≈5 MB JSON) in its init — doing that synchronously in
+    /// `onAppear` of the DEFAULT tab made every cold launch hitch on the main
+    /// thread. The store is lock-guarded, so a detached first touch is safe; the
+    /// count hops back to main when ready.
+    private func refresh() {
+        Task.detached(priority: .utility) {
+            let n = KnowledgeStore.shared.allDocuments().count
+            await MainActor.run { knowledgeCount = n }
+        }
+    }
 
     // MARK: Sections
 
