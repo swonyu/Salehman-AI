@@ -1359,6 +1359,14 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Found & fixed (`70eee77`):** History-sheet staggered reveal NEVER animated — rows mounted in the same SwiftUI update as the `revealed=true` flip, so `.animation(value:)` had nothing to interpolate (insertion renders at final values; the welcome entrance works only because onAppear flips state a frame after first render). Fix: 50ms separation between row insertion and the reveal flip. Sub-80 notes (not fixed, recorded): `Shell.run` 10s timeout silently empties git dots on enormous repos; async `ChatStore.load()` re-fires a redundant debounced save (pre-existing behavior). CLAUDE.md compliance: clean. Typecheck EXIT 0 on the FULL live tree (twin session's BrainRouting refactor compiles at HEAD).
 
+## 2026-06-12 · "DO THE FREE GPU" — /connect command ships; notebook verified; runbook delivered (Chat B)
+
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift` (+3, now 41)
+
+**What & why:** Owner ordered execution of the free cloud-GPU serving plan (memory: salehman-cloud-serving). The login-gated half (Colab needs the owner's Google + a fresh HF token) cannot run from this sandbox — no kaggle.json/HF token/gcloud on disk, and the old HF token was chat-exposed and is to be revoked, not reused. Executed everything automatable: (1) **verified `salehman_cloud_gpu.ipynb`** — 3 cells, run-all, T4-safe (serves prebuilt Q3 GGUF from private HF `swonyu/salehman-gguf`; no fp16 merge so no OOM); (2) **NEW `/connect` chat command** — paste the notebook's trycloudflare URL into a dialog and the app wires itself: `normalizedServerURL` (pure; https default, trailing-slash strip, `/v1` appended exactly once, junk → friendly error) → `unslothStudioEndpoint` + model "salehman" + `brainPreference = .unslothStudio` in one tap (case verified selectable + persistent). The notebook stays out of git intentionally — `salehman-training/` is gitignored for personal-data reasons; the Colab path is upload-the-file.
+
+**Result:** typecheck EXIT 0; standing AITests request grows by 3 (41 total in ChatTranscriptLogicTests). Owner runbook: colab.research.google.com → Upload → salehman_cloud_gpu.ipynb → Runtime=T4 → Run all → paste hf token → copy printed URL → /connect in the app.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
