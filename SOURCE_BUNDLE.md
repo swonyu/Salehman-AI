@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 02:16 +03 · Swift files: 150 · Swift LOC: 30156_
+_Generated: 2026-06-12 02:25 +03 · Swift files: 150 · Swift LOC: 30290_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -4984,7 +4984,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1764 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1707 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -6341,33 +6341,10 @@ enum LocalLLM {
         return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem)
     }
 
-    // Brain-gate predicates. Each cloud brain is *only* tried when the user
-    // explicitly pins it — we never silently spend on a cloud API.
-    //
-    // The local tier (Ollama) is free and on-device. `isLocalPref` opens the
-    // tier for `.auto` and the `.ollama` pin.
-    nonisolated private static var isLocalPref: Bool {
-        pref == .auto || pref == .ollama
-    }
-    /// The user's own model is pinned — route EXCLUSIVELY to it (no fallback).
-    nonisolated private static var salehmanAllowed: Bool { pref == .salehman }
-    /// Unsloth Studio (or any local OpenAI-compatible server) is pinned — route
-    /// exclusively to it, no silent fallback to Ollama. Same discipline as
-    /// `.salehman`: an explicit pin means "this engine or nothing."
-    nonisolated private static var unslothStudioAllowed: Bool { pref == .unslothStudio }
-    /// vLLM (local OpenAI-compatible server) is pinned — route exclusively to it,
-    /// no silent fallback. Same discipline as `.unslothStudio`.
-    nonisolated private static var vllmAllowed: Bool { pref == .vllm }
-    nonisolated private static var claudeAllowed:   Bool { pref == .claudeHaiku }
-    nonisolated private static var grokAllowed:     Bool { pref == .grok }
-    nonisolated private static var geminiAllowed:   Bool { pref == .gemini }
-    nonisolated private static var groqAllowed:     Bool { pref == .groq }
-    nonisolated private static var mistralAllowed:  Bool { pref == .mistral }
-    nonisolated private static var cerebrasAllowed: Bool { pref == .cerebras }
-    nonisolated private static var deepSeekAllowed: Bool { pref == .deepSeek }
-    nonisolated private static var codexAllowed:    Bool { pref == .codex }
-    nonisolated private static var copilotAllowed:  Bool { pref == .copilot }
-    nonisolated private static var openRouterAllowed: Bool { pref == .openRouter }
+    // The per-brain pin gates ("each cloud brain is only tried when the user
+    // explicitly pins it — we never silently spend on a cloud API") moved to
+    // `BrainRouting.dispatch`: one switch, one source of truth, pinned by
+    // BrainRoutingDispatchTests. The ladders below consume the dispatch.
 
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
@@ -6614,108 +6591,74 @@ enum LocalLLM {
     /// tool-enabled Ollama/cloud loop;
     /// otherwise falls back to Ollama qwen-coder *without* tools.
     static func chat(_ message: String) async -> String {
-        if isFreeAutoMode { return await generateFreeAuto(message) }
-        if isFreeCodingMode { return await freeCodingReply(message) }
-        if isCloudCodingMode { return await cloudCodingReply(message) }
-        if isEnsembleMode { return await generateEnsemble(message) }
-        if claudeAllowed {
-            // Claude Haiku (cloud), single-turn, no local tools.
-            if let reply = await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
-                return reply
-            }
+        // Same single-dispatch plan (BrainRouting.dispatch), including the
+        // Offline-Mode hard-gate on cloud pins. Chat-shape specifics live in
+        // `cloudConversational`: the OpenAI-compatible brains run the TOOL
+        // loop first (so a pinned cloud brain can drive the terminal), the
+        // bespoke clients run plain chat.
+        switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
+        case .mode(.freeAuto):    return await generateFreeAuto(message)
+        case .mode(.freeCoding):  return await freeCodingReply(message)
+        case .mode(.cloudCoding): return await cloudCodingReply(message)
+        case .mode(.ensemble):    return await generateEnsemble(message)
+        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
+        case .cloud(let p):
+            if let reply = await cloudConversational(p, message: message) { return reply }
             return offMessage
-        }
-        if grokAllowed {
-            if let reply = await GrokClient.chat(prompt: message,
-                                                 system: Self.cloudSystemPrompt,
-                                                 model: AppSettings.grokModelCurrent) {
-                return reply
-            }
-            return offMessage
-        }
-        if geminiAllowed {
-            if let reply = await GeminiClient.chat(prompt: message,
-                                                   system: Self.cloudSystemPrompt,
-                                                   model: AppSettings.geminiModelCurrent) {
-                return reply
-            }
-            return offMessage
-        }
-        if groqAllowed {
-            // Tool-calling first (so the cloud brain can run the terminal),
-            // falling back to plain chat if the tool turn errors out.
-            let m = AppSettings.groqModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: GroqClient.shared, model: m, message: message) { return reply }
-            if let reply = await GroqClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if mistralAllowed {
-            let m = AppSettings.mistralModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: MistralClient.shared, model: m, message: message) { return reply }
-            if let reply = await MistralClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if cerebrasAllowed {
-            let m = AppSettings.cerebrasModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: CerebrasClient.shared, model: m, message: message) { return reply }
-            if let reply = await CerebrasClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if deepSeekAllowed {
-            let m = AppSettings.deepSeekModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: DeepSeekClient.shared, model: m, message: message) { return reply }
-            if let reply = await DeepSeekClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if codexAllowed {
-            let m = AppSettings.openAIModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: OpenAIClient.shared, model: m, message: message) { return reply }
-            if let reply = await OpenAIClient.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if openRouterAllowed {
-            let m = AppSettings.openRouterModelCurrent
-            if let reply = await chatOpenAICompatWithTools(client: OpenRouterClient.shared, model: m, message: message) { return reply }
-            if let reply = await OpenRouterClient.shared.chat(prompt: message, system: Self.cloudSystemPrompt, model: m) { return reply }
-            return offMessage
-        }
-        if copilotAllowed {
-            if let reply = await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt) {
-                return reply
-            }
-            return offMessage
-        }
-        // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
-        // brain can run the terminal / web through the OpenAI `tools` field, and
-        // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
-        // engine the leader uses. No further fallback.
-        if salehmanAllowed {
+        case .salehman:
+            // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
+            // brain can run the terminal / web through the OpenAI `tools` field, and
+            // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
+            // engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generateWithTools(message: message, userPrompt: message) {
                 return reply
             }
             return offMessage
-        }
-        // Unsloth Studio (or any local OpenAI-compatible server) — explicit pin.
-        // Tool-calling first via its OpenAI-compatible `tools` field, so the
-        // Studio model can run the terminal; plain chat if the server doesn't
-        // support tools or the tool turn errors out.
-        if unslothStudioAllowed {
+        case .unslothStudio:
+            // Explicit pin. Tool-calling first via its OpenAI-compatible `tools`
+            // field, so the Studio model can run the terminal; plain chat if the
+            // server doesn't support tools or the tool turn errors out.
             if let reply = await UnslothStudio.chatWithTools(message) { return reply }
             if let reply = await UnslothStudio.chat(prompt: message, system: Self.cloudSystemPrompt) { return reply }
             return offMessage
-        }
-        // vLLM — explicit pin; tool-calling first, plain chat fallback (same as Unsloth Studio).
-        if vllmAllowed {
+        case .vllm:
             if let reply = await VLLM.chatWithTools(message) { return reply }
             if let reply = await VLLM.chat(prompt: message, system: Self.cloudSystemPrompt) { return reply }
             return offMessage
-        }
-        // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
-        if isLocalPref {
+        case .localTier:
+            // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
+        case .unavailable:
+            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+            return offMessage
         }
-        return offMessage
+    }
+
+    /// One pinned cloud brain's conversational execution. The six
+    /// OpenAI-compatible brains try the tool loop first (terminal / web),
+    /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
+    /// are plain chat only (no shared tool loop).
+    private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
+        switch p {
+        case .anthropic:
+            // Claude Haiku (cloud), single-turn, no local tools.
+            return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
+        case .grok:
+            return await GrokClient.chat(prompt: message,
+                                         system: Self.cloudSystemPrompt,
+                                         model: AppSettings.grokModelCurrent)
+        case .gemini:
+            return await GeminiClient.chat(prompt: message,
+                                           system: Self.cloudSystemPrompt,
+                                           model: AppSettings.geminiModelCurrent)
+        case .copilot:
+            return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
+        case .groq, .mistral, .cerebras, .deepSeek, .openAI, .openRouter:
+            guard let client = p.compatClient, let m = p.selectedModel else { return nil }
+            if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
+            return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
+        }
     }
 
 
@@ -8018,7 +7961,7 @@ nonisolated struct OpenAICompatibleClient: Sendable {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanEngine.swift (344 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanEngine.swift (363 lines) =====
 ```swift
 import Foundation
 
@@ -8074,18 +8017,27 @@ enum SalehmanEngine {
     static func generate(prompt: String,
                          userPrompt: String? = nil,
                          maxTokens: Int? = nil) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: Salehman answers from this Mac ONLY — endpoint engines
+        // qualify only on loopback URLs (the `generateOnDevice` rule), the
+        // cloud chain + standalone keys are skipped entirely, and the
+        // MLX/Ollama floor below still answers. (This was the Offline leak:
+        // a pinned .salehman walked the whole cloud chain — including the
+        // PAID DeepSeek backstop — while "offline".)
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? prompt) {
-            if let r = await tryCloud(entry.client, model: entry.model, prompt: prompt) { return r }
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? prompt) {
+                if let r = await tryCloud(entry.client, model: entry.model, prompt: prompt) { return r }
+            }
+            // Then the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI /
+            // Claude) — not in the curated free chain — so ANY configured cloud key
+            // makes Salehman work on the cloud, not just the six free coders.
+            if let r = await tryStandaloneClouds(prompt: prompt) { return r }
         }
-        // Then the owner's OWN standalone cloud keys (Gemini / Grok / OpenAI /
-        // Claude) — not in the curated free chain — so ANY configured cloud key
-        // makes Salehman work on the cloud, not just the six free coders.
-        if let r = await tryStandaloneClouds(prompt: prompt) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: prompt, maxTokens: maxTokens ?? 1024) { return r }
@@ -8102,16 +8054,21 @@ enum SalehmanEngine {
                                userPrompt: String? = nil,
                                maxTokens: Int? = nil,
                                onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: local-only (loopback endpoints + the MLX/Ollama floor)
+        // — same gate as `generate`, streamed.
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chatStream(prompt: prompt, system: SalehmanPersona.activeSystemPrompt, onUpdate: onUpdate) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? prompt) {
-            if let r = await tryCloudStream(entry.client, model: entry.model, prompt: prompt, onUpdate: onUpdate) { return r }
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? prompt) {
+                if let r = await tryCloudStream(entry.client, model: entry.model, prompt: prompt, onUpdate: onUpdate) { return r }
+            }
+            // Owner's standalone cloud keys (Gemini / Grok / OpenAI / Claude), streamed.
+            if let r = await tryStandaloneCloudsStream(prompt: prompt, onUpdate: onUpdate) { return r }
         }
-        // Owner's standalone cloud keys (Gemini / Grok / OpenAI / Claude), streamed.
-        if let r = await tryStandaloneCloudsStream(prompt: prompt, onUpdate: onUpdate) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generateStream(prompt: prompt, maxTokens: maxTokens ?? 1024, onUpdate: onUpdate) { return r }
@@ -8127,26 +8084,31 @@ enum SalehmanEngine {
     /// falls back to plain chat on the same brain, then the chain rolls on. The
     /// local floor keeps tools too (`ollamaReply`).
     static func generateWithTools(message: String, userPrompt: String? = nil) async -> String? {
-        if VLLM.isConfigured,
+        // Offline Mode: local-only (loopback endpoints + the MLX/Ollama floor)
+        // — same gate as `generate`, with tools.
+        let offline = AppSettings.isOfflineOnly
+        if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
-        if UnslothStudio.isConfigured,
+        if (offline ? UnslothStudio.isLocalLoopback : UnslothStudio.isConfigured),
            let r = await UnslothStudio.chatWithTools(message, systemPrompt: SalehmanPersona.activeSystemPrompt) { return r }
 
-        for entry in cloudChain(routing: userPrompt ?? message) {
-            guard entry.client.hasKey() else { continue }
-            let model = entry.model ?? entry.client.defaultModel
-            if let r = await LocalLLM.chatOpenAICompatWithTools(client: entry.client,
-                                                                model: model,
-                                                                message: message,
-                                                                systemPrompt: SalehmanPersona.activeSystemPrompt) {
-                return r
+        if !offline {
+            for entry in cloudChain(routing: userPrompt ?? message) {
+                guard entry.client.hasKey() else { continue }
+                let model = entry.model ?? entry.client.defaultModel
+                if let r = await LocalLLM.chatOpenAICompatWithTools(client: entry.client,
+                                                                    model: model,
+                                                                    message: message,
+                                                                    systemPrompt: SalehmanPersona.activeSystemPrompt) {
+                    return r
+                }
+                // Tools unsupported by this model → plain chat before moving on.
+                if let r = await tryCloud(entry.client, model: entry.model, prompt: message) { return r }
             }
-            // Tools unsupported by this model → plain chat before moving on.
-            if let r = await tryCloud(entry.client, model: entry.model, prompt: message) { return r }
+            // Owner's standalone cloud keys (plain chat — these clients don't share the
+            // OpenAI-compat tool loop; a real answer still beats the local floor).
+            if let r = await tryStandaloneClouds(prompt: message) { return r }
         }
-        // Owner's standalone cloud keys (plain chat — these clients don't share the
-        // OpenAI-compat tool loop; a real answer still beats the local floor).
-        if let r = await tryStandaloneClouds(prompt: message) { return r }
 
         if await MLXSalehmanEngine.shared.isReady,
            let r = await MLXSalehmanEngine.shared.generate(prompt: message) { return r }
@@ -14071,7 +14033,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (144 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (154 lines) =====
 ```swift
 import SwiftUI
 
@@ -14094,6 +14056,9 @@ struct ChatHistoryView: View {
     /// crawl). Pre-revealed on QA launches — offscreen renders never fire
     /// onAppear, so the chat_history capture would photograph empty rows.
     @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
+    /// Archive summaries decode up to 100 JSON files — that work now runs
+    /// off-main (it was a visible hitch on sheet-open with a deep history).
+    @State private var loaded = false
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -14123,7 +14088,11 @@ struct ChatHistoryView: View {
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                      alignment: .bottom)
 
-            if archives.isEmpty {
+            if !loaded {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 22, weight: .semibold))
@@ -14177,9 +14146,12 @@ struct ChatHistoryView: View {
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
         .preferredColorScheme(.dark)
-        .onAppear {
-            archives = ChatStore.archives()
-            revealed = true   // first frame renders hidden, then rows cascade in
+        .task {
+            archives = await Task.detached(priority: .userInitiated) {
+                ChatStore.archives()
+            }.value
+            loaded = true
+            revealed = true   // rows render hidden for one frame, then cascade in
         }
     }
 
@@ -17173,7 +17145,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2344 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2368 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17343,7 +17315,18 @@ struct ContentView: View {
             Text("Save the current message as a reusable prompt.")
         }
         .onAppear {
-            if vm.messages.isEmpty { vm.messages = ChatStore.load() }
+            // History decode runs OFF-main (it's a full-file JSON decode that
+            // grows with the conversation — decoding it synchronously here was
+            // a mount hitch on ⌘2). Guarded re-check: don't clobber a
+            // conversation the user started while the load was in flight.
+            if vm.messages.isEmpty {
+                Task {
+                    let loaded = await Task.detached(priority: .userInitiated) {
+                        ChatStore.load()
+                    }.value
+                    if vm.messages.isEmpty { vm.messages = loaded }
+                }
+            }
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
             // Restore an unsent draft (quitting mid-thought shouldn't eat it).
@@ -17569,6 +17552,7 @@ struct ContentView: View {
                                                       inputFocused = true
                                                   },
                                                   onTogglePin: { vm.togglePin($0) })
+                                        .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
                                 if vm.isRunning { RunningProgressView() }
@@ -18866,7 +18850,19 @@ struct ChatStats: Equatable {
 }
 
 // MARK: - Message Bubble
-struct MessageBubble: View {
+struct MessageBubble: View, Equatable {
+    /// Equality gates body re-evaluation (used via `.equatable()` at the
+    /// transcript call site): ContentView's body re-runs on EVERY keystroke /
+    /// hover flip, handing each bubble fresh closures — reflection-based
+    /// diffing can't prove them unchanged, so every settled bubble re-ran its
+    /// body (markdown-cache lookups + full tree diff × N messages) per
+    /// keystroke. Comparing just message + qaShowActions skips all of it;
+    /// speech-state updates still flow via @ObservedObject (dynamic-property
+    /// invalidation bypasses ==, by design).
+    static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+    }
+
     let message: ChatMessage
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     /// Edit-and-resend on user rows: the view model truncates the transcript
@@ -25183,39 +25179,177 @@ enum BrainPreferenceTestLock {
 }
 ```
 
-===== FILE: Salehman AITests/BrainRoutingDispatchTests.swift (33 lines) =====
+===== FILE: Salehman AITests/BrainRoutingDispatchTests.swift (171 lines) =====
 ```swift
 import Testing
 import Foundation
 @testable import Salehman_AI
 
-// MARK: - LocalLLM brain routing (via BrainAdapter registry — §3 refactor target)
+// MARK: - Brain routing plan (the R1 seam — BrainRouting.swift)
 //
-// These cases REQUIRE the BrainAdapter registry + injectable seams from Tab B's
-// refactor (R1). Without a fakeable dispatch the routing ladder is a 200-line
-// cascade of ifs with no seam for unit tests. Leave all cases disabled until
-// the registry lands; then un-disable + supply a test double registry.
-//
-// Header note per COORDINATION + CODEBASE_REVIEW: do not enable until the
-// refactor that makes currentBrain / generate / ensemble etc. dispatch through
-// one registry instead of 3 copies of the ladder.
+// The routing PLAN (gating, roster membership, order, offline rules) is pure
+// over a `BrainRouteConfig` snapshot; `LocalLLM`'s ladders only execute it.
+// These tests pin the plan hermetically — no keys, no network, no UI.
+// House invariants pinned here:
+//   · every preference dispatches to exactly ONE target, no fallthrough;
+//   · `.auto`/`.ollama` never dispatch to a cloud adapter (local-first);
+//   · Offline Mode hard-gates the ten cloud pins and empties every cloud
+//     roster (the Offline-leak fix this seam enforces);
+//   · `.freeAuto` may only race FREE providers — never paid keys.
 
+@MainActor
 struct BrainRoutingDispatchTests {
 
-    @Test(.disabled("TODO: §3 refactor (BrainAdapter registry) required — see CODEBASE_REVIEW §4 and Tab B mission"))
+    private static let cloudPins: [BrainPreference] = [
+        .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
+        .deepSeek, .codex, .copilot, .openRouter,
+    ]
+
+    private static func config(
+        _ tweak: (inout BrainRouteConfig) -> Void = { _ in }
+    ) -> BrainRouteConfig {
+        var c = BrainRouteConfig(pref: .auto)
+        tweak(&c)
+        return c
+    }
+
+    @Test
     func pinnedBrainPreferenceDispatchesToExactlyOneAdapterNoFallthrough() {
+        // Every cloud pin → exactly its own provider, online.
+        for pin in Self.cloudPins {
+            let d = BrainRouting.dispatch(pref: pin, offlineOnly: false)
+            guard case .cloud(let p) = d else {
+                Issue.record("\(pin) should dispatch to a cloud provider, got \(d)")
+                continue
+            }
+            #expect(p.pin == pin)
+        }
+        // The non-cloud pins each map to their own dedicated target.
+        #expect(BrainRouting.dispatch(pref: .salehman, offlineOnly: false) == .salehman)
+        #expect(BrainRouting.dispatch(pref: .unslothStudio, offlineOnly: false) == .unslothStudio)
+        #expect(BrainRouting.dispatch(pref: .vllm, offlineOnly: false) == .vllm)
+        // Orchestration modes are first-class (the old Settings "ensemble
+        // falsely Not working" bug came from them falling through the gates).
+        for mode in [BrainPreference.freeAuto, .freeCoding, .cloudCoding, .ensemble] {
+            #expect(BrainRouting.dispatch(pref: mode, offlineOnly: false) == .mode(mode))
+        }
+        // The provider↔pin maps are a bijection over the ten cloud providers.
+        for p in CloudProvider.allCases {
+            #expect(CloudProvider.provider(for: p.pin) == p)
+        }
     }
 
-    @Test(.disabled("TODO: §3 refactor (BrainAdapter registry) required — see CODEBASE_REVIEW §4 and Tab B mission"))
+    @Test
     func autoAndLocalPinsNeverInvokeAnyCloudAdapterLocalFirstInvariant() {
+        // Dispatch: `.auto`/`.ollama` go to the local tier — online or not.
+        for offline in [false, true] {
+            #expect(BrainRouting.dispatch(pref: .auto, offlineOnly: offline) == .localTier)
+            #expect(BrainRouting.dispatch(pref: .ollama, offlineOnly: offline) == .localTier)
+        }
+        // Reachability: every cloud key on the planet must not light `.auto`
+        // when the local floor is down (.auto never silently spends).
+        let allKeys = Self.config {
+            $0.pref = .auto
+            $0.configured = Set(CloudProvider.allCases)
+            $0.unslothConfigured = true; $0.vllmConfigured = true
+            $0.salehmanCloudReady = true
+        }
+        #expect(BrainRouting.reachableBrain(allKeys) == LocalLLM.Brain.none)
+        var ollamaPin = allKeys; ollamaPin.pref = .ollama
+        #expect(BrainRouting.reachableBrain(ollamaPin) == LocalLLM.Brain.none)
+        // And the local floor alone lights both.
+        let floor = Self.config { $0.pref = .auto; $0.ollamaReady = true }
+        #expect(BrainRouting.reachableBrain(floor) == .ollamaCoder)
     }
 
-    @Test(.disabled("TODO: §3 refactor (BrainAdapter registry) required — see CODEBASE_REVIEW §4 and Tab B mission"))
+    @Test
     func offlineModeForcesCloudPrefsToNoneAndExcludesThemFromEnsembleAndFreeAuto() {
+        // Reachability: each of the ten cloud pins reads .none offline, even
+        // with its key saved.
+        for pin in Self.cloudPins {
+            let c = Self.config {
+                $0.pref = pin
+                $0.offlineOnly = true
+                $0.configured = Set(CloudProvider.allCases)
+            }
+            #expect(BrainRouting.reachableBrain(c) == LocalLLM.Brain.none,
+                    "\(pin) must be unreachable offline")
+        }
+        // Dispatch: cloud pins are hard-gated (the Offline-leak fix — the old
+        // generate/streaming/chat cascades never enforced this contract).
+        for pin in Self.cloudPins {
+            #expect(BrainRouting.dispatch(pref: pin, offlineOnly: true) == .unavailable)
+        }
+        // Every cloud roster empties offline: ensemble and the free/coding
+        // pools run local-only, attempting zero cloud calls.
+        let offline = Self.config {
+            $0.offlineOnly = true
+            $0.configured = Set(CloudProvider.allCases)
+        }
+        #expect(BrainRouting.ensembleCloudRoster(offline).isEmpty)
+        #expect(BrainRouting.freeAutoRoster(offline).isEmpty)
+        #expect(BrainRouting.freeAutoToolRoster(offline).isEmpty)
+        #expect(BrainRouting.codingRaceRoster(offline).isEmpty)
+        #expect(BrainRouting.coderLoopRoster(offline).isEmpty)
+        // Local pins and the orchestration modes stay reachable offline when
+        // the local floor stands (they gate their own cloud rosters).
+        let localOffline = Self.config {
+            $0.pref = .freeAuto; $0.offlineOnly = true; $0.ollamaReady = true
+        }
+        #expect(BrainRouting.reachableBrain(localOffline) == .freeAuto)
+        // Cloud Coding is cloud-ONLY: offline → .none even with every key.
+        var cloudCoding = offline; cloudCoding.pref = .cloudCoding
+        #expect(BrainRouting.reachableBrain(cloudCoding) == LocalLLM.Brain.none)
     }
 
-    @Test(.disabled("TODO: §3 refactor (BrainAdapter registry) required — see CODEBASE_REVIEW §4 and Tab B mission"))
+    @Test
     func freeAutoIncludesOnlyFreeProvidersNeverPaidClients() {
+        // With EVERYTHING configured, the freeAuto roster is exactly the free
+        // tier, in the canonical race order — no paid provider ever appears.
+        let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
+        let roster = BrainRouting.freeAutoRoster(everything)
+        #expect(roster == CloudProvider.freeTier)
+        #expect(roster.allSatisfy { $0.isFree })
+        for paid in [CloudProvider.anthropic, .grok, .deepSeek, .openAI, .copilot] {
+            #expect(!roster.contains(paid))
+        }
+        // The tool-loop variant additionally drops Gemini (free, but no
+        // OpenAI-compat tool loop).
+        let tools = BrainRouting.freeAutoToolRoster(everything)
+        #expect(tools == CloudProvider.freeToolCapable)
+        #expect(!tools.contains(.gemini))
+        // Membership follows the configured set exactly.
+        let groqOnly = Self.config { $0.configured = [.groq, .anthropic] }
+        #expect(BrainRouting.freeAutoRoster(groqOnly) == [.groq])
+    }
+
+    @Test
+    func rosterMembershipMatchesTheDocumentedSets() {
+        let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
+        // Ensemble: the nine chat brains — DeepSeek's exclusion is the
+        // PRESERVED historical drift, documented in CloudProvider.ensembleRoster
+        // and flagged to the owner (anyBrainReachable counts it; the fan-out
+        // doesn't). If the owner opts DeepSeek in, update this test and the
+        // roster constant together.
+        let ensemble = BrainRouting.ensembleCloudRoster(everything)
+        #expect(ensemble == CloudProvider.ensembleRoster)
+        #expect(!ensemble.contains(.deepSeek))
+        // The coding pools: race order and sequential-loop order are distinct,
+        // deliberately (race = parallel anyway; the loop is quality+speed) —
+        // but their MEMBERSHIP is identical.
+        #expect(BrainRouting.codingRaceRoster(everything) == CloudProvider.codingRace)
+        #expect(BrainRouting.coderLoopRoster(everything) == CloudProvider.coderLoop)
+        #expect(Set(CloudProvider.codingRace) == Set(CloudProvider.coderLoop))
+        // anyBrainReachable: local floor or any single key (DeepSeek included).
+        #expect(!BrainRouting.anyBrainReachable(Self.config()))
+        #expect(BrainRouting.anyBrainReachable(Self.config { $0.ollamaReady = true }))
+        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.deepSeek] }))
+        // Salehman: cloud-first; endpoint engines and any chain key light it,
+        // nothing at all reads .none.
+        let salehmanCloud = Self.config { $0.pref = .salehman; $0.salehmanCloudReady = true }
+        #expect(BrainRouting.reachableBrain(salehmanCloud) == .salehman)
+        let salehmanNothing = Self.config { $0.pref = .salehman }
+        #expect(BrainRouting.reachableBrain(salehmanNothing) == LocalLLM.Brain.none)
     }
 }
 ```
@@ -30767,7 +30901,7 @@ struct WebToolsOfflineGateTests {
 }
 ```
 
-===== FILE: ARCHITECTURE.md (457 lines) =====
+===== FILE: ARCHITECTURE.md (458 lines) =====
 <!-- Auto-generated 2026-06-05 by the full-codebase-review workflow (Chat B). Grounded in the real source; refine as the app evolves. -->
 
 # Salehman AI: Architecture Documentation
@@ -30820,6 +30954,7 @@ Salehman AI/
 │   ├── UnslothStudio.swift          # Local OpenAI-compat server brain
 │   ├── VLLM.swift                   # Local vLLM server brain
 │   ├── BrainAdapter.swift           # Adapter protocol (+ Ollama/Anthropic adapters)
+│   ├── BrainRouting.swift           # THE routing plan (R1 seam): dispatch + rosters + offline rules, pure & tested
 │   ├── MemoryManager.swift          # RAM/thermal awareness (actor)
 │   └── KeychainStore.swift          # Secure API key storage
 │
@@ -31631,7 +31766,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (126 lines) =====
+===== FILE: COORDINATION.md (127 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31709,6 +31844,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Chat B — design round 2 + timeout fix (2026-06-12 ~02:3x)** | `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `DesignSystem/DesignSystem.swift` (**APPEND-ONLY: new `PressableStyle`**) | 02:3x | ✅ DONE `3a8b525` — choreography per /high-end-visual-design: `DS.PressableStyle` press physics on send/stop/mic/pills/chips/Restore, magnetic hover lift on welcome pills (1.04 + hairline brighten, lux), staggered mask reveal on History rows (40ms/row cap 8, `--qa` pre-reveal). **Also split the composer controls row** (Chat D's :946 timeout flag — banner updated, awaiting their real-build confirm). Typecheck EXIT 0. | **released** |
 | **Chat B — design round 3 (2026-06-12 ~02:5x)** | `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift` | 02:5x | ✅ DONE `48eb618` — quote-reply now renders as a REAL quote block in user rows (pure `splitLeadingQuote` parser +3 tests = 33 total; accent rail card + body; `userTextBlock` extracted per budget discipline), slash-menu island scale-entrance on a dedicated lux driver (empty-flip only), scroll pill press physics. Typecheck EXIT 0. **Standing: AITests run still owed; SNAPSHOT_REQUEST still planted — chat_empty/chat_live/chat_history/chat_samples drift will be INTENTIONAL.** | **released** |
 | **Chat B — design round 4 (2026-06-12 ~03:1x)** | `Views/ContentView.swift` (ApprovalCard only) | 03:1x | ✅ DONE `23f5aa0` — ApprovalCard double-bezel via **Chat D's `DS.Bezel` tokens** (nice component, thanks — modalBG core kept so the modal still reads lifted; coexists with Chat C's grey `ff065ec`), lux entrance (0.96→1, QAGeometry guard), last `.plain` → PressableStyle. **Typecheck EXIT 0 with your in-flight `LocalLLM.swift` WIP pinned to HEAD** (it currently references `CloudProvider.selectedModel`/`coderModels` which don't exist at HEAD — assuming your `BrainRouting.swift` lands them; not flagging, just noting my pin). The `approval` QA surface will drift INTENTIONALLY too. | **released** |
+| **Chat B — perf deep-dive (2026-06-12 ~03:3x, owner: "/deep-research perf + lag spikes, fix them")** | `Views/ContentView.swift`, `Views/ChatHistoryView.swift` | 03:3x | ✅ DONE `b3eacc7` — **root cause: invalidation breadth.** Every keystroke re-ran EVERY settled MessageBubble's body (fresh closures defeat reflection diffing) → fixed with `MessageBubble: Equatable` + `.equatable()` (speech still invalidates via @ObservedObject). Also off-mained two synchronous decodes: `ChatStore.load()` at chat mount (guarded) and History-sheet `archives()` (≤100 file decodes, now `.task` + spinner). Evidence: 0 OS hang reports; launch/streaming/knowledge already fixed in prior rounds; MarkdownText cache already present. Typecheck EXIT 0 (your LLM WIP pinned again). **Streaming bonus: per-token cost now O(1 bubble) instead of O(transcript).** Runtime numbers owed — next QA run's renderMs + a typing `sample` will quantify. | **released** |
 | **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. **✅ SLICE 1 DONE + RELEASED (~02:1x):** seam+tests `446ffd8`, locale fix `3efc758` (staged as a single-hunk patch — your uncommitted hover WIP in ContentView untouched), bundle `e114d6c`. **Final verification: full `Salehman AITests` `** TEST SUCCEEDED **` (455 passed) + app build green + QA `settings` passes (0.33%).** FYI Chat A: `code_samples` baselineDiff 8.83% in the 01:4x capture = your committed design pass needing re-adopt (eyes-verify + `--adopt` on your next cycle). SettingsView + SettingsBrainReadyTests lanes are free again — `Views/SettingsBrainReadiness.swift` is the new pure seam (readiness rules live THERE now; re-read before editing brainReady). | **released** |
 | **Claude Chat D — slice 2: R1 brain-routing seam (2026-06-12 ~02:3x)** | `LLM/LocalLLM.swift` (Chat B lane — owner-directed, Chat B inactive; also old void Grok Tab B claim), NEW `LLM/BrainRouting.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift` (enabling the last blocked suite). **NOT touching** the cloud client files themselves (R3 out of scope), AgentPipeline, BrainAdapter.swift (additive shim stays as-is). | now | **CODEBASE_REVIEW R1 (staged): extract the routing PLAN as a pure seam.** The generate/generateStreaming/chat ladders + freeAuto/freeCoding/cloudCoding/ensemble rosters re-implement the same pin/key/offline gating 8+ ways (the drift class behind the review's confirmed bugs). Plan = pure functions over a `BrainRouteConfig` snapshot (one source of truth, hermetically testable → un-disables `BrainRoutingDispatchTests` with the .auto-never-cloud + offline + free-roster invariants); execution sites keep their exact per-provider quirks (behavior-preserving, verified by full AITests + app build + QA capture per sub-step). No red windows: additive file first, ladders rewired one at a time, build between each. **SCOPE +1 FILE (~02:4x): `LLM/SalehmanEngine.swift`** — the deep-read found **2 real bugs**: (1) 🔴 **Offline-Mode leak** (same class as the fixed WebTools leak): the pinned-cloud cascades in generate/generateStreaming/chat have NO `isOfflineOnly` gate (only `currentBrain` + the orchestration modes gate), so direct callers (Settings ping, StockSage, title gen) hit real cloud HTTP under Offline Mode — and a pinned `.salehman` walks its whole cloud chain incl. the PAID DeepSeek backstop (`SalehmanEngine.generate*` never checks offline). FIXING both layers (dispatch gate + engine gate, loopback-only endpoints offline, matching `generateOnDevice`'s rule) — this is the intended contract per `currentBrain`'s own doc + the disabled test's name. (2) 🟠 **ensemble/deepSeek drift**: `anyBrainReachable` counts DeepSeek but `generateEnsemble`'s roster omits it → DeepSeek-only user sees ensemble 'reachable' but the fan-out is empty. NOT fixing (visible behavior change) — flagged for owner. Unsloth/vLLM REMOTE endpoints under Offline Mode left as-is (currentBrain documents them untouched) — flagged as an open question. | no — IN PROGRESS |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
@@ -32696,7 +32832,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (1985 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2011 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34038,6 +34174,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Round 4 (`23f5aa0`) — ApprovalCard joins the design system:** the chat's most consequential card (command approval modal) now wears the canonical double-bezel using **Chat D's new `DS.Bezel` tokens** (core = warm `modalBG` at `innerRadius` with the top-lit `coreInnerHighlight` strokeBorder, seated in `shellFill`/`shellStroke` at `outerRadius`) — replacing its single hairline; scrim + card get a lux entrance (settle up from 0.96, `QAGeometry.enabled` pre-reveal guard); the "Always run without asking" button was the chat's last `.plain` → `PressableStyle`. `TypingIndicator` audited: already on a custom curve (kept); `StreamingBubble` clean. **Verification note:** full-target typecheck ran with the other session's in-flight `LocalLLM.swift` refactor **pinned to HEAD** (their uncommitted WIP references not-yet-committed `CloudProvider` members; untracked `BrainRouting.swift` excluded) — **EXIT 0**; my changes are clean against the committed tree. Coexists with Chat C's `ff065ec` grey-neutral palette (I reference the `modalBG` token, not values).
 
+## 2026-06-12 · Performance deep-research → 3 lag-spike fixes (Chat B, owner-directed)
+
+**Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift` (`b3eacc7`)
+
+**Evidence reviewed (inline deep-research, no workflows):** ① macOS DiagnosticReports — ZERO .hang/.spin files for the app (no OS-level hang events on record). ② Repo perf ledger — launch lag already fixed 9× (06-11 night: lazy chat mount, knowledge.json off-main, QA hooks gated); streaming markdown re-parse already fixed (plain text while streaming); `MarkdownText` already carries a capped parse cache. ③ Static hot-path audit per the swiftui-expert-skill checklist (Equatable views §4, off-main work, invalidation breadth).
+
+**Root cause found — invalidation breadth, not parse depth:** `ContentView.body` re-evaluates on EVERY keystroke (`mission`), and the transcript `ForEach` hands each `MessageBubble` fresh closures (`onEdit`/`onQuote`/`onRegenerate`/`onTogglePin`) — SwiftUI's reflection diffing can't prove closures unchanged, so **every settled bubble's body re-ran per character typed and per streaming tick** (cache lookups + attributed fetches + full tree diff × N messages — the classic long-conversation typing lag).
+
+**Fixes:** (1) `MessageBubble: Equatable` (`==` on `message` + `qaShowActions` only) + `.equatable()` at the transcript call site — settled bubbles now skip entirely; speech-state changes still invalidate via `@ObservedObject` (dynamic-property invalidation bypasses `==`, by design; the parse cache makes those re-runs cheap). Streaming synergy: per-token cost is now O(1 bubble), not O(transcript). (2) `ChatStore.load()` at chat mount moved off-main (full-history decode; guarded so it can't clobber a conversation started mid-load). (3) History sheet `archives()` (≤100 full JSON decodes) off-main via `.task` + ProgressView — was synchronous in `onAppear`.
+
+**Verification:** full-target swiftc typecheck EXIT 0 (other session's in-flight LLM WIP pinned to HEAD). Runtime measurement owed: next time the app runs under QA, the renderMs budgets + a `sample` of typing in a long conversation will quantify the win; the swiftui-expert-skill's `record_trace.py` can capture an Instruments trace if the owner wants hard numbers.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -34682,6 +34830,20 @@ injected dir + mtimes, non-images ignored, OCR reads a rendered "SALEHMAN OCR 42
 PNG) — TEST SUCCEEDED. One test-only trap fixed: the enumerator returns
 /private/var/… for /var/… temp paths, so the picker test compares names, not URLs.
 **Files:** `Views/CodeView.swift`, `Salehman AITests/ScreenshotGrabberTests.swift`.
+
+## 2026-06-12 (~02:1x) — Chat C: refined the run-salehman-ai skill (re-verified driver)
+**What & why:** `/run-skill-generator` re-invoked; per its step-0 ("refine, don't rewrite") the
+`.claude/skills/run-salehman-ai/` skill already exists + works, so I re-ran the driver and updated
+stale claims + added gotchas learned this session. Driver verified: fresh `24/24 surfaces OK` capture
+(02:13:29), `SNAPSHOT_REQUEST` consumed. SKILL.md edits: surface count 14→24; documented the new
+colour-vision (CVD) pass (`*_deuter`/`*_protan` + `cvd_report.html`); honest `FAILURES:` line (e.g.
+`code_samples` trips a CVD merge — flag, not crash); test count ~310→~405; "private on-device" →
+"cloud-first with local fallback" (honesty). **Two new high-value gotchas:** (1) captures render each
+surface in ISOLATION with NO shared `BackgroundView`, so a global backdrop/theme change (the grey-bg work)
+does NOT show in `today.png` — verify via `onboarding.png` (draws `bgVertical`) or the live-window
+capture; (2) `database is locked` build error = concurrent multi-session build → retry. `.claude/` is
+gitignored so the skill is local-only (not committed); logging for traceability.
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md` (gitignored), `DEVELOPMENT_LOG.md`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -37025,7 +37187,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (295 lines) =====
+===== FILE: PROJECT_CONTEXT.md (296 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -37098,7 +37260,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ### `LLM/` — the brain layer (Chat B's lane)
 | File | Purpose |
 |---|---|
-| `LocalLLM.swift` | **The brain router** (~1500 lines). `BrainPreference`→`Brain` resolution (`currentBrain`), the `*Allowed` gates, and `generate` / `generateStreaming` / `chat`. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
+| `LocalLLM.swift` | **The brain router** (~1500 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-provider EXECUTION lives here in `cloudOneShot`/`cloudStream`/`cloudConversational`); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
+| `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `CloudProvider` (the ten providers + free/coding/ensemble roster constants + key checks + model/client maps), `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref), `BrainRouting` (`dispatch` — exactly one target per pref, **Offline Mode hard-gates the ten cloud pins**; roster builders — offline empties every cloud roster; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
 | `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
 | `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
@@ -37272,7 +37435,7 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
 - `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
 - `SettingsBrainReadyTests` — now ACTIVE (2026-06-12, Chat D): the brainReady extract landed as `Views/SettingsBrainReadiness.swift`; 7 tests pin the readiness rules (`.auto` local-only, `.freeAuto` never-spends, `.salehman` cloud-first), the active-brain probe overlap rules, the ping verdict, and the no-leak key subtitle.
-- Still refactor-dependent (disabled with header): `BrainRoutingDispatchTests` — waits for the BrainAdapter registry.
+- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (incl. the preserved ensemble/DeepSeek drift). All 8 review suites are now enabled.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 
