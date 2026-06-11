@@ -63,6 +63,7 @@ struct ScratchpadView: View {
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .padding(.horizontal, 10).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .focused($addFocused)
                 .onSubmit(add)
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")

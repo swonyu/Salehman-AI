@@ -58,7 +58,7 @@ struct MemoryView: View {
                             .font(.callout.weight(.semibold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(DS.Palette.danger)
                 }
             }
             .padding(DS.Space.xl)

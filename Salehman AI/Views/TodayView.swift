@@ -115,7 +115,7 @@ private struct ActionTile: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
                         .fill(DS.Palette.accent.opacity(0.16)).frame(width: 40, height: 40)
                     Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 }
@@ -151,7 +151,7 @@ private struct StatTile: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary.opacity(hovering ? 0.9 : 0.35))

@@ -64,7 +64,7 @@ struct KnowledgeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                 Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
@@ -98,6 +98,7 @@ struct KnowledgeView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if !answer.isEmpty {
                 Text(answer).font(.callout).foregroundStyle(.white)
