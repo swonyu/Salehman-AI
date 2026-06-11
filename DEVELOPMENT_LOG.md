@@ -1390,3 +1390,14 @@ verified state. Also annotated two stale board items (QAGeometryTests CoreGraphi
 fixed in `0abed68`; closed my build-request/centering thread on my row).
 **Files:** `COORDINATION.md`, qa request files (gitignored).
 **Result:** Owner-reported color + centering issues both verified fixed by measurement.
+
+## 2026-06-12 — Code tab marathon (owner: "3 hours straight") · A: conversation persistence
+**What:** Code-tab messages were pure `@State` — every quit (and the QA loop relaunches
+the app all day) wiped the conversation, while the chat tab kept its history. Last 100
+turns now round-trip through `JSONFileStore<[ChatMessage]>` (`code_history.json`): load
+once on appear (off-main decode), save on change debounced 0.8s (off-main), clears
+propagate via the same onChange. Swift-6 note: the store is built inside each detached
+task (non-Sendable value can't be a shared static under default MainActor isolation).
+**Verified:** seeded `code_history.json` → relaunch → screenshot shows the conversation
+restored (user bubble + assistant markdown) — pixels, not claims.
+**Files:** `Views/CodeView.swift`.

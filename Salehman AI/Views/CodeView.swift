@@ -248,6 +248,14 @@ struct CodeView: View {
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
+    /// Conversation persistence — the chat tab survives relaunches but Code-tab
+    /// messages were pure @State and vanished on every quit (and the QA loop
+    /// relaunches the app all day). Last 100 turns round-trip via JSONFileStore.
+    /// (The store is built inside each off-main task — it's a cheap value and
+    /// JSONFileStore isn't Sendable, so a shared static can't cross actors.)
+    nonisolated private static let historyFile = "code_history.json"
+    @State private var historyLoaded = false
+    @State private var saveDebounce: Task<Void, Never>?
     @State private var input = ""
     @State private var isRunning = false
     @State private var rightPane: RightPane = .file
@@ -333,6 +341,29 @@ struct CodeView: View {
                 }
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
+        }
+        // Restore the last session's conversation once (off-main decode; tiny file).
+        .onAppear {
+            guard !historyLoaded else { return }
+            historyLoaded = true
+            Task.detached(priority: .utility) {
+                let saved = JSONFileStore<[ChatMessage]>(filename: Self.historyFile).load(defaultValue: [])
+                if !saved.isEmpty {
+                    await MainActor.run { if messages.isEmpty { messages = saved } }
+                }
+            }
+        }
+        // Persist on every change, debounced — a streaming run appends in bursts;
+        // one write ~0.8s after the last mutation is plenty.
+        .onChange(of: messages) { _, snapshot in
+            guard historyLoaded else { return }
+            saveDebounce?.cancel()
+            let tail = Array(snapshot.suffix(100))
+            saveDebounce = Task.detached(priority: .utility) {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard !Task.isCancelled else { return }
+                try? JSONFileStore<[ChatMessage]>(filename: Self.historyFile).save(tail)
+            }
         }
         // Expand the tree to reveal whatever file becomes selected (diff-jump, AI edit…),
         // and pop the right panel open so the file/diff is actually visible.
