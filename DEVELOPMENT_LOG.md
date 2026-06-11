@@ -1523,3 +1523,14 @@ whichever session added the missing `import Foundation` to the test file — cau
   duplicated `StockSageSignalEngineTests` → deleted); verify by the `** TEST SUCCEEDED **` MARKER, not a
   background `$?` (which is a trailing grep's).
 **Result:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` **355 cases** (was ~322). Marathon continues.
+
+## 2026-06-12 — marathon D: recent-projects quick-switcher
+**What:** the tree header's "Open Folder" is now a split Menu — click = open panel
+(unchanged, ⇧⌘O), chevron = the last 6 project folders (MRU, existing-on-disk only,
+one click to switch via the new `CodeWorkspace.openProject(at:)`, which is the panel
+path minus the panel). MRU updates on open/restore (`noteRecent`), persists in
+`code_recentProjects`.
+**Verified:** build green; QA all surfaces pass; behavioral proof — after the capture
+cycle rendered CodeView, `~/Library/Preferences/SA.Salehman-AI.plist` holds
+`code_recentProjects: ["/Users/saleh/Desktop/Salehman AI"]` (init→noteRecent ran).
+**Files:** `Views/CodeView.swift`.

@@ -37,6 +37,34 @@ final class CodeWorkspace: ObservableObject {
     /// reopens it on launch instead of making you re-pick every time. (The app
     /// isn't sandboxed, so a plain path round-trips without a security bookmark.)
     private static let rootKey = "code_projectRoot"
+    private static let recentsKey = "code_recentProjects"
+
+    /// MRU project folders (most recent first, existing-on-disk only, max 6) —
+    /// drives the tree header's quick-switcher so changing projects is one click
+    /// instead of a re-pick through the open panel every time.
+    @Published var recentProjects: [URL] = []
+
+    private func noteRecent(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        paths = Array(paths.prefix(6))
+        UserDefaults.standard.set(paths, forKey: Self.recentsKey)
+        recentProjects = paths.filter { FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    /// Switch straight to a known folder (recents menu) — same plumbing as
+    /// `openFolder()` minus the panel.
+    func openProject(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        projectRoot = url
+        Shell.workingDirectory = url
+        UserDefaults.standard.set(url.path, forKey: Self.rootKey)
+        noteRecent(url)
+        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
+        Task { await reload() }
+    }
 
     init() {
         // Under unit tests the test host launches the app; auto-scanning a real repo
@@ -52,6 +80,7 @@ final class CodeWorkspace: ObservableObject {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         projectRoot = url
         Shell.workingDirectory = url
+        noteRecent(url)
         Task { await reload() }
     }
 
@@ -84,11 +113,7 @@ final class CodeWorkspace: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Project"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        projectRoot = url
-        Shell.workingDirectory = url          // terminal + edits now run in the project
-        UserDefaults.standard.set(url.path, forKey: Self.rootKey)   // remembered across launches
-        selectedFile = nil; fileContent = ""; diff = []; changedFiles = []; changeStats = [:]
-        Task { await reload() }
+        openProject(at: url)
     }
 
     /// Scan the project tree OFF the main actor — file enumeration was blocking the
@@ -496,11 +521,25 @@ struct CodeView: View {
     private var treeContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: ws.openFolder) {
+                // Click = open panel; the chevron lists recent projects (one-click switch).
+                Menu {
+                    ForEach(ws.recentProjects.filter { $0 != ws.projectRoot }, id: \.self) { url in
+                        Button { ws.openProject(at: url) } label: {
+                            Label(url.lastPathComponent, systemImage: "clock.arrow.circlepath")
+                        }
+                        .help(url.path)
+                    }
+                    if ws.recentProjects.count > 1 { Divider() }
+                    Button { ws.openFolder() } label: {
+                        Label("Open Folder…", systemImage: "folder.badge.plus")
+                    }
+                } label: {
                     Label("Open Folder", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .semibold))
+                } primaryAction: {
+                    ws.openFolder()
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.button).buttonStyle(.plain).fixedSize()
                 .foregroundStyle(DS.Palette.accent)
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 Spacer()
