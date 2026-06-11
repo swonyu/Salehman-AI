@@ -1947,3 +1947,22 @@ ContentView:946 red had cleared). **Verified in captured pixels** via the run-sa
 Adopted ONLY the onboarding QA baseline (targeted `cp`, not `--adopt`, to avoid sweeping other
 sessions' drift; baselines are gitignored/local). Commit `da3630d`.
 **Files:** `Salehman AI/Views/OnboardingView.swift`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~02:1x) — Chat C: neutral-grey app backdrop, keep red accent (owner request, cross-lane)
+**What & why:** Owner: "today tab should be grey, why is the background red." Investigated → the red
+was NOT a Today bug nor my edits: it's the global brand theme — `DS.Palette.accent` is a vivid red
+(#FA2E4A), AND the dark backdrop was warm-red-tinted (`bgTop` 0.09/0.05/0.07, `bgBottom` 0.03/0.02/0.03)
+with red `BackgroundView` accent glows behind every tab. Asked the owner the scope (Today-only vs global
+vs full de-red); they chose **"grey backdrop, keep red accent."** Implemented surgically:
+- `DesignSystem.swift` (Chat B's lane): `Palette.bgTop`→(0.11,0.11,0.12), `bgBottom`→(0.04,0.04,0.045),
+  `modalBG`→(0.13,0.13,0.14). accent/accent2/brand UNCHANGED (red identity kept).
+- `BackgroundView.swift` (Chat A's lane): the two glow fills `Theme.accent`/`accent2` (red) →
+  `Color.white` 0.05/0.035 (neutral blooms); doc comments de-redded ("accent glows"→"neutral/ambient").
+Today's "Working late" header stays brand-red (it's accent, kept) — flagged to owner as a one-word
+follow-up if they want that banner greyed too.
+**Result:** `** BUILD SUCCEEDED **` (canonical, after a transient DB-lock retry). Grey base verified in
+captured pixels (`qa/snapshots/onboarding.png` — same bgVertical/bgTop tokens BackgroundView uses behind
+Today; live-window capture was stale this run). Commit `ff065ec`. Cross-lane but owner-authorized; flagged
+on the COORDINATION board (banner) for Chat A + Chat B to coexist, not revert.
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/BackgroundView.swift`,
+`COORDINATION.md`, `DEVELOPMENT_LOG.md`.
