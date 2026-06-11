@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers   // UTType.fileURL for the composer's drag-and-drop
 
 // MARK: - Theme
 // Legacy brand surface — now a thin forwarding layer over the `DS` design
