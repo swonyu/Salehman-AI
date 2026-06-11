@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-11 20:44 +03 · Swift files: 134 · Swift LOC: 25755_
+_Generated: 2026-06-11 20:51 +03 · Swift files: 134 · Swift LOC: 25778_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13606,7 +13606,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (1525 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (1531 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15035,6 +15035,12 @@ struct CodeMessageRow: View {
                 .opacity(hovering ? 1 : 0)
                 .animation(.easeOut(duration: 0.12), value: hovering)
             }
+            // Make the ENTIRE row (text + the empty gap + the button area) a single
+            // solid hover target. Without this, the transparent space between the
+            // text and the top-right buttons isn't hit-testable, so moving the cursor
+            // toward the buttons reads as "left the row" and they vanish before you
+            // can click them.
+            .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }
     }
@@ -15260,7 +15266,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (1604 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (1621 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15867,7 +15873,8 @@ struct ContentView: View {
             // halving the old left-side chrome), then mic and send at the
             // trailing edge.
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                TextField(speechIn.isListening ? "Listening… speak now" : "Message Salehman AI…",
+                          text: $mission, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...8)
@@ -15977,7 +15984,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSend)
-                        .help("Send")
+                        .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
                         .accessibilityLabel("Send")
                         .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
@@ -16001,6 +16008,22 @@ struct ContentView: View {
             .animation(.easeOut(duration: 0.18), value: mission.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
             .animation(.easeOut(duration: 0.2), value: inputFocused)
+            // While a file hovers, say what will happen — the full-accent ring
+            // alone doesn't explain itself.
+            .overlay {
+                if isDropTargeted {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperclip")
+                        Text("Drop to attach as context")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent.opacity(0.92), in: Capsule())
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                }
+            }
             // Drag a file anywhere onto the composer to attach it as context —
             // same affordance the Code tab's input has.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in

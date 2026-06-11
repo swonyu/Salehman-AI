@@ -603,7 +603,8 @@ struct ContentView: View {
             // halving the old left-side chrome), then mic and send at the
             // trailing edge.
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Message Salehman AI…", text: $mission, axis: .vertical)
+                TextField(speechIn.isListening ? "Listening… speak now" : "Message Salehman AI…",
+                          text: $mission, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...8)
@@ -713,7 +714,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSend)
-                        .help("Send")
+                        .help("Send (↩ · ⌥↩ for a new line · ↑ recalls your last message)")
                         .accessibilityLabel("Send")
                         .accessibilityIdentifier("chat.composer.send")
                         .transition(.scale.combined(with: .opacity))
@@ -737,6 +738,22 @@ struct ContentView: View {
             .animation(.easeOut(duration: 0.18), value: mission.isEmpty)
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
             .animation(.easeOut(duration: 0.2), value: inputFocused)
+            // While a file hovers, say what will happen — the full-accent ring
+            // alone doesn't explain itself.
+            .overlay {
+                if isDropTargeted {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperclip")
+                        Text("Drop to attach as context")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent.opacity(0.92), in: Capsule())
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                }
+            }
             // Drag a file anywhere onto the composer to attach it as context —
             // same affordance the Code tab's input has.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
