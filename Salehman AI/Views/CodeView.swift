@@ -1009,6 +1009,28 @@ struct CodeView: View {
                 shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
+
+            // Recent projects — one click back into anything you worked on lately
+            // (the tree may be collapsed, so the welcome carries its own way in).
+            let recents = ws.recentProjects.filter { $0 != ws.projectRoot }.prefix(3)
+            if !recents.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.7))
+                    ForEach(Array(recents), id: \.self) { url in
+                        Button { ws.openProject(at: url) } label: {
+                            Text(url.lastPathComponent)
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.white.opacity(0.05), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help(url.path)
+                    }
+                }
+                .padding(.top, 10)
+            }
             // The 14B's home: show when the owner's own model is serving locally.
             if let m = localServingModel {
                 HStack(spacing: 5) {
@@ -1352,9 +1374,19 @@ struct CodeView: View {
                 // otherwise; a ticking clock shows the run is alive.
                 if isRunning, let t0 = progress.startedAt {
                     TimelineView(.periodic(from: t0, by: 1)) { ctx in
-                        Text(elapsedLabel(since: t0, now: ctx.date))
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary.opacity(0.85))
+                        HStack(spacing: 6) {
+                            Text(elapsedLabel(since: t0, now: ctx.date))
+                            // Live throughput estimate while the answer streams
+                            // (chars/4 ≈ tokens; average since run start — honest,
+                            // not a fake instantaneous number).
+                            if !progress.streamingAnswer.isEmpty {
+                                let secs = max(1, ctx.date.timeIntervalSince(t0))
+                                Text(String(format: "≈%.0f tok/s",
+                                            Double(progress.streamingAnswer.count) / 4 / secs))
+                            }
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary.opacity(0.85))
                     }
                 }
                 Spacer()
@@ -1449,6 +1481,17 @@ struct CodeView: View {
                 Text("Run a task and the steps appear here.")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
                     .multilineTextAlignment(.center)
+                // Last local run's engine + measured speed — the "is my model
+                // fast right now" answer lives where the run activity lives.
+                if let stats = OllamaClient.lastStats {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill").font(.system(size: 8))
+                        Text("\(stats.model) · \(String(format: "%.0f tok/s", stats.tps))")
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.75))
+                    .padding(.top, 2)
+                }
             }
         }
         .padding(16)

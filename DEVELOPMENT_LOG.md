@@ -1700,3 +1700,16 @@ a "Find a document…" field appears when >10 docs (useful at 77) + a no-match s
 (KnowledgeSortTests now 9). Filter field verified in knowledge.png.
 **Verified:** `** BUILD SUCCEEDED **` · full `** TEST SUCCEEDED **` — **389 cases**. Marathon: 6 cycles, 33 new
 tests (322→389), every tab feature test-pinned, build green throughout, no workflows.
+
+## 2026-06-12 — marathon F: Activity throughput readouts + welcome recent-projects
+**F:** the Activity header now shows a **live ≈tok/s estimate** while the answer streams
+(chars/4 over elapsed — an honest average, not a fake instantaneous rate) next to the
+run clock, and the idle panel shows the last local run's **engine + measured tok/s**
+(`OllamaClient.lastStats`) — "is my model fast right now" lives where the activity lives.
+**Welcome recents:** up to 3 recent projects as pills under the shortcut hints (current
+root filtered out) → one click into `openProject(at:)` even with the tree collapsed.
+**Verified:** build green; welcome pill verified in capture pixels (seeded a 2nd MRU
+entry, photographed, fixture removed + MRU reset). The two tok/s readouts are
+build-verified only — they need a live local generation to display, and they reuse the
+already-verified TimelineView/lastStats plumbing.
+**Files:** `Views/CodeView.swift`.
