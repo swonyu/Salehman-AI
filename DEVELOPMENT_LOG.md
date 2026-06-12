@@ -1842,6 +1842,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Chat tab footer is now contextual; Stop hint appears only when the AI is actually generating. SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AK — Command Palette keyboard navigation (↑/↓ select + Enter runs)
+
+**What changed:**
+- `CommandPalette.swift` — added `@State private var selectedIndex: Int = 0`; `.onKeyPress(.upArrow/.downArrow)` on the TextField intercept arrow keys (return `.handled`) to move selection without moving text cursor; `onSubmit` runs `filtered[selectedIndex]`; rows use `ScrollViewReader` with integer `.id(idx)` and `.onChange(of: selectedIndex)` to auto-scroll; hover also updates `selectedIndex`; selected row gets `accent.opacity(0.18)` background; `.onChange(of: query)` resets selection to 0
+
+**Files:** `CommandPalette.swift`
+
+**Why:** ↑/↓ keyboard navigation is the standard affordance for a command palette — without it, filtering + Enter always runs the first result, and mouse-only selection breaks the keyboard-native flow.
+
+**Result:** Full keyboard flow: type to filter → ↑/↓ to select → Enter to run. List auto-scrolls to keep selected item visible. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

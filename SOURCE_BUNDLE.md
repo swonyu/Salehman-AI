@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:56 +03 · Swift files: 150 · Swift LOC: 32267_
+_Generated: 2026-06-12 08:58 +03 · Swift files: 150 · Swift LOC: 32296_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17021,7 +17021,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (127 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (156 lines) =====
 ```swift
 import SwiftUI
 
@@ -17035,6 +17035,7 @@ struct CommandPalette: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var query = ""
     @State private var hoveredID: UUID?
+    @State private var selectedIndex: Int = 0
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -17093,7 +17094,18 @@ struct CommandPalette: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($searchFocused)
-                    .onSubmit { run(filtered.first) }
+                    .onSubmit {
+                        let list = filtered
+                        run(selectedIndex < list.count ? list[selectedIndex] : list.first)
+                    }
+                    // Arrow keys navigate the result list; .handled prevents
+                    // the TextField from moving its cursor instead.
+                    .onKeyPress(.upArrow) {
+                        selectedIndex = max(0, selectedIndex - 1); return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        selectedIndex = min(filtered.count - 1, selectedIndex + 1); return .handled
+                    }
                     .accessibilityLabel("Command search")
                 Text("esc")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -17104,42 +17116,59 @@ struct CommandPalette: View {
 
             Divider().overlay(DS.Palette.hairline)
 
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(filtered) { cmd in
-                        Button { run(cmd) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: cmd.icon)
-                                    .font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 22)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                                    if !cmd.subtitle.isEmpty {
-                                        Text(cmd.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, cmd in
+                            let isSelected = idx == selectedIndex
+                            Button { run(cmd) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: cmd.icon)
+                                        .font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 22)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                                        if !cmd.subtitle.isEmpty {
+                                            Text(cmd.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                        }
                                     }
+                                    Spacer(minLength: 4)
                                 }
-                                Spacer(minLength: 4)
+                                .padding(.horizontal, 12).padding(.vertical, 9)
+                                .background(
+                                    (hoveredID == cmd.id || isSelected)
+                                        ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
+                                        : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 12).padding(.vertical, 9)
-                            .background(hoveredID == cmd.id ? DS.Palette.accent.opacity(0.14) : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .id(idx)
+                            .onHover { over in
+                                hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
+                                if over { selectedIndex = idx }
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .onHover { hoveredID = $0 ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID) }
+                        if filtered.isEmpty {
+                            Text("No matching commands")
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                        }
                     }
-                    if filtered.isEmpty {
-                        Text("No matching commands")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 28)
-                    }
+                    .padding(8)
                 }
-                .padding(8)
+                .frame(maxHeight: 340)
+                // Auto-scroll to keep the selected row visible when using arrows.
+                .onChange(of: selectedIndex) { _, idx in
+                    withAnimation { proxy.scrollTo(idx, anchor: .center) }
+                }
             }
-            .frame(maxHeight: 340)
         }
         .frame(width: 560)
         .background(DS.Palette.bgTop)
         .onAppear { searchFocused = true }
+        // Reset selection to top whenever the result list changes.
+        .onChange(of: query) { _, _ in selectedIndex = 0 }
     }
 
     private func run(_ cmd: Command?) {
@@ -34824,7 +34853,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2713 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2725 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36667,6 +36696,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** The bottom bar was showing generic global shortcuts even on the Chat tab. The most useful chat affordances (⌘F to search, ⌘. to stop a running generation) weren't surfaced anywhere outside the keyboard. `aiIsRunning` in AppState follows the same mirror pattern as `chatHasUnread`.
 
 **Result:** Chat tab footer is now contextual; Stop hint appears only when the AI is actually generating. SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AK — Command Palette keyboard navigation (↑/↓ select + Enter runs)
+
+**What changed:**
+- `CommandPalette.swift` — added `@State private var selectedIndex: Int = 0`; `.onKeyPress(.upArrow/.downArrow)` on the TextField intercept arrow keys (return `.handled`) to move selection without moving text cursor; `onSubmit` runs `filtered[selectedIndex]`; rows use `ScrollViewReader` with integer `.id(idx)` and `.onChange(of: selectedIndex)` to auto-scroll; hover also updates `selectedIndex`; selected row gets `accent.opacity(0.18)` background; `.onChange(of: query)` resets selection to 0
+
+**Files:** `CommandPalette.swift`
+
+**Why:** ↑/↓ keyboard navigation is the standard affordance for a command palette — without it, filtering + Enter always runs the first result, and mouse-only selection breaks the keyboard-native flow.
+
+**Result:** Full keyboard flow: type to filter → ↑/↓ to select → Enter to run. List auto-scrolls to keep selected item visible. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues
