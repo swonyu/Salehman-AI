@@ -431,6 +431,7 @@ private struct DocDetailSheet: View {
     @State private var question = ""
     @State private var answer = ""
     @State private var asking = false
+    @State private var answerSaved = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -466,6 +467,24 @@ private struct DocDetailSheet: View {
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 16) {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(answer, forType: .string)
+                            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                            .help("Copy answer to clipboard").accessibilityLabel("Copy answer")
+                            Button {
+                                ScratchpadStore.shared.addNote(answer)
+                                answerSaved = true
+                                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                            } label: {
+                                Label(answerSaved ? "Saved!" : "Save to Notes",
+                                      systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                            }
+                            .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
             }

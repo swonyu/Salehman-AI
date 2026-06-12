@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:07 +03 · Swift files: 150 · Swift LOC: 32392_
+_Generated: 2026-06-12 09:09 +03 · Swift files: 150 · Swift LOC: 32411_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20238,7 +20238,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (539 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (558 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20673,6 +20673,7 @@ private struct DocDetailSheet: View {
     @State private var question = ""
     @State private var answer = ""
     @State private var asking = false
+    @State private var answerSaved = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -20708,6 +20709,24 @@ private struct DocDetailSheet: View {
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 16) {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(answer, forType: .string)
+                            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                            .help("Copy answer to clipboard").accessibilityLabel("Copy answer")
+                            Button {
+                                ScratchpadStore.shared.addNote(answer)
+                                answerSaved = true
+                                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                            } label: {
+                                Label(answerSaved ? "Saved!" : "Save to Notes",
+                                      systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                            }
+                            .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
             }
@@ -34960,7 +34979,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2803 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2815 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36893,6 +36912,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** `ContentView`'s chat search already had Escape-to-clear (line 625). These two search filters had an X button but no keyboard equivalent, breaking the consistent Escape = clear pattern.
 
 **Result:** Escape key now clears all three search filter fields consistently. SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AQ — DocDetailSheet: Copy + Save to Notes on scoped-answer panel
+
+**What changed:**
+- `KnowledgeView.swift` `DocDetailSheet`: added `@State private var answerSaved = false`; added Copy + Save-to-Notes action buttons after the scoped `answer` Text (same pattern as the main KnowledgeView answer panel from marathon AH)
+
+**Files:** `KnowledgeView.swift`
+
+**Why:** The per-document detail sheet had a scoped Q&A section but offered no way to act on the answer. The main KnowledgeView answer panel already had Copy + Save to Notes — the detail sheet was inconsistent.
+
+**Result:** Both answer surfaces (main + per-document) now have identical Copy/Save affordances. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues

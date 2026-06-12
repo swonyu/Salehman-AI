@@ -1932,6 +1932,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Escape key now clears all three search filter fields consistently. SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AQ — DocDetailSheet: Copy + Save to Notes on scoped-answer panel
+
+**What changed:**
+- `KnowledgeView.swift` `DocDetailSheet`: added `@State private var answerSaved = false`; added Copy + Save-to-Notes action buttons after the scoped `answer` Text (same pattern as the main KnowledgeView answer panel from marathon AH)
+
+**Files:** `KnowledgeView.swift`
+
+**Why:** The per-document detail sheet had a scoped Q&A section but offered no way to act on the answer. The main KnowledgeView answer panel already had Copy + Save to Notes — the detail sheet was inconsistent.
+
+**Result:** Both answer surfaces (main + per-document) now have identical Copy/Save affordances. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
