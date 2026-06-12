@@ -54,6 +54,12 @@ enum KeychainStore {
         /// Settings can substitute the real `ANTHROPIC_AUTH_TOKEN` into the
         /// copy-to-clipboard payload (see Unsloth's Claude-Code guide).
         case unslothStudioAPIKey = "unsloth-studio-api-key"
+        /// Hugging Face token (read scope). Used OUTSIDE the app: the free
+        /// cloud-GPU notebook (salehman_cloud_gpu.ipynb) needs it to download
+        /// the private salehman GGUF — Settings keeps it in the Keychain with
+        /// a Copy button so it's pasted into Colab, never retyped or stored
+        /// in a notebook/file.
+        case hfToken = "hf-token"
         /// Optional bearer token for a self-hosted vLLM server started with
         /// `--api-key`. Needed when you host the vLLM brain on a PUBLIC cloud GPU
         /// (so the endpoint isn't open to the world); a localhost `vllm serve`

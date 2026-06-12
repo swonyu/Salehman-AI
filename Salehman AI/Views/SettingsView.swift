@@ -240,6 +240,7 @@ struct SettingsView: View {
                         unslothStudioModelRow
                         unslothStudioTestRow
                         unslothStudioKeyRow
+                        hfTokenRow
                         claudeCodeUsageRow
                     }
 
@@ -991,6 +992,57 @@ struct SettingsView: View {
     /// env-var snippet (below) so the copy-to-clipboard payload uses the user's
     /// real token instead of a placeholder. Per CLAUDE.md, the key lives ONLY
     /// in Keychain — never UserDefaults, logs, or source.
+    /// Hugging Face token — the free cloud-GPU notebook needs it to download
+    /// the private salehman GGUF. Keychain-only (never UserDefaults/files);
+    /// Copy puts it on the clipboard for pasting into Colab's login box.
+    private var hfTokenRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hugging Face token").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(hfTokenSaved
+                     ? "Saved in macOS Keychain · Copy → paste into the cloud-GPU notebook's token box"
+                     : "For the free cloud-GPU notebook (downloads your private salehman model). Read scope is enough.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("hf_…", text: $hfTokenDraft)
+                .textFieldStyle(.plain).frame(width: 140)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+                .accessibilityLabel("Hugging Face token")
+            Button("Save") {
+                let trimmed = hfTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .hfToken)
+                hfTokenDraft = ""                      // Wipe the in-memory copy immediately.
+                hfTokenSaved = true
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(hfTokenDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if hfTokenSaved {
+                Button("Copy") {
+                    if let token = KeychainStore.read(.hfToken) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(token, forType: .string)
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("Copies the token for pasting into the Colab notebook")
+                .accessibilityLabel("Copy Hugging Face token")
+                Button("Clear") {
+                    _ = KeychainStore.delete(.hfToken)
+                    hfTokenSaved = false
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .accessibilityLabel("Clear Hugging Face token")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
+    @State private var hfTokenDraft: String = ""
+
     private var unslothStudioKeyRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
