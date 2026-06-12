@@ -2267,6 +2267,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves the full module fine. Code structure verified.
 
 ---
+
+### 2026-06-12 — Marathon BN: SettingsView premium elevation pass
+
+**What changed:** `Salehman AI/Views/SettingsView.swift`
+- Header: plain title → 36×36 brand icon tile (gear, DS.Gradient.brand + accentGlow) + `Eyebrow("App Configuration")` + `DS.Space.md` gap — matches BH–BM pattern
+- `section()` helper: flat `DS.Palette.codeSurface` fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` overlay 1pt) — cascades across ALL sections in one edit
+- `toggle()` helper: bare `Image(systemName:)` 22px → 26×26 `RoundedRectangle` icon well (`accent.opacity(0.12)`) — cascades across ALL toggle rows
+- `modeRow()`: bare icon → icon well, brightens to `accent.opacity(0.18)` when selected
+- `statusRow()`: bare icon → semantic-colored icon well (successSoft/warningSoft 14% opacity)
+- `speedRow`, `voiceRow`, `memoryRow`: bare icons → icon wells (accent.opacity 0.12)
+- Added `@State private var appeared` + header entrance animation (`DS.Motion.smooth` on `.onAppear`)
+
+**Why:** SettingsView had no brand tile in the header (unique omission) and all rows used bare SF Symbols without wells — breaking the depth ladder established across BG–BM. The `section()` and `toggle()` helpers are multipliers: editing them upgrades dozens of rows simultaneously.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

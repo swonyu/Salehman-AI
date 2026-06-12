@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:38 +03 · Swift files: 150 · Swift LOC: 32971_
+_Generated: 2026-06-12 20:41 +03 · Swift files: 150 · Swift LOC: 33044_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23766,7 +23766,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1901 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1974 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -23887,6 +23887,7 @@ struct SettingsView: View {
     // they have configured without making them expand.
     @AppStorage("settings.showFreeKeys") private var showFreeKeys: Bool = false
     @AppStorage("settings.showPaidKeys") private var showPaidKeys: Bool = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
@@ -23904,6 +23905,9 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(DS.Motion.entrance, value: appeared)
 
                     section("Intelligence", "How Salehman thinks — local-first: vLLM → Unsloth Studio → MLX → Ollama.") {
                         toggle("Offline mode (local only)",
@@ -24081,6 +24085,7 @@ struct SettingsView: View {
         }
         .frame(width: 560, height: 640)
         .preferredColorScheme(.dark)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .sheet(isPresented: $showMemory) { MemoryView() }
         .sheet(isPresented: $showCopilotSignIn) {
             CopilotSignInView { copilotAuthed = CopilotClient.isAuthed() }
@@ -24133,10 +24138,29 @@ struct SettingsView: View {
     }
 
     private var header: some View {
-        // Slimmer header per the design language — title at body-plus weight,
-        // not a display headline.
-        HStack {
-            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+        HStack(spacing: DS.Space.md) {
+            // Brand icon tile — consistent with all other sheet headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.38))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: "gear")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Settings")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Eyebrow(text: "App Configuration")
+            }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
@@ -24158,24 +24182,38 @@ struct SettingsView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
             }
-            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(Color.white.opacity(0.035))
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
     }
 
     private func modeRow(_ mode: AppSettings.ResponseMode) -> some View {
-        Button { settings.responseMode = mode } label: {
+        let sel = settings.responseMode == mode
+        return Button { settings.responseMode = mode } label: {
             HStack(spacing: 12) {
-                Image(systemName: mode.icon).foregroundStyle(settings.responseMode == mode ? DS.Palette.accent : .secondary).frame(width: 22)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(DS.Palette.accent.opacity(sel ? 0.18 : 0.09))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(sel ? DS.Palette.accent : .secondary)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mode.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text(mode.detail).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if settings.responseMode == mode {
+                if sel {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
                 }
             }
@@ -25583,14 +25621,22 @@ struct SettingsView: View {
 
     private func toggle(_ title: String, _ subtitle: String, _ icon: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 22)
+            // Icon well — accent-tinted, consistent with all other list rows.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(subtitle).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).tint(DS.Palette.accent)
-                .accessibilityLabel(title)   // labelsHidden() drops the visual label from VoiceOver too
+                .accessibilityLabel(title)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -25598,7 +25644,14 @@ struct SettingsView: View {
     // MARK: Voice rows
     private var speedRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "speedometer").foregroundStyle(.secondary).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: "speedometer")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text("Speaking speed").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text("How fast replies are read aloud").font(.caption2).foregroundStyle(.secondary)
@@ -25611,7 +25664,14 @@ struct SettingsView: View {
 
     private var voiceRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "person.wave.2").foregroundStyle(.secondary).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: "person.wave.2")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
             Spacer()
             Picker("Voice", selection: $settings.speechVoiceID) {
@@ -25643,7 +25703,14 @@ struct SettingsView: View {
     private var memoryRow: some View {
         Button { showMemory = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: "brain").foregroundStyle(.secondary).frame(width: 22)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(DS.Palette.accent.opacity(0.12))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "brain")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.accent)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Manage memory").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text("See and delete what Salehman AI remembers about you").font(.caption2).foregroundStyle(.secondary)
@@ -25659,8 +25726,14 @@ struct SettingsView: View {
 
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill((ok ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14))
+                    .frame(width: 26, height: 26)
+                Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft)
+            }
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)
@@ -35539,7 +35612,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3138 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3155 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37807,6 +37880,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** AboutView already had the brand tile + ambient orb + entrance animation. The remaining gaps (flat section label, bare icons without wells, smooth vs magnetic hover) broke the depth ladder established across all other marathon slices (BG–BL).
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves the full module fine. Code structure verified.
+
+---
+
+### 2026-06-12 — Marathon BN: SettingsView premium elevation pass
+
+**What changed:** `Salehman AI/Views/SettingsView.swift`
+- Header: plain title → 36×36 brand icon tile (gear, DS.Gradient.brand + accentGlow) + `Eyebrow("App Configuration")` + `DS.Space.md` gap — matches BH–BM pattern
+- `section()` helper: flat `DS.Palette.codeSurface` fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` overlay 1pt) — cascades across ALL sections in one edit
+- `toggle()` helper: bare `Image(systemName:)` 22px → 26×26 `RoundedRectangle` icon well (`accent.opacity(0.12)`) — cascades across ALL toggle rows
+- `modeRow()`: bare icon → icon well, brightens to `accent.opacity(0.18)` when selected
+- `statusRow()`: bare icon → semantic-colored icon well (successSoft/warningSoft 14% opacity)
+- `speedRow`, `voiceRow`, `memoryRow`: bare icons → icon wells (accent.opacity 0.12)
+- Added `@State private var appeared` + header entrance animation (`DS.Motion.smooth` on `.onAppear`)
+
+**Why:** SettingsView had no brand tile in the header (unique omission) and all rows used bare SF Symbols without wells — breaking the depth ladder established across BG–BM. The `section()` and `toggle()` helpers are multipliers: editing them upgrades dozens of rows simultaneously.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
 
 ---
 ## Standing notes / known issues
