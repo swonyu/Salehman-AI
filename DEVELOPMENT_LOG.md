@@ -1944,6 +1944,22 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Both answer surfaces (main + per-document) now have identical Copy/Save affordances. SourceKit false positives expected.
 
 ---
+
+## 2026-06-12 — Design polish: BottomShortcutBar, CommandPalette, LiveTranscriptionView, VoiceModeView
+
+**What changed:**
+- `Views/BottomShortcutBar.swift`: keycap hint gets `stroke(white@0.12/0.22 on hover)` + `shadow(black@0.18)` — tactile key depth matching ContentView shortcut chips.
+- `Views/CommandPalette.swift`: command row icons 26pt circle bg+border (accent@0.10/0.16); "esc" keycap stroke+shadow; selected row gets accent stroke overlay.
+- `Views/LiveTranscriptionView.swift`: Start/Stop → `LuxPressStyle` + `DS.Palette.accent` + shadow; LIVE indicator `Color.red`→`DS.Palette.accent` with accent glow; "Open Settings" `.borderedProminent`→`LuxPressStyle` Capsule pill.
+- `Views/VoiceModeView.swift`: orb pulse `.easeInOut`→`.timingCurve(0.45,0,0.55,1)` (banned pattern removed); save button `LuxPressStyle`+circle bg+stroke; scrollback turn icons 18pt circle bg.
+
+**Files:** `Views/BottomShortcutBar.swift`, `Views/CommandPalette.swift`, `Views/LiveTranscriptionView.swift`, `Views/VoiceModeView.swift`
+
+**Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
+
+**Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
