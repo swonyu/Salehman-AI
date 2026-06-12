@@ -444,6 +444,7 @@ struct ActivityStepRow: View {
             if step.status == .running {
                 DS.Palette.accent.frame(width: 2.5)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         // Machined top bevel — each step card reads as a physical tile.
@@ -452,6 +453,7 @@ struct ActivityStepRow: View {
                 .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {

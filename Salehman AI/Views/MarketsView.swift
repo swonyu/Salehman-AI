@@ -560,9 +560,27 @@ struct MarketsView: View {
     // MARK: Empty
 
     private var emptyState: some View {
-        Text("No symbols tracked yet.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 28)
+        VStack(spacing: 10) {
+            ZStack {
+                PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 52, height: 52)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.14
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.80))
+            }
+            Text("No symbols tracked yet.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 28)
     }
 }
 
