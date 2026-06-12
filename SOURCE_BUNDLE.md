@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:12 +03 · Swift files: 150 · Swift LOC: 34059_
+_Generated: 2026-06-13 02:14 +03 · Swift files: 150 · Swift LOC: 34071_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14810,7 +14810,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2641 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2643 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16097,7 +16097,9 @@ struct CodeView: View {
                 .font(.system(size: 9, weight: .semibold)).tracking(2.2)
                 .foregroundStyle(.secondary.opacity(0.85))
                 .padding(.horizontal, 10).padding(.vertical, 3.5)
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -17455,7 +17457,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (195 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (199 lines) =====
 ```swift
 import SwiftUI
 
@@ -17558,7 +17560,9 @@ struct CommandPalette: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
             }
             .padding(16)
@@ -17581,7 +17585,9 @@ struct CommandPalette: View {
                                         .background(DS.Palette.accent.opacity(0.10),
                                                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.32),
+                                                                            DS.Palette.accent.opacity(0.06)],
+                                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {
@@ -21523,7 +21529,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (328 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (330 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21699,7 +21705,9 @@ struct LiveTranscriptionView: View {
         .background(DS.Palette.accent.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private var searchField: some View {
@@ -22313,7 +22321,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (744 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (746 lines) =====
 ```swift
 import SwiftUI
 
@@ -22437,7 +22445,9 @@ struct MarketsView: View {
         .background(DS.Palette.warningSoft.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-            .stroke(DS.Palette.warningSoft.opacity(0.30), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.warningSoft.opacity(0.52),
+                                            DS.Palette.warningSoft.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private var sectionPicker: some View {
@@ -23751,7 +23761,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (657 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (659 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24352,7 +24362,9 @@ struct ScratchpadView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private func runAI() async {
@@ -36627,7 +36639,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4076 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4092 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39661,6 +39673,22 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** Continued the top-lit depth language from EM/EO across the main chrome (always-visible tab bar) and the highest-traffic interactive surfaces (suggestion pills, slash menu, sidebar CTA pills). Tab bar is the single most-seen surface in the app — lighting it consistently is highest ROI.
 
 **Result:** Zero Swift compiler errors. 6 flat strokes upgraded across 3 files.
+
+---
+## 2026-06-13 — Marathon EQ: top-lit gradient sweep — CodeView eyebrow, ScratchpadView, CommandPalette, LiveTranscription, MarketsView
+
+**What changed:**
+- `CodeView.swift` welcome eyebrow Capsule: `white@0.12` → `[white@0.22, white@0.06]`
+- `ScratchpadView.swift` AI result card: `accent@0.3` → `[accent@0.52, accent@0.12]`
+- `CommandPalette.swift` "esc" key badge: `white@0.14` → `[white@0.28, white@0.06]`; command icon square: `accent@0.16` → `[accent@0.32, accent@0.06]`
+- `LiveTranscriptionView.swift` transcript banner: `accent@0.30` → `[accent@0.52, accent@0.12]`
+- `MarketsView.swift` warning banner: `warningSoft@0.30` → `[warningSoft@0.52, warningSoft@0.12]`
+
+**Files:** `CodeView.swift`, `ScratchpadView.swift`, `CommandPalette.swift`, `LiveTranscriptionView.swift`, `MarketsView.swift`
+
+**Why:** Completes the flat-stroke audit across all non-circular controls. The tinted top-lit ratio (≈4:1 top:bottom opacity) is consistent regardless of hue, so all accent/warning/neutral borders share the same lighting physics.
+
+**Result:** Zero Swift compiler errors. 6 strokes upgraded across 5 files.
 
 ---
 ## Standing notes / known issues

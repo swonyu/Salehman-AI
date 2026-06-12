@@ -597,7 +597,9 @@ struct ScratchpadView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private func runAI() async {

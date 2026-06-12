@@ -3033,6 +3033,22 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors. 6 flat strokes upgraded across 3 files.
 
 ---
+## 2026-06-13 — Marathon EQ: top-lit gradient sweep — CodeView eyebrow, ScratchpadView, CommandPalette, LiveTranscription, MarketsView
+
+**What changed:**
+- `CodeView.swift` welcome eyebrow Capsule: `white@0.12` → `[white@0.22, white@0.06]`
+- `ScratchpadView.swift` AI result card: `accent@0.3` → `[accent@0.52, accent@0.12]`
+- `CommandPalette.swift` "esc" key badge: `white@0.14` → `[white@0.28, white@0.06]`; command icon square: `accent@0.16` → `[accent@0.32, accent@0.06]`
+- `LiveTranscriptionView.swift` transcript banner: `accent@0.30` → `[accent@0.52, accent@0.12]`
+- `MarketsView.swift` warning banner: `warningSoft@0.30` → `[warningSoft@0.52, warningSoft@0.12]`
+
+**Files:** `CodeView.swift`, `ScratchpadView.swift`, `CommandPalette.swift`, `LiveTranscriptionView.swift`, `MarketsView.swift`
+
+**Why:** Completes the flat-stroke audit across all non-circular controls. The tinted top-lit ratio (≈4:1 top:bottom opacity) is consistent regardless of hue, so all accent/warning/neutral borders share the same lighting physics.
+
+**Result:** Zero Swift compiler errors. 6 strokes upgraded across 5 files.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

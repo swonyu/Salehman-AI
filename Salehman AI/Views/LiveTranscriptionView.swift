@@ -172,7 +172,9 @@ struct LiveTranscriptionView: View {
         .background(DS.Palette.accent.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private var searchField: some View {

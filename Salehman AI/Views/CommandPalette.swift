@@ -99,7 +99,9 @@ struct CommandPalette: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
             }
             .padding(16)
@@ -122,7 +124,9 @@ struct CommandPalette: View {
                                         .background(DS.Palette.accent.opacity(0.10),
                                                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.32),
+                                                                            DS.Palette.accent.opacity(0.06)],
+                                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {

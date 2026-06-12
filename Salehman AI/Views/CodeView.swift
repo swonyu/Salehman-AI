@@ -1283,7 +1283,9 @@ struct CodeView: View {
                 .font(.system(size: 9, weight: .semibold)).tracking(2.2)
                 .foregroundStyle(.secondary.opacity(0.85))
                 .padding(.horizontal, 10).padding(.vertical, 3.5)
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
