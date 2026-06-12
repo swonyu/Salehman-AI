@@ -144,13 +144,17 @@ struct FileTreeRow: View {
                         .foregroundStyle(isSel ? .white : Color.white.opacity(hovering ? 0.92 : 0.72))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
-                    if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
+                    if changed {
+                        Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
                 }
                 .background(
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
                     in: RoundedRectangle(cornerRadius: 6)
                 )
                 .animation(DS.Motion.smooth, value: isSel)
+                .animation(DS.Motion.spring, value: changed)
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }

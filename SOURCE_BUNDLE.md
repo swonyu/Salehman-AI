@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:42 +03 · Swift files: 150 · Swift LOC: 33885_
+_Generated: 2026-06-13 00:45 +03 · Swift files: 150 · Swift LOC: 33893_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14114,7 +14114,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (250 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (254 lines) =====
 ```swift
 import SwiftUI
 
@@ -14199,6 +14199,7 @@ struct ChatHistoryView: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     ZStack {
@@ -14226,6 +14227,7 @@ struct ChatHistoryView: View {
                         .frame(maxWidth: 300)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -14285,6 +14287,8 @@ struct ChatHistoryView: View {
         }
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
+        .animation(DS.Motion.smooth, value: loaded)
+        .animation(DS.Motion.smooth, value: archives.isEmpty)
         .preferredColorScheme(.dark)
         .task {
             archives = await Task.detached(priority: .userInitiated) {
@@ -20563,7 +20567,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (170 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (174 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20711,13 +20715,17 @@ struct FileTreeRow: View {
                         .foregroundStyle(isSel ? .white : Color.white.opacity(hovering ? 0.92 : 0.72))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
-                    if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
+                    if changed {
+                        Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
                 }
                 .background(
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
                     in: RoundedRectangle(cornerRadius: 6)
                 )
                 .animation(DS.Motion.smooth, value: isSel)
+                .animation(DS.Motion.spring, value: changed)
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
@@ -36453,7 +36461,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3856 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3873 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39267,6 +39275,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** All these conditionals had animation context for per-row changes (via `ForEach` items' `.transition`) but no context for the top-level empty ↔ populated branch switches — first data load and data-clear both hard-cut.
 
 **Result:** Zero Swift compilation errors. All MarketsView and LiveTranscriptionView state transitions are now animated end-to-end.
+
+---
+## 2026-06-13 — Marathon DZ: FileTree changed-file dot + ChatHistoryView loading transitions
+
+**What changed:** `Salehman AI/Views/FileTree.swift`, `Salehman AI/Views/ChatHistoryView.swift`
+
+**FileTree.swift:**
+- Changed-file accent dot (`if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }`): added `.transition(.scale(scale: 0.4).combined(with: .opacity))` to the Circle and `.animation(DS.Motion.spring, value: changed)` to the parent HStack — the dot now pops in with a spring bounce when a file is modified, matching the tab-badge and unread-dot patterns used elsewhere.
+
+**ChatHistoryView.swift:**
+- ProgressView spinner (loading state): added `.transition(.opacity)` so the spinner fades out when `loaded` flips.
+- Empty-archives state VStack: added `.transition(.opacity)` so it fades in/out when `archives.isEmpty` changes.
+- Outer VStack: added `.animation(DS.Motion.smooth, value: loaded)` and `.animation(DS.Motion.smooth, value: archives.isEmpty)` as drivers — the loading spinner → content and empty-state → populated-list transitions now crossfade rather than hard-cutting.
+
+**Why:** The FileTree's changed-file dot popped in instantly, inconsistent with the spring-badge pattern on all other notification indicators. The ChatHistoryView sheet opened with a hard-cut from spinner to content every time it was presented.
+
+**Result:** Zero Swift compilation errors.
 
 ---
 ## Standing notes / known issues

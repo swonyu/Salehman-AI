@@ -81,6 +81,7 @@ struct ChatHistoryView: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     ZStack {
@@ -108,6 +109,7 @@ struct ChatHistoryView: View {
                         .frame(maxWidth: 300)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -167,6 +169,8 @@ struct ChatHistoryView: View {
         }
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
+        .animation(DS.Motion.smooth, value: loaded)
+        .animation(DS.Motion.smooth, value: archives.isEmpty)
         .preferredColorScheme(.dark)
         .task {
             archives = await Task.detached(priority: .userInitiated) {
