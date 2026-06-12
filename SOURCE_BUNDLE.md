@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:49 +03 · Swift files: 150 · Swift LOC: 33571_
+_Generated: 2026-06-12 22:50 +03 · Swift files: 150 · Swift LOC: 33578_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14746,7 +14746,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2556 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2563 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15152,9 +15152,11 @@ struct SlashMenuView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .offset(y: 4)))
                 .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
             }
         }
+        .animation(DS.Motion.smooth, value: matches.count)
         .padding(5)
         // Inner core: its own surface + machined top bevel…
         .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -15591,8 +15593,12 @@ struct CodeView: View {
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 1) {
-                                ForEach(shown, id: \.self) { url in fileRow(url) }
+                                ForEach(shown, id: \.self) { url in
+                                    fileRow(url)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                                }
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                             .padding(.vertical, 6)
                         }
                     }
@@ -15807,6 +15813,7 @@ struct CodeView: View {
                                             ? DS.Palette.accent.opacity(0.08) : .clear,
                                             in: RoundedRectangle(cornerRadius: 10))
                                 .id(msg.id)
+                                .transition(.opacity.combined(with: .offset(y: 8)))
                         }
                         if isRunning {
                             streamingView.id("stream")
@@ -36139,7 +36146,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3517 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3522 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39623,10 +39630,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CT: CodeView slash autocomplete, file search + code chat bubble transitions (Chat A)
+**What:** Three more CodeView list transitions. (1) Slash-command autocomplete popup: `.transition(.opacity.combined(with: .offset(y: 4)))` on each Button row + `.animation(DS.Motion.smooth, value: matches.count)` on the VStack — command rows fade+slide when user types and the filtered list changes. (2) File-search results: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `fileRow` + `.animation(DS.Motion.smooth, value: shown.count)` on the LazyVStack — file rows slide in/out when the filter updates. (3) Code-tab chat bubbles: `.transition(.opacity.combined(with: .offset(y: 8)))` on each `codeBubble` — new AI/user messages fade+slide up; the container LazyVStack already had `.animation(value: messages.count)` so no additional animation context needed.
+**Files:** `Views/CodeView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CS: insertion/removal transitions across 4 more list containers (Chat A)
 **What:** Four list containers that previously snapped on filter/data changes now animate smoothly. (1) `CommandPalette` ⌘K results: `.transition(.opacity.combined(with: .offset(y: 6)))` on each row button + `.animation(DS.Motion.smooth, value: filtered.count)` on the `LazyVStack` — filtering the palette fades rows in/out. (2) `ChatHistoryView` search results: ForEach contents wrapped in `Group { row + divider }` with `.transition(.opacity.combined(with: .move(edge: .leading)))` per Group + `.animation(DS.Motion.smooth, value: shown.count)` on the VStack — conversation items slide when search filters. (3) `CodeView` changed-files list: same leading-edge slide treatment + `ws.changedFiles.count` keyed animation. (4) `CodeView` activity-step list: `.transition(.opacity.combined(with: .offset(y: 6)))` on each step row + `progress.steps.count` animation — steps fade+slide up as the agent pipeline appends them.
 **Files:** `Views/CommandPalette.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `6bfa432`
 
 ## 2026-06-12 — marathon CR: MarketsView alert + portfolio list transitions (Chat A)
 **What:** Added insertion/removal animations to the two remaining plain `ForEach` lists in `MarketsView`. (1) Alert signals list: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `signalAlertRow` + `.animation(DS.Motion.smooth, value: alertSignals.count)` on the `VStack(spacing: 1)` container — alert rows now slide in/out from the leading edge when the monitor scan updates the signal list. (2) Portfolio positions list: same treatment — `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `positionRow` + `.animation(DS.Motion.smooth, value: portfolio.positions.count)` — position rows animate when added/removed.

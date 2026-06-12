@@ -402,9 +402,11 @@ struct SlashMenuView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .offset(y: 4)))
                 .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
             }
         }
+        .animation(DS.Motion.smooth, value: matches.count)
         .padding(5)
         // Inner core: its own surface + machined top bevel…
         .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -841,8 +843,12 @@ struct CodeView: View {
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 1) {
-                                ForEach(shown, id: \.self) { url in fileRow(url) }
+                                ForEach(shown, id: \.self) { url in
+                                    fileRow(url)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                                }
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                             .padding(.vertical, 6)
                         }
                     }
@@ -1057,6 +1063,7 @@ struct CodeView: View {
                                             ? DS.Palette.accent.opacity(0.08) : .clear,
                                             in: RoundedRectangle(cornerRadius: 10))
                                 .id(msg.id)
+                                .transition(.opacity.combined(with: .offset(y: 8)))
                         }
                         if isRunning {
                             streamingView.id("stream")
