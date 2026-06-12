@@ -1828,6 +1828,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Edge-trigger pattern ensures focus fires whether the tab was already visible (`.onAppear`) or switches in after the flag is set (`.onChange`). SourceKit cross-file false-positives expected; `xcodebuild` would show clean.
 
 ---
+### 2026-06-12 — Marathon AJ — Context-aware BottomShortcutBar (Chat tab: ⌘F + ⌘. Stop)
+
+**What changed:**
+- `AppState.swift` — `@Published var aiIsRunning = false` (mirrors `ChatViewModel.isRunning` for views outside ContentView's subtree)
+- `ChatViewModel.swift` — `AppState.shared.aiIsRunning = true/false` at every `isRunning` flip site in `send()` and `transcribeMedia()`
+- `BottomShortcutBar.swift` — `hints` is now a context-aware computed property: Chat tab shows `⌘F Search`, `⌘N New Chat`, `⌘J Voice`, `⌘K Palette`, `⌘, Settings`; when AI is running, `⌘. Stop` is promoted to first slot (list capped at 5); all other tabs keep the existing static hints
+
+**Files:** `AppState.swift`, `ChatViewModel.swift`, `BottomShortcutBar.swift`
+
+**Why:** The bottom bar was showing generic global shortcuts even on the Chat tab. The most useful chat affordances (⌘F to search, ⌘. to stop a running generation) weren't surfaced anywhere outside the keyboard. `aiIsRunning` in AppState follows the same mirror pattern as `chatHasUnread`.
+
+**Result:** Chat tab footer is now contextual; Stop hint appears only when the AI is actually generating. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

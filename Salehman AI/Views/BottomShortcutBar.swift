@@ -17,13 +17,31 @@ struct BottomShortcutBar: View {
     }
 
     private var hints: [Hint] {
-        [
-            .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
-            .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
-            .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
-            .init(keys: "⌘/", label: "Shortcuts") { app.showShortcutsRequested = true },
-            .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
-        ]
+        switch app.selectedTab {
+        case .chat:
+            // Chat-specific bar: surface ⌘F Search and, when the AI is generating,
+            // promote ⌘. Stop to the first slot so it's the most visible affordance.
+            var h: [Hint] = []
+            if app.aiIsRunning {
+                h.append(.init(keys: "⌘.", label: "Stop") { app.stopRequested = true })
+            }
+            h += [
+                .init(keys: "⌘F", label: "Search") { app.toggleSearchRequested = true },
+                .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
+                .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
+                .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
+                .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
+            ]
+            return Array(h.prefix(5))
+        default:
+            return [
+                .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
+                .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
+                .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
+                .init(keys: "⌘/", label: "Shortcuts") { app.showShortcutsRequested = true },
+                .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
+            ]
+        }
     }
 
     var body: some View {

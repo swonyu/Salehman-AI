@@ -120,6 +120,7 @@ final class ChatViewModel: ObservableObject {
         // message is answered by it (the whole pipeline reads the updated pin).
         AppSettings.shared.advanceRotation()
         isRunning = true
+        AppState.shared.aiIsRunning = true
 
         runningTask = Task {
             // Build the message the agents receive (resolving image vision first).
@@ -170,6 +171,7 @@ final class ChatViewModel: ObservableObject {
                 break
             }
             isRunning = false
+            AppState.shared.aiIsRunning = false
             if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             // Refresh the header brain dot now — it otherwise lags up to ~10s, so
             // this reflects reality right after a send (e.g. a brain that just failed).
@@ -181,7 +183,8 @@ final class ChatViewModel: ObservableObject {
     /// when the input is detected as media.
     func transcribeMedia(_ source: MediaTranscribe.Source, raw: String) {
         messages.append(ChatMessage(id: UUID(), text: raw, isUser: true, timestamp: Date()))
-        isRunning = true            // reuse the existing typing indicator
+        isRunning = true
+        AppState.shared.aiIsRunning = true            // reuse the existing typing indicator
 
         runningTask = Task {
             let transcript = await MediaTranscribe.transcribe(source)
@@ -196,6 +199,7 @@ final class ChatViewModel: ObservableObject {
                   !transcript.hasPrefix("Couldn't"),
                   !transcript.contains("no captions") else {
                 isRunning = false
+                AppState.shared.aiIsRunning = false
                 if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
                 return
             }
@@ -209,6 +213,7 @@ final class ChatViewModel: ObservableObject {
             let reply = ChatMessage(id: UUID(), text: result.output, isUser: false, timestamp: Date())
             messages.append(reply)
             isRunning = false
+            AppState.shared.aiIsRunning = false
             if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             if AppSettings.shared.autoSpeak {
                 SpeechOut.shared.speak(result.output, id: reply.id)

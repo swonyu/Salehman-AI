@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:53 +03 · Swift files: 150 · Swift LOC: 32239_
+_Generated: 2026-06-12 08:56 +03 · Swift files: 150 · Swift LOC: 32267_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1894,7 +1894,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (93 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (98 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1927,6 +1927,11 @@ final class AppState: ObservableObject {
     /// `TabSwitcherBar` uses it to render a pulse dot on the Chat pill; cleared
     /// automatically when the user switches to the Chat tab.
     @Published var chatHasUnread = false
+
+    /// Mirrors `ChatViewModel.isRunning` so components outside ContentView's
+    /// subtree (e.g. `BottomShortcutBar`) can show a Stop hint without wiring
+    /// the view model through the whole hierarchy.
+    @Published var aiIsRunning = false
 
     /// Edge-trigger: set `true` to ask `ScratchpadView` to focus its add field
     /// on the next appear or on change. Cleared by the view after acting.
@@ -13829,7 +13834,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (64 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (82 lines) =====
 ```swift
 import SwiftUI
 
@@ -13850,13 +13855,31 @@ struct BottomShortcutBar: View {
     }
 
     private var hints: [Hint] {
-        [
-            .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
-            .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
-            .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
-            .init(keys: "⌘/", label: "Shortcuts") { app.showShortcutsRequested = true },
-            .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
-        ]
+        switch app.selectedTab {
+        case .chat:
+            // Chat-specific bar: surface ⌘F Search and, when the AI is generating,
+            // promote ⌘. Stop to the first slot so it's the most visible affordance.
+            var h: [Hint] = []
+            if app.aiIsRunning {
+                h.append(.init(keys: "⌘.", label: "Stop") { app.stopRequested = true })
+            }
+            h += [
+                .init(keys: "⌘F", label: "Search") { app.toggleSearchRequested = true },
+                .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
+                .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
+                .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
+                .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
+            ]
+            return Array(h.prefix(5))
+        default:
+            return [
+                .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
+                .init(keys: "⌘N", label: "New Chat") { app.selectedTab = .chat; app.newChatRequested = true },
+                .init(keys: "⌘J", label: "Voice") { app.showVoiceModeRequested = true },
+                .init(keys: "⌘/", label: "Shortcuts") { app.showShortcutsRequested = true },
+                .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
+            ]
+        }
     }
 
     var body: some View {
@@ -14083,7 +14106,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (218 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (223 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -14207,6 +14230,7 @@ final class ChatViewModel: ObservableObject {
         // message is answered by it (the whole pipeline reads the updated pin).
         AppSettings.shared.advanceRotation()
         isRunning = true
+        AppState.shared.aiIsRunning = true
 
         runningTask = Task {
             // Build the message the agents receive (resolving image vision first).
@@ -14257,6 +14281,7 @@ final class ChatViewModel: ObservableObject {
                 break
             }
             isRunning = false
+            AppState.shared.aiIsRunning = false
             if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             // Refresh the header brain dot now — it otherwise lags up to ~10s, so
             // this reflects reality right after a send (e.g. a brain that just failed).
@@ -14268,7 +14293,8 @@ final class ChatViewModel: ObservableObject {
     /// when the input is detected as media.
     func transcribeMedia(_ source: MediaTranscribe.Source, raw: String) {
         messages.append(ChatMessage(id: UUID(), text: raw, isUser: true, timestamp: Date()))
-        isRunning = true            // reuse the existing typing indicator
+        isRunning = true
+        AppState.shared.aiIsRunning = true            // reuse the existing typing indicator
 
         runningTask = Task {
             let transcript = await MediaTranscribe.transcribe(source)
@@ -14283,6 +14309,7 @@ final class ChatViewModel: ObservableObject {
                   !transcript.hasPrefix("Couldn't"),
                   !transcript.contains("no captions") else {
                 isRunning = false
+                AppState.shared.aiIsRunning = false
                 if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
                 return
             }
@@ -14296,6 +14323,7 @@ final class ChatViewModel: ObservableObject {
             let reply = ChatMessage(id: UUID(), text: result.output, isUser: false, timestamp: Date())
             messages.append(reply)
             isRunning = false
+            AppState.shared.aiIsRunning = false
             if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             if AppSettings.shared.autoSpeak {
                 SpeechOut.shared.speak(result.output, id: reply.id)
@@ -34796,7 +34824,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2699 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2713 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36625,6 +36653,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Two micro-focus wins: (1) after clearing a chat the composer should be ready to type; (2) tapping "New Note" from Today should land the cursor in the add field without a second click.
 
 **Result:** Edge-trigger pattern ensures focus fires whether the tab was already visible (`.onAppear`) or switches in after the flag is set (`.onChange`). SourceKit cross-file false-positives expected; `xcodebuild` would show clean.
+
+---
+### 2026-06-12 — Marathon AJ — Context-aware BottomShortcutBar (Chat tab: ⌘F + ⌘. Stop)
+
+**What changed:**
+- `AppState.swift` — `@Published var aiIsRunning = false` (mirrors `ChatViewModel.isRunning` for views outside ContentView's subtree)
+- `ChatViewModel.swift` — `AppState.shared.aiIsRunning = true/false` at every `isRunning` flip site in `send()` and `transcribeMedia()`
+- `BottomShortcutBar.swift` — `hints` is now a context-aware computed property: Chat tab shows `⌘F Search`, `⌘N New Chat`, `⌘J Voice`, `⌘K Palette`, `⌘, Settings`; when AI is running, `⌘. Stop` is promoted to first slot (list capped at 5); all other tabs keep the existing static hints
+
+**Files:** `AppState.swift`, `ChatViewModel.swift`, `BottomShortcutBar.swift`
+
+**Why:** The bottom bar was showing generic global shortcuts even on the Chat tab. The most useful chat affordances (⌘F to search, ⌘. to stop a running generation) weren't surfaced anywhere outside the keyboard. `aiIsRunning` in AppState follows the same mirror pattern as `chatHasUnread`.
+
+**Result:** Chat tab footer is now contextual; Stop hint appears only when the AI is actually generating. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues

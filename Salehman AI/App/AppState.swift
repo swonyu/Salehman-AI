@@ -30,6 +30,11 @@ final class AppState: ObservableObject {
     /// automatically when the user switches to the Chat tab.
     @Published var chatHasUnread = false
 
+    /// Mirrors `ChatViewModel.isRunning` so components outside ContentView's
+    /// subtree (e.g. `BottomShortcutBar`) can show a Stop hint without wiring
+    /// the view model through the whole hierarchy.
+    @Published var aiIsRunning = false
+
     /// Edge-trigger: set `true` to ask `ScratchpadView` to focus its add field
     /// on the next appear or on change. Cleared by the view after acting.
     @Published var focusScratchpadAddFieldRequested = false
