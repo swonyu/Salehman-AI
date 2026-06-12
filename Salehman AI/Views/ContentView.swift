@@ -2049,6 +2049,7 @@ struct MessageBubble: View, Equatable {
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
+    @State private var copied = false
 
     /// Same `offMessage` → `unavailableMessage` swap that `StreamingBubble` does.
     /// See the discussion above `bubbleRow` for the trade-off and why we now
@@ -2256,7 +2257,7 @@ struct MessageBubble: View, Equatable {
                             onEdit?(message)
                         }
                     }
-                    actionButton("doc.on.doc", "Copy") { copyText() }
+                    actionButton(copied ? "checkmark" : "doc.on.doc", "Copy") { copyText() }
                     if onTogglePin != nil {
                         actionButton(message.pinned == true ? "pin.slash" : "pin",
                                      message.pinned == true ? "Unpin" : "Pin to top") {
@@ -2385,6 +2386,8 @@ struct MessageBubble: View, Equatable {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
+        copied = true
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
     }
 
     private func copyPlainText() {

@@ -2150,6 +2150,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); purely additive data change.
 
 ---
+
+### 2026-06-12 — Marathon BE: Copy-feedback flash on MessageBubble
+
+**What:** Added `@State private var copied = false` to `MessageBubble`. `copyText()` now sets `copied = true` and resets it after 1.5 seconds. Both hover-toolbar "Copy" action buttons flip their icon from `"doc.on.doc"` to `"checkmark"` while `copied` is true, giving the user instant confirmation that the copy succeeded. The context-menu "Copy" option doesn't get the flash (the menu closes on selection anyway). `@State` dynamic property invalidation bypasses `Equatable` diffing by design, so the optimization is preserved.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** The Copy button was previously silent — no visual confirmation. Every well-crafted app (VS Code, Linear, Notion) flashes a checkmark to confirm clipboard writes.
+
+**Result:** Build not yet run (owner-side); additive state + icon swap.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

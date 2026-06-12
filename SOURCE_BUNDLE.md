@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:45 +03 · Swift files: 150 · Swift LOC: 32523_
+_Generated: 2026-06-12 09:47 +03 · Swift files: 150 · Swift LOC: 32526_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17256,7 +17256,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2787 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2790 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19309,6 +19309,7 @@ struct MessageBubble: View, Equatable {
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
+    @State private var copied = false
 
     /// Same `offMessage` → `unavailableMessage` swap that `StreamingBubble` does.
     /// See the discussion above `bubbleRow` for the trade-off and why we now
@@ -19516,7 +19517,7 @@ struct MessageBubble: View, Equatable {
                             onEdit?(message)
                         }
                     }
-                    actionButton("doc.on.doc", "Copy") { copyText() }
+                    actionButton(copied ? "checkmark" : "doc.on.doc", "Copy") { copyText() }
                     if onTogglePin != nil {
                         actionButton(message.pinned == true ? "pin.slash" : "pin",
                                      message.pinned == true ? "Unpin" : "Pin to top") {
@@ -19645,6 +19646,8 @@ struct MessageBubble: View, Equatable {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
+        copied = true
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
     }
 
     private func copyPlainText() {
@@ -35091,7 +35094,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3021 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3033 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37242,6 +37245,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The shortcuts sheet (⌘/) was missing the Code tab entirely — all those shortcuts existed but were undiscoverable since they weren't in the reference sheet.
 
 **Result:** Build not yet run (owner-side); purely additive data change.
+
+---
+
+### 2026-06-12 — Marathon BE: Copy-feedback flash on MessageBubble
+
+**What:** Added `@State private var copied = false` to `MessageBubble`. `copyText()` now sets `copied = true` and resets it after 1.5 seconds. Both hover-toolbar "Copy" action buttons flip their icon from `"doc.on.doc"` to `"checkmark"` while `copied` is true, giving the user instant confirmation that the copy succeeded. The context-menu "Copy" option doesn't get the flash (the menu closes on selection anyway). `@State` dynamic property invalidation bypasses `Equatable` diffing by design, so the optimization is preserved.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** The Copy button was previously silent — no visual confirmation. Every well-crafted app (VS Code, Linear, Notion) flashes a checkmark to confirm clipboard writes.
+
+**Result:** Build not yet run (owner-side); additive state + icon swap.
 
 ---
 ## Standing notes / known issues
