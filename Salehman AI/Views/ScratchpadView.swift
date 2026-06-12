@@ -6,6 +6,7 @@ import SwiftUI
 /// "Organize"/"Summarize" over the current contents via `LocalLLM.generate`.
 struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
+    @ObservedObject private var app = AppState.shared
     @State private var pad: Pad = .tasks
     @State private var newText = ""
     @State private var search = ""
@@ -49,6 +50,20 @@ struct ScratchpadView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
+        // Today "New Note" quick action: focus the add field so the user
+        // can start typing immediately after the tab switch.
+        .onAppear {
+            if app.focusScratchpadAddFieldRequested {
+                addFocused = true
+                app.focusScratchpadAddFieldRequested = false
+            }
+        }
+        .onChange(of: app.focusScratchpadAddFieldRequested) { _, requested in
+            if requested {
+                addFocused = true
+                app.focusScratchpadAddFieldRequested = false
+            }
+        }
     }
 
     private var header: some View {

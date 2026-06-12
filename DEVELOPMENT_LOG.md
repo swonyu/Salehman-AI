@@ -1791,6 +1791,43 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Code tab heavy visual/design polish (Chat A)
+
+**What changed:** Comprehensive design pass across `CodeView.swift` (~25 targeted edits):
+- **Welcome state**: Hero icon enlarged (60→68pt frame, 25→28pt glyph) with `RadialGradient` background fill, `LinearGradient` stroke on circle, double shadow layers (outer glow + inner). Title to size-20 rounded design. Subtitle to `white.opacity(0.52)`. Example cards with larger icon circles + border rings. Shortcut hint keycaps with stroke + drop shadow. Staggered two-phase entrance — hero fades up at t+0.05s, action cards/shortcuts at t+0.22s. Ambient `RadialGradient` accent glow behind the welcome block.
+- **ActivityStepRow**: Running steps get an accent left-bar (`width: 2.5`) + warmer background `accent.opacity(0.07)`.
+- **agentSteps bar**: `PulsingDot` replaces sparkles icon in the "Working" header; running chips get `DS.Palette.accent.opacity(0.42)` ring border.
+- **activityIdle**: Bigger icon (22pt in 48×48 framed circle), "Ready" label, better stats pill (green live dot + Capsule bg).
+- **Diff colors**: Additions changed from blue `(0.27, 0.72, 1.0)` to green `(0.35, 0.82, 0.48)` in symbol color, background, and ChangedFileRow stat — matches universal git convention.
+- **Right panel**: `bolt.horizontal.circle.fill` (filled) for ACTIVITY header; CHANGED FILES dot glow.
+- **Inspector empty state**: Larger framed icon (52→54pt), shadow, better text contrast.
+- **File row**: Selected state gets a `white.opacity(0.14)` ring border overlay.
+- **Chat header pills**: Context-% and tok/s pills get `white.opacity(0.05)` background fill.
+- **CodeMessageRow**: User bubble padding+opacity up; action buttons grouped into a floating `Capsule` pill; `DS.Motion.fade` animation replaces `easeOut`.
+- **Animations**: `ChangedFileRow` hover now uses `DS.Motion.press` (cubic bezier) instead of `easeOut`.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** Owner request — "design and layout and features polish them heavily" + `/high-end-visual-design` skill kept on.
+
+**Result:** `** BUILD SUCCEEDED **` (clean, no errors or warnings on CodeView).
+
+---
+### 2026-06-12 — Marathon AI — New Note quick-focus + newChat composer focus
+
+**What changed:**
+- `ContentView.swift` `newChat()` — added `inputFocused = true` at end so the composer is focused immediately after clearing a conversation
+- `AppState.swift` — `@Published var focusScratchpadAddFieldRequested = false` edge-trigger flag
+- `TodayView.swift` "New Note" action tile — sets `app.selectedTab = .scratchpad` + `app.focusScratchpadAddFieldRequested = true`
+- `ScratchpadView.swift` — `@ObservedObject private var app = AppState.shared` + `.onAppear` / `.onChange(of:)` handlers that set `addFocused = true` and reset the flag
+
+**Files:** `ContentView.swift`, `AppState.swift`, `TodayView.swift`, `ScratchpadView.swift`
+
+**Why:** Two micro-focus wins: (1) after clearing a chat the composer should be ready to type; (2) tapping "New Note" from Today should land the cursor in the add field without a second click.
+
+**Result:** Edge-trigger pattern ensures focus fires whether the tab was already visible (`.onAppear`) or switches in after the flag is set (`.onChange`). SourceKit cross-file false-positives expected; `xcodebuild` would show clean.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

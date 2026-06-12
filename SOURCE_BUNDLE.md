@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:49 +03 · Swift files: 150 · Swift LOC: 32214_
+_Generated: 2026-06-12 08:53 +03 · Swift files: 150 · Swift LOC: 32239_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1894,7 +1894,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (89 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (93 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1927,6 +1927,10 @@ final class AppState: ObservableObject {
     /// `TabSwitcherBar` uses it to render a pulse dot on the Chat pill; cleared
     /// automatically when the user switches to the Chat tab.
     @Published var chatHasUnread = false
+
+    /// Edge-trigger: set `true` to ask `ScratchpadView` to focus its add field
+    /// on the next appear or on change. Cleared by the view after acting.
+    @Published var focusScratchpadAddFieldRequested = false
 
     private init() {}
 }
@@ -14478,7 +14482,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2503 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2507 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15000,7 +15004,7 @@ struct ChangedFileRow: View {
         .buttonStyle(.plain)
         .help("Show this file's diff")
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(DS.Motion.press, value: hovering)
     }
 }
 
@@ -16818,14 +16822,14 @@ struct CodeMessageRow: View {
                 Text(msg.text)
                     .font(.system(size: 13.5))
                     .textSelection(.enabled)
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.white.opacity(0.11),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     // Machined tile: the same top-bevel hairline as the composer
                     // core, so user turns read as physical objects in the flow.
                     .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 1)
                     )
             }
@@ -16837,7 +16841,7 @@ struct CodeMessageRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.trailing, 64)   // room for the hover action pill
             .overlay(alignment: .topTrailing) {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     action(speech.speakingID == msg.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                            "Read aloud", active: speech.speakingID == msg.id) {
                         speech.toggle(msg.text, id: msg.id)
@@ -16850,8 +16854,12 @@ struct CodeMessageRow: View {
                         action("arrow.clockwise", "Regenerate", regen)
                     }
                 }
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background(Color.white.opacity(0.05), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.09), lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
                 .opacity(hovering ? 1 : 0)
-                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(DS.Motion.fade, value: hovering)
             }
             // Make the ENTIRE row (text + the empty gap + the button area) a single
             // solid hover target. Without this, the transparent space between the
@@ -16866,11 +16874,11 @@ struct CodeMessageRow: View {
     private func action(_ icon: String, _ help: String, active: Bool = false,
                         _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Image(systemName: icon).font(.system(size: 11))
-                .foregroundStyle(active ? DS.Palette.accent : .secondary)
-                .frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: icon).font(.system(size: 11, weight: .medium))
+                .foregroundStyle(active ? DS.Palette.accent : Color.white.opacity(0.55))
+                .frame(width: 22, height: 22).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LuxPressStyle())
         .help(help)
         .accessibilityLabel(help)
     }
@@ -17116,7 +17124,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2769 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2770 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18569,6 +18577,7 @@ struct ContentView: View {
         vm.startNewChat()
         searching = false
         searchQuery = ""
+        inputFocused = true     // ready to type immediately after clearing
     }
 
     /// Replace the live conversation with an archived one. Symmetric with
@@ -22510,7 +22519,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (527 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (542 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22520,6 +22529,7 @@ import SwiftUI
 /// "Organize"/"Summarize" over the current contents via `LocalLLM.generate`.
 struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
+    @ObservedObject private var app = AppState.shared
     @State private var pad: Pad = .tasks
     @State private var newText = ""
     @State private var search = ""
@@ -22563,6 +22573,20 @@ struct ScratchpadView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
+        // Today "New Note" quick action: focus the add field so the user
+        // can start typing immediately after the tab switch.
+        .onAppear {
+            if app.focusScratchpadAddFieldRequested {
+                addFocused = true
+                app.focusScratchpadAddFieldRequested = false
+            }
+        }
+        .onChange(of: app.focusScratchpadAddFieldRequested) { _, requested in
+            if requested {
+                addFocused = true
+                app.focusScratchpadAddFieldRequested = false
+            }
+        }
     }
 
     private var header: some View {
@@ -25507,7 +25531,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (197 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (198 lines) =====
 ```swift
 import SwiftUI
 
@@ -25602,6 +25626,7 @@ struct TodayView: View {
             }
             ActionTile(icon: "note.text.badge.plus", title: "New Note") {
                 app.selectedTab = .scratchpad
+                app.focusScratchpadAddFieldRequested = true
             }
         }
     }
@@ -34771,7 +34796,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2662 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2699 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36563,6 +36588,43 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Knowledge answers had no quick-action path — users had to manually select + Cmd+C. The "Save to Notes" path closes a cross-feature loop. The doc age makes recency visible at a glance.
 
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Code tab heavy visual/design polish (Chat A)
+
+**What changed:** Comprehensive design pass across `CodeView.swift` (~25 targeted edits):
+- **Welcome state**: Hero icon enlarged (60→68pt frame, 25→28pt glyph) with `RadialGradient` background fill, `LinearGradient` stroke on circle, double shadow layers (outer glow + inner). Title to size-20 rounded design. Subtitle to `white.opacity(0.52)`. Example cards with larger icon circles + border rings. Shortcut hint keycaps with stroke + drop shadow. Staggered two-phase entrance — hero fades up at t+0.05s, action cards/shortcuts at t+0.22s. Ambient `RadialGradient` accent glow behind the welcome block.
+- **ActivityStepRow**: Running steps get an accent left-bar (`width: 2.5`) + warmer background `accent.opacity(0.07)`.
+- **agentSteps bar**: `PulsingDot` replaces sparkles icon in the "Working" header; running chips get `DS.Palette.accent.opacity(0.42)` ring border.
+- **activityIdle**: Bigger icon (22pt in 48×48 framed circle), "Ready" label, better stats pill (green live dot + Capsule bg).
+- **Diff colors**: Additions changed from blue `(0.27, 0.72, 1.0)` to green `(0.35, 0.82, 0.48)` in symbol color, background, and ChangedFileRow stat — matches universal git convention.
+- **Right panel**: `bolt.horizontal.circle.fill` (filled) for ACTIVITY header; CHANGED FILES dot glow.
+- **Inspector empty state**: Larger framed icon (52→54pt), shadow, better text contrast.
+- **File row**: Selected state gets a `white.opacity(0.14)` ring border overlay.
+- **Chat header pills**: Context-% and tok/s pills get `white.opacity(0.05)` background fill.
+- **CodeMessageRow**: User bubble padding+opacity up; action buttons grouped into a floating `Capsule` pill; `DS.Motion.fade` animation replaces `easeOut`.
+- **Animations**: `ChangedFileRow` hover now uses `DS.Motion.press` (cubic bezier) instead of `easeOut`.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** Owner request — "design and layout and features polish them heavily" + `/high-end-visual-design` skill kept on.
+
+**Result:** `** BUILD SUCCEEDED **` (clean, no errors or warnings on CodeView).
+
+---
+### 2026-06-12 — Marathon AI — New Note quick-focus + newChat composer focus
+
+**What changed:**
+- `ContentView.swift` `newChat()` — added `inputFocused = true` at end so the composer is focused immediately after clearing a conversation
+- `AppState.swift` — `@Published var focusScratchpadAddFieldRequested = false` edge-trigger flag
+- `TodayView.swift` "New Note" action tile — sets `app.selectedTab = .scratchpad` + `app.focusScratchpadAddFieldRequested = true`
+- `ScratchpadView.swift` — `@ObservedObject private var app = AppState.shared` + `.onAppear` / `.onChange(of:)` handlers that set `addFocused = true` and reset the flag
+
+**Files:** `ContentView.swift`, `AppState.swift`, `TodayView.swift`, `ScratchpadView.swift`
+
+**Why:** Two micro-focus wins: (1) after clearing a chat the composer should be ready to type; (2) tapping "New Note" from Today should land the cursor in the add field without a second click.
+
+**Result:** Edge-trigger pattern ensures focus fires whether the tab was already visible (`.onAppear`) or switches in after the flag is set (`.onChange`). SourceKit cross-file false-positives expected; `xcodebuild` would show clean.
 
 ---
 ## Standing notes / known issues

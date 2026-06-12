@@ -1449,6 +1449,7 @@ struct ContentView: View {
         vm.startNewChat()
         searching = false
         searchQuery = ""
+        inputFocused = true     // ready to type immediately after clearing
     }
 
     /// Replace the live conversation with an archived one. Symmetric with

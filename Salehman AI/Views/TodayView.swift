@@ -91,6 +91,7 @@ struct TodayView: View {
             }
             ActionTile(icon: "note.text.badge.plus", title: "New Note") {
                 app.selectedTab = .scratchpad
+                app.focusScratchpadAddFieldRequested = true
             }
         }
     }
