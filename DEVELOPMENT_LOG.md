@@ -2167,3 +2167,19 @@ capture type hasn't refired since; ignore it / QA owner may want to clean it.
 **Files:** `App/AppState.swift`, `App/Salehman_AIApp.swift`, `Views/TabSwitcherBar.swift`,
 `Views/CommandPalette.swift`, `Views/ShortcutsView.swift`, `Views/TodayView.swift`,
 `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:1x) — Chat D: Notes+Knowledge → compact corner tabs (owner directive)
+**What & why:** Owner: "notes and knowledge should be really small like the copy
+button and in the right top corner instead of closed." Notes + Knowledge left the
+pill row and now render as 28pt `CircleIconButton`s (the Settings-gear metrics) in
+TabSwitcherBar's right cluster — exactly where the hidden market pill sat. Selected
+state = brand-filled circle; the pill row's sliding highlight rests while a corner
+tab is active. New `AppTab.corner` + `AppTab.pills` (visible minus corner) drive it;
+labelThreshold tracks the pill count (4). ⌘6/⌘7, the View menu, command palette, and
+shortcuts sheet are UNCHANGED — corner tabs are still real, navigable tabs.
+**Verified:** build `** BUILD SUCCEEDED **`; AITests `** TEST SUCCEEDED **` (469);
+fresh capture cycle: audit failures = only the pre-existing `chat_history` (Chat A).
+The bar chrome itself isn't a captured QA surface (window_0_live mechanism is stale,
+flagged earlier) — owner sees it live; app relaunched with the new bar.
+**Files:** `App/AppState.swift`, `Views/TabSwitcherBar.swift`, `COORDINATION.md`,
+`DEVELOPMENT_LOG.md`.

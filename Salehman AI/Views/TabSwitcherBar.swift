@@ -31,7 +31,7 @@ struct TabSwitcherBar: View {
     @State private var barWidth: CGFloat = 0
     /// Scales with the tab count so adding a 6th/7th tab raises the collapse
     /// point automatically instead of silently re-introducing the clip.
-    private var labelThreshold: CGFloat { CGFloat(AppTab.visible.count) * 92 + 380 }
+    private var labelThreshold: CGFloat { CGFloat(AppTab.pills.count) * 92 + 380 }
     private var showAllLabels: Bool { barWidth == 0 || barWidth >= labelThreshold }
 
     var body: some View {
@@ -60,7 +60,7 @@ struct TabSwitcherBar: View {
 
             // Pills
             HStack(spacing: 4) {
-                ForEach(AppTab.visible) { tab in pill(tab) }
+                ForEach(AppTab.pills) { tab in pill(tab) }
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
@@ -71,6 +71,21 @@ struct TabSwitcherBar: View {
             // Right cluster: live market status pill + Settings gear. Grouped
             // so the rightmost slot reads as one "status + tools" zone.
             HStack(spacing: 8) {
+                // Notes + Knowledge — compact corner tabs (owner directive:
+                // "really small like the copy button", in the old market-pill
+                // spot). Same metrics as the Settings gear; the brand-filled
+                // circle marks the selected tab (the pill row's sliding
+                // highlight simply rests while a corner tab is active).
+                ForEach(AppTab.corner.filter { !AppTab.hidden.contains($0) }) { tab in
+                    CircleIconButton(systemName: tab.icon,
+                                     size: 28, iconSize: 13,
+                                     filled: selection == tab,
+                                     help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
+                                     accessibilityLabel: tab.title) {
+                        withAnimation(DS.Motion.snappy) { selection = tab }
+                    }
+                }
+
                 if !AppTab.hidden.contains(.markets) {
                 // Live market status — dot + halo (when open) in a soft pill.
                 // Hovering reveals a system tooltip ("Market is closed/open") via

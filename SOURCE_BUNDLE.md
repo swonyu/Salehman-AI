@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 02:54 +03 · Swift files: 150 · Swift LOC: 30380_
+_Generated: 2026-06-12 03:00 +03 · Swift files: 150 · Swift LOC: 30475_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1898,7 +1898,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (74 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (84 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1949,6 +1949,16 @@ enum AppTab: String, CaseIterable, Identifiable {
     /// The user-visible tab roster — navigation surfaces iterate THIS, never
     /// `allCases`, so a hidden tab vanishes everywhere at once.
     nonisolated static var visible: [AppTab] { allCases.filter { !hidden.contains($0) } }
+
+    /// Owner directive (2026-06-12): Notes + Knowledge render as SMALL corner
+    /// icon buttons in the tab bar's right cluster ("really small like the
+    /// copy button", in the old market-pill spot) instead of full-width
+    /// pills. They stay real tabs — ⌘6/⌘7, the palette, and the shortcuts
+    /// sheet all still navigate to them.
+    nonisolated static let corner: [AppTab] = [.scratchpad, .knowledge]
+
+    /// The full-size pill roster: visible tabs minus the compact corner tabs.
+    nonisolated static var pills: [AppTab] { visible.filter { !corner.contains($0) } }
 
     var title: String {
         switch self {
@@ -17212,7 +17222,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2375 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2421 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17268,6 +17278,11 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showStats = false
     @State private var statsBlurb = ""
+    // /connect — paste the cloud-GPU tunnel URL, the app wires itself.
+    @State private var showConnect = false
+    @State private var connectURL = ""
+    @State private var showNotice = false
+    @State private var noticeText = ""
     /// Welcome entrance choreography (Code-tab parity): pre-revealed on QA
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
@@ -17374,6 +17389,26 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
+        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
+            TextField("https://….trycloudflare.com", text: $connectURL)
+            Button("Cancel", role: .cancel) { }
+            Button("Connect") {
+                if let url = Self.normalizedServerURL(connectURL) {
+                    settings.unslothStudioEndpoint = url
+                    settings.unslothStudioModel = "salehman"
+                    settings.brainPreference = .unslothStudio
+                    noticeText = "Connected — Custom server → \(url), model “salehman”. Replies now come from the cloud GPU; pick Salehman in the Brain menu to go back to local."
+                } else {
+                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
+                }
+                showNotice = true
+            }
+        } message: {
+            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
+        }
+        .alert("Cloud GPU", isPresented: $showNotice) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(noticeText) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -18005,6 +18040,21 @@ struct ContentView: View {
         return ("\(words) words", words >= budget)
     }
 
+    /// Normalizes a pasted tunnel/server URL for the Custom-server brain:
+    /// trims, defaults the scheme to https, requires http(s) + a host, strips
+    /// trailing slashes, appends `/v1` exactly once. nil = unusable. Pure.
+    nonisolated static func normalizedServerURL(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if !s.contains("://") { s = "https://" + s }
+        guard let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.hasSuffix("/v1") ? s : s + "/v1"
+    }
+
     /// Horizontal chip rail: click a chip to jump to (and center) its message.
     /// A chip whose message is search-filtered out scrolls nowhere — harmless.
     private func pinnedStrip(_ proxy: ScrollViewProxy) -> some View {
@@ -18088,6 +18138,9 @@ struct ContentView: View {
         .init(id: "stats", icon: "chart.bar",
               blurb: "Conversation statistics",
               kind: .action("stats")),
+        .init(id: "connect", icon: "bolt.horizontal.circle",
+              blurb: "Connect to your cloud-GPU Salehman (paste tunnel URL)",
+              kind: .action("connect")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -18121,6 +18174,9 @@ struct ContentView: View {
             case "stats":
                 statsBlurb = ChatStats.summarize(vm.messages).blurb
                 showStats = true
+            case "connect":
+                connectURL = ""
+                showConnect = true
             default: break
             }
         }
@@ -24475,7 +24531,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (178 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (193 lines) =====
 ```swift
 import SwiftUI
 
@@ -24510,7 +24566,7 @@ struct TabSwitcherBar: View {
     @State private var barWidth: CGFloat = 0
     /// Scales with the tab count so adding a 6th/7th tab raises the collapse
     /// point automatically instead of silently re-introducing the clip.
-    private var labelThreshold: CGFloat { CGFloat(AppTab.visible.count) * 92 + 380 }
+    private var labelThreshold: CGFloat { CGFloat(AppTab.pills.count) * 92 + 380 }
     private var showAllLabels: Bool { barWidth == 0 || barWidth >= labelThreshold }
 
     var body: some View {
@@ -24539,7 +24595,7 @@ struct TabSwitcherBar: View {
 
             // Pills
             HStack(spacing: 4) {
-                ForEach(AppTab.visible) { tab in pill(tab) }
+                ForEach(AppTab.pills) { tab in pill(tab) }
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
@@ -24550,6 +24606,21 @@ struct TabSwitcherBar: View {
             // Right cluster: live market status pill + Settings gear. Grouped
             // so the rightmost slot reads as one "status + tools" zone.
             HStack(spacing: 8) {
+                // Notes + Knowledge — compact corner tabs (owner directive:
+                // "really small like the copy button", in the old market-pill
+                // spot). Same metrics as the Settings gear; the brand-filled
+                // circle marks the selected tab (the pill row's sliding
+                // highlight simply rests while a corner tab is active).
+                ForEach(AppTab.corner.filter { !AppTab.hidden.contains($0) }) { tab in
+                    CircleIconButton(systemName: tab.icon,
+                                     size: 28, iconSize: 13,
+                                     filled: selection == tab,
+                                     help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
+                                     accessibilityLabel: tab.title) {
+                        withAnimation(DS.Motion.snappy) { selection = tab }
+                    }
+                }
+
                 if !AppTab.hidden.contains(.markets) {
                 // Live market status — dot + halo (when open) in a soft pill.
                 // Hovering reveals a system tooltip ("Market is closed/open") via
@@ -25661,7 +25732,7 @@ struct ChatGreetingBucketTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (298 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (322 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -25856,6 +25927,30 @@ struct TranscriptCadenceTests {
         #expect(!ContentView.isFirstInGroup(idx: 1, list: list))   // same sender, 1 min
         #expect(ContentView.isFirstInGroup(idx: 2, list: list))    // sender flip
         #expect(ContentView.isFirstInGroup(idx: 3, list: list))    // 8 min > 5 min
+    }
+}
+
+// MARK: - /connect server-URL normalizer
+
+struct ConnectURLTests {
+
+    @Test func addsSchemeAndV1() {
+        #expect(ContentView.normalizedServerURL("abc-def.trycloudflare.com")
+                == "https://abc-def.trycloudflare.com/v1")
+    }
+
+    @Test func stripsTrailingSlashesAndKeepsExistingV1() {
+        #expect(ContentView.normalizedServerURL("https://x.trycloudflare.com/")
+                == "https://x.trycloudflare.com/v1")
+        #expect(ContentView.normalizedServerURL("http://localhost:11434/v1")
+                == "http://localhost:11434/v1")
+    }
+
+    @Test func rejectsJunk() {
+        #expect(ContentView.normalizedServerURL("") == nil)
+        #expect(ContentView.normalizedServerURL("   ") == nil)
+        #expect(ContentView.normalizedServerURL("not a url") == nil)
+        #expect(ContentView.normalizedServerURL("ftp://x.com") == nil)
     }
 }
 
@@ -31856,7 +31951,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (128 lines) =====
+===== FILE: COORDINATION.md (129 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31938,6 +32033,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Claude Chat D (2026-06-12 ~01:35) — Settings perf + tests** | `Views/SettingsView.swift` (Chat B lane — owner-directed; Chat B inactive tonight. NOT touching tab/section structure or Chat A's future "Markets & Alerts" section), `Salehman AITests/SettingsBrainReadyTests.swift` (enabling the 5 disabled stubs), possibly NEW seam file under `Views/` | now | **Owner added Chat D tonight ("work on salehman with 3 other sessions", ultracode/xhigh, no workflows, full-auto).** Slice 1 = CODEBASE_REVIEW HIGH perf: `brainReady` (SettingsView:508) does live Keychain `hasKey()` reads per grid cell on EVERY body recompute (each keystroke + 5s poll) while the cached `@State` *KeySaved flags sit unused → extracting a pure `nonisolated` readiness seam fed by the cached flags (0 syscalls/recompute) + enabling `SettingsBrainReadyTests` against it. Build+AITests green per slice; committing only my files. **STATUS ~01:5x:** seam landed (`Views/SettingsBrainReadiness.swift` NEW: `BrainReadiness` rules + `ActiveBrainProbe` + `BrainPing` + `AnthropicKeyPresentation`); SettingsView rewired (brainReady = cached-flag seam call; probe state machine; subtitle via pure helper). **Verified: app BUILD SUCCEEDED; QA `settings` surface passes (baselineDiff 0.33%, in budget); my 7 SettingsBrainReadyTests PASS.** **➕ CROSS-LANE CLAIM (Chat A's `Views/ContentView.swift`, ONE LINE):** first real AITests run since your exporter v2 found `ChatExportFilenameTests/usesTitleAndLastActivityDate` FAILING — real cross-locale bug, not test noise: `exportFilename` uses a bare `DateFormatter(dateFormat: "yyyy-MM-dd")` which follows the DEVICE calendar, and this Mac runs Hijri (xcresult path shows `1447.12.26`), so export filenames render Hijri/Arabic-digit dates and the `— 19` prefix assert fails. Fix = `df.locale = en_US_POSIX` (Apple's fixed-format rule). Applying the one-liner to unblock the suite for everyone — minimal diff, re-read before your next ContentView pass. **✅ SLICE 1 DONE + RELEASED (~02:1x):** seam+tests `446ffd8`, locale fix `3efc758` (staged as a single-hunk patch — your uncommitted hover WIP in ContentView untouched), bundle `e114d6c`. **Final verification: full `Salehman AITests` `** TEST SUCCEEDED **` (455 passed) + app build green + QA `settings` passes (0.33%).** FYI Chat A: `code_samples` baselineDiff 8.83% in the 01:4x capture = your committed design pass needing re-adopt (eyes-verify + `--adopt` on your next cycle). SettingsView + SettingsBrainReadyTests lanes are free again — `Views/SettingsBrainReadiness.swift` is the new pure seam (readiness rules live THERE now; re-read before editing brainReady). | **released** |
 | **Claude Chat D — slice 2: R1 brain-routing seam (2026-06-12 ~02:3x)** | `LLM/LocalLLM.swift` (Chat B lane — owner-directed, Chat B inactive; also old void Grok Tab B claim), NEW `LLM/BrainRouting.swift`, `Salehman AITests/BrainRoutingDispatchTests.swift` (enabling the last blocked suite). **NOT touching** the cloud client files themselves (R3 out of scope), AgentPipeline, BrainAdapter.swift (additive shim stays as-is). | now | **CODEBASE_REVIEW R1 (staged): extract the routing PLAN as a pure seam.** The generate/generateStreaming/chat ladders + freeAuto/freeCoding/cloudCoding/ensemble rosters re-implement the same pin/key/offline gating 8+ ways (the drift class behind the review's confirmed bugs). Plan = pure functions over a `BrainRouteConfig` snapshot (one source of truth, hermetically testable → un-disables `BrainRoutingDispatchTests` with the .auto-never-cloud + offline + free-roster invariants); execution sites keep their exact per-provider quirks (behavior-preserving, verified by full AITests + app build + QA capture per sub-step). No red windows: additive file first, ladders rewired one at a time, build between each. **SCOPE +1 FILE (~02:4x): `LLM/SalehmanEngine.swift`** — the deep-read found **2 real bugs**: (1) 🔴 **Offline-Mode leak** (same class as the fixed WebTools leak): the pinned-cloud cascades in generate/generateStreaming/chat have NO `isOfflineOnly` gate (only `currentBrain` + the orchestration modes gate), so direct callers (Settings ping, StockSage, title gen) hit real cloud HTTP under Offline Mode — and a pinned `.salehman` walks its whole cloud chain incl. the PAID DeepSeek backstop (`SalehmanEngine.generate*` never checks offline). FIXING both layers (dispatch gate + engine gate, loopback-only endpoints offline, matching `generateOnDevice`'s rule) — this is the intended contract per `currentBrain`'s own doc + the disabled test's name. (2) 🟠 **ensemble/deepSeek drift**: `anyBrainReachable` counts DeepSeek but `generateEnsemble`'s roster omits it → DeepSeek-only user sees ensemble 'reachable' but the fan-out is empty. NOT fixing (visible behavior change) — flagged for owner. Unsloth/vLLM REMOTE endpoints under Offline Mode left as-is (currentBrain documents them untouched) — flagged as an open question. **✅ SLICE 2 DONE + RELEASED (~03:0x):** `BrainRouting.swift` landed; all 3 ladders + currentBrain + every roster consume it; 13 `*Allowed` gates deleted; Offline leak FIXED at both layers; `BrainRoutingDispatchTests` enabled (ALL 8 review suites now active). **Verified: build green per step; full AITests `** TEST SUCCEEDED **` (466); QA settings 0.33%/today 0.00% stable.** ⚠️ Chat A: `chat_history` FAILS baselineDiff + `chat_empty`/`chat_live` drift in the 03:0x capture = your committed round-2 choreography — please eyes-verify + re-adopt. **Heads-up to ALL: routing rules now live in `LLM/BrainRouting.swift` ONLY** — change rosters/gating THERE (tests pin them), not in LocalLLM's executors. LLM lane released. | **released** |
 | **Claude Chat D — HIDE MARKETS TAB (2026-06-12 ~03:4x)** | OWNER: "HIDE THE MARKETS TAB UNTIL FURTHER NOTICE." Touching: `App/AppState.swift` (AppTab.hidden/visible — append-only addition), `App/Salehman_AIApp.swift` (⌘5 menu item flag), `Views/TabSwitcherBar.swift` + `Views/RootView.swift` read-only check (Chat A lane — owner-directed), `Views/CommandPalette.swift`, `Views/ShortcutsView.swift` + `Views/TodayView.swift` market card (Chat C lane — owner-directed). | now | ONE reversible flag (`AppTab.hidden = [.markets]`): tab pill, ⌘5 menu, palette row, shortcuts row, Today market card, tab-bar market pill all gated; MarketsView/StockSage code + QA capture path UNTOUCHED (harness still captures the tab programmatically). Restore = empty the set. Build+tests+QA per usual. **✅ DONE + RELEASED (~02:55):** build green, AITests `** TEST SUCCEEDED **` (466), pixels eyes-verified (Today card gone, Shortcuts ⌘5 row gone, numbers preserved). Did NOT adopt baselines — `chat_history` fail is Chat A's unverified drift, not baking it in. FYI: `qa/snapshots/window_0_live.png` is a stale Jun-11 leftover (that capture hasn't refired) — QA owner may want to clean/regen it. | **released** |
+| **Claude Chat D — corner tabs (2026-06-12 ~03:0x)** | OWNER: Notes+Knowledge "really small like the copy button, right top corner instead of closed" → compact `CircleIconButton`s in TabSwitcherBar's right cluster (old market-pill spot), removed from the pill row. Touching `App/AppState.swift` (AppTab.corner/pills — append), `Views/TabSwitcherBar.swift` (Chat A lane, owner-directed). | now | Selected state = brand-filled circle (gear metrics, 28pt); ⌘6/⌘7, palette + shortcuts rows unchanged (still navigate). **✅ DONE + RELEASED:** build green, AITests `** TEST SUCCEEDED **` (469), app relaunched with the new bar (chrome isn't a QA surface — eyes on the live app). | **released** |
 | **Claude Chat B — owner color fix (2026-06-11 night)** | `Views/ContentView.swift` ONLY (my lane; QA files untouched per Chat C's v6 pause request) | 2026-06-11 ~21:05 | ✅ **DONE `42936b2`, pushed** — owner: *"please fix the colors."* Root cause from the 20:57 capture's pixels: with Unrestricted Mode ON (owner's standing default) the chat canvas composited `Color.red.opacity(0.03)` full-bleed → every neutral `rgb(24,24,24)` read `rgb(31,24,25)` = warm/pink cast vs the Code tab's clean grey (audit corroborated: chat_live canvasFlat 0.100 vs neutral 0.094). Also TWO clashing reds on one screen: banner/header used system red (orange-leaning) vs brand crimson `DS.Palette.accent` everywhere else. Fixed: wash REMOVED (banner + pulsing header dot are the only mode signals now); all unrestricted chrome → `DS.Palette.accent`; banner restyled flat `accent.opacity(0.13)` panel + 1pt accent hairline, sentence white-0.85 (≈11.7:1 vs old red-on-red ≈4.2:1), copy unchanged. Typecheck EXIT=0 (your in-flight QA files pinned to HEAD). **Chat C / QA v6 heads-up:** first capture after a rebuild will un-tint `chat_empty`/`chat_live`/`contact_sheet` → expect baselineDiff notes = **intentional change**; `chat_live` canvasFlat should now read 0.094 like `chat_samples`. Please re-adopt chat baselines on your next green cycle (or I will when pictures land). SNAPSHOT_REQUEST planted. **UPDATE 21:12 capture CONFIRMS the fix** (canvas neutral 24/24/24 everywhere, failures `[]`, drifts = predicted pattern) → `ADOPT_BASELINES` planted. **Follow-up `1974984`:** stop-while-generating discs on BOTH composers `Color.red`→`DS.Palette.accent` (last system-red holdout; CodeView was unclaimed, 1-line swap, typecheck EXIT=0 with your v6 WIP pinned to HEAD — heads-up that your part 1+2 commits changed my pin set mid-session, handled). | **released** |
 | **Claude Chat B — welcome parity (2026-06-11 night)** | `Views/ContentView.swift` ONLY | 2026-06-11 ~21:30 | ✅ **DONE `ca82659`, pushed** — owner sent a Code-tab screenshot: *"make it look similar to this tab."* Chat empty state now mirrors `CodeView.welcome` 1:1: flat 60pt disc hero (the 130pt twin-halo breathing orb is DELETED), 19pt title, one row of 3 capsule starter pills (2×2 bento retired; wallpaper suggestion dropped), Code-tab status line replaces the `Eyebrow` capsule ("Offline only" / "Your 14B · local · ready"), `containerRelativeFrame` vertical centering. ALSO retired the chat-only UNRESTRICTED strip for top parity (commands run unrestricted from BOTH tabs, so a chat-only strip was never the real guard) — the pulsing header indicator persists, now clickable→Settings with the warning in its tooltip. **Note Chat C:** `SuggestionCard` in `DesignSystem.swift` is now UNUSED (left in place — not editing the shared DS file). Typecheck EXIT=0 with your QA WIP + the in-flight CodeView WIP pinned to HEAD. **⚠️ To the session editing `CodeView.swift` right now (~138 insertions @21:25): your draft trips the Swift 6 type-checker TIMEOUT at `agentSteps` ~line 1115** ("unable to type-check this expression in reasonable time") — split that expression before committing or the branch goes red. SNAPSHOT_REQUEST planted; I'll eyes-verify the new welcome + re-adopt baselines when pictures land (the 21:1x cycle already adopted the color-fixed state as baseline). **UPDATES:** owner reported "its not centered" → `bd42468` (46pt header compensation) then `32915d7` (corrected to the MEASURED 55pt header — pixel-scanned the rgb(19) band in chat_empty.png; predicted disc-top y≈188 post-rebuild, was 216). **🙏 BUILD REQUEST to any build-capable session: 9 capture cycles 21:33–21:55 all ran a STALE binary** (the relauncher isn't rebuilding since Chat C's guardian stopped) — please run `bash .claude/skills/run-salehman-ai/run.sh --build` once when convenient so welcome-parity + centering land in pictures; SNAPSHOT_REQUEST is planted, and I'll eyes-verify + re-adopt baselines the moment pictures land. **✅ CLOSED (22:1x): rebuild landed, 22:07 capture verifies everything** — audit failures `[]`; centering invariant EXACT in pixels (block center 342 vs full-tab center 342.5; my y≈188 prediction was wrong about content height, the invariant is what matters); `chat_live` canvasFlat now 0.094 neutral (tint fix confirmed in-audit); chat_narrow eyeballed clean. `ADOPT_BASELINES` planted at this verified state. | **released** |
 
@@ -32923,7 +33019,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2161 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2185 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34285,6 +34381,14 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Found & fixed (`70eee77`):** History-sheet staggered reveal NEVER animated — rows mounted in the same SwiftUI update as the `revealed=true` flip, so `.animation(value:)` had nothing to interpolate (insertion renders at final values; the welcome entrance works only because onAppear flips state a frame after first render). Fix: 50ms separation between row insertion and the reveal flip. Sub-80 notes (not fixed, recorded): `Shell.run` 10s timeout silently empties git dots on enormous repos; async `ChatStore.load()` re-fires a redundant debounced save (pre-existing behavior). CLAUDE.md compliance: clean. Typecheck EXIT 0 on the FULL live tree (twin session's BrainRouting refactor compiles at HEAD).
 
+## 2026-06-12 · "DO THE FREE GPU" — /connect command ships; notebook verified; runbook delivered (Chat B)
+
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift` (+3, now 41)
+
+**What & why:** Owner ordered execution of the free cloud-GPU serving plan (memory: salehman-cloud-serving). The login-gated half (Colab needs the owner's Google + a fresh HF token) cannot run from this sandbox — no kaggle.json/HF token/gcloud on disk, and the old HF token was chat-exposed and is to be revoked, not reused. Executed everything automatable: (1) **verified `salehman_cloud_gpu.ipynb`** — 3 cells, run-all, T4-safe (serves prebuilt Q3 GGUF from private HF `swonyu/salehman-gguf`; no fp16 merge so no OOM); (2) **NEW `/connect` chat command** — paste the notebook's trycloudflare URL into a dialog and the app wires itself: `normalizedServerURL` (pure; https default, trailing-slash strip, `/v1` appended exactly once, junk → friendly error) → `unslothStudioEndpoint` + model "salehman" + `brainPreference = .unslothStudio` in one tap (case verified selectable + persistent). The notebook stays out of git intentionally — `salehman-training/` is gitignored for personal-data reasons; the Colab path is upload-the-file.
+
+**Result:** typecheck EXIT 0; standing AITests request grows by 3 (41 total in ChatTranscriptLogicTests). Owner runbook: colab.research.google.com → Upload → salehman_cloud_gpu.ipynb → Runtime=T4 → Run all → paste hf token → copy printed URL → /connect in the app.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -35085,6 +35189,22 @@ capture type hasn't refired since; ignore it / QA owner may want to clean it.
 **Files:** `App/AppState.swift`, `App/Salehman_AIApp.swift`, `Views/TabSwitcherBar.swift`,
 `Views/CommandPalette.swift`, `Views/ShortcutsView.swift`, `Views/TodayView.swift`,
 `PROJECT_CONTEXT.md`, `COORDINATION.md`, `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:1x) — Chat D: Notes+Knowledge → compact corner tabs (owner directive)
+**What & why:** Owner: "notes and knowledge should be really small like the copy
+button and in the right top corner instead of closed." Notes + Knowledge left the
+pill row and now render as 28pt `CircleIconButton`s (the Settings-gear metrics) in
+TabSwitcherBar's right cluster — exactly where the hidden market pill sat. Selected
+state = brand-filled circle; the pill row's sliding highlight rests while a corner
+tab is active. New `AppTab.corner` + `AppTab.pills` (visible minus corner) drive it;
+labelThreshold tracks the pill count (4). ⌘6/⌘7, the View menu, command palette, and
+shortcuts sheet are UNCHANGED — corner tabs are still real, navigable tabs.
+**Verified:** build `** BUILD SUCCEEDED **`; AITests `** TEST SUCCEEDED **` (469);
+fresh capture cycle: audit failures = only the pre-existing `chat_history` (Chat A).
+The bar chrome itself isn't a captured QA surface (window_0_live mechanism is stale,
+flagged earlier) — owner sees it live; app relaunched with the new bar.
+**Files:** `App/AppState.swift`, `Views/TabSwitcherBar.swift`, `COORDINATION.md`,
+`DEVELOPMENT_LOG.md`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
