@@ -104,6 +104,9 @@ enum DS {
         static let coreInnerHighlight = LinearGradient(
             colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)],
             startPoint: .top, endPoint: .bottom)
+        /// Subtle fill for machined card containers — the background layer under
+        /// the coreInnerHighlight stroke. Matches all per-view inline cards.
+        static let cardFill             = Color.white.opacity(0.035)
     }
 
     // MARK: Gradients

@@ -230,7 +230,7 @@ struct AgentsView: View {
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .fill(settings.autonomousMode
                           ? DS.Palette.accent.opacity(0.07)
-                          : Color.white.opacity(0.035))
+                          : DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -351,7 +351,7 @@ struct AgentsView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }

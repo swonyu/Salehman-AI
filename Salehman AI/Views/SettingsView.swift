@@ -426,7 +426,7 @@ struct SettingsView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .fill(Color.white.opacity(0.035))
+                            .fill(DS.Bezel.cardFill)
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                             .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                     }

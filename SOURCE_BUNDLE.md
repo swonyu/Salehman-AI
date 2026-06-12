@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:53 +03 · Swift files: 150 · Swift LOC: 33998_
+_Generated: 2026-06-13 01:56 +03 · Swift files: 150 · Swift LOC: 34001_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (406 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (409 lines) =====
 ```swift
 import SwiftUI
 
@@ -2241,6 +2241,9 @@ enum DS {
         static let coreInnerHighlight = LinearGradient(
             colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)],
             startPoint: .top, endPoint: .bottom)
+        /// Subtle fill for machined card containers — the background layer under
+        /// the coreInnerHighlight stroke. Matches all per-view inline cards.
+        static let cardFill             = Color.white.opacity(0.035)
     }
 
     // MARK: Gradients
@@ -13375,7 +13378,7 @@ struct AboutView: View {
                     .background(
                         ZStack {
                             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                                .fill(Color.white.opacity(0.035))
+                                .fill(DS.Bezel.cardFill)
                             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                         }
@@ -13671,7 +13674,7 @@ struct AgentsView: View {
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .fill(settings.autonomousMode
                           ? DS.Palette.accent.opacity(0.07)
-                          : Color.white.opacity(0.035))
+                          : DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -13792,7 +13795,7 @@ struct AgentsView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }
@@ -21014,7 +21017,7 @@ struct KnowledgeView: View {
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .fill(!answer.isEmpty
                           ? DS.Palette.accent.opacity(0.05)
-                          : Color.white.opacity(0.035))
+                          : DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -21106,7 +21109,7 @@ struct KnowledgeView: View {
                     .background(
                         ZStack {
                             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                                .fill(Color.white.opacity(0.035))
+                                .fill(DS.Bezel.cardFill)
                             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                         }
@@ -22451,7 +22454,7 @@ struct MarketsView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }
@@ -22475,7 +22478,7 @@ struct MarketsView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .fill(Color.white.opacity(0.035))
+                            .fill(DS.Bezel.cardFill)
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                             .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                     }
@@ -22561,7 +22564,7 @@ struct MarketsView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .fill(Color.white.opacity(0.035))
+                            .fill(DS.Bezel.cardFill)
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                             .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                     }
@@ -22601,7 +22604,7 @@ struct MarketsView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(Color.white.opacity(0.035))
+                    .fill(DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -22820,7 +22823,7 @@ struct MarketsView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(Color.white.opacity(hovered ? 0.055 : 0.035))
+                    .fill(hovered ? Color.white.opacity(0.055) : DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -22902,7 +22905,7 @@ struct MarketsView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(Color.white.opacity(0.035))
+                    .fill(DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
@@ -23113,7 +23116,7 @@ struct MemoryView: View {
                             .background(
                                 ZStack {
                                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                                        .fill(Color.white.opacity(0.035))
+                                        .fill(DS.Bezel.cardFill)
                                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                                 }
@@ -24201,7 +24204,7 @@ struct ScratchpadView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }
@@ -24227,7 +24230,7 @@ struct ScratchpadView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }
@@ -24965,7 +24968,7 @@ struct SettingsView: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                            .fill(Color.white.opacity(0.035))
+                            .fill(DS.Bezel.cardFill)
                         RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                             .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                     }
@@ -26759,7 +26762,7 @@ struct ShortcutsView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(Color.white.opacity(0.035))
+                        .fill(DS.Bezel.cardFill)
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
                 }
@@ -36566,7 +36569,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4009 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4018 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39533,6 +39536,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
 
 **Result:** Zero Swift compiler errors. Single source of truth for the machined tile gradient across the whole app.
+
+---
+## 2026-06-13 — Marathon EK: DS.Bezel.cardFill token — replace 15 inline white@0.035 fills
+
+**What:** Added `DS.Bezel.cardFill = Color.white.opacity(0.035)` to the `DS.Bezel` namespace in DesignSystem.swift. Replaced all 15 standalone and ternary occurrences of the inline `Color.white.opacity(0.035)` machined card fill across 9 view files: MarketsView (5+1 ternary), ScratchpadView (2), KnowledgeView (1+1 ternary), AgentsView (1+1 ternary), AboutView, ShortcutsView, MemoryView, SettingsView. BackgroundView's ambient glow circle (different use case) left unchanged. Zero visual change — pure DRY refactor.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Views/MarketsView.swift`, `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`, `Views/MemoryView.swift`, `Views/SettingsView.swift`
+
+**Result:** Zero Swift compiler errors. Single DS token controls the machined card fill level app-wide.
 
 ---
 ## Standing notes / known issues

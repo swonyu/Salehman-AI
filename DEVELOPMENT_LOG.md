@@ -2966,6 +2966,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compiler errors. Single source of truth for the machined tile gradient across the whole app.
 
 ---
+## 2026-06-13 — Marathon EK: DS.Bezel.cardFill token — replace 15 inline white@0.035 fills
+
+**What:** Added `DS.Bezel.cardFill = Color.white.opacity(0.035)` to the `DS.Bezel` namespace in DesignSystem.swift. Replaced all 15 standalone and ternary occurrences of the inline `Color.white.opacity(0.035)` machined card fill across 9 view files: MarketsView (5+1 ternary), ScratchpadView (2), KnowledgeView (1+1 ternary), AgentsView (1+1 ternary), AboutView, ShortcutsView, MemoryView, SettingsView. BackgroundView's ambient glow circle (different use case) left unchanged. Zero visual change — pure DRY refactor.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Views/MarketsView.swift`, `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`, `Views/MemoryView.swift`, `Views/SettingsView.swift`
+
+**Result:** Zero Swift compiler errors. Single DS token controls the machined card fill level app-wide.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
