@@ -1486,6 +1486,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon S: token estimate + longest-reply in /stats; reorderList fixedSize fix
+
+**What changed:**
+- `ContentView.swift` `ChatStats`: added `approxTokens: Int` (`words × 1.3`, rounded) and `longestReplyWords: Int?` (max word count across assistant replies). Updated `blurb` to include `· ~N tok` after word count and `· longest: Nw` when replies exist. The token heuristic gives users a quick context-window pressure reading without any API call.
+- `ScratchpadView.swift` `reorderList`: replaced `.frame(minHeight: 0)` (didn't fix overflow case) with `.fixedSize(horizontal: false, vertical: true)` — forces SwiftUI to query the List's ideal content-fit height, fixing both collapse-to-0 and fill-container bugs on macOS.
+- `ChatComposerLogicTests.swift`: added `ChatStatsTokenTests` (8 tests) covering `approxTokens` arithmetic, rounding, zero-message edge case, `longestReplyWords` nil/max, and blurb format pins for `tok` suffix, `longest: Nw` present/absent.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session confirms compile; 8 new unit tests (total ~53). Sandbox prevents `xcodebuild` in this session — owner to run tests.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

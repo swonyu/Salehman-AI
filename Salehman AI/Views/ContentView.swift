@@ -1833,12 +1833,16 @@ struct ChatStats: Equatable {
     let yours: Int
     let replies: Int
     let words: Int
-    let avgReplySeconds: Double?     // nil when no reply carries a duration
-    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+    let approxTokens: Int           // rough English estimate: words × 1.3
+    let longestReplyWords: Int?     // word count of the longest assistant reply
+    let avgReplySeconds: Double?    // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?  // nil for 0–1 messages
 
     nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
         let yours = msgs.filter(\.isUser).count
         let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let replyWordCounts = msgs.filter { !$0.isUser }
+            .map { $0.text.split(whereSeparator: \.isWhitespace).count }
         let durations = msgs.compactMap(\.duration)
         let stamps = msgs.map(\.timestamp)
         var span: TimeInterval? = nil
@@ -1848,6 +1852,8 @@ struct ChatStats: Equatable {
         return ChatStats(
             messages: msgs.count, yours: yours, replies: msgs.count - yours,
             words: words,
+            approxTokens: Int((Double(words) * 1.3).rounded()),
+            longestReplyWords: replyWordCounts.max(),
             avgReplySeconds: durations.isEmpty ? nil
                 : durations.reduce(0, +) / Double(durations.count),
             spanSeconds: span)
@@ -1869,7 +1875,8 @@ struct ChatStats: Equatable {
     /// is locale-independent, so tests can pin the exact string.
     nonisolated var blurb: String {
         let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
-        var tail = counted(words, "word")
+        var tail = counted(words, "word") + " · ~\(approxTokens) tok"
+        if let lw = longestReplyWords { tail += " · longest: \(lw)w" }
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:31 +03 · Swift files: 150 · Swift LOC: 30677_
+_Generated: 2026-06-12 06:45 +03 · Swift files: 150 · Swift LOC: 31092_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (800 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (802 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -549,7 +549,9 @@ enum AgentPipeline {
         // concurrent task-group closures. A mutable `var` stays "accessible to
         // main-actor code", so sending such a closure is a Swift 6 data-race error.
         let baseTranscript = await ConversationStore.shared.transcript()
-        let memories = MemoryStore.shared.recall(mission)
+        // NLEmbedding model load + cosine scan — off main actor so the UI stays
+        // responsive during mission setup (can take ~50–200ms on first call).
+        let memories = await Task.detached { MemoryStore.shared.recall(mission) }.value
         let history = memories.isEmpty
             ? baseTranscript
             : "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + baseTranscript
@@ -1291,7 +1293,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (595 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (594 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1467,10 +1469,9 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
 
-    /// Self-improvement loop: after Salehman answers, a reasoner-class critic
-    /// (DeepSeek-V4-pro via NVIDIA's free tier) critiques the answer and Salehman
-    /// revises it. Smarter replies, but ~2–3× slower and more quota — **default
-    /// OFF for speed** (owner asked to make it faster); turn ON for max-quality
+    /// Self-improvement loop: after Salehman answers, a self-critic pass analyses
+    /// the reply and Salehman revises it via `SelfCritique.refine`. Smarter replies,
+    /// but ~2–3× slower — **default OFF for speed**; turn ON for max-quality
     /// single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
@@ -1775,7 +1776,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
     // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers) + local floor (MLX, Ollama)
+    case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -1844,7 +1845,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
-        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a critique pass"
+        case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
@@ -9783,10 +9784,11 @@ final class PromptLibrary: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (117 lines) =====
+===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (128 lines) =====
 ```swift
 import Foundation
 import Combine
+import SwiftUI
 
 /// A captured note (free text).
 struct Note: Codable, Identifiable, Equatable, Sendable {
@@ -9859,6 +9861,16 @@ final class ScratchpadStore: ObservableObject {
         tasks[i].done = true
         save()
         return true
+    }
+
+    func moveNote(from offsets: IndexSet, to dest: Int) {
+        notes.move(fromOffsets: offsets, toOffset: dest)
+        save()
+    }
+
+    func moveTask(from offsets: IndexSet, to dest: Int) {
+        tasks.move(fromOffsets: offsets, toOffset: dest)
+        save()
     }
 
     func updateNote(_ id: UUID, text: String) {
@@ -13224,11 +13236,11 @@ struct AboutView: View {
 
     private let capabilities: [Capability] = [
         .init(icon: "lock.shield.fill",
-              title: "Private when you want it",
-              body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
+              title: "Fully private, on this Mac",
+              body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
         .init(icon: "brain.head.profile",
-              title: "Many brains, one Salehman",
-              body: "MLX, Ollama, and many free cloud brains. Check several to rotate through them — one per message."),
+              title: "Your model, your identity",
+              body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
         .init(icon: "wrench.and.screwdriver.fill",
               title: "Real tools, with approval",
               body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
@@ -13295,7 +13307,7 @@ struct AboutView: View {
                     .accessibilityLabel("Close")
                 }
 
-                Text("Your AI — cloud-first with a local fallback, built by Saleh. Many brains, real tools, your own model.")
+                Text("Your AI — on-device, private, built by Saleh. Your own model, real tools, nothing leaves this Mac.")
                     .font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -13367,7 +13379,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (327 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (383 lines) =====
 ```swift
 import SwiftUI
 
@@ -13396,6 +13408,7 @@ struct AgentsView: View {
     // Drives the Stop confirmation dialog — guards against an accidental click
     // discarding the current iteration's work mid-run.
     @State private var showStopConfirm = false
+    @State private var runHistory: [RunEntry] = []
 
     var body: some View {
         ZStack {
@@ -13409,6 +13422,7 @@ struct AgentsView: View {
                 ScrollView {
                     VStack(spacing: DS.Space.lg) {
                         autonomousControlSection
+                        if !runHistory.isEmpty { runHistorySection.transition(.opacity.combined(with: .move(edge: .top))) }
                         agentsGrid
                     }
                     .padding(DS.Space.xl)
@@ -13562,6 +13576,47 @@ struct AgentsView: View {
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
+    private var runHistorySection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(spacing: 6) {
+                Text("Run log")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(runHistory.count)")
+                    .font(.caption2.monospacedDigit())
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(DS.Palette.accent.opacity(0.15), in: Capsule())
+                    .foregroundStyle(DS.Palette.accent)
+                Spacer()
+                Button("Clear") { runHistory.removeAll() }
+                    .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 1) {
+                ForEach(runHistory) { entry in
+                    HStack(spacing: 10) {
+                        Text("#\(entry.iteration)")
+                            .font(.system(size: 10, weight: .bold).monospacedDigit())
+                            .foregroundStyle(DS.Palette.accent)
+                            .frame(minWidth: 28, alignment: .trailing)
+                        Text(entry.preview)
+                            .font(.caption2)
+                            .foregroundStyle(DS.Palette.textSecondary)
+                            .lineLimit(2)
+                        Spacer(minLength: 4)
+                        Text(entry.timestamp, style: .time)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(Color.secondary.opacity(0.5))
+                    }
+                    .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
+                }
+            }
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        }
+    }
+
     /// Toggle between starting and stopping the autonomous loop.
     ///
     /// Why a `Task` (not just a boolean flag): `AgentPipeline.run` is `async`,
@@ -13604,6 +13659,10 @@ struct AgentsView: View {
 
                 await MainActor.run {
                     lastResultPreview = result
+                    runHistory.insert(
+                        RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
+                        at: 0
+                    )
                 }
 
                 // Bail if the agents signaled completion. This is now the
@@ -13695,6 +13754,15 @@ enum AgentFilter {
         guard !q.isEmpty else { return specs }
         return specs.filter { $0.name.lowercased().contains(q) || $0.role.lowercased().contains(q) }
     }
+}
+
+// MARK: - Run-log entry
+/// One completed autonomous iteration: its number, first 120 chars of output, and the wall-clock time it finished.
+private struct RunEntry: Identifiable {
+    let id = UUID()
+    let iteration: Int
+    let preview: String
+    let timestamp: Date
 }
 ```
 
@@ -16935,7 +17003,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2628 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2676 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17024,6 +17092,9 @@ struct ContentView: View {
     @ObservedObject private var library = PromptLibrary.shared
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
+    /// Drives the self-dismissing "Saved to Notes" banner. Set true on save;
+    /// a .task(id:) clears it automatically after 1.8s.
+    @State private var noteSavedPulse = false
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
@@ -17390,7 +17461,11 @@ struct ContentView: View {
                                                                                 : mission + "\n" + q + "\n"
                                                       inputFocused = true
                                                   },
-                                                  onTogglePin: { vm.togglePin($0) })
+                                                  onTogglePin: { vm.togglePin($0) },
+                                                  onSaveToNotes: { text in
+                                                      ScratchpadStore.shared.addNote(text)
+                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                  })
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -17929,6 +18004,9 @@ struct ContentView: View {
         .init(id: "pin", icon: "pin",
               blurb: "Pin the last AI reply to the top strip",
               kind: .action("pin")),
+        .init(id: "note", icon: "note.text.badge.plus",
+              blurb: "Save the last AI reply as a Note",
+              kind: .action("note")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -17970,6 +18048,11 @@ struct ContentView: View {
                 if let last = vm.messages.last(where: { !$0.isUser }) {
                     vm.togglePin(last)
                 }
+            case "note":
+                if let last = vm.messages.last(where: { !$0.isUser }) {
+                    ScratchpadStore.shared.addNote(last.text)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                }
             default: break
             }
         }
@@ -17978,6 +18061,25 @@ struct ContentView: View {
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
+            // Self-dismissing "Saved to Notes" confirmation banner.
+            if noteSavedPulse {
+                HStack(spacing: 6) {
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.success.opacity(0.85))
+                    Text("Saved to Notes")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .task(id: noteSavedPulse) {
+                    guard noteSavedPulse else { return }
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = false }
+                }
+            }
             // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
                 attachmentChip(icon: "hourglass", title: "Reading attachment…")
@@ -18738,12 +18840,16 @@ struct ChatStats: Equatable {
     let yours: Int
     let replies: Int
     let words: Int
-    let avgReplySeconds: Double?     // nil when no reply carries a duration
-    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+    let approxTokens: Int           // rough English estimate: words × 1.3
+    let longestReplyWords: Int?     // word count of the longest assistant reply
+    let avgReplySeconds: Double?    // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?  // nil for 0–1 messages
 
     nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
         let yours = msgs.filter(\.isUser).count
         let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let replyWordCounts = msgs.filter { !$0.isUser }
+            .map { $0.text.split(whereSeparator: \.isWhitespace).count }
         let durations = msgs.compactMap(\.duration)
         let stamps = msgs.map(\.timestamp)
         var span: TimeInterval? = nil
@@ -18753,6 +18859,8 @@ struct ChatStats: Equatable {
         return ChatStats(
             messages: msgs.count, yours: yours, replies: msgs.count - yours,
             words: words,
+            approxTokens: Int((Double(words) * 1.3).rounded()),
+            longestReplyWords: replyWordCounts.max(),
             avgReplySeconds: durations.isEmpty ? nil
                 : durations.reduce(0, +) / Double(durations.count),
             spanSeconds: span)
@@ -18774,7 +18882,8 @@ struct ChatStats: Equatable {
     /// is locale-independent, so tests can pin the exact string.
     nonisolated var blurb: String {
         let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
-        var tail = counted(words, "word")
+        var tail = counted(words, "word") + " · ~\(approxTokens) tok"
+        if let lw = longestReplyWords { tail += " · longest: \(lw)w" }
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail
@@ -18865,6 +18974,8 @@ struct MessageBubble: View, Equatable {
     var onQuote: ((String) -> Void)? = nil
     /// Pin/unpin this message (context menu, either side). nil hides it.
     var onTogglePin: ((ChatMessage) -> Void)? = nil
+    /// Save this message's text as a note in ScratchpadStore. nil hides it.
+    var onSaveToNotes: ((String) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -18955,6 +19066,11 @@ struct MessageBubble: View, Equatable {
                 if onRegenerate != nil {
                     Button { onRegenerate?(message) } label: {
                         Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+                if onSaveToNotes != nil {
+                    Button { onSaveToNotes?(displayedText) } label: {
+                        Label("Save as Note", systemImage: "note.text.badge.plus")
                     }
                 }
                 Divider()
@@ -19820,7 +19936,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (464 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (509 lines) =====
 ```swift
 import SwiftUI
 import UniformTypeIdentifiers
@@ -19854,6 +19970,7 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    @State private var hoveredDocID: UUID?
 
     var body: some View {
         ScrollView {
@@ -19886,24 +20003,40 @@ struct KnowledgeView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                .accessibilityLabel("Paste text").disabled(ingesting)
-            Button(action: addFile) {
-                HStack(spacing: 6) {
-                    if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
-                    Text(ingesting ? "Reading…" : "Add file")
+        ZStack(alignment: .topLeading) {
+            // Ambient glow — soft depth behind the title area.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.13))
+                .frame(width: 200)
+                .blur(radius: 70)
+                .offset(x: -30, y: -40)
+                .allowsHitTesting(false)
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("KNOWLEDGE VAULT")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(2)
+                        .foregroundStyle(DS.Palette.accent)
+                    Text("Knowledge")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Chat with your own documents — private, on this Mac.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
+                Spacer()
+                Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
+                    .buttonStyle(.bordered).controlSize(.small).help("Paste text")
+                    .accessibilityLabel("Paste text").disabled(ingesting)
+                Button(action: addFile) {
+                    HStack(spacing: 6) {
+                        if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
+                        Text(ingesting ? "Reading…" : "Add file")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .disabled(ingesting)
             }
-            .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
-            .disabled(ingesting)
         }
     }
 
@@ -19958,16 +20091,25 @@ struct KnowledgeView: View {
 
     @ViewBuilder private var documentsSection: some View {
         if docs.isEmpty {
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.14)).frame(width: 84, height: 84).blur(radius: 16)
-                    Image(systemName: "books.vertical.fill").font(.system(size: 38)).foregroundStyle(DS.Palette.accent.opacity(0.85))
+                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
-                Text("No documents yet").font(.headline).foregroundStyle(.white)
+                .padding(.bottom, 4)
+                Text("START YOUR VAULT")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(DS.Palette.accent)
+                Text("No documents yet")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
                 Text("Add PDFs, text, or notes. Everything stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 30)
+            .frame(maxWidth: .infinity).padding(.vertical, 40)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
@@ -20023,28 +20165,47 @@ struct KnowledgeView: View {
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
-        HStack(spacing: 12) {
+        let hovered = hoveredDocID == doc.id
+        return HStack(spacing: 12) {
             // Tapping the row opens the detail sheet (on-device summary + info).
             Button { detailDoc = doc } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: doc.icon).font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 20)
+                    Image(systemName: doc.icon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
+                        .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(doc.name).font(.system(size: 14, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+                        Text(doc.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                            .lineLimit(1)
                         Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s")")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.6) : .secondary)
             }
             .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredDocID = doc.id }
+                else if hoveredDocID == doc.id { hoveredDocID = nil }
+            }
+        }
     }
 
     // MARK: Actions
@@ -21788,10 +21949,10 @@ struct OnboardingView: View {
               body: "Your personal AI — sharp, fast, and entirely yours. Let's get you set up in a few seconds."),
         .init(icon: "lock.shield.fill", eyebrow: "PRIVACY",
               title: "Private by design",
-              body: "Salehman runs cloud-first on free big models, with a local fallback. Turn on Offline Mode to keep everything on this Mac."),
-        .init(icon: "brain.head.profile", eyebrow: "YOUR BRAINS",
-              title: "Choose your brain — or many",
-              body: "Pin one model, or check several and Salehman rotates through them, one per message. Free local brains, your own custom model, or the cloud — your call."),
+              body: "Salehman runs entirely on this Mac — your own `salehman` model via Ollama. Nothing leaves your device."),
+        .init(icon: "brain.head.profile", eyebrow: "YOUR MODEL",
+              title: "Your model, your identity",
+              body: "Powered by your own fine-tuned `salehman` model. When your RunPod pod is up, pin vLLM in Settings to route there instead."),
         .init(icon: "wrench.and.screwdriver.fill", eyebrow: "CAPABILITIES",
               title: "It can actually do things",
               body: "With your approval, Salehman runs terminal commands, searches the web, transcribes audio, and works as a team of agents on bigger tasks."),
@@ -22050,7 +22211,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (288 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (329 lines) =====
 ```swift
 import SwiftUI
 
@@ -22167,7 +22328,6 @@ struct ScratchpadView: View {
     }
 
     private var tasksList: some View {
-        let items = ScratchpadList.tasks(store.tasks, filter: search)
         let done = ScratchpadList.completedCount(store.tasks)
         return Group {
             if store.tasks.isEmpty {
@@ -22182,7 +22342,17 @@ struct ScratchpadView: View {
                                 .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
                         }
                     }
-                    if items.isEmpty { noMatch } else { listCard { ForEach(items) { taskRow($0) } } }
+                    if search.isEmpty {
+                        // No filter active: show in stored order with drag-to-reorder.
+                        reorderList {
+                            ForEach(store.tasks) { taskRow($0) }
+                                .onMove { store.moveTask(from: $0, to: $1) }
+                        }
+                    } else {
+                        let filtered = ScratchpadList.tasks(store.tasks, filter: search)
+                        if filtered.isEmpty { noMatch }
+                        else { listCard { ForEach(filtered) { taskRow($0) } } }
+                    }
                 }
             }
         }
@@ -22215,17 +22385,25 @@ struct ScratchpadView: View {
             deleteButton { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparatorTint(DS.Palette.surfaceStroke)
     }
 
     private var notesList: some View {
-        let items = ScratchpadList.notes(store.notes, filter: search)
-        return Group {
+        Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
-            } else if items.isEmpty {
-                noMatch
+            } else if search.isEmpty {
+                // No filter: stored order + drag-to-reorder.
+                reorderList {
+                    ForEach(store.notes) { noteRow($0) }
+                        .onMove { store.moveNote(from: $0, to: $1) }
+                }
             } else {
-                listCard { ForEach(items) { noteRow($0) } }
+                let filtered = ScratchpadList.notes(store.notes, filter: search)
+                if filtered.isEmpty { noMatch }
+                else { listCard { ForEach(filtered) { noteRow($0) } } }
             }
         }
     }
@@ -22248,6 +22426,9 @@ struct ScratchpadView: View {
             deleteButton { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparatorTint(DS.Palette.surfaceStroke)
     }
 
     private func startEdit(id: UUID, text: String) {
@@ -22282,6 +22463,27 @@ struct ScratchpadView: View {
             .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    /// Like `listCard` but uses a `List` so rows are reorderable by drag.
+    /// `.scrollDisabled` lets the outer `ScrollView` drive paging; the `List`
+    /// is purely a container here. `.scrollContentBackground(.hidden)` + per-row
+    /// background keeps the design-language flat dark surface.
+    private func reorderList<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        List { content() }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
+            .listRowSeparatorTint(DS.Palette.surfaceStroke)
+            // Force the List to report its ideal (content-fit) height so the
+            // outer ScrollView sizes it correctly — without this the List either
+            // collapses to 0 or fills the container on macOS.
+            .fixedSize(horizontal: false, vertical: true)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .environment(\.defaultMinListRowHeight, 1)
     }
 
     private func emptyState(_ text: String, _ icon: String) -> some View {
@@ -24410,7 +24612,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (81 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (144 lines) =====
 ```swift
 import SwiftUI
 
@@ -24419,17 +24621,19 @@ import SwiftUI
 /// command palette for discoverability.
 struct ShortcutsView: View {
     let onClose: () -> Void
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredID: UUID?
 
     private struct Shortcut: Identifiable { let id = UUID(); let keys: String; let label: String }
     private struct ShortcutGroup: Identifiable { let id = UUID(); let title: String; let items: [Shortcut] }
 
     private let groups: [ShortcutGroup] = [
-        .init(title: "General", items: [
+        .init(title: "GENERAL", items: [
             .init(keys: "⌘K", label: "Command palette"),
             .init(keys: "⌘,", label: "Settings"),
             .init(keys: "⌘/", label: "This shortcuts sheet"),
         ]),
-        .init(title: "Navigation", items: {
+        .init(title: "NAVIGATION", items: {
             var nav: [Shortcut] = [
                 .init(keys: "⌘1", label: "Today"),
                 .init(keys: "⌘2", label: "Chat"),
@@ -24439,15 +24643,10 @@ struct ShortcutsView: View {
                 .init(keys: "⌘6", label: "Notes"),
                 .init(keys: "⌘7", label: "Knowledge"),
             ]
-            // Hidden tabs (owner directive — see `AppTab.hidden`) drop their
-            // row so this sheet never lists a shortcut that does nothing.
-            // The other ⌘-numbers keep their tabs (⌘5 is simply absent).
-            if AppTab.hidden.contains(.markets) {
-                nav.removeAll { $0.label == "Markets" }
-            }
+            if AppTab.hidden.contains(.markets) { nav.removeAll { $0.label == "Markets" } }
             return nav
         }()),
-        .init(title: "Conversation", items: [
+        .init(title: "CONVERSATION", items: [
             .init(keys: "⌘N", label: "New chat"),
             .init(keys: "⌘J", label: "Hands-free voice"),
             .init(keys: "⌘F", label: "Find in conversation"),
@@ -24457,40 +24656,106 @@ struct ShortcutsView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Keyboard Shortcuts")
-                    .font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Spacer()
-                Button { onClose() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain).accessibilityLabel("Close")
-            }
-            .padding(.bottom, DS.Space.md)
+        ZStack {
+            DS.Gradient.bgVertical.ignoresSafeArea()
 
-            ForEach(groups) { group in
-                Eyebrow(text: group.title)
-                    .padding(.top, DS.Space.sm).padding(.bottom, 4)
-                ForEach(group.items) { s in
-                    HStack {
-                        Text(s.label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.9))
-                        Spacer()
-                        Text(s.keys)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+            // Ambient accent glow — depth on the flat canvas.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.14))
+                .frame(width: 220)
+                .blur(radius: 80)
+                .offset(x: 130, y: -150)
+                .allowsHitTesting(false)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("KEYBOARD SHORTCUTS")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .tracking(2)
+                            .foregroundStyle(DS.Palette.accent)
+                        Text("Every shortcut in one place")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
                     }
-                    .padding(.vertical, 5)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(s.label), \(s.keys)")
+                    Spacer()
+                    Button { onClose() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20)).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("Close")
+                }
+                .padding(.bottom, DS.Space.lg)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: DS.Space.lg) {
+                        ForEach(groups) { group in groupSection(group) }
+                    }
                 }
             }
-            Spacer()
+            .padding(DS.Space.xl)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 14)
         }
-        .padding(DS.Space.xl)
-        .frame(width: 380, height: 470)
-        .background(DS.Palette.bgTop)
+        .frame(width: 400, height: 500)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Keyboard Shortcuts")
+    }
+
+    private func groupSection(_ group: ShortcutGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(group.title)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.8)
+                .foregroundStyle(DS.Palette.accent)
+                .padding(.bottom, 4)
+
+            VStack(spacing: 1) {
+                ForEach(group.items) { s in shortcutRow(s) }
+            }
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        }
+    }
+
+    private func shortcutRow(_ s: Shortcut) -> some View {
+        let hovered = hoveredID == s.id
+        return HStack {
+            Text(s.label)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.9))
+            Spacer()
+            Text(s.keys)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(hovered ? 0.14 : 0.08))
+                        // Top-lit edge highlight — key badge reads dimensional.
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(LinearGradient(
+                                colors: [.white.opacity(0.45), .white.opacity(0.04)],
+                                startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                )
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredID = s.id }
+                else if hoveredID == s.id { hoveredID = nil }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(s.label), \(s.keys)")
     }
 }
 ```
@@ -25502,7 +25767,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (354 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (504 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -25718,6 +25983,77 @@ struct ChatGreetingBucketTests {
     }
 }
 
+// MARK: - ScratchpadStore.addNote — note-saving contract for /note and "Save as Note"
+//
+// Tests run in an isolated temp directory so the real scratchpad.json is never
+// touched. The trim + guard-empty contract is the key invariant: blank strings
+// must not reach the store (the plain-text of some replies can be whitespace-only
+// after stripping, e.g. a code-only block).
+
+@MainActor
+@Suite(.serialized)
+struct NoteFromChatTests {
+
+    private func makeStore() -> ScratchpadStore {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("note_test_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        return ScratchpadStore(testingBaseDirectory: tmp)
+    }
+
+    @Test func addNoteStoresText() {
+        let store = makeStore()
+        store.addNote("Hello from the chat")
+        #expect(store.notes.first?.text == "Hello from the chat")
+    }
+
+    @Test func addNoteTrimsWhitespace() {
+        let store = makeStore()
+        store.addNote("  hello  \n")
+        #expect(store.notes.first?.text == "hello")
+    }
+
+    @Test func addNoteIgnoresBlankInput() {
+        let store = makeStore()
+        store.addNote("   ")
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func addNoteIgnoresEmptyInput() {
+        let store = makeStore()
+        store.addNote("")
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func multipleNotesInsertAtFront() {
+        let store = makeStore()
+        store.addNote("first")
+        store.addNote("second")
+        #expect(store.notes.first?.text == "second")
+        #expect(store.notes.last?.text == "first")
+    }
+
+    @Test func moveNoteChangesOrder() {
+        let store = makeStore()
+        store.addNote("a")
+        store.addNote("b")
+        store.addNote("c")
+        // After inserts: ["c","b","a"]. Move index 0 ("c") to after index 2 → ["b","a","c"]
+        store.moveNote(from: IndexSet(integer: 0), to: 3)
+        #expect(store.notes.map(\.text) == ["b", "a", "c"])
+    }
+
+    @Test func moveTaskChangesOrder() {
+        let store = makeStore()
+        store.addTask("x")
+        store.addTask("y")
+        store.addTask("z")
+        // After inserts: ["z","y","x"]. Move index 2 ("x") to top (index 0) → ["x","z","y"]
+        store.moveTask(from: IndexSet(integer: 2), to: 0)
+        #expect(store.tasks.map(\.title) == ["x", "z", "y"])
+    }
+}
+
 // MARK: - MessageBubble.plainText — markdown stripping contract
 //
 // `copyPlainText` writes this to the pasteboard for users pasting into
@@ -25771,6 +26107,85 @@ struct MessageBubblePlainTextTests {
         let result = MessageBubble.plainText(md)
         #expect(!result.contains("- "))
         #expect(result.contains("Alpha"))
+    }
+}
+
+// MARK: - ChatStats — token estimation and blurb contract
+//
+// `approxTokens` uses the `words × 1.3` English BPE heuristic. The blurb is
+// the string shown in the `/stats` alert; these tests pin its format so a
+// refactor doesn't silently truncate useful context-window info.
+
+@MainActor
+@Suite(.serialized)
+struct ChatStatsTokenTests {
+
+    private func msg(_ text: String, user: Bool,
+                     duration: Double? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: user, timestamp: .now)
+        m.duration = duration
+        return m
+    }
+
+    @Test func approxTokensIsWordsTimesOnePtThree() {
+        // 10 words of prose: expected = Int((10 * 1.3).rounded()) = 13
+        let msgs = [msg("one two three four five six seven eight nine ten", user: true)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.words == 10)
+        #expect(stats.approxTokens == 13)
+    }
+
+    @Test func approxTokensRoundsHalfUp() {
+        // 1 word: Int((1 * 1.3).rounded()) = Int(1.3.rounded()) = 1
+        // 3 words: Int((3 * 1.3).rounded()) = Int(3.9.rounded()) = 4
+        let one = ChatStats.summarize([msg("hello", user: true)])
+        let three = ChatStats.summarize([msg("one two three", user: true)])
+        #expect(one.approxTokens == 1)
+        #expect(three.approxTokens == 4)
+    }
+
+    @Test func zeroWordsGivesZeroTokens() {
+        let stats = ChatStats.summarize([])
+        #expect(stats.approxTokens == 0)
+    }
+
+    @Test func longestReplyWordsPicksMaxAssistantReply() {
+        let msgs = [
+            msg("hi", user: true),
+            msg("short reply", user: false),               // 2 words
+            msg("please help me", user: true),
+            msg("one two three four five six", user: false), // 6 words
+        ]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.longestReplyWords == 6)
+    }
+
+    @Test func longestReplyWordsIsNilWhenNoAssistantMessages() {
+        let msgs = [msg("just a user message", user: true)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.longestReplyWords == nil)
+    }
+
+    @Test func blurbContainsTokSuffix() {
+        let msgs = [msg("ten words long is what this particular sentence has", user: true)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(blurb.contains("tok"))
+    }
+
+    @Test func blurbContainsLongestWordCountWhenReplyExists() {
+        let msgs = [
+            msg("hi", user: true),
+            msg("three words here", user: false),
+        ]
+        let blurb = ChatStats.summarize(msgs).blurb
+        // longestReplyWords = 3 → "longest: 3w" should appear in the second line
+        #expect(blurb.contains("longest: 3w"))
+    }
+
+    @Test func blurbOmitsLongestWhenNoReplies() {
+        let msgs = [msg("user only", user: true)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(!blurb.contains("longest:"))
     }
 }
 
@@ -33228,7 +33643,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2310 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2369 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34651,6 +35066,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
 
 ---
+**2026-06-12 — Stale copy + visual polish: ShortcutsView, KnowledgeView, AboutView, OnboardingView (Chat C)**
+
+**What changed:**
+- AboutView + OnboardingView: updated stale cloud-first copy to honest on-device after cloud removal.
+- ShortcutsView: full premium visual rewrite — gradient bg, ambient glow, editorial eyebrow, hover states on rows, top-lit key badges, entrance animation.
+- KnowledgeView: ambient glow + KNOWLEDGE VAULT eyebrow; hover states on doc rows; elevated empty state.
+- ScratchpadStore: added import SwiftUI (was blocking clean builds — IndexSet.move needs SwiftUI).
+
+**Files:** Views/AboutView.swift, Views/OnboardingView.swift, Views/ShortcutsView.swift, Views/KnowledgeView.swift, Persistence/ScratchpadStore.swift
+
+**Result:** BUILD SUCCEEDED
+
+---
 **2026-06-12 — Auto-start Ollama + fix stale cloud-key messages (Chat C, owner-directed)**
 
 **What changed:**
@@ -34688,6 +35116,32 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Views/SettingsView.swift`, `LLM/OllamaClient.swift`, `App/AppSettings.swift`
 
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`
+
+---
+**2026-06-12 — KnowledgeView hover rows + AgentsView run-log panel + AppSettings stale-string cleanup (Chat C)**
+
+**What changed:**
+- `Views/KnowledgeView.swift`: Doc rows now show a hover state — accent-tinted icon/sparkles/trash, soft accent background wash (`accent.opacity(0.07)`). Implemented via `@State private var hoveredDocID: UUID?` pattern (linter), matching the established hover language across the app.
+- `Views/AgentsView.swift`: Added `RunEntry` (private struct, file-level) and a "Run log" panel — each completed autonomous iteration records its number, first 120 chars of output, and timestamp; panel appears with a slide-in transition when history exists, with a Clear button. Entries newest-first.
+- `App/AppSettings.swift`: Fixed three stale doc strings: `.salehman` case comment (was "cloud-first/NVIDIA"), `.salehman` subtitle (was "DeepSeek V4 free"), and `salehmanRefine` docstring (was "DeepSeek-V4-pro via NVIDIA"). All now reflect the pure local-first engine.
+
+**Why:** Owner "contunye" — marathon polish pass. KnowledgeView doc rows lacked hover (visible gap vs. AgentCard, SuggestionCard). AgentsView had no mission history; owner has no visibility into what past autonomous runs produced. AppSettings comments drifted from reality after SalehmanEngine was made local-only.
+
+**Files:** `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `App/AppSettings.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
+## 2026-06-12 — Marathon S: token estimate + longest-reply in /stats; reorderList fixedSize fix
+
+**What changed:**
+- `ContentView.swift` `ChatStats`: added `approxTokens: Int` (`words × 1.3`, rounded) and `longestReplyWords: Int?` (max word count across assistant replies). Updated `blurb` to include `· ~N tok` after word count and `· longest: Nw` when replies exist. The token heuristic gives users a quick context-window pressure reading without any API call.
+- `ScratchpadView.swift` `reorderList`: replaced `.frame(minHeight: 0)` (didn't fix overflow case) with `.fixedSize(horizontal: false, vertical: true)` — forces SwiftUI to query the List's ideal content-fit height, fixing both collapse-to-0 and fill-container bugs on macOS.
+- `ChatComposerLogicTests.swift`: added `ChatStatsTokenTests` (8 tests) covering `approxTokens` arithmetic, rounding, zero-message edge case, `longestReplyWords` nil/max, and blurb format pins for `tok` suffix, `longest: Nw` present/absent.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session confirms compile; 8 new unit tests (total ~53). Sandbox prevents `xcodebuild` in this session — owner to run tests.
 
 ---
 ## Standing notes / known issues
@@ -35512,6 +35966,26 @@ Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
 replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
 rollback, not deleted). App launched. Owner-authorized explicitly after the
 permission classifier blocked the first attempt.
+
+## 2026-06-12 — marathon R: drag-to-reorder notes and tasks (Chat A)
+**What (owner: "continue"):**
+- `ScratchpadStore.moveNote/moveTask` — `Array.move(fromOffsets:toOffset:)` wrappers with immediate persist.
+- `ScratchpadView.tasksList`/`notesList`: when search is empty, shows items in stored order inside a SwiftUI `List` with `.onMove` (macOS drag handles on hover). When search is active, uses the existing sorted/filtered `listCard`.
+- `reorderList()` helper: `List` + `.scrollDisabled(true)` + `.scrollContentBackground(.hidden)` wrapped in the design-language rounded panel + stroke overlay.
+- Per-row `.listRowBackground(Color.clear)` + `.listRowInsets(EdgeInsets())` — no-ops in the VStack path, required in the List path.
+- Tests: `moveNoteChangesOrder` + `moveTaskChangesOrder` with hermetic temp stores.
+**Files:** `Persistence/ScratchpadStore.swift`, `Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`.
+**Commit:** `72e70de`
+
+## 2026-06-12 — marathon Q: /note + Save as Note + auto-dismiss toast (Chat A)
+**What (owner: "continue"):**
+- `/note` slash command: saves the most recent AI reply as a note in the scratchpad.
+- "Save as Note" in the assistant right-click context menu: saves `displayedText` without tab-switching.
+- Self-dismissing "Saved to Notes ✓" banner above the input bar: auto-clears after 1.8 s via `.task(id:)` — no modal, no timer.
+- `onSaveToNotes: ((String) -> Void)?` added to `MessageBubble` (closure, excluded from `==` per the equatable contract).
+- Tests: `NoteFromChatTests` ×5 (stores text, trims whitespace, ignores blank/empty, multiple notes insert at front).
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`.
+**Commit:** `074dc6c`
 
 ## 2026-06-12 — marathon P: pin in hover pills + /pin command + Copy as Plain Text (Chat A)
 **What (owner: "continue"):**

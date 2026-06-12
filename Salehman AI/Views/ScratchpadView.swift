@@ -260,8 +260,10 @@ struct ScratchpadView: View {
             .scrollContentBackground(.hidden)
             .scrollDisabled(true)
             .listRowSeparatorTint(DS.Palette.surfaceStroke)
-            // Intrinsic height: 56pt × N rows (matches the 10+10pt padding in each row).
-            .frame(minHeight: 0)
+            // Force the List to report its ideal (content-fit) height so the
+            // outer ScrollView sizes it correctly — without this the List either
+            // collapses to 0 or fills the container on macOS.
+            .fixedSize(horizontal: false, vertical: true)
             .background(DS.Palette.codeSurfaceSide,
                         in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)

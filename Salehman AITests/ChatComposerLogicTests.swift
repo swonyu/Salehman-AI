@@ -339,6 +339,85 @@ struct MessageBubblePlainTextTests {
     }
 }
 
+// MARK: - ChatStats — token estimation and blurb contract
+//
+// `approxTokens` uses the `words × 1.3` English BPE heuristic. The blurb is
+// the string shown in the `/stats` alert; these tests pin its format so a
+// refactor doesn't silently truncate useful context-window info.
+
+@MainActor
+@Suite(.serialized)
+struct ChatStatsTokenTests {
+
+    private func msg(_ text: String, user: Bool,
+                     duration: Double? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: user, timestamp: .now)
+        m.duration = duration
+        return m
+    }
+
+    @Test func approxTokensIsWordsTimesOnePtThree() {
+        // 10 words of prose: expected = Int((10 * 1.3).rounded()) = 13
+        let msgs = [msg("one two three four five six seven eight nine ten", user: true)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.words == 10)
+        #expect(stats.approxTokens == 13)
+    }
+
+    @Test func approxTokensRoundsHalfUp() {
+        // 1 word: Int((1 * 1.3).rounded()) = Int(1.3.rounded()) = 1
+        // 3 words: Int((3 * 1.3).rounded()) = Int(3.9.rounded()) = 4
+        let one = ChatStats.summarize([msg("hello", user: true)])
+        let three = ChatStats.summarize([msg("one two three", user: true)])
+        #expect(one.approxTokens == 1)
+        #expect(three.approxTokens == 4)
+    }
+
+    @Test func zeroWordsGivesZeroTokens() {
+        let stats = ChatStats.summarize([])
+        #expect(stats.approxTokens == 0)
+    }
+
+    @Test func longestReplyWordsPicksMaxAssistantReply() {
+        let msgs = [
+            msg("hi", user: true),
+            msg("short reply", user: false),               // 2 words
+            msg("please help me", user: true),
+            msg("one two three four five six", user: false), // 6 words
+        ]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.longestReplyWords == 6)
+    }
+
+    @Test func longestReplyWordsIsNilWhenNoAssistantMessages() {
+        let msgs = [msg("just a user message", user: true)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.longestReplyWords == nil)
+    }
+
+    @Test func blurbContainsTokSuffix() {
+        let msgs = [msg("ten words long is what this particular sentence has", user: true)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(blurb.contains("tok"))
+    }
+
+    @Test func blurbContainsLongestWordCountWhenReplyExists() {
+        let msgs = [
+            msg("hi", user: true),
+            msg("three words here", user: false),
+        ]
+        let blurb = ChatStats.summarize(msgs).blurb
+        // longestReplyWords = 3 → "longest: 3w" should appear in the second line
+        #expect(blurb.contains("longest: 3w"))
+    }
+
+    @Test func blurbOmitsLongestWhenNoReplies() {
+        let msgs = [msg("user only", user: true)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(!blurb.contains("longest:"))
+    }
+}
+
 // MARK: - ContentView.recalledMessage — message-recall cycling contract
 //
 // ↑ in the empty composer cycles backward through user messages (terminal
