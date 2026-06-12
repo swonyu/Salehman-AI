@@ -156,6 +156,7 @@ struct ScratchpadView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { search = ""; return .handled }
                 .accessibilityLabel("Search scratchpad")
             if !search.isEmpty {
                 Button { search = "" } label: {
@@ -259,7 +260,7 @@ struct ScratchpadView: View {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
-                    .foregroundStyle(t.done ? Color(red: 0.35, green: 0.82, blue: 0.48) : (hovered ? .white.opacity(0.5) : .secondary))
+                    .foregroundStyle(t.done ? DS.Palette.successSoft : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {

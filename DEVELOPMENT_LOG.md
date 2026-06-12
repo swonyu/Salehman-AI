@@ -1960,6 +1960,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
 
 ---
+### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field
+
+**What changed:**
+- Task done-checkmark color: `Color(red: 0.35, green: 0.82, blue: 0.48)` → `DS.Palette.successSoft`. The hardcoded RGB was near-identical to the DS token but bypassed the palette layer.
+- Search field: added `.onKeyPress(.escape) { search = ""; return .handled }` — Escape clears the tasks/notes search, consistent with all other filter fields in the app.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** Found while verifying the AT Escape sweep was complete. The search field in ScratchpadView was the last major filter TextField missing Escape-to-clear (all others — AgentsView, KnowledgeView, MemoryView, LiveTranscriptionView — were already covered). The hardcoded color was a pre-restyle remnant.
+
+**Result:** Build not yet run; minimal 2-line changes.
+
+---
 ### 2026-06-12 — Marathon AT — Escape-to-clear on MemoryView + LiveTranscriptionView search fields
 
 **What changed:**

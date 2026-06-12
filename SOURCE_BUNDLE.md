@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:21 +03 · Swift files: 150 · Swift LOC: 32441_
+_Generated: 2026-06-12 09:22 +03 · Swift files: 150 · Swift LOC: 32442_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22694,7 +22694,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (563 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (564 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22854,6 +22854,7 @@ struct ScratchpadView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { search = ""; return .handled }
                 .accessibilityLabel("Search scratchpad")
             if !search.isEmpty {
                 Button { search = "" } label: {
@@ -22957,7 +22958,7 @@ struct ScratchpadView: View {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
-                    .foregroundStyle(t.done ? Color(red: 0.35, green: 0.82, blue: 0.48) : (hovered ? .white.opacity(0.5) : .secondary))
+                    .foregroundStyle(t.done ? DS.Palette.successSoft : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -35009,7 +35010,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2881 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2894 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36970,6 +36971,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
 
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
+### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field
+
+**What changed:**
+- Task done-checkmark color: `Color(red: 0.35, green: 0.82, blue: 0.48)` → `DS.Palette.successSoft`. The hardcoded RGB was near-identical to the DS token but bypassed the palette layer.
+- Search field: added `.onKeyPress(.escape) { search = ""; return .handled }` — Escape clears the tasks/notes search, consistent with all other filter fields in the app.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** Found while verifying the AT Escape sweep was complete. The search field in ScratchpadView was the last major filter TextField missing Escape-to-clear (all others — AgentsView, KnowledgeView, MemoryView, LiveTranscriptionView — were already covered). The hardcoded color was a pre-restyle remnant.
+
+**Result:** Build not yet run; minimal 2-line changes.
 
 ---
 ### 2026-06-12 — Marathon AT — Escape-to-clear on MemoryView + LiveTranscriptionView search fields
