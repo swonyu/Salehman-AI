@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:33 +03 · Swift files: 150 · Swift LOC: 31877_
+_Generated: 2026-06-12 08:27 +03 · Swift files: 150 · Swift LOC: 31893_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5000,7 +5000,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1699 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1698 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5080,7 +5080,7 @@ enum LocalLLM {
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "Salehman runs on-device. Start Ollama with `ollama serve` and make sure the model is pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
+            return "No model is reachable right now. For Salehman: run `ollama serve` and pull the model with `ollama pull \(AppSettings.customModelNameCurrent)`. For a cloud GPU, switch to the vLLM brain in Settings → Brain and paste your RunPod (or local) endpoint URL."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -5560,12 +5560,12 @@ enum LocalLLM {
             case .ollama:  return "Ollama selected · not running"
             case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
-                // Cloud-first: the quickest fix is a free cloud key; on-device
-                // (MLX standalone / Ollama) still works for offline use.
+                // Local-first: MLX (on-device) → Ollama. No third-party cloud.
+                // For a cloud GPU, the user switches to the vLLM brain instead.
                 if MLXSalehmanEngine.isPackageLinked {
-                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, download the standalone engine, or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\", or load the MLX engine"
                 } else {
-                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\" (or switch to vLLM for RunPod)"
                 }
             case .unslothStudio:
                 // Different failure mode from the cloud brains — no key, just a
@@ -6394,9 +6394,8 @@ enum LocalLLM {
                                               cachePrefix: cachePrefix) { return reply }
             return offMessage
         case .salehman:
-            // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
-            // NVIDIA → free frontier/120B tiers → local
-            // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
+            // Salehman — LOCAL-FIRST: MLX (on-device) → Ollama (custom model).
+            // No external cloud. Mirrors SalehmanEngine exactly.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
@@ -17055,7 +17054,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2735 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2752 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19267,6 +19266,14 @@ struct MessageBubble: View, Equatable {
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 2) {
+                    // Send time — same metadata-on-demand pattern as the
+                    // assistant's duration label. Appears at leading edge of
+                    // the pill so timestamp scans left-to-right like reading.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                     if onEdit != nil {
                         actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
                             onEdit?(message)
@@ -19333,6 +19340,15 @@ struct MessageBubble: View, Equatable {
                         // Full stats on demand (the pill only renders on
                         // hover, so the word count split is effectively free).
                         .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
+                } else {
+                    // Fallback for history-loaded replies that have no recorded
+                    // duration — still show the timestamp so every bubble has
+                    // time context on hover.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                 }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
@@ -34428,7 +34444,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2520 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2536 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36076,6 +36092,22 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 2. `ContentView.swift` had macOS autocorrect replace straight ASCII double-quotes with Unicode curly quotes (U+201C/U+201D) across 8 string literals in the cloud-GPU connect alert block (lines 176-191), causing ~20 compile errors. Fixed by global U+201C→`"` / U+201D→`"` substitution; the one embedded typographic quote in the model name was fixed to use `\"salehman\"`.
 
 **Files:** `Salehman AI/Views/SettingsBrainReadiness.swift`, `Salehman AITests/SettingsBrainReadyTests.swift`, `Salehman AI/Views/ContentView.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
+
+---
+## 2026-06-12 — Marathon hover pass: MarketsView, AgentsView, FileTree, BottomShortcutBar
+
+**What:** Completed the UI hover polish sweep across all remaining surfaces that had interactive rows/cards without hover feedback (commit fb9d3ed).
+
+- **MarketsView**: all four interactive surfaces now have hover — `signalCard` gets accent border tint; `positionRow` gets bg tint + danger-tinted trash icon; `signalAlertRow` gets bg tint; heatmap tiles get `scaleEffect(1.04)` + brightened border.
+- **AgentsView run-log rows**: `hoveredRunID` state added; rows get `accent.opacity(0.06)` bg tint + text brighten on hover.
+- **FileTree**: `FileTreeRow` owns its own `@State private var hovering`; both folder and file rows get `0.04` white bg tint + text brightness lift; selected-file background (`0.08`) still wins over hover.
+- **BottomShortcutBar**: hint pills now brighten key badge (`0.08→0.14`) and label text on hover.
+- **ContentView**: `nonisolated` annotation added to `ArchivedChat.init` (Swift 6 concurrency fix).
+- **ChatTabUITests**: `DispatchQueue.main.sync` wrap on `terminate()` to prevent teardown-launch races.
+
+**Files:** `Views/MarketsView.swift`, `Views/AgentsView.swift`, `Views/FileTree.swift`, `Views/BottomShortcutBar.swift`, `Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
 
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
 

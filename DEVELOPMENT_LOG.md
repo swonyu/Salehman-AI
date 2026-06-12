@@ -1665,6 +1665,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
 
 ---
+## 2026-06-12 — Purge NVIDIA/Groq/cloud-key copy from Salehman "no model" messages
+
+**What:** Fixed three stale messages in `LocalLLM.swift` (commit 06b9d85) that told the user to "add a free cloud key (NVIDIA/Groq/Cerebras/OpenRouter)" when the Salehman brain couldn't reach any model — contradicting the local-first, owner-only-model directive.
+
+- `unavailableMessage(.salehman)` — now says: run `ollama serve` + pull the model, or switch to vLLM in Settings → Brain for a RunPod endpoint. No third-party cloud mentions.
+- `currentBrainLabel(.none, .salehman)` — header tooltip was "add a free cloud key (NVIDIA/Groq/…)"; now "run `ollama serve` + pull the model (or switch to vLLM for RunPod)".
+- `generate(.salehman)` code comment — updated from "CLOUD-FIRST via NVIDIA → free frontier/120B tiers" to "LOCAL-FIRST: MLX → Ollama. No external cloud."
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
