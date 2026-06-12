@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:28 +03 · Swift files: 150 · Swift LOC: 33687_
+_Generated: 2026-06-12 23:30 +03 · Swift files: 150 · Swift LOC: 33694_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14102,7 +14102,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (243 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (250 lines) =====
 ```swift
 import SwiftUI
 
@@ -14227,10 +14227,12 @@ struct ChatHistoryView: View {
                         Button { query = "" } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }.buttonStyle(.plain)
+                        .transition(.opacity)
                     }
                 }
                 .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
                 .background(Color.white.opacity(0.07), in: Capsule())
+                .animation(DS.Motion.magnetic, value: query.isEmpty)
                 .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(DS.Palette.codeSurfaceSide.opacity(0.6))
@@ -14238,30 +14240,35 @@ struct ChatHistoryView: View {
                          alignment: .bottom)
 
                 let shown = Self.filtered(archives, query: query)
-                if shown.isEmpty {
-                    Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
-                                Group {
-                                    row(item)
-                                        // Staggered mask reveal — each row fades up
-                                        // 40ms after the one above (lux curve).
-                                        .opacity(revealed ? 1 : 0)
-                                        .offset(y: revealed ? 0 : 12)
-                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
-                                                   value: revealed)
-                                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                Group {
+                    if shown.isEmpty {
+                        Text(“No conversations match “\(query.trimmingCharacters(in: .whitespaces))””)
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
+                                    Group {
+                                        row(item)
+                                            // Staggered mask reveal — each row fades up
+                                            // 40ms after the one above (lux curve).
+                                            .opacity(revealed ? 1 : 0)
+                                            .offset(y: revealed ? 0 : 12)
+                                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                                       value: revealed)
+                                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .leading)))
                                 }
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                         }
-                        .animation(DS.Motion.smooth, value: shown.count)
+                        .transition(.opacity)
                     }
                 }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
             }
         }
         .frame(width: 520, height: 560)
@@ -36255,7 +36262,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3577 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3582 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39739,10 +39746,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DF: ChatHistoryView search clear + no-match transitions (Chat A)
+**What:** Two unanimated moments in `ChatHistoryView`. (1) Search filter clear button (×): `.transition(.opacity)` on the Button + `.animation(DS.Motion.magnetic, value: query.isEmpty)` on the capsule HStack — button fades in/out as the user types. (2) No-match state: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }.animation(DS.Motion.smooth, value: shown.isEmpty)` with `.transition(.opacity)` on both branches — the "No conversations match" text fades in rather than snapping when the filter yields zero results.
+**Files:** `Views/ChatHistoryView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DE: LiveTranscriptionView LIVE badge + AgentsView label transitions (Chat A)
 **What:** Three remaining unanimated moments. (1) `LiveTranscriptionView` LIVE recording badge: `.transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))` on the HStack + `.animation(DS.Motion.smooth, value: live.isRunning)` on the controls bar — badge scales in from the right when recording starts and fades out on stop. (2) `AgentsView` autonomous-run button label text (`"Stop · iteration N"` / `"Start Autonomous Run"`): `.contentTransition(.opacity)` + `.animation(.smooth, value: isRunningAutonomous)` — label crossfades instead of snapping when run starts/stops. (3) `AgentsView` latest-result preview text: `.transition(.opacity.combined(with: .offset(y: -4)))` — preview slides down from above when the first agent result arrives.
 **Files:** `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`.
-**Commit:** TBD
+**Commit:** `82f4497`
 
 ## 2026-06-12 — marathon DD: KnowledgeView document-detail panel animations (Chat A)
 **What:** Four unanimated moments in the KnowledgeView document-detail sheet now animate. (1) `if loading { spinner } else { Text(summary) }`: `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: loading)` on the VStack. (2) `if !answer.isEmpty { ... }`: parent VStack gains `.animation(DS.Motion.smooth, value: answer.isEmpty)` so the answer section fades in when the AI reply arrives. (3) "Save to Notes" button label: `Label(answerSaved ? "Saved!" : "Save to Notes", ...)` gets `.contentTransition(.symbolEffect(.replace))` + `.animation(.smooth, value: answerSaved)` on the Button. (4) Ask-button send-icon spinner: `Group { if asking { ProgressView } else { Image } }.transition(.opacity)` + `.animation(.smooth, value: asking)` — the arrow crossfades to a spinner while the on-device model answers.

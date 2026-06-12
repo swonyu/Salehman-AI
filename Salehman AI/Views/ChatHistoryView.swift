@@ -121,10 +121,12 @@ struct ChatHistoryView: View {
                         Button { query = "" } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }.buttonStyle(.plain)
+                        .transition(.opacity)
                     }
                 }
                 .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
                 .background(Color.white.opacity(0.07), in: Capsule())
+                .animation(DS.Motion.magnetic, value: query.isEmpty)
                 .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(DS.Palette.codeSurfaceSide.opacity(0.6))
@@ -132,30 +134,35 @@ struct ChatHistoryView: View {
                          alignment: .bottom)
 
                 let shown = Self.filtered(archives, query: query)
-                if shown.isEmpty {
-                    Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
-                                Group {
-                                    row(item)
-                                        // Staggered mask reveal — each row fades up
-                                        // 40ms after the one above (lux curve).
-                                        .opacity(revealed ? 1 : 0)
-                                        .offset(y: revealed ? 0 : 12)
-                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
-                                                   value: revealed)
-                                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                Group {
+                    if shown.isEmpty {
+                        Text(“No conversations match “\(query.trimmingCharacters(in: .whitespaces))””)
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
+                                    Group {
+                                        row(item)
+                                            // Staggered mask reveal — each row fades up
+                                            // 40ms after the one above (lux curve).
+                                            .opacity(revealed ? 1 : 0)
+                                            .offset(y: revealed ? 0 : 12)
+                                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                                       value: revealed)
+                                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .leading)))
                                 }
-                                .transition(.opacity.combined(with: .move(edge: .leading)))
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                         }
-                        .animation(DS.Motion.smooth, value: shown.count)
+                        .transition(.opacity)
                     }
                 }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
             }
         }
         .frame(width: 520, height: 560)
