@@ -1677,6 +1677,8 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's
                 // own fine-tune gets the accent — a fallback coder stays grey. Makes
@@ -1687,10 +1689,15 @@ struct CodeView: View {
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: localServingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

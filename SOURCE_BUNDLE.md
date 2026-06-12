@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:14 +03 · Swift files: 150 · Swift LOC: 34071_
+_Generated: 2026-06-13 02:17 +03 · Swift files: 150 · Swift LOC: 34083_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14810,7 +14810,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2643 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2650 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16491,6 +16491,8 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's
                 // own fine-tune gets the accent — a fallback coder stays grey. Makes
@@ -16501,10 +16503,15 @@ struct CodeView: View {
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: localServingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -17660,7 +17667,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2856 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2861 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18262,6 +18269,8 @@ struct ContentView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 if let m = servingModel {
                     Text("· \(m)")
                         .font(.system(size: 9.5, weight: .semibold))
@@ -18274,6 +18283,9 @@ struct ContentView: View {
             .animation(DS.Motion.smooth, value: servingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -36639,7 +36651,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4092 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4105 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39689,6 +39701,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** Completes the flat-stroke audit across all non-circular controls. The tinted top-lit ratio (≈4:1 top:bottom opacity) is consistent regardless of hue, so all accent/warning/neutral borders share the same lighting physics.
 
 **Result:** Zero Swift compiler errors. 6 strokes upgraded across 5 files.
+
+---
+## 2026-06-13 — Marathon ER: brain-picker badge border + contentTransition on model title
+
+**What changed:**
+- `ContentView.swift` brain-picker Capsule: added `contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: brainPreference)` on the title `Text`, plus top-lit gradient Capsule border `[white@0.16, white@0.04]`.
+- `CodeView.swift` brain-picker Capsule: same changes — `contentTransition(.opacity)`, `transition(.opacity)` on the serving-model suffix, `.animation(.smooth, value: localServingModel)` on the HStack, and top-lit gradient border.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** The brain-picker is the most-used control in both chat and code tabs — switching models is a frequent operation. Without `contentTransition`, the label snaps to the new name. The missing border made it visually "floating" without a surface definition despite every other Capsule control in the chrome now having the top-lit gradient stroke.
+
+**Result:** Zero Swift compiler errors.
 
 ---
 ## Standing notes / known issues

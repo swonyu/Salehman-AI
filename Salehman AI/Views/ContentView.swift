@@ -598,6 +598,8 @@ struct ContentView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 if let m = servingModel {
                     Text("· \(m)")
                         .font(.system(size: 9.5, weight: .semibold))
@@ -610,6 +612,9 @@ struct ContentView: View {
             .animation(DS.Motion.smooth, value: servingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

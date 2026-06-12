@@ -3049,6 +3049,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors. 6 strokes upgraded across 5 files.
 
 ---
+## 2026-06-13 — Marathon ER: brain-picker badge border + contentTransition on model title
+
+**What changed:**
+- `ContentView.swift` brain-picker Capsule: added `contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: brainPreference)` on the title `Text`, plus top-lit gradient Capsule border `[white@0.16, white@0.04]`.
+- `CodeView.swift` brain-picker Capsule: same changes — `contentTransition(.opacity)`, `transition(.opacity)` on the serving-model suffix, `.animation(.smooth, value: localServingModel)` on the HStack, and top-lit gradient border.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** The brain-picker is the most-used control in both chat and code tabs — switching models is a frequent operation. Without `contentTransition`, the label snaps to the new name. The missing border made it visually "floating" without a surface definition despite every other Capsule control in the chrome now having the top-lit gradient stroke.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
