@@ -123,11 +123,28 @@ struct TabSwitcherBar: View {
                 // that the pill is informational and explorable.
                 HStack(spacing: 7) {
                     ZStack {
-                        Circle().fill(market.session.isOpen ? DS.Palette.successSoft : Color.secondary)
-                            .frame(width: 8, height: 8)
                         if market.session.isOpen {
-                            Circle().stroke(DS.Palette.successSoft.opacity(0.45), lineWidth: 2)
-                                .frame(width: 8, height: 8).scaleEffect(1.7).opacity(0.6)
+                            // Continuously breathing halo — signals "live market"
+                            // more clearly than a static ring.
+                            PhaseAnimator([false, true]) { pulsing in
+                                ZStack {
+                                    Circle()
+                                        .fill(DS.Palette.successSoft)
+                                        .frame(width: 8, height: 8)
+                                        .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
+                                                radius: pulsing ? 5 : 1)
+                                    Circle()
+                                        .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
+                                        .frame(width: 8, height: 8)
+                                        .scaleEffect(pulsing ? 2.6 : 1.7)
+                                }
+                            } animation: { pulsing in
+                                pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
+                            }
+                        } else {
+                            Circle()
+                                .fill(Color.secondary)
+                                .frame(width: 8, height: 8)
                         }
                     }
                     Text(market.session.shortLabel)

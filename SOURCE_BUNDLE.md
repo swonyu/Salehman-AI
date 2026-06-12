@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:45 +03 · Swift files: 150 · Swift LOC: 33312_
+_Generated: 2026-06-12 21:48 +03 · Swift files: 150 · Swift LOC: 33351_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14091,7 +14091,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (213 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (235 lines) =====
 ```swift
 import SwiftUI
 
@@ -14142,9 +14142,18 @@ struct ChatHistoryView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 30, height: 30)
                         .dsShadow(DS.Elevation.accentGlow(0.32))
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        }
+                    }
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Conversations")
@@ -14169,9 +14178,22 @@ struct ChatHistoryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    ZStack {
+                        PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(opacity))
+                                .frame(width: 60, height: 60)
+                                .blur(radius: 14)
+                                .allowsHitTesting(false)
+                        } animation: { opacity in
+                            opacity > 0.14
+                                ? .spring(duration: 2.2, bounce: 0.06)
+                                : .easeOut(duration: 1.8)
+                        }
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent.opacity(0.80))
+                    }
                     Text("No archived conversations yet")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))
@@ -26149,7 +26171,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (251 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (268 lines) =====
 ```swift
 import SwiftUI
 
@@ -26276,11 +26298,28 @@ struct TabSwitcherBar: View {
                 // that the pill is informational and explorable.
                 HStack(spacing: 7) {
                     ZStack {
-                        Circle().fill(market.session.isOpen ? DS.Palette.successSoft : Color.secondary)
-                            .frame(width: 8, height: 8)
                         if market.session.isOpen {
-                            Circle().stroke(DS.Palette.successSoft.opacity(0.45), lineWidth: 2)
-                                .frame(width: 8, height: 8).scaleEffect(1.7).opacity(0.6)
+                            // Continuously breathing halo — signals "live market"
+                            // more clearly than a static ring.
+                            PhaseAnimator([false, true]) { pulsing in
+                                ZStack {
+                                    Circle()
+                                        .fill(DS.Palette.successSoft)
+                                        .frame(width: 8, height: 8)
+                                        .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
+                                                radius: pulsing ? 5 : 1)
+                                    Circle()
+                                        .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
+                                        .frame(width: 8, height: 8)
+                                        .scaleEffect(pulsing ? 2.6 : 1.7)
+                                }
+                            } animation: { pulsing in
+                                pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
+                            }
+                        } else {
+                            Circle()
+                                .fill(Color.secondary)
+                                .frame(width: 8, height: 8)
                         }
                     }
                     Text(market.session.shortLabel)
@@ -35880,7 +35919,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3314 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3326 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38324,6 +38363,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** ScratchpadView was the last view without an `appeared`-driven entrance. The block-level stagger (sections, not rows) was chosen because task/note rows are inside complex `reorderList`/`listCard` containers where per-row `ForEach(enumerated(...))` would require intrusive refactoring. Four-block cascade gives the same polished feel at lower complexity.
 
 **Result:** All views in the marathon now have entrance animation. ScratchpadView joins the consistent brand-tile KeyframeAnimator treatment.
+
+---
+
+## 2026-06-12 · Marathon CA — Live market dot PhaseAnimator + ChatHistoryView polish
+
+**What:** `TabSwitcherBar` market status dot upgraded from a static halo ring to `PhaseAnimator([false, true])` with breathing shadow glow + expanding stroke ring when the market is open (open: PhaseAnimator ZStack with dot + ring; closed: plain gray dot). `ChatHistoryView` brand tile icon wrapped in `KeyframeAnimator(trigger: revealed)` for the rubber-band pop-in when history loads. Empty-state icon upgraded from static `.secondary` to a `ZStack` with `PhaseAnimator` ambient halo + accent-tinted icon.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/ChatHistoryView.swift`
+
+**Why:** The market dot is always visible in the tab bar — upgrading it to a live breathing indicator makes the "market is open" state immediately legible at a glance. ChatHistoryView already had staggered rows (from a prior session); the brand tile and empty-state were the remaining static elements.
+
+**Result:** Market status dot now pulses like a live indicator. ChatHistoryView has full entrance + empty-state parity with the rest of the app.
 
 ---
 ## Standing notes / known issues

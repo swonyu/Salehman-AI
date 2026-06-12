@@ -47,9 +47,18 @@ struct ChatHistoryView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 30, height: 30)
                         .dsShadow(DS.Elevation.accentGlow(0.32))
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        }
+                    }
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Conversations")
@@ -74,9 +83,22 @@ struct ChatHistoryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    ZStack {
+                        PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(opacity))
+                                .frame(width: 60, height: 60)
+                                .blur(radius: 14)
+                                .allowsHitTesting(false)
+                        } animation: { opacity in
+                            opacity > 0.14
+                                ? .spring(duration: 2.2, bounce: 0.06)
+                                : .easeOut(duration: 1.8)
+                        }
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent.opacity(0.80))
+                    }
                     Text("No archived conversations yet")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))

@@ -2443,6 +2443,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All views in the marathon now have entrance animation. ScratchpadView joins the consistent brand-tile KeyframeAnimator treatment.
 
 ---
+
+## 2026-06-12 · Marathon CA — Live market dot PhaseAnimator + ChatHistoryView polish
+
+**What:** `TabSwitcherBar` market status dot upgraded from a static halo ring to `PhaseAnimator([false, true])` with breathing shadow glow + expanding stroke ring when the market is open (open: PhaseAnimator ZStack with dot + ring; closed: plain gray dot). `ChatHistoryView` brand tile icon wrapped in `KeyframeAnimator(trigger: revealed)` for the rubber-band pop-in when history loads. Empty-state icon upgraded from static `.secondary` to a `ZStack` with `PhaseAnimator` ambient halo + accent-tinted icon.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/ChatHistoryView.swift`
+
+**Why:** The market dot is always visible in the tab bar — upgrading it to a live breathing indicator makes the "market is open" state immediately legible at a glance. ChatHistoryView already had staggered rows (from a prior session); the brand tile and empty-state were the remaining static elements.
+
+**Result:** Market status dot now pulses like a live indicator. ChatHistoryView has full entrance + empty-state parity with the rest of the app.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
