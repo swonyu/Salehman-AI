@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:28 +03 · Swift files: 150 · Swift LOC: 32826_
+_Generated: 2026-06-12 20:30 +03 · Swift files: 150 · Swift LOC: 32881_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20432,7 +20432,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (572 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (627 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20470,13 +20470,26 @@ struct KnowledgeView: View {
     @State private var hoveredDocID: UUID?
     /// Pulses briefly after "Save to Notes" to confirm the action.
     @State private var answerSaved = false
+    /// Copy-feedback flash for the answer copy button.
+    @State private var copiedAnswer = false
+    /// Staggered entrance.
+    @State private var appeared = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance, value: appeared)
                 askCard
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance.delay(0.07), value: appeared)
                 documentsSection
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance.delay(0.14), value: appeared)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -20485,7 +20498,7 @@ struct KnowledgeView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
-        .onAppear(perform: reload)
+        .onAppear { appeared = true; reload() }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay {
             if dropTargeted {
@@ -20502,45 +20515,52 @@ struct KnowledgeView: View {
     }
 
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Ambient glow — soft depth behind the title area.
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.13))
-                .frame(width: 200)
-                .blur(radius: 70)
-                .offset(x: -30, y: -40)
-                .allowsHitTesting(false)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("KNOWLEDGE VAULT")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(DS.Palette.accent)
-                    Text("Knowledge")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("Chat with your own documents — private, on this Mac.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                    .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                    .accessibilityLabel("Paste text").disabled(ingesting)
-                Button(action: addFile) {
-                    HStack(spacing: 6) {
-                        if ingesting { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "plus") }
-                        Text(ingesting ? "Reading…" : "Add file")
-                    }
-                    .font(.system(size: 11.5, weight: .semibold))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches TodayView / AgentsView header treatment.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(
+                                LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.75
+                            )
+                    )
+                Image(systemName: "books.vertical.fill")
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(DS.Palette.accent, in: Capsule())
-                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
-                }
-                .buttonStyle(LuxPressStyle())
-                .disabled(ingesting)
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Knowledge")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Private Vault")
+                }
+                Text("Chat with your own documents — on this Mac only.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
+                .buttonStyle(.bordered).controlSize(.small).help("Paste text")
+                .accessibilityLabel("Paste text").disabled(ingesting)
+            Button(action: addFile) {
+                HStack(spacing: 6) {
+                    if ingesting { ProgressView().controlSize(.small).tint(.white) }
+                    else { Image(systemName: "plus") }
+                    Text(ingesting ? "Reading…" : "Add file")
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(DS.Gradient.brand, in: Capsule())
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(ingesting)
         }
     }
 
@@ -20587,8 +20607,11 @@ struct KnowledgeView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(answer, forType: .string)
+                        copiedAnswer = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copiedAnswer = false }
                     } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
+                        Label(copiedAnswer ? "Copied!" : "Copy",
+                              systemImage: copiedAnswer ? "checkmark" : "doc.on.doc")
                     }
                     .help("Copy answer to clipboard")
                     .accessibilityLabel("Copy answer")
@@ -20615,9 +20638,27 @@ struct KnowledgeView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Flat opaque panel + hairline (design language).
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // Bezel treatment — outer shell + inner core with subtle brand tint.
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .fill(!answer.isEmpty
+                          ? DS.Palette.accent.opacity(0.05)
+                          : Color.white.opacity(0.035))
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .padding(DS.Bezel.shellPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(DS.Bezel.shellStroke, lineWidth: 1)
+        )
+        .animation(DS.Motion.smooth, value: answer.isEmpty)
     }
 
     @ViewBuilder private var documentsSection: some View {
@@ -20670,8 +20711,16 @@ struct KnowledgeView: View {
                     VStack(spacing: 1) {
                         ForEach(shown) { doc in docRow(doc) }
                     }
-                    .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .fill(Color.white.opacity(0.035))
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                        }
+                    )
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
             }
         }
@@ -20702,22 +20751,28 @@ struct KnowledgeView: View {
             // Tapping the row opens the detail sheet (on-device summary + info).
             Button { detailDoc = doc } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: doc.icon)
-                        .font(.system(size: 14))
-                        .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 1) {
+                    // Icon well — consistent with ActionTile / AgentCard pattern.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.12))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: doc.icon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(doc.name)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(hovered ? .white : .white.opacity(0.90))
                             .lineLimit(1)
                         Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: doc.addedAt))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
+                    Image(systemName: hovered ? "arrow.up.right" : "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.80) : .secondary)
+                        .offset(x: hovered ? 1 : 0, y: hovered ? -1 : 0)
                 }
                 .contentShape(Rectangle())
             }
@@ -20725,7 +20780,7 @@ struct KnowledgeView: View {
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.6) : .secondary)
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
             .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
@@ -20733,7 +20788,7 @@ struct KnowledgeView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredDocID = doc.id }
                 else if hoveredDocID == doc.id { hoveredDocID = nil }
             }
@@ -35394,7 +35449,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3080 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3091 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37582,6 +37637,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
 
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
+## 2026-06-12 — Marathon BI — KnowledgeView premium elevation
+
+**What changed:** Header upgraded from raw ZStack + raw eyebrow string to brand icon tile (36×36 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Private Vault")` + subtitle; "Add file" button uses `DS.Gradient.brand` fill. Ask card changed from flat `codeSurfaceSide` to full Bezel treatment (outer shell + inner core; core tints `accent.opacity(0.05)` when an answer is shown). Copy answer button gains `copiedAnswer` state with 1.5s checkmark flash (consistent with all other copy buttons). Doc list container changed from `codeSurfaceSide` to bezel fill + inner highlight. Doc rows upgraded: icon changed from plain SF Symbol to 28×28 `RoundedRectangle` icon well with accent fill; trailing indicator flips from `sparkles` to `arrow.up.right` on hover with diagonal offset; trash icon shows `danger` tint on hover; `DS.Motion.magnetic` hover; `DS.Motion.smooth` → `magnetic`. Staggered entrance animation (3 sections, 0/0.07/0.14 s). Merged double `.onAppear` into one.
+
+**Files:** `Views/KnowledgeView.swift`
+
+**Why:** Ask card was flat; Copy button had no feedback state (gap vs BE/BF); doc row icons lacked wells; header used raw string styling instead of the `Eyebrow` component.
+
+**Result:** Code verified structurally correct.
 
 ---
 ## 2026-06-12 — Marathon BH — AgentsView premium elevation

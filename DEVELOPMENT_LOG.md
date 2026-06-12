@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BI — KnowledgeView premium elevation
+
+**What changed:** Header upgraded from raw ZStack + raw eyebrow string to brand icon tile (36×36 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Private Vault")` + subtitle; "Add file" button uses `DS.Gradient.brand` fill. Ask card changed from flat `codeSurfaceSide` to full Bezel treatment (outer shell + inner core; core tints `accent.opacity(0.05)` when an answer is shown). Copy answer button gains `copiedAnswer` state with 1.5s checkmark flash (consistent with all other copy buttons). Doc list container changed from `codeSurfaceSide` to bezel fill + inner highlight. Doc rows upgraded: icon changed from plain SF Symbol to 28×28 `RoundedRectangle` icon well with accent fill; trailing indicator flips from `sparkles` to `arrow.up.right` on hover with diagonal offset; trash icon shows `danger` tint on hover; `DS.Motion.magnetic` hover; `DS.Motion.smooth` → `magnetic`. Staggered entrance animation (3 sections, 0/0.07/0.14 s). Merged double `.onAppear` into one.
+
+**Files:** `Views/KnowledgeView.swift`
+
+**Why:** Ask card was flat; Copy button had no feedback state (gap vs BE/BF); doc row icons lacked wells; header used raw string styling instead of the `Eyebrow` component.
+
+**Result:** Code verified structurally correct.
+
+---
 ## 2026-06-12 — Marathon BH — AgentsView premium elevation
 
 **What changed:** Full high-end visual design pass on `AgentsView.swift`. Header gains a brand icon tile (36×36 rounded square with gradient) + `Eyebrow("Specialist Team")`. Autonomous control section upgraded from flat `codeSurfaceSide` card to full `Bezel` treatment (outer shell + inner core) — core tints with `accent.opacity(0.07)` when autonomous mode is ON; border glows accent when a run is in progress; accent shadow materialises during run. Direct command field gets a leading `chevron.right` prompt glyph. `AgentCard` redesigned: icon changes from `Circle` to `RoundedRectangle` icon well (brand gradient when active), background changed from flat `codeSurfaceSide` to bezel fill (white 4%→7% on hover) with inner highlight, hover uses `DS.Motion.magnetic` + `scaleEffect(1.015)`, running state gets a `successSoft` status dot alongside `ProgressView`, subtle trailing arrow appears on hover at rest. Agent search field upgraded to capsule style. Staggered entrance animation across all three sections.
