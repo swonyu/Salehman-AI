@@ -1866,6 +1866,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Users can now manually add memories; the copy button gives confirmation feedback. SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AM — "New Note" from Today switches to notes mode + clears stale add-field text
+
+**What changed:**
+- `AppState.swift` — `@Published var scratchpadFocusNotesMode = false` companion flag alongside `focusScratchpadAddFieldRequested`
+- `TodayView.swift` — "New Note" action tile also sets `app.scratchpadFocusNotesMode = true` before the focus trigger
+- `ScratchpadView.swift` — extracted `applyFocusTrigger()` helper: if `scratchpadFocusNotesMode` is set, switches `pad = .notes` and clears the flag before focusing; also added `.onChange(of: pad)` to clear `newText` when the user switches between Tasks/Notes segments
+
+**Files:** `AppState.swift`, `TodayView.swift`, `ScratchpadView.swift`
+
+**Why:** Clicking "New Note" from Today was focusing the add field but leaving it in Tasks mode (showing "Add a task…"). Also, typing in the task add field and then switching to Notes would carry over the stale draft text.
+
+**Result:** "New Note" from Today lands in the correct notes mode with a clean field. Switching segments always clears stale input. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -39,6 +39,11 @@ final class AppState: ObservableObject {
     /// on the next appear or on change. Cleared by the view after acting.
     @Published var focusScratchpadAddFieldRequested = false
 
+    /// Companion to `focusScratchpadAddFieldRequested`: when `true`, `ScratchpadView`
+    /// also switches its segmented picker to Notes mode before focusing. Set by
+    /// any action that means "create a note" (e.g. Today's "New Note" tile).
+    @Published var scratchpadFocusNotesMode = false
+
     private init() {}
 }
 

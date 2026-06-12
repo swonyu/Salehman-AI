@@ -50,20 +50,28 @@ struct ScratchpadView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
-        // Today "New Note" quick action: focus the add field so the user
-        // can start typing immediately after the tab switch.
+        // Today "New Note" / "New Task" quick actions: focus the add field so
+        // the user can start typing immediately after the tab switch.
+        // scratchpadFocusNotesMode switches the picker to Notes before focusing.
         .onAppear {
             if app.focusScratchpadAddFieldRequested {
-                addFocused = true
-                app.focusScratchpadAddFieldRequested = false
+                applyFocusTrigger()
             }
         }
         .onChange(of: app.focusScratchpadAddFieldRequested) { _, requested in
-            if requested {
-                addFocused = true
-                app.focusScratchpadAddFieldRequested = false
-            }
+            if requested { applyFocusTrigger() }
         }
+        // Clear stale add-field text when the user switches between Tasks and Notes.
+        .onChange(of: pad) { _, _ in newText = "" }
+    }
+
+    private func applyFocusTrigger() {
+        if app.scratchpadFocusNotesMode {
+            pad = .notes
+            app.scratchpadFocusNotesMode = false
+        }
+        addFocused = true
+        app.focusScratchpadAddFieldRequested = false
     }
 
     private var header: some View {
@@ -106,8 +114,13 @@ struct ScratchpadView: View {
                         if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
                         Text(pad == .tasks ? "Organize" : "Summarize")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
         }
@@ -246,7 +259,7 @@ struct ScratchpadView: View {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
-                    .foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : (hovered ? .white.opacity(0.5) : .secondary))
+                    .foregroundStyle(t.done ? Color(red: 0.35, green: 0.82, blue: 0.48) : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -276,7 +289,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.press) {
                 if over { hoveredTaskID = t.id }
                 else if hoveredTaskID == t.id { hoveredTaskID = nil }
             }
@@ -354,7 +367,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.press) {
                 if over { hoveredNoteID = n.id }
                 else if hoveredNoteID == n.id { hoveredNoteID = nil }
             }
@@ -435,12 +448,17 @@ struct ScratchpadView: View {
         VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(DS.Palette.accent.opacity(0.16))
-                    .frame(width: 90)
-                    .blur(radius: 20)
+                    .fill(DS.Palette.accent.opacity(0.14))
+                    .frame(width: 100)
+                    .blur(radius: 28)
+                    .allowsHitTesting(false)
                 Image(systemName: icon)
-                    .font(.system(size: 36, weight: .light))
-                    .foregroundStyle(DS.Palette.accent.opacity(0.9))
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(DS.Palette.accent)
+                    .frame(width: 54, height: 54)
+                    .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.18), DS.Palette.accent.opacity(0.05)], center: .center, startRadius: 0, endRadius: 27), in: Circle())
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    .shadow(color: DS.Palette.accent.opacity(0.26), radius: 14, y: 3)
             }
             .padding(.bottom, 2)
             Text(pad == .tasks ? "YOUR TASKS" : "YOUR NOTES")
@@ -449,7 +467,7 @@ struct ScratchpadView: View {
                 .foregroundStyle(DS.Palette.accent)
             Text(text)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.white)
             Text(pad == .tasks ? "Type above and hit ↩ to add one." : "Type above and hit ↩ to add one.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
@@ -467,9 +485,12 @@ struct ScratchpadView: View {
                 } label: {
                     Label("Save as Note", systemImage: "note.text.badge.plus")
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.70))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                 }
-                .buttonStyle(.plain).help("Save this summary as a note")
+                .buttonStyle(LuxPressStyle()).help("Save this summary as a note")
                 .accessibilityLabel("Save AI summary as note")
 
                 Button { aiResult = "" } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary) }

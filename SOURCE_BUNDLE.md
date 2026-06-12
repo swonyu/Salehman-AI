@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:00 +03 · Swift files: 150 · Swift LOC: 32356_
+_Generated: 2026-06-12 09:02 +03 · Swift files: 150 · Swift LOC: 32386_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1894,7 +1894,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (98 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (103 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1936,6 +1936,11 @@ final class AppState: ObservableObject {
     /// Edge-trigger: set `true` to ask `ScratchpadView` to focus its add field
     /// on the next appear or on change. Cleared by the view after acting.
     @Published var focusScratchpadAddFieldRequested = false
+
+    /// Companion to `focusScratchpadAddFieldRequested`: when `true`, `ScratchpadView`
+    /// also switches its segmented picker to Notes mode before focusing. Set by
+    /// any action that means "create a note" (e.g. Today's "New Note" tile).
+    @Published var scratchpadFocusNotesMode = false
 
     private init() {}
 }
@@ -17181,7 +17186,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2772 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2787 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17860,10 +17865,13 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 ForEach(suggestions.prefix(3), id: \.self) { s in
                     Button { submit(s.prompt) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: s.icon).font(.system(size: 10.5))
+                        HStack(spacing: 6) {
+                            Image(systemName: s.icon).font(.system(size: 10))
                                 .foregroundStyle(DS.Palette.accent)
-                            Text(s.title).font(.system(size: 11.5, weight: .medium))
+                                .frame(width: 22, height: 22)
+                                .background(DS.Palette.accent.opacity(0.10), in: Circle())
+                                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                            Text(s.title).font(.system(size: 12, weight: .medium))
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
@@ -17880,12 +17888,16 @@ struct ContentView: View {
                 }
             }
             .padding(.top, 6)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             HStack(spacing: 16) {
                 welcomeShortcutHint("⌘N", "New chat")
                 welcomeShortcutHint("⌘F", "Find")
                 welcomeShortcutHint("⌘J", "Voice")
             }
             .padding(.top, 10)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             // Honest status, Code-tab position (replaces the old eyebrow
             // capsule — the Code welcome has no eyebrow): offline mode wins,
             // else the live fine-tune when it's actually pulled.
@@ -17915,6 +17927,11 @@ struct ContentView: View {
                 .help("Browse and restore archived conversations")
             }
         }
+        .background {
+            RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
+                           center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)
+                .allowsHitTesting(false)
+        }
         .frame(maxWidth: .infinity)
         // Entrance: same heavy fade-up the Code welcome performs (lux curve,
         // 16pt rise, 0.05s settle delay). QA launches skip it via the
@@ -17924,6 +17941,7 @@ struct ContentView: View {
         .onAppear {
             guard !welcomeAppeared else { return }
             withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+            withAnimation(DS.Motion.lux.delay(0.22)) { welcomeContentAppeared = true }
         }
         // The chat viewport starts 55pt lower than the Code tab's (header row
         // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
@@ -17971,7 +17989,9 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
     }
@@ -22623,7 +22643,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (555 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (563 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22677,20 +22697,28 @@ struct ScratchpadView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
-        // Today "New Note" quick action: focus the add field so the user
-        // can start typing immediately after the tab switch.
+        // Today "New Note" / "New Task" quick actions: focus the add field so
+        // the user can start typing immediately after the tab switch.
+        // scratchpadFocusNotesMode switches the picker to Notes before focusing.
         .onAppear {
             if app.focusScratchpadAddFieldRequested {
-                addFocused = true
-                app.focusScratchpadAddFieldRequested = false
+                applyFocusTrigger()
             }
         }
         .onChange(of: app.focusScratchpadAddFieldRequested) { _, requested in
-            if requested {
-                addFocused = true
-                app.focusScratchpadAddFieldRequested = false
-            }
+            if requested { applyFocusTrigger() }
         }
+        // Clear stale add-field text when the user switches between Tasks and Notes.
+        .onChange(of: pad) { _, _ in newText = "" }
+    }
+
+    private func applyFocusTrigger() {
+        if app.scratchpadFocusNotesMode {
+            pad = .notes
+            app.scratchpadFocusNotesMode = false
+        }
+        addFocused = true
+        app.focusScratchpadAddFieldRequested = false
     }
 
     private var header: some View {
@@ -25394,7 +25422,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (250 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (251 lines) =====
 ```swift
 import SwiftUI
 
@@ -25442,6 +25470,7 @@ struct TabSwitcherBar: View {
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
+                .shadow(color: DS.Palette.accent.opacity(0.30), radius: 8, y: 2)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Salehman")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -25648,7 +25677,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (198 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (199 lines) =====
 ```swift
 import SwiftUI
 
@@ -25743,6 +25772,7 @@ struct TodayView: View {
             }
             ActionTile(icon: "note.text.badge.plus", title: "New Note") {
                 app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = true
                 app.focusScratchpadAddFieldRequested = true
             }
         }
@@ -34913,7 +34943,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2737 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2751 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36780,6 +36810,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** The memory sheet was read-only — users could view/delete/search facts but had no way to seed facts manually (e.g. "My name is Saleh" or "I use macOS 15"). The copy flash matches the pattern introduced in KnowledgeView (marathon AH).
 
 **Result:** Users can now manually add memories; the copy button gives confirmation feedback. SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AM — "New Note" from Today switches to notes mode + clears stale add-field text
+
+**What changed:**
+- `AppState.swift` — `@Published var scratchpadFocusNotesMode = false` companion flag alongside `focusScratchpadAddFieldRequested`
+- `TodayView.swift` — "New Note" action tile also sets `app.scratchpadFocusNotesMode = true` before the focus trigger
+- `ScratchpadView.swift` — extracted `applyFocusTrigger()` helper: if `scratchpadFocusNotesMode` is set, switches `pad = .notes` and clears the flag before focusing; also added `.onChange(of: pad)` to clear `newText` when the user switches between Tasks/Notes segments
+
+**Files:** `AppState.swift`, `TodayView.swift`, `ScratchpadView.swift`
+
+**Why:** Clicking "New Note" from Today was focusing the add field but leaving it in Tasks mode (showing "Add a task…"). Also, typing in the task add field and then switching to Notes would carry over the stale draft text.
+
+**Result:** "New Note" from Today lands in the correct notes mode with a clean field. Switching segments always clears stale input. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues
