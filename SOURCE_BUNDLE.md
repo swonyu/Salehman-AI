@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:36 +03 · Swift files: 150 · Swift LOC: 34151_
+_Generated: 2026-06-13 02:38 +03 · Swift files: 150 · Swift LOC: 34166_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20903,7 +20903,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (692 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (697 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21284,6 +21284,11 @@ struct KnowledgeView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                    )
                     VStack(alignment: .leading, spacing: 2) {
                         Text(doc.name)
                             .font(.system(size: 13.5, weight: .medium))
@@ -27233,7 +27238,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (357 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (367 lines) =====
 ```swift
 import SwiftUI
 
@@ -27482,6 +27487,11 @@ private struct ActionTile: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                )
                 .scaleEffect(hovering ? 1.06 : 1.0)
 
                 Text(title)
@@ -27549,6 +27559,11 @@ private struct StatTile: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                    )
                     Text(title)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -36719,7 +36734,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4159 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4170 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39834,6 +39849,17 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 - `Views/ScratchpadView.swift`: Same 0.75pt top-lit gradient stroke added to 24px note icon wells.
 
 **Why:** Small icon wells were the only remaining depth-less surfaces in hoverable list rows. Consistent top-lit gradient strokes across all icon well sizes (24px, 36px, 42px) unifies the material language.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EW: Icon-well depth sweep — KnowledgeView + TodayView
+
+**What changed:**
+- `Views/KnowledgeView.swift`: 28px accent icon well in doc list rows gains 0.75pt top-lit gradient stroke `[white@0.22, white@0.04]`.
+- `Views/TodayView.swift`: Both ActionTile (38px) and StatTile (26px) icon wells gain 0.75pt top-lit gradient strokes `[white@0.22, white@0.04]`.
+
+**Why:** Completing the icon-well depth vocabulary sweep. All icon wells across all 7 views that use them (AgentsView, MemoryView, ScratchpadView, KnowledgeView, TodayView, plus the header tiles) now have consistent top-lit gradient borders.
 
 **Result:** Zero Swift compiler errors.
 

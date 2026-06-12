@@ -377,6 +377,11 @@ struct KnowledgeView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                    )
                     VStack(alignment: .leading, spacing: 2) {
                         Text(doc.name)
                             .font(.system(size: 13.5, weight: .medium))

@@ -3116,6 +3116,17 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EW: Icon-well depth sweep — KnowledgeView + TodayView
+
+**What changed:**
+- `Views/KnowledgeView.swift`: 28px accent icon well in doc list rows gains 0.75pt top-lit gradient stroke `[white@0.22, white@0.04]`.
+- `Views/TodayView.swift`: Both ActionTile (38px) and StatTile (26px) icon wells gain 0.75pt top-lit gradient strokes `[white@0.22, white@0.04]`.
+
+**Why:** Completing the icon-well depth vocabulary sweep. All icon wells across all 7 views that use them (AgentsView, MemoryView, ScratchpadView, KnowledgeView, TodayView, plus the header tiles) now have consistent top-lit gradient borders.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

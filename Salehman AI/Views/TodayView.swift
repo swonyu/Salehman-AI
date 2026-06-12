@@ -245,6 +245,11 @@ private struct ActionTile: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                )
                 .scaleEffect(hovering ? 1.06 : 1.0)
 
                 Text(title)
@@ -312,6 +317,11 @@ private struct StatTile: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                    )
                     Text(title)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
