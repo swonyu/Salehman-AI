@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:58 +03 · Swift files: 150 · Swift LOC: 33454_
+_Generated: 2026-06-12 21:59 +03 · Swift files: 150 · Swift LOC: 33456_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (404 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (406 lines) =====
 ```swift
 import SwiftUI
 
@@ -2294,6 +2294,8 @@ struct CircleIconButton: View {
                 .shadow(color: (filled && !disabled) ? DS.Palette.accent.opacity(0.5) : .clear, radius: 8, y: 3)
                 .scaleEffect(hovering && !disabled ? 1.06 : 1.0)
                 .opacity(disabled ? 0.55 : 1)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: systemName)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -36022,7 +36024,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3398 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3410 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38550,6 +38552,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Adding the transition at the helper level covers all callers without per-call boilerplate. Icons in the chat message action row (copy, pin, read-aloud) and the code message action row (copy, read-aloud, regenerate) all benefit.
 
 **Result:** Every icon-state change in the chat and code message action rows now animates with a crisp SF Symbol crossfade.
+
+---
+
+## 2026-06-12 · Marathon CH — symbolEffect(.replace) in CircleIconButton DS component
+
+**What:** Added `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: systemName)` to the `Image` inside `CircleIconButton` in `DesignSystem.swift`. Covers VoiceModeView's mic/stop symbol swap, the Live Transcription waveform indicator, and any other `CircleIconButton` caller where the `systemName` prop changes state.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** Centralising the transition in the DS component ensures consistent, animated symbol swaps everywhere `CircleIconButton` is used without per-call-site boilerplate.
+
+**Result:** All `CircleIconButton` symbol changes now animate with SF Symbol crossfade.
 
 ---
 ## Standing notes / known issues

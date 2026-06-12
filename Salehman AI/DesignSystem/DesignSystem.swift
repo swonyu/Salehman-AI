@@ -157,6 +157,8 @@ struct CircleIconButton: View {
                 .shadow(color: (filled && !disabled) ? DS.Palette.accent.opacity(0.5) : .clear, radius: 8, y: 3)
                 .scaleEffect(hovering && !disabled ? 1.06 : 1.0)
                 .opacity(disabled ? 0.55 : 1)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: systemName)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
