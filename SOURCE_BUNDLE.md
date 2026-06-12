@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:06 +03 · Swift files: 150 · Swift LOC: 33786_
+_Generated: 2026-06-13 00:11 +03 · Swift files: 150 · Swift LOC: 33795_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23539,7 +23539,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (643 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (646 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23694,8 +23694,11 @@ struct ScratchpadView: View {
 
             Button { Task { await runAI() } } label: {
                 HStack(spacing: 6) {
-                    if working { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "sparkles") }
+                    Group {
+                        if working { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "sparkles").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: working)
                     Text(pad == .tasks ? "Organize" : "Summarize")
                 }
                 .font(.system(size: 11.5, weight: .semibold))
@@ -24359,7 +24362,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2051 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2057 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -24893,10 +24896,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: mlxStatusText)
             }
             Spacer(minLength: 8)
             mlxStatusControl
         }
+        .animation(DS.Motion.smooth, value: mlxState)
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .task(id: "mlx-poll") {
@@ -25031,16 +25037,19 @@ struct SettingsView: View {
                     .frame(width: 80)
                     .progressViewStyle(.linear)
                     .tint(DS.Palette.accent)
+                    .transition(.opacity)
 
             case .loading:
                 ProgressView()
                     .controlSize(.small)
+                    .transition(.opacity)
 
             case .ready:
                 Label("Ready", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.successSoft)
                     .labelStyle(.titleAndIcon)
+                    .transition(.opacity)
             }
         }
     }
@@ -36354,7 +36363,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3713 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3726 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39025,6 +39034,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DP: ScratchpadView AI button + SettingsView MLX state transitions
+
+**What changed:**
+- `Views/ScratchpadView.swift`: AI button sparkles/spinner swap now uses a `Group { if working {...} else {...} }.animation(DS.Motion.smooth, value: working)` pattern with `.transition(.opacity)` on each branch. Previously the icon swapped instantly — the bare `if/else` inside an `HStack` didn't have an animation context container, so SwiftUI couldn't interpolate between the two branches.
+- `Views/SettingsView.swift`: `Text(mlxStatusText)` gets `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: mlxStatusText)` so engine status label crossfades; `mlxEngineRow` HStack gets `.animation(DS.Motion.smooth, value: mlxState)` to animate the whole row when state changes; `.downloading`, `.loading`, `.ready` cases in `mlxStatusControl` each get `.transition(.opacity)` so the progress bar / spinner / label transition softly when the MLX engine changes phase.
+
+**Files:** `Views/ScratchpadView.swift`, `Views/SettingsView.swift`
+
+**Why:** ScratchpadView's AI button icon snapped between sparkles and spinner with no transition. SettingsView's MLX engine row showed hard swaps between progress bar, spinner, and "Ready" label as the local model loaded — the `switch` cases lacked transitions so SwiftUI just replaced them instantly.
+
+**Result:** AI button and MLX status row now use smooth DS.Motion.smooth crossfades throughout their state lifecycles.
 
 ---
 ## Standing notes / known issues

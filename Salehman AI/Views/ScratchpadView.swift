@@ -151,8 +151,11 @@ struct ScratchpadView: View {
 
             Button { Task { await runAI() } } label: {
                 HStack(spacing: 6) {
-                    if working { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "sparkles") }
+                    Group {
+                        if working { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "sparkles").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: working)
                     Text(pad == .tasks ? "Organize" : "Summarize")
                 }
                 .font(.system(size: 11.5, weight: .semibold))

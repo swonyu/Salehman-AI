@@ -530,10 +530,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: mlxStatusText)
             }
             Spacer(minLength: 8)
             mlxStatusControl
         }
+        .animation(DS.Motion.smooth, value: mlxState)
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .task(id: "mlx-poll") {
@@ -668,16 +671,19 @@ struct SettingsView: View {
                     .frame(width: 80)
                     .progressViewStyle(.linear)
                     .tint(DS.Palette.accent)
+                    .transition(.opacity)
 
             case .loading:
                 ProgressView()
                     .controlSize(.small)
+                    .transition(.opacity)
 
             case .ready:
                 Label("Ready", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.successSoft)
                     .labelStyle(.titleAndIcon)
+                    .transition(.opacity)
             }
         }
     }
