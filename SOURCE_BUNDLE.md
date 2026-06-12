@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:48 +03 · Swift files: 150 · Swift LOC: 32532_
+_Generated: 2026-06-12 10:06 +03 · Swift files: 150 · Swift LOC: 32574_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13413,7 +13413,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (395 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (399 lines) =====
 ```swift
 import SwiftUI
 
@@ -13522,9 +13522,13 @@ struct AgentsView: View {
                           ? "Stop (iteration \(iterationCount))"
                           : "Start Autonomous Run",
                           systemImage: isRunningAutonomous ? "stop.fill" : "play.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(isRunningAutonomous ? Color.red.opacity(0.85) : DS.Palette.accent, in: Capsule())
+                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.28), radius: 6, y: 2)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(isRunningAutonomous ? .red : DS.Palette.accent)
+                .buttonStyle(LuxPressStyle())
                 .confirmationDialog("Stop the autonomous run?",
                                     isPresented: $showStopConfirm,
                                     titleVisibility: .visible) {
@@ -14531,7 +14535,7 @@ struct CodeTextView: View {
         guard let line else { return }
         // Defer so the (lazy) target row exists before we scroll to it.
         DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(line, anchor: .center) }
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)) { proxy.scrollTo(line, anchor: .center) }
         }
     }
 }
@@ -15610,7 +15614,7 @@ struct CodeView: View {
                     // read edge-to-edge on a wide window — cap and center.
                     .frame(maxWidth: 780)
                     .frame(maxWidth: .infinity)
-                    .animation(.easeOut(duration: 0.15), value: messages.count)
+                    .animation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -16976,7 +16980,7 @@ struct PulsingDot: View {
         Circle().fill(DS.Palette.accent)
             .frame(width: 7, height: 7)
             .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
             .accessibilityHidden(true)
     }
 }
@@ -17511,7 +17515,7 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
                     unrestrictedPulse = true
                 }
             } else {
@@ -19794,7 +19798,7 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
             } else {
                 pulse = false
             }
@@ -20053,7 +20057,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (85 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (92 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20092,8 +20096,15 @@ struct CopilotSignInView: View {
                             .buttonStyle(.bordered)
                         Button {
                             if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
-                        } label: { Label("Open GitHub", systemImage: "arrow.up.forward.app") }
-                            .buttonStyle(.borderedProminent)
+                        } label: {
+                            Label("Open GitHub", systemImage: "arrow.up.forward.app")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(DS.Palette.accent, in: Capsule())
+                                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                        }
+                        .buttonStyle(LuxPressStyle())
                     }
                     .controlSize(.small)
                 }
@@ -20313,7 +20324,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (560 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (572 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20410,11 +20421,16 @@ struct KnowledgeView: View {
                     .accessibilityLabel("Paste text").disabled(ingesting)
                 Button(action: addFile) {
                     HStack(spacing: 6) {
-                        if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
+                        if ingesting { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "plus") }
                         Text(ingesting ? "Reading…" : "Add file")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(ingesting)
             }
         }
@@ -20678,9 +20694,16 @@ struct KnowledgeView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { showPaste = false }.buttonStyle(.plain).foregroundStyle(.secondary)
-                Button("Add to Knowledge", action: addPastedText)
-                    .buttonStyle(.borderedProminent).tint(DS.Palette.accent)
-                    .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(action: addPastedText) {
+                    Text("Add to Knowledge")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                }
+                .buttonStyle(LuxPressStyle())
+                .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(DS.Space.xl)
@@ -21598,7 +21621,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (570 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (575 lines) =====
 ```swift
 import SwiftUI
 
@@ -22070,12 +22093,17 @@ struct MarketsView: View {
                 Spacer()
                 Button { Task { await generateBriefing() } } label: {
                     HStack(spacing: 6) {
-                        if loadingBriefing { ProgressView().controlSize(.small) }
+                        if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
                         else { Image(systemName: "sparkles") }
                         Text(loadingBriefing ? "Generating…" : "Generate")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(loadingBriefing)
             }
             Text(briefing.isEmpty ? StockSageBriefingService.deterministicSummary(for: store.symbols) : briefing)
@@ -23516,7 +23544,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1887 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1901 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -23776,10 +23804,15 @@ struct SettingsView: View {
                             Text("Recommended for your Mac: \(MachineInfo.recommendedMode.title)")
                                 .font(.caption).foregroundStyle(.white.opacity(0.9))
                             Spacer()
-                            Button("Use") { settings.applyRecommendedMode() }
-                                .font(.caption.weight(.semibold))
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
+                            Button { settings.applyRecommendedMode() } label: {
+                                Text("Use")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(DS.Palette.accent, in: Capsule())
+                                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                            }
+                            .buttonStyle(LuxPressStyle())
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
 
@@ -24119,12 +24152,15 @@ struct SettingsView: View {
         } else {
             switch mlxState {
             case .unavailable:
-                Button("Download Model") {
-                    Task { await MLXSalehmanEngine.shared.downloadAndLoad() }
+                Button { Task { await MLXSalehmanEngine.shared.downloadAndLoad() } } label: {
+                    Text("Download Model")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DS.Palette.accent)
-                .controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .accessibilityLabel("Download standalone Salehman model")
 
             case .downloading(let p):
@@ -24850,9 +24886,15 @@ struct SettingsView: View {
                     .font(.caption.weight(.semibold)).buttonStyle(.bordered)
                     .controlSize(.small).tint(.red)
                 } else {
-                    Button("Sign in with GitHub") { showCopilotSignIn = true }
-                        .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button { showCopilotSignIn = true } label: {
+                        Text("Sign in with GitHub")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(DS.Palette.accent, in: Capsule())
+                            .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                    }
+                    .buttonStyle(LuxPressStyle())
                 }
             }
             if copilotAuthed {
@@ -35100,7 +35142,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3045 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3058 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37275,6 +37317,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Consistency — all three copy surfaces now give the same confirmation signal. Previously only ScratchpadView's "Copy all" button and MemoryView's row copy had the flash.
 
 **Result:** Build not yet run (owner-side); additive @State + icon swap in two views.
+
+---
+### 2026-06-12 — Marathon BB: Comprehensive banned-pattern sweep — 14 hits across 8 files
+
+**What:** Completed the final pass of the "all views" `/high-end-visual-design` directive — found and eliminated 14 remaining banned patterns that the previous grep missed:
+- **Animation fixes (5):** `CodeView` list animation `.easeOut(0.15)` + `PulsingDot.easeInOut(0.8)` → `timingCurve`; `CodeSyntaxView` scroll `.easeInOut(0.2)` → `timingCurve`; `ContentView` `unrestrictedPulse` and streaming-dot pulse both `.easeInOut(1.2)` → `timingCurve(0.45,0.0,0.55,1.0)`
+- **Button upgrades (9):** `SettingsView` — "Use" (recommended mode), "Download Model" (MLX), "Sign in with GitHub" (Copilot); `MarketsView` — "Generate" briefing button; `KnowledgeView` — "Add file" + "Add to Knowledge"; `AgentsView` — Start/Stop Autonomous Run (accent/red conditional); `CopilotSignInView` — "Open GitHub" — all upgraded from `.borderedProminent` to `LuxPressStyle()` + accent Capsule pill
+
+**Files:** `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`, `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `Views/CopilotSignInView.swift`
+
+**Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
+
+**Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
 ## Standing notes / known issues
