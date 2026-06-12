@@ -2479,6 +2479,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All main tab views now have the consistent brand-tile header pattern. Marathon design pass is functionally complete.
 
 ---
+
+## 2026-06-12 · Marathon CD — contentTransition(.numericText()) on stat tiles + portfolio
+
+**What:** `TodayView.StatTile`: the 28pt count value and detail string both get `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` — task/chat/document counts now roll like an odometer when they change rather than instant-swapping. `MarketsView.portfolioSummary`: same treatment on the portfolio value (`t.value`) and total P&L string (`pl`) — numbers animate smoothly when positions are added or prices recalculate.
+
+**Files:** `Salehman AI/Views/TodayView.swift`, `Salehman AI/Views/MarketsView.swift`
+
+**Why:** `contentTransition(.numericText())` is a semantic SwiftUI API that signals the text represents a changing number. The digit-roll effect it produces is one of the most visible marks of a premium app. Both surfaces show live-updating numeric data, making them ideal targets.
+
+**Result:** Numeric counters across Today and Markets now animate with digit-roll transitions instead of instant redraws.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

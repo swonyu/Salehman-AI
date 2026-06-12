@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:52 +03 · Swift files: 150 · Swift LOC: 33424_
+_Generated: 2026-06-12 21:54 +03 · Swift files: 150 · Swift LOC: 33432_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21979,7 +21979,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (621 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (625 lines) =====
 ```swift
 import SwiftUI
 
@@ -22255,6 +22255,8 @@ struct MarketsView: View {
                 Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
                 Text(String(format: "%.2f", t.value))
                     .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: t.value)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -22262,6 +22264,8 @@ struct MarketsView: View {
                 Text((up ? "+" : "") + String(format: "%.2f (%+.1f%%)", pl, plPct))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: pl)
             }
         }
         .padding(DS.Space.md)
@@ -26516,7 +26520,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (353 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (357 lines) =====
 ```swift
 import SwiftUI
 
@@ -26846,9 +26850,13 @@ private struct StatTile: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(valueAccent)
                     .lineLimit(1).minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: value)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: detail)
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -35992,7 +36000,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3350 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3362 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38472,6 +38480,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** MarketsView was the only main tab with a plain-text-only header, making it visually inconsistent with the rest of the app. The brand tile acts as a visual anchor and signals that this is a first-class tab, not a stub.
 
 **Result:** All main tab views now have the consistent brand-tile header pattern. Marathon design pass is functionally complete.
+
+---
+
+## 2026-06-12 · Marathon CD — contentTransition(.numericText()) on stat tiles + portfolio
+
+**What:** `TodayView.StatTile`: the 28pt count value and detail string both get `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` — task/chat/document counts now roll like an odometer when they change rather than instant-swapping. `MarketsView.portfolioSummary`: same treatment on the portfolio value (`t.value`) and total P&L string (`pl`) — numbers animate smoothly when positions are added or prices recalculate.
+
+**Files:** `Salehman AI/Views/TodayView.swift`, `Salehman AI/Views/MarketsView.swift`
+
+**Why:** `contentTransition(.numericText())` is a semantic SwiftUI API that signals the text represents a changing number. The digit-roll effect it produces is one of the most visible marks of a premium app. Both surfaces show live-updating numeric data, making them ideal targets.
+
+**Result:** Numeric counters across Today and Markets now animate with digit-roll transitions instead of instant redraws.
 
 ---
 ## Standing notes / known issues

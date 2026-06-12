@@ -326,9 +326,13 @@ private struct StatTile: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(valueAccent)
                     .lineLimit(1).minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: value)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: detail)
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)

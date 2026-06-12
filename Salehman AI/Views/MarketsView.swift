@@ -272,6 +272,8 @@ struct MarketsView: View {
                 Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
                 Text(String(format: "%.2f", t.value))
                     .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: t.value)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -279,6 +281,8 @@ struct MarketsView: View {
                 Text((up ? "+" : "") + String(format: "%.2f (%+.1f%%)", pl, plPct))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: pl)
             }
         }
         .padding(DS.Space.md)
