@@ -81,6 +81,7 @@ struct ChatHistoryView: View {
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
                 }
                 .padding(.horizontal, 18).padding(.vertical, 8)

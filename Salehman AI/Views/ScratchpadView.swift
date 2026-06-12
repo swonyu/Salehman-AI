@@ -135,6 +135,7 @@ struct ScratchpadView: View {
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .focused($addFocused)
                 .onSubmit(add)
+                .onKeyPress(.escape) { newText = ""; return .handled }
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
             Button(action: add) {
                 Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent)

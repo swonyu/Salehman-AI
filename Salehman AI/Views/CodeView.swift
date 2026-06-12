@@ -849,6 +849,7 @@ struct CodeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
             TextField("Filter files", text: $fileFilter)
                 .textFieldStyle(.plain).font(.system(size: 11))
+                .onKeyPress(.escape) { fileFilter = ""; return .handled }
             if !fileFilter.isEmpty {
                 Button { fileFilter = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 10))
@@ -2024,6 +2025,7 @@ struct CodeView: View {
                 .textFieldStyle(.plain).font(.system(size: 11))
                 .focused($findFocused)
                 .onSubmit { jumpMatch(+1) }
+                .onKeyPress(.escape) { clearSearch(); return .handled }
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))

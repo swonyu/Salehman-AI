@@ -1960,6 +1960,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
 
 ---
+### 2026-06-12 — Marathon AV — Escape-to-clear final pass: ChatHistoryView, CodeView, ScratchpadView add field
+
+**What changed:** Four remaining TextFields that were missing Escape-to-clear:
+- `ChatHistoryView.swift` filter: `.onKeyPress(.escape) { query = ""; return .handled }`
+- `CodeView.swift` file-filter (tree panel): `.onKeyPress(.escape) { fileFilter = ""; return .handled }`
+- `CodeView.swift` find-in-file (⌘F bar): `.onKeyPress(.escape) { clearSearch(); return .handled }` (uses existing clearSearch() which also resets match state)
+- `ScratchpadView.swift` add-task/note field: `.onKeyPress(.escape) { newText = ""; return .handled }` (discard partial entry, consistent with MemoryView add-fact AT)
+
+**Files:** `ChatHistoryView.swift`, `CodeView.swift`, `ScratchpadView.swift`
+
+**Why:** Completing the Escape-to-clear/dismiss sweep started in marathon AP and continued through AT–AU. After AV, every filter, search, and entry TextField in the app handles Escape consistently.
+
+**Result:** Build not yet run; all changes are 1-modifier additions.
+
+---
 ### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field
 
 **What changed:**

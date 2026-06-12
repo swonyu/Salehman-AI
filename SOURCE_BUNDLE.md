@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:22 +03 · Swift files: 150 · Swift LOC: 32442_
+_Generated: 2026-06-12 09:24 +03 · Swift files: 150 · Swift LOC: 32446_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13929,7 +13929,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (182 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (183 lines) =====
 ```swift
 import SwiftUI
 
@@ -14014,6 +14014,7 @@ struct ChatHistoryView: View {
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
                 }
                 .padding(.horizontal, 18).padding(.vertical, 8)
@@ -14519,7 +14520,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2507 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2509 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15372,6 +15373,7 @@ struct CodeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
             TextField("Filter files", text: $fileFilter)
                 .textFieldStyle(.plain).font(.system(size: 11))
+                .onKeyPress(.escape) { fileFilter = ""; return .handled }
             if !fileFilter.isEmpty {
                 Button { fileFilter = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 10))
@@ -16547,6 +16549,7 @@ struct CodeView: View {
                 .textFieldStyle(.plain).font(.system(size: 11))
                 .focused($findFocused)
                 .onSubmit { jumpMatch(+1) }
+                .onKeyPress(.escape) { clearSearch(); return .handled }
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))
@@ -22694,7 +22697,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (564 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (565 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22833,6 +22836,7 @@ struct ScratchpadView: View {
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .focused($addFocused)
                 .onSubmit(add)
+                .onKeyPress(.escape) { newText = ""; return .handled }
                 .accessibilityLabel(pad == .tasks ? "New task" : "New note")
             Button(action: add) {
                 Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent)
@@ -35010,7 +35014,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2894 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2909 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36971,6 +36975,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
 
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
+### 2026-06-12 — Marathon AV — Escape-to-clear final pass: ChatHistoryView, CodeView, ScratchpadView add field
+
+**What changed:** Four remaining TextFields that were missing Escape-to-clear:
+- `ChatHistoryView.swift` filter: `.onKeyPress(.escape) { query = ""; return .handled }`
+- `CodeView.swift` file-filter (tree panel): `.onKeyPress(.escape) { fileFilter = ""; return .handled }`
+- `CodeView.swift` find-in-file (⌘F bar): `.onKeyPress(.escape) { clearSearch(); return .handled }` (uses existing clearSearch() which also resets match state)
+- `ScratchpadView.swift` add-task/note field: `.onKeyPress(.escape) { newText = ""; return .handled }` (discard partial entry, consistent with MemoryView add-fact AT)
+
+**Files:** `ChatHistoryView.swift`, `CodeView.swift`, `ScratchpadView.swift`
+
+**Why:** Completing the Escape-to-clear/dismiss sweep started in marathon AP and continued through AT–AU. After AV, every filter, search, and entry TextField in the app handles Escape consistently.
+
+**Result:** Build not yet run; all changes are 1-modifier additions.
 
 ---
 ### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field
