@@ -98,20 +98,22 @@ struct AboutView: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Editorial section label → rhythm before the list.
-                Text("WHAT IT DOES")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(DS.Palette.accent)
-                    .padding(.top, 2)
+                // Section eyebrow — uses the DS component for consistency.
+                Eyebrow(text: "What it does").padding(.top, 2)
 
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
                     VStack(spacing: 1) {
                         ForEach(capabilities) { cap in capabilityRow(cap) }
                     }
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .fill(Color.white.opacity(0.035))
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                        }
+                    )
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
@@ -138,11 +140,16 @@ struct AboutView: View {
     private func capabilityRow(_ cap: Capability) -> some View {
         let isHovered = hoveredCap == cap.id
         return HStack(alignment: .top, spacing: DS.Space.md) {
-            Image(systemName: cap.icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DS.Palette.accent)
-                .frame(width: 22, height: 22)
-                .padding(.top, 1)
+            // Icon well — 28×28, accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(isHovered ? 0.20 : 0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: cap.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(cap.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                 Text(cap.body).font(.caption).foregroundStyle(.white.opacity(0.7))
@@ -152,11 +159,10 @@ struct AboutView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
-        // Hover highlight — a premium macOS row affordance (research: hover states).
         .background(isHovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if hovering { hoveredCap = cap.id }
                 else if hoveredCap == cap.id { hoveredCap = nil }
             }

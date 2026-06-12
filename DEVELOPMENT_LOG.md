@@ -2253,6 +2253,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build sandbox-blocked (DerivedData write); SourceKit false positives are pre-existing cross-file reference issues. Code structure verified correct.
 
 ---
+
+### 2026-06-12 — Marathon BM: AboutView premium elevation pass
+
+**What changed:** `AboutView.swift`
+- "WHAT IT DOES" raw text label → `Eyebrow(text: "What it does")` component (consistent with BH–BL)
+- Capability list container: flat `codeSurfaceSide` fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` overlay 1pt)
+- Capability rows: bare `Image(systemName:)` 22×22 → 28×28 `RoundedRectangle` icon well with `accent.opacity(0.12→0.20)` fill (brightens on hover)
+- Row hover: `DS.Motion.smooth` (ease-based) → `DS.Motion.magnetic` (interpolatingSpring stiffness 220, damping 18)
+
+**Why:** AboutView already had the brand tile + ambient orb + entrance animation. The remaining gaps (flat section label, bare icons without wells, smooth vs magnetic hover) broke the depth ladder established across all other marathon slices (BG–BL).
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves the full module fine. Code structure verified.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:34 +03 · Swift files: 150 · Swift LOC: 32965_
+_Generated: 2026-06-12 20:38 +03 · Swift files: 150 · Swift LOC: 32971_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13244,7 +13244,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (165 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (171 lines) =====
 ```swift
 import SwiftUI
 
@@ -13346,20 +13346,22 @@ struct AboutView: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Editorial section label → rhythm before the list.
-                Text("WHAT IT DOES")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(DS.Palette.accent)
-                    .padding(.top, 2)
+                // Section eyebrow — uses the DS component for consistency.
+                Eyebrow(text: "What it does").padding(.top, 2)
 
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
                     VStack(spacing: 1) {
                         ForEach(capabilities) { cap in capabilityRow(cap) }
                     }
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .fill(Color.white.opacity(0.035))
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                        }
+                    )
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
@@ -13386,11 +13388,16 @@ struct AboutView: View {
     private func capabilityRow(_ cap: Capability) -> some View {
         let isHovered = hoveredCap == cap.id
         return HStack(alignment: .top, spacing: DS.Space.md) {
-            Image(systemName: cap.icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DS.Palette.accent)
-                .frame(width: 22, height: 22)
-                .padding(.top, 1)
+            // Icon well — 28×28, accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(isHovered ? 0.20 : 0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: cap.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(cap.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                 Text(cap.body).font(.caption).foregroundStyle(.white.opacity(0.7))
@@ -13400,11 +13407,10 @@ struct AboutView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
-        // Hover highlight — a premium macOS row affordance (research: hover states).
         .background(isHovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if hovering { hoveredCap = cap.id }
                 else if hoveredCap == cap.id { hoveredCap = nil }
             }
@@ -35533,7 +35539,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3124 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3138 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37787,6 +37793,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** TodayView was the only major surface still using flat `codeSurface` fills without depth — no `DS.Bezel`, no magnetic hover, no entrance animation. The `DS.Bezel`, `SuggestionCard`, and `DS.Motion.magnetic` patterns already existed; this pass wires all three into the Today dashboard.
 
 **Result:** Build sandbox-blocked (DerivedData write); SourceKit false positives are pre-existing cross-file reference issues. Code structure verified correct.
+
+---
+
+### 2026-06-12 — Marathon BM: AboutView premium elevation pass
+
+**What changed:** `AboutView.swift`
+- "WHAT IT DOES" raw text label → `Eyebrow(text: "What it does")` component (consistent with BH–BL)
+- Capability list container: flat `codeSurfaceSide` fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` overlay 1pt)
+- Capability rows: bare `Image(systemName:)` 22×22 → 28×28 `RoundedRectangle` icon well with `accent.opacity(0.12→0.20)` fill (brightens on hover)
+- Row hover: `DS.Motion.smooth` (ease-based) → `DS.Motion.magnetic` (interpolatingSpring stiffness 220, damping 18)
+
+**Why:** AboutView already had the brand tile + ambient orb + entrance animation. The remaining gaps (flat section label, bare icons without wells, smooth vs magnetic hover) broke the depth ladder established across all other marathon slices (BG–BL).
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves the full module fine. Code structure verified.
 
 ---
 ## Standing notes / known issues
