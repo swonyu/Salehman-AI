@@ -873,7 +873,8 @@ struct ContentView: View {
                                           budget: Int = 2_000) -> (label: String, warn: Bool)? {
         let words = text.split(whereSeparator: \.isWhitespace).count
         guard words >= floor else { return nil }
-        return ("\(words) words", words >= budget)
+        let approxTok = Int((Double(words) * 1.3).rounded())
+        return ("~\(approxTok) tok", words >= budget)
     }
 
     /// Normalizes a pasted tunnel/server URL for the Custom-server brain:

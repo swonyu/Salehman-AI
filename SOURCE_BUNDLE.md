@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:09 +03 · Swift files: 150 · Swift LOC: 31638_
+_Generated: 2026-06-12 07:10 +03 · Swift files: 150 · Swift LOC: 31662_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17030,7 +17030,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2718 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2719 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17907,7 +17907,8 @@ struct ContentView: View {
                                           budget: Int = 2_000) -> (label: String, warn: Bool)? {
         let words = text.split(whereSeparator: \.isWhitespace).count
         guard words >= floor else { return nil }
-        return ("\(words) words", words >= budget)
+        let approxTok = Int((Double(words) * 1.3).rounded())
+        return ("~\(approxTok) tok", words >= budget)
     }
 
     /// Normalizes a pasted tunnel/server URL for the Custom-server brain:
@@ -22296,7 +22297,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (425 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (436 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22680,6 +22681,17 @@ struct ScratchpadView: View {
             HStack {
                 Label("Salehman", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
+                Button {
+                    store.addNote(aiResult)
+                    aiResult = ""
+                } label: {
+                    Label("Save as Note", systemImage: "note.text.badge.plus")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Save this summary as a note")
+                .accessibilityLabel("Save AI summary as note")
+
                 Button { aiResult = "" } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Dismiss")
             }
@@ -26652,7 +26664,7 @@ struct ChatHistoryFilterExtendedTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (478 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (490 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26968,15 +26980,27 @@ struct ComposerCountTests {
     }
 
     @Test func labelsAtTheFloorWithoutWarning() {
+        // 120 words × 1.3 = 156 tokens (rounded)
         let draft = Array(repeating: "w", count: 120).joined(separator: " ")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "120 words" && c?.warn == false)
+        #expect(c?.label == "~156 tok" && c?.warn == false)
     }
 
     @Test func warnsAtTheBudget() {
+        // 2000 words × 1.3 = 2600 tokens
         let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "2000 words" && c?.warn == true)
+        #expect(c?.label == "~2600 tok" && c?.warn == true)
+    }
+
+    @Test func tokenLabelRoundsCorrectly() {
+        // 100 words × 1.3 = 130.0 — even; 77 words × 1.3 = 100.1 → 100 tok
+        let c100 = ContentView.composerCount(
+            Array(repeating: "w", count: 100).joined(separator: " "), floor: 1)
+        #expect(c100?.label == "~130 tok")
+        let c77 = ContentView.composerCount(
+            Array(repeating: "w", count: 77).joined(separator: " "), floor: 1)
+        #expect(c77?.label == "~100 tok")
     }
 }
 
@@ -34189,7 +34213,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2465 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2492 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35772,6 +35796,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Marathon Y: Notes context menus + save AI result + composer token count**
+
+**What changed:**
+- `Views/ScratchpadView.swift`: `taskRow` and `noteRow` each get a `.contextMenu` — Copy, Edit, Delete for both; tasks additionally have Mark Done / Mark Not Done. New private `copyText(_:)` helper uses `NSPasteboard`. `aiResultCard` gains a "Save as Note" button (before dismiss X) that calls `store.addNote(aiResult)` then clears the card.
+- `Views/ContentView.swift`: `composerCount` now returns `"~N tok"` (English BPE estimate: words × 1.3, rounded) instead of `"N words"` — more actionable for users watching context window limits.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: Updated 3 existing `ComposerCountTests` to match new label format (`"~156 tok"` / `"~2600 tok"`); added `tokenLabelRoundsCorrectly` (verifies rounding at 100 and 77 words).
+
+**Why:** Notes rows had no clipboard path for task titles; context menus mirror the chat-bubble pattern. AI summary card was dead-end (dismiss only). Composer showing tokens is more actionable than word count when using a 4096-token local model.
+
+**Files:** `Views/ScratchpadView.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by updated + new unit tests.
+
+---
 **2026-06-12 — Marathon X: rating-filtered training export (`ratedOnly`)**
 
 **What changed:**
@@ -35784,6 +35822,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Persistence/TrainingExporter.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
 
 **Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
+
+---
+## 2026-06-12 — Marathon polish: local-first brain gate + ContentView curly-quote fix
+
+**What:** Three-file commit (cac6cbe) cleaning up bugs found during the marathon polish pass.
+
+1. `SettingsBrainReadiness.salehmanAnyCloud` was incorrectly returning `true` when only third-party cloud API keys (Gemini, NVIDIA, Anthropic, etc.) were configured. Salehman is local-first and never contacts cloud services, so the gate now only checks `vllmConfigured || unslothConfigured`. `SettingsBrainReadyTests` updated accordingly (gemini/nvidia/anthropic cases flipped to NOT ready).
+
+2. `ContentView.swift` had macOS autocorrect replace straight ASCII double-quotes with Unicode curly quotes (U+201C/U+201D) across 8 string literals in the cloud-GPU connect alert block (lines 176-191), causing ~20 compile errors. Fixed by global U+201C→`"` / U+201D→`"` substitution; the one embedded typographic quote in the model name was fixed to use `\"salehman\"`.
+
+**Files:** `Salehman AI/Views/SettingsBrainReadiness.swift`, `Salehman AITests/SettingsBrainReadyTests.swift`, `Salehman AI/Views/ContentView.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
 
 ---
 ## Standing notes / known issues

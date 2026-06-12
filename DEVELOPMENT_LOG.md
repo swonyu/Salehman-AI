@@ -1580,6 +1580,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Marathon Y: Notes context menus + save AI result + composer token count**
+
+**What changed:**
+- `Views/ScratchpadView.swift`: `taskRow` and `noteRow` each get a `.contextMenu` — Copy, Edit, Delete for both; tasks additionally have Mark Done / Mark Not Done. New private `copyText(_:)` helper uses `NSPasteboard`. `aiResultCard` gains a "Save as Note" button (before dismiss X) that calls `store.addNote(aiResult)` then clears the card.
+- `Views/ContentView.swift`: `composerCount` now returns `"~N tok"` (English BPE estimate: words × 1.3, rounded) instead of `"N words"` — more actionable for users watching context window limits.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: Updated 3 existing `ComposerCountTests` to match new label format (`"~156 tok"` / `"~2600 tok"`); added `tokenLabelRoundsCorrectly` (verifies rounding at 100 and 77 words).
+
+**Why:** Notes rows had no clipboard path for task titles; context menus mirror the chat-bubble pattern. AI summary card was dead-end (dismiss only). Composer showing tokens is more actionable than word count when using a 4096-token local model.
+
+**Files:** `Views/ScratchpadView.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by updated + new unit tests.
+
+---
 **2026-06-12 — Marathon X: rating-filtered training export (`ratedOnly`)**
 
 **What changed:**

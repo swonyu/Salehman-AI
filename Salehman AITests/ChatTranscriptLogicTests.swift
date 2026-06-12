@@ -312,15 +312,27 @@ struct ComposerCountTests {
     }
 
     @Test func labelsAtTheFloorWithoutWarning() {
+        // 120 words × 1.3 = 156 tokens (rounded)
         let draft = Array(repeating: "w", count: 120).joined(separator: " ")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "120 words" && c?.warn == false)
+        #expect(c?.label == "~156 tok" && c?.warn == false)
     }
 
     @Test func warnsAtTheBudget() {
+        // 2000 words × 1.3 = 2600 tokens
         let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "2000 words" && c?.warn == true)
+        #expect(c?.label == "~2600 tok" && c?.warn == true)
+    }
+
+    @Test func tokenLabelRoundsCorrectly() {
+        // 100 words × 1.3 = 130.0 — even; 77 words × 1.3 = 100.1 → 100 tok
+        let c100 = ContentView.composerCount(
+            Array(repeating: "w", count: 100).joined(separator: " "), floor: 1)
+        #expect(c100?.label == "~130 tok")
+        let c77 = ContentView.composerCount(
+            Array(repeating: "w", count: 77).joined(separator: " "), floor: 1)
+        #expect(c77?.label == "~100 tok")
     }
 }
 

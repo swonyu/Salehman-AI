@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Notes/Tasks tab — a manual UI over `ScratchpadStore` (which the chat tools
@@ -165,6 +166,11 @@ struct ScratchpadView: View {
         for t in store.tasks where t.done { store.deleteTask(t.id) }
     }
 
+    private func copyText(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     private func taskRow(_ t: TaskItem) -> some View {
         let hovered = hoveredTaskID == t.id
         return HStack(spacing: 12) {
@@ -203,6 +209,22 @@ struct ScratchpadView: View {
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
+        .contextMenu {
+            Button { copyText(t.title) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button { store.toggleTask(t.id) } label: {
+                Label(t.done ? "Mark Not Done" : "Mark Done",
+                      systemImage: t.done ? "circle" : "checkmark.circle")
+            }
+            if editingId != t.id {
+                Button { startEdit(id: t.id, text: t.title) } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { store.deleteTask(t.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var notesList: some View {
@@ -259,6 +281,18 @@ struct ScratchpadView: View {
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
+        .contextMenu {
+            Button { copyText(n.text) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if editingId != n.id {
+                Button { startEdit(id: n.id, text: n.text) } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { store.deleteNote(n.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func startEdit(id: UUID, text: String) {
@@ -346,6 +380,17 @@ struct ScratchpadView: View {
             HStack {
                 Label("Salehman", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
+                Button {
+                    store.addNote(aiResult)
+                    aiResult = ""
+                } label: {
+                    Label("Save as Note", systemImage: "note.text.badge.plus")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Save this summary as a note")
+                .accessibilityLabel("Save AI summary as note")
+
                 Button { aiResult = "" } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Dismiss")
             }
