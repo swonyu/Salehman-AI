@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:43 +03 · Swift files: 150 · Swift LOC: 32509_
+_Generated: 2026-06-12 09:45 +03 · Swift files: 150 · Swift LOC: 32523_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17075,7 +17075,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (165 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (177 lines) =====
 ```swift
 import SwiftUI
 
@@ -17125,6 +17125,18 @@ struct CommandPalette: View {
             .init(title: "Keyboard Shortcuts", subtitle: "See every ⌘ shortcut at a glance", icon: "keyboard") { app.showShortcutsRequested = true },
             .init(title: "About Salehman AI", subtitle: "Identity, capabilities, privacy", icon: "info.circle.fill") { app.showAboutRequested = true },
             .init(title: "Hands-Free Voice", subtitle: "Talk to Salehman, eyes-free", icon: "waveform") { app.showVoiceModeRequested = true },
+            .init(title: "New Note", subtitle: "Open Notes and focus the add field", icon: "note.text.badge.plus") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = true
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "New Task", subtitle: "Open Notes in tasks mode", icon: "checklist.checked") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = false
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "Review Project", subtitle: "Pack folder and ask Salehman to review it", icon: "sparkles") {
+                app.selectedTab = .code; app.reviewProjectRequested = true },
+            .init(title: "Find in File", subtitle: "Search the open file in Code tab", icon: "doc.text.magnifyingglass") {
+                app.selectedTab = .code; app.toggleCodeFindRequested = true },
         ]
         // One "switch brain" command per selectable (non-paid) brain.
         for pref in BrainPreference.selectableCases {
@@ -22751,7 +22763,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (565 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (567 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22824,6 +22836,8 @@ struct ScratchpadView: View {
         if app.scratchpadFocusNotesMode {
             pad = .notes
             app.scratchpadFocusNotesMode = false
+        } else {
+            pad = .tasks
         }
         addFocused = true
         app.focusScratchpadAddFieldRequested = false
@@ -35077,7 +35091,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3009 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3021 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37204,6 +37218,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The Code tab showed the generic "Palette / New Chat / Voice / Shortcuts / Settings" hints, which are useless for a power user already on the Code tab. The Code tab has rich keyboard shortcuts (⌘R Review, ⌘F Find, ⌘L Focus, ⌘⇧E Tree) that aren't discoverable — showing them in the shortcut bar makes them visible and clickable.
 
 **Result:** Build not yet run (owner-side); all changes are edge-trigger additions + `@ObservedObject` addition to CodeView.
+
+---
+
+### 2026-06-12 — Marathon BD: CommandPalette — New Task, New Note, Review Project, Find in File
+
+**What:** Added 4 commands to `CommandPalette`: "New Note" and "New Task" (navigate to Scratchpad and focus the add field in the correct mode), "Review Project" (switches to Code tab and fires `reviewProjectRequested`), "Find in File" (switches to Code tab and fires `toggleCodeFindRequested`). These reuse edge-trigger flags from marathon BB; no new state. Also fixed `ScratchpadView.applyFocusTrigger()` to explicitly switch to `.tasks` mode when `scratchpadFocusNotesMode = false` — previously it would stay in whichever tab @AppStorage had last persisted, so "New Task" from the palette could land on the Notes tab.
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** CommandPalette is the fastest action surface in the app (⌘K), so common quick-create actions (new task, new note) and the primary Code tab action (review project) belong there. Previously ⌘K had no way to start a note or task without going through TodayView.
+
+**Result:** Build not yet run (owner-side); all additions are data (command list entries) + one line in applyFocusTrigger.
 
 ---
 

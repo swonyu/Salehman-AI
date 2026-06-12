@@ -69,6 +69,8 @@ struct ScratchpadView: View {
         if app.scratchpadFocusNotesMode {
             pad = .notes
             app.scratchpadFocusNotesMode = false
+        } else {
+            pad = .tasks
         }
         addFocused = true
         app.focusScratchpadAddFieldRequested = false

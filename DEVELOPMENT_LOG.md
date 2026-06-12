@@ -2127,6 +2127,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 
 ---
 
+### 2026-06-12 — Marathon BD: CommandPalette — New Task, New Note, Review Project, Find in File
+
+**What:** Added 4 commands to `CommandPalette`: "New Note" and "New Task" (navigate to Scratchpad and focus the add field in the correct mode), "Review Project" (switches to Code tab and fires `reviewProjectRequested`), "Find in File" (switches to Code tab and fires `toggleCodeFindRequested`). These reuse edge-trigger flags from marathon BB; no new state. Also fixed `ScratchpadView.applyFocusTrigger()` to explicitly switch to `.tasks` mode when `scratchpadFocusNotesMode = false` — previously it would stay in whichever tab @AppStorage had last persisted, so "New Task" from the palette could land on the Notes tab.
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** CommandPalette is the fastest action surface in the app (⌘K), so common quick-create actions (new task, new note) and the primary Code tab action (review project) belong there. Previously ⌘K had no way to start a note or task without going through TodayView.
+
+**Result:** Build not yet run (owner-side); all additions are data (command list entries) + one line in applyFocusTrigger.
+
+---
+
 ### 2026-06-12 — Marathon BC: ShortcutsView Code tab group
 
 **What:** Added a "CODE TAB" group to `ShortcutsView` with the 7 Code-tab-specific keyboard shortcuts: `⌘R` Review project, `⌘F` Find in file, `⌘⌥F` Find in conversation, `⌘L` Focus chat input, `⌘⇧E` Toggle file tree, `⌘⇧I` Toggle right panel, `⌘⇧O` Open folder.

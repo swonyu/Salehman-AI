@@ -46,6 +46,18 @@ struct CommandPalette: View {
             .init(title: "Keyboard Shortcuts", subtitle: "See every ⌘ shortcut at a glance", icon: "keyboard") { app.showShortcutsRequested = true },
             .init(title: "About Salehman AI", subtitle: "Identity, capabilities, privacy", icon: "info.circle.fill") { app.showAboutRequested = true },
             .init(title: "Hands-Free Voice", subtitle: "Talk to Salehman, eyes-free", icon: "waveform") { app.showVoiceModeRequested = true },
+            .init(title: "New Note", subtitle: "Open Notes and focus the add field", icon: "note.text.badge.plus") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = true
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "New Task", subtitle: "Open Notes in tasks mode", icon: "checklist.checked") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = false
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "Review Project", subtitle: "Pack folder and ask Salehman to review it", icon: "sparkles") {
+                app.selectedTab = .code; app.reviewProjectRequested = true },
+            .init(title: "Find in File", subtitle: "Search the open file in Code tab", icon: "doc.text.magnifyingglass") {
+                app.selectedTab = .code; app.toggleCodeFindRequested = true },
         ]
         // One "switch brain" command per selectable (non-paid) brain.
         for pref in BrainPreference.selectableCases {
