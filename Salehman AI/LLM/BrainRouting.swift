@@ -185,10 +185,24 @@ nonisolated struct BrainRouteConfig: Sendable {
     static func live() async -> BrainRouteConfig {
         let pref = AppSettings.brainPreferenceCurrent
         var c = BrainRouteConfig(pref: pref, offlineOnly: AppSettings.isOfflineOnly)
-        c.configured = CloudProvider.configuredNow()
-        c.unslothConfigured = UnslothStudio.isConfigured
-        c.vllmConfigured = VLLM.isConfigured
-        c.salehmanCloudReady = SalehmanEngine.hasAnyCloud
+        // These four probes are SYNCHRONOUS Keychain reads (SecItemCopyMatching,
+        // 10+ items). macOS can block such a read for SECONDS — or forever — when
+        // it needs an authorization prompt (e.g. after the app is rebuilt and its
+        // code signature no longer matches an item's "always allow" ACL, the
+        // hidden SecurityAgent dialog blocks the call). On the MAIN actor that
+        // froze the whole UI mid-send (observed: Code tab stuck on "Working",
+        // main thread parked in SecItemCopyMatching). Run them OFF-main so the
+        // prompt can surface and the UI stays alive. All return Sendable values.
+        let probes = await Task.detached(priority: .userInitiated) {
+            (configured: CloudProvider.configuredNow(),
+             unsloth: UnslothStudio.isConfigured,
+             vllm: VLLM.isConfigured,
+             salehmanCloud: SalehmanEngine.hasAnyCloud)
+        }.value
+        c.configured = probes.configured
+        c.unslothConfigured = probes.unsloth
+        c.vllmConfigured = probes.vllm
+        c.salehmanCloudReady = probes.salehmanCloud
         switch pref {
         case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
             c.ollamaReady = await LocalLLM.ollamaReady()
