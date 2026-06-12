@@ -37,6 +37,15 @@ struct ShortcutsView: View {
             .init(keys: "⌘.", label: "Stop generating"),
             .init(keys: "⌘L", label: "Live transcription"),
         ]),
+        .init(title: "CODE TAB", items: [
+            .init(keys: "⌘R",  label: "Review project"),
+            .init(keys: "⌘F",  label: "Find in file"),
+            .init(keys: "⌘⌥F", label: "Find in conversation"),
+            .init(keys: "⌘L",  label: "Focus chat input"),
+            .init(keys: "⌘⇧E", label: "Toggle file tree"),
+            .init(keys: "⌘⇧I", label: "Toggle right panel"),
+            .init(keys: "⌘⇧O", label: "Open folder"),
+        ]),
     ]
 
     var body: some View {

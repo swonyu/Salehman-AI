@@ -2126,6 +2126,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); all changes are edge-trigger additions + `@ObservedObject` addition to CodeView.
 
 ---
+
+### 2026-06-12 — Marathon BC: ShortcutsView Code tab group
+
+**What:** Added a "CODE TAB" group to `ShortcutsView` with the 7 Code-tab-specific keyboard shortcuts: `⌘R` Review project, `⌘F` Find in file, `⌘⌥F` Find in conversation, `⌘L` Focus chat input, `⌘⇧E` Toggle file tree, `⌘⇧I` Toggle right panel, `⌘⇧O` Open folder.
+
+**Files:** `Salehman AI/Views/ShortcutsView.swift`
+
+**Why:** The shortcuts sheet (⌘/) was missing the Code tab entirely — all those shortcuts existed but were undiscoverable since they weren't in the reference sheet.
+
+**Result:** Build not yet run (owner-side); purely additive data change.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

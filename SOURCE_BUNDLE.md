@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:42 +03 · Swift files: 150 · Swift LOC: 32500_
+_Generated: 2026-06-12 09:43 +03 · Swift files: 150 · Swift LOC: 32509_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25384,7 +25384,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (144 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (153 lines) =====
 ```swift
 import SwiftUI
 
@@ -25424,6 +25424,15 @@ struct ShortcutsView: View {
             .init(keys: "⌘F", label: "Find in conversation"),
             .init(keys: "⌘.", label: "Stop generating"),
             .init(keys: "⌘L", label: "Live transcription"),
+        ]),
+        .init(title: "CODE TAB", items: [
+            .init(keys: "⌘R",  label: "Review project"),
+            .init(keys: "⌘F",  label: "Find in file"),
+            .init(keys: "⌘⌥F", label: "Find in conversation"),
+            .init(keys: "⌘L",  label: "Focus chat input"),
+            .init(keys: "⌘⇧E", label: "Toggle file tree"),
+            .init(keys: "⌘⇧I", label: "Toggle right panel"),
+            .init(keys: "⌘⇧O", label: "Open folder"),
         ]),
     ]
 
@@ -35068,7 +35077,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2997 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3009 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37195,6 +37204,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The Code tab showed the generic "Palette / New Chat / Voice / Shortcuts / Settings" hints, which are useless for a power user already on the Code tab. The Code tab has rich keyboard shortcuts (⌘R Review, ⌘F Find, ⌘L Focus, ⌘⇧E Tree) that aren't discoverable — showing them in the shortcut bar makes them visible and clickable.
 
 **Result:** Build not yet run (owner-side); all changes are edge-trigger additions + `@ObservedObject` addition to CodeView.
+
+---
+
+### 2026-06-12 — Marathon BC: ShortcutsView Code tab group
+
+**What:** Added a "CODE TAB" group to `ShortcutsView` with the 7 Code-tab-specific keyboard shortcuts: `⌘R` Review project, `⌘F` Find in file, `⌘⌥F` Find in conversation, `⌘L` Focus chat input, `⌘⇧E` Toggle file tree, `⌘⇧I` Toggle right panel, `⌘⇧O` Open folder.
+
+**Files:** `Salehman AI/Views/ShortcutsView.swift`
+
+**Why:** The shortcuts sheet (⌘/) was missing the Code tab entirely — all those shortcuts existed but were undiscoverable since they weren't in the reference sheet.
+
+**Result:** Build not yet run (owner-side); purely additive data change.
 
 ---
 ## Standing notes / known issues
