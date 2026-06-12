@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:19 +03 · Swift files: 150 · Swift LOC: 34087_
+_Generated: 2026-06-13 02:23 +03 · Swift files: 150 · Swift LOC: 34095_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14810,7 +14810,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2650 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2656 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15229,7 +15229,9 @@ struct SlashMenuView: View {
         .padding(4)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
     }
 }
@@ -16137,7 +16139,9 @@ struct CodeView: View {
                         }
                         .padding(.leading, 5).padding(.trailing, 14).padding(.vertical, 6)
                         .background(Color.white.opacity(0.07), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         .contentShape(Capsule())
                     }
                     .buttonStyle(LuxPressStyle())
@@ -16214,7 +16218,9 @@ struct CodeView: View {
                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.07)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.82))
         }
@@ -23773,7 +23779,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (659 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (661 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24359,7 +24365,9 @@ struct ScratchpadView: View {
                         .foregroundStyle(.white.opacity(0.70))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color.white.opacity(0.08), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
                 .buttonStyle(LuxPressStyle()).help("Save this summary as a note")
                 .accessibilityLabel("Save AI summary as note")
@@ -36655,7 +36663,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4119 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4134 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39730,6 +39738,21 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/SettingsView.swift`
 
 **Why:** The brainGridCell status text was the last dynamic label in the app without a crossfade — all other changing labels (voice phase, brain title, market prices, progress counters) already had contentTransition. The test status appearances are shown/hidden conditionally; without a transition they snap in abruptly.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon ET: final top-lit gradient pass — Scratchpad, CodeView avatar ring + welcome pills + shortcutHint
+
+**What changed:**
+- `ScratchpadView.swift` "Save as Note" pill: `white@0.10` → `[white@0.20, white@0.04]`
+- `CodeView.swift` double-bezel avatar ring: `accent@0.28` → `[accent@0.50, accent@0.12]`
+- `CodeView.swift` welcome example-prompt Capsule pills (LuxPressStyle): `white@0.12` → `[white@0.22, white@0.05]`
+- `CodeView.swift` `shortcutHint` key badge: `white@0.16` → `[white@0.28, white@0.07]` (consistent with BottomShortcutBar Marathon EI)
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Final sweep of the remaining non-circular strokes. All 4 targets are interactive or prominent: a CTA pill, the main avatar double-bezel ring, interactive prompt pills, and keyboard shortcut badges. Top-lit gradient now fully consistent across the entire app's stroke vocabulary.
 
 **Result:** Zero Swift compiler errors.
 

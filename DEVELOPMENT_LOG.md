@@ -3076,6 +3076,21 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon ET: final top-lit gradient pass — Scratchpad, CodeView avatar ring + welcome pills + shortcutHint
+
+**What changed:**
+- `ScratchpadView.swift` "Save as Note" pill: `white@0.10` → `[white@0.20, white@0.04]`
+- `CodeView.swift` double-bezel avatar ring: `accent@0.28` → `[accent@0.50, accent@0.12]`
+- `CodeView.swift` welcome example-prompt Capsule pills (LuxPressStyle): `white@0.12` → `[white@0.22, white@0.05]`
+- `CodeView.swift` `shortcutHint` key badge: `white@0.16` → `[white@0.28, white@0.07]` (consistent with BottomShortcutBar Marathon EI)
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Final sweep of the remaining non-circular strokes. All 4 targets are interactive or prominent: a CTA pill, the main avatar double-bezel ring, interactive prompt pills, and keyboard shortcut badges. Top-lit gradient now fully consistent across the entire app's stroke vocabulary.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

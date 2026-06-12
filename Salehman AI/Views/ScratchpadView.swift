@@ -582,7 +582,9 @@ struct ScratchpadView: View {
                         .foregroundStyle(.white.opacity(0.70))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color.white.opacity(0.08), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
                 .buttonStyle(LuxPressStyle()).help("Save this summary as a note")
                 .accessibilityLabel("Save AI summary as note")

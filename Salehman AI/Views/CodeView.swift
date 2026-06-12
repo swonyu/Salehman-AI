@@ -415,7 +415,9 @@ struct SlashMenuView: View {
         .padding(4)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
     }
 }
@@ -1323,7 +1325,9 @@ struct CodeView: View {
                         }
                         .padding(.leading, 5).padding(.trailing, 14).padding(.vertical, 6)
                         .background(Color.white.opacity(0.07), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         .contentShape(Capsule())
                     }
                     .buttonStyle(LuxPressStyle())
@@ -1400,7 +1404,9 @@ struct CodeView: View {
                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.07)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.82))
         }
