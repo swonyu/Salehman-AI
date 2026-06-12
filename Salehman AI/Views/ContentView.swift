@@ -1085,7 +1085,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "note.text.badge.plus")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DS.Palette.success.opacity(0.85))
+                        .foregroundStyle(DS.Palette.successSoft)
                     Text("Saved to Notes")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.72))

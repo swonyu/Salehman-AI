@@ -123,10 +123,10 @@ struct TabSwitcherBar: View {
                 // that the pill is informational and explorable.
                 HStack(spacing: 7) {
                     ZStack {
-                        Circle().fill(market.session.isOpen ? DS.Palette.success : Color.secondary)
+                        Circle().fill(market.session.isOpen ? DS.Palette.successSoft : Color.secondary)
                             .frame(width: 8, height: 8)
                         if market.session.isOpen {
-                            Circle().stroke(DS.Palette.success.opacity(0.45), lineWidth: 2)
+                            Circle().stroke(DS.Palette.successSoft.opacity(0.45), lineWidth: 2)
                                 .frame(width: 8, height: 8).scaleEffect(1.7).opacity(0.6)
                         }
                     }
@@ -135,7 +135,7 @@ struct TabSwitcherBar: View {
                         .foregroundStyle(market.session.isOpen ? Color.white : .secondary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(market.session.isOpen ? DS.Palette.success.opacity(0.12) : Color.white.opacity(0.04),
+                .background(market.session.isOpen ? DS.Palette.successSoft.opacity(0.12) : Color.white.opacity(0.04),
                             in: Capsule())
                 .overlay(
                     Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)

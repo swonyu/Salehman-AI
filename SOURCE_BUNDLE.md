@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:16 +03 · Swift files: 150 · Swift LOC: 32438_
+_Generated: 2026-06-12 09:19 +03 · Swift files: 150 · Swift LOC: 32438_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -18288,7 +18288,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "note.text.badge.plus")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DS.Palette.success.opacity(0.85))
+                        .foregroundStyle(DS.Palette.successSoft)
                     Text("Saved to Notes")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.72))
@@ -22795,7 +22795,7 @@ struct ScratchpadView: View {
                 Button { copyAll() } label: {
                     Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 13))
-                        .foregroundStyle(copyAllPulse ? DS.Palette.success : .secondary)
+                        .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
@@ -25597,10 +25597,10 @@ struct TabSwitcherBar: View {
                 // that the pill is informational and explorable.
                 HStack(spacing: 7) {
                     ZStack {
-                        Circle().fill(market.session.isOpen ? DS.Palette.success : Color.secondary)
+                        Circle().fill(market.session.isOpen ? DS.Palette.successSoft : Color.secondary)
                             .frame(width: 8, height: 8)
                         if market.session.isOpen {
-                            Circle().stroke(DS.Palette.success.opacity(0.45), lineWidth: 2)
+                            Circle().stroke(DS.Palette.successSoft.opacity(0.45), lineWidth: 2)
                                 .frame(width: 8, height: 8).scaleEffect(1.7).opacity(0.6)
                         }
                     }
@@ -25609,7 +25609,7 @@ struct TabSwitcherBar: View {
                         .foregroundStyle(market.session.isOpen ? Color.white : .secondary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(market.session.isOpen ? DS.Palette.success.opacity(0.12) : Color.white.opacity(0.04),
+                .background(market.session.isOpen ? DS.Palette.successSoft.opacity(0.12) : Color.white.opacity(0.04),
                             in: Capsule())
                 .overlay(
                     Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
@@ -25850,7 +25850,7 @@ struct TodayView: View {
                 StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
                          value: market.session.shortLabel,
                          detail: market.session.isOpen ? "open now" : "closed",
-                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                         accent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
                 }
             }
@@ -35006,7 +35006,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2851 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2867 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36967,6 +36967,22 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
 
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
+### 2026-06-12 — Marathon AS — Cross-view DS palette sweep (remaining DS.Palette.success → successSoft)
+
+**What changed:** Swept all remaining `DS.Palette.success` (full-saturation `Color.green` alias) usages outside the intentional financial heatmap:
+- `TodayView`: market "open" stat tile accent: `success` → `successSoft`
+- `ContentView`: "Saved to Notes" banner icon: `success.opacity(0.85)` → `successSoft`
+- `ScratchpadView`: copy-all feedback checkmark pulse: `success` → `successSoft`
+- `TabSwitcherBar`: market open dot fill, halo stroke, pill background: all `success` → `successSoft`
+MarketsView heatmap `success.opacity(...)` left intact — financial domain convention.
+
+**Files:** `TodayView.swift`, `ContentView.swift`, `ScratchpadView.swift`, `TabSwitcherBar.swift`
+
+**Why:** `DS.Palette.success = Color.green` is a convenience alias that bypasses the design token calibration. `successSoft` was introduced for the dark canvas specifically to avoid the harsh full-saturation look. After AR swept SettingsView, this marathon clears the remaining cross-view occurrences so the entire Views directory uses only soft tokens.
+
+**Result:** Build not yet run; all changes are pure color-token swaps.
 
 ---
 ### 2026-06-12 — Marathon AR — SettingsView: DS palette color sweep (replace raw .green/.red/.orange with soft tokens)

@@ -1960,6 +1960,22 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
 
 ---
+### 2026-06-12 — Marathon AS — Cross-view DS palette sweep (remaining DS.Palette.success → successSoft)
+
+**What changed:** Swept all remaining `DS.Palette.success` (full-saturation `Color.green` alias) usages outside the intentional financial heatmap:
+- `TodayView`: market "open" stat tile accent: `success` → `successSoft`
+- `ContentView`: "Saved to Notes" banner icon: `success.opacity(0.85)` → `successSoft`
+- `ScratchpadView`: copy-all feedback checkmark pulse: `success` → `successSoft`
+- `TabSwitcherBar`: market open dot fill, halo stroke, pill background: all `success` → `successSoft`
+MarketsView heatmap `success.opacity(...)` left intact — financial domain convention.
+
+**Files:** `TodayView.swift`, `ContentView.swift`, `ScratchpadView.swift`, `TabSwitcherBar.swift`
+
+**Why:** `DS.Palette.success = Color.green` is a convenience alias that bypasses the design token calibration. `successSoft` was introduced for the dark canvas specifically to avoid the harsh full-saturation look. After AR swept SettingsView, this marathon clears the remaining cross-view occurrences so the entire Views directory uses only soft tokens.
+
+**Result:** Build not yet run; all changes are pure color-token swaps.
+
+---
 ### 2026-06-12 — Marathon AR — SettingsView: DS palette color sweep (replace raw .green/.red/.orange with soft tokens)
 
 **What changed:** Swept `SettingsView.swift` for every hardcoded `.green`, `.red`, `.orange` status-color usage that bypassed the DS design token layer. Seven spots updated:

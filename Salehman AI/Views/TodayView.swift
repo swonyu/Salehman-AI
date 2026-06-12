@@ -121,7 +121,7 @@ struct TodayView: View {
                 StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
                          value: market.session.shortLabel,
                          detail: market.session.isOpen ? "open now" : "closed",
-                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                         accent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
                 }
             }

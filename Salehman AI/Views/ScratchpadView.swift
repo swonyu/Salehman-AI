@@ -100,7 +100,7 @@ struct ScratchpadView: View {
                 Button { copyAll() } label: {
                     Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 13))
-                        .foregroundStyle(copyAllPulse ? DS.Palette.success : .secondary)
+                        .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
