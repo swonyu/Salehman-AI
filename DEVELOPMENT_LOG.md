@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BH — AgentsView premium elevation
+
+**What changed:** Full high-end visual design pass on `AgentsView.swift`. Header gains a brand icon tile (36×36 rounded square with gradient) + `Eyebrow("Specialist Team")`. Autonomous control section upgraded from flat `codeSurfaceSide` card to full `Bezel` treatment (outer shell + inner core) — core tints with `accent.opacity(0.07)` when autonomous mode is ON; border glows accent when a run is in progress; accent shadow materialises during run. Direct command field gets a leading `chevron.right` prompt glyph. `AgentCard` redesigned: icon changes from `Circle` to `RoundedRectangle` icon well (brand gradient when active), background changed from flat `codeSurfaceSide` to bezel fill (white 4%→7% on hover) with inner highlight, hover uses `DS.Motion.magnetic` + `scaleEffect(1.015)`, running state gets a `successSoft` status dot alongside `ProgressView`, subtle trailing arrow appears on hover at rest. Agent search field upgraded to capsule style. Staggered entrance animation across all three sections.
+
+**Files:** `Views/AgentsView.swift`
+
+**Why:** AgentCard used plain `Circle` icon containers and flat fills — no depth, no magnetic physics, no visual feedback on running state. Autonomous control card was commented as "intentionally flattened"; re-elevated it using `Bezel` while keeping all logic untouched.
+
+**Result:** Code verified structurally correct; sandbox blocks DerivedData write (pre-existing).
+
+---
 ## 2026-06-12 — Marathon BG — TodayView premium elevation (high-end-visual-design pass)
 
 **What changed:** Rewrote `TodayView.swift` with a full high-end visual design pass: greeting header upgraded to a double-bezel (outer shell + brand-tinted inner core) with a brand icon tile (time-specific SF Symbol), top-lit edge highlight, and an ambient glow orb; `ActionTile` redesigned with `SuggestionCard`-style bezel fill (white 4% → 7% on hover), icon-well that scales on hover, trailing arrow-in-circle "button-in-button" kinetic element, and `DS.Motion.magnetic` spring hover; `StatTile` redesigned with matching bezel fill, icon well, chevron that nudges right on hover, and accent shadow on hover; staggered entrance animation (three sections at 0 / 0.08 / 0.16 s delays using `DS.Motion.entrance`). Renamed `accent` param to `valueAccent` on `StatTile` for clarity.

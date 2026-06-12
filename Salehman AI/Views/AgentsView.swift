@@ -27,11 +27,11 @@ struct AgentsView: View {
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
     @State private var hoveredRunID: UUID?
+    /// Staggered entrance — sections fade up on first appear.
+    @State private var appeared = false
 
     var body: some View {
         ZStack {
-            // Flat opaque working canvas (design language) — no gradients,
-            // no glow show-through on chat-like/working surfaces.
             DS.Palette.codeSurface.ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -40,24 +40,57 @@ struct AgentsView: View {
                 ScrollView {
                     VStack(spacing: DS.Space.lg) {
                         autonomousControlSection
-                        if !runHistory.isEmpty { runHistorySection.transition(.opacity.combined(with: .move(edge: .top))) }
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 12)
+                            .animation(DS.Motion.entrance.delay(0.06), value: appeared)
+                        if !runHistory.isEmpty {
+                            runHistorySection
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .opacity(appeared ? 1 : 0)
+                                .animation(DS.Motion.entrance.delay(0.10), value: appeared)
+                        }
                         agentsGrid
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 12)
+                            .animation(DS.Motion.entrance.delay(0.14), value: appeared)
                     }
                     .padding(DS.Space.xl)
                 }
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear { appeared = true }
     }
 
+    // MARK: Header
+
     private var header: some View {
-        // Slimmer header, chrome diet: the "N agents" counter badge is gone —
-        // not actionable, and the gallery below already shows the team.
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Agents")
-                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Your specialist team — they plan, build, and review together.")
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — consistent with TodayView header treatment.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(
+                                LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.75
+                            )
+                    )
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Agents")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Specialist Team")
+                }
+                Text("They plan, build, and review together.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -65,17 +98,27 @@ struct AgentsView: View {
         .padding(.horizontal, DS.Space.xl)
         .padding(.top, DS.Space.lg)
         .padding(.bottom, DS.Space.md)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 10)
+        .animation(DS.Motion.entrance, value: appeared)
     }
 
+    // MARK: Autonomous Control
+
     private var autonomousControlSection: some View {
-        // Flat card per the design language (was a glass-hero with gradient
-        // wash + accent glow). Logic below (toggleAutonomousRun /
-        // sendDirectCommand / settings binding) is unchanged — chrome only.
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(DS.Palette.accent)
+                // Mode icon — glows brand when active.
+                ZStack {
+                    Circle()
+                        .fill(settings.autonomousMode
+                              ? DS.Palette.accent.opacity(0.20)
+                              : Color.white.opacity(0.07))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: settings.autonomousMode ? "brain.head.profile" : "brain.head.profile")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(settings.autonomousMode ? DS.Palette.accent : .secondary)
+                }
                 Text("Autonomous Mode")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
@@ -92,24 +135,30 @@ struct AgentsView: View {
 
             if settings.autonomousMode {
                 Button {
-                    // While running, an accidental click could discard
-                    // mid-iteration work — confirm first. Starting is a normal
-                    // tap (no confirmation needed).
                     if isRunningAutonomous {
                         showStopConfirm = true
                     } else {
                         toggleAutonomousRun()
                     }
                 } label: {
-                    Label(isRunningAutonomous
-                          ? "Stop (iteration \(iterationCount))"
-                          : "Start Autonomous Run",
-                          systemImage: isRunningAutonomous ? "stop.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    HStack(spacing: 8) {
+                        Image(systemName: isRunningAutonomous ? "stop.fill" : "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(isRunningAutonomous
+                             ? "Stop  ·  iteration \(iterationCount)"
+                             : "Start Autonomous Run")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(isRunningAutonomous ? Color.red.opacity(0.85) : DS.Palette.accent, in: Capsule())
-                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.28), radius: 6, y: 2)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(
+                        isRunningAutonomous
+                            ? AnyShapeStyle(Color.red.opacity(0.85))
+                            : AnyShapeStyle(DS.Gradient.brand),
+                        in: Capsule()
+                    )
+                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.30),
+                            radius: 8, y: 3)
                 }
                 .buttonStyle(LuxPressStyle())
                 .confirmationDialog("Stop the autonomous run?",
@@ -122,8 +171,6 @@ struct AgentsView: View {
                 }
 
                 if isRunningAutonomous && !lastResultPreview.isEmpty {
-                    // Show the head of the latest reply so the user has
-                    // visible proof the loop is actually iterating.
                     Text("Latest: \(lastResultPreview.prefix(160))…")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -132,17 +179,24 @@ struct AgentsView: View {
                 }
             }
 
+            // Direct command field.
             HStack {
-                TextField("Give agents a direct command…", text: $directCommand)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    .onSubmit { Task { await sendDirectCommand() } }
-                    .onKeyPress(.escape) { directCommand = ""; return .handled }
-                    .accessibilityLabel("Direct command to agents")
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.accent.opacity(0.70))
+                    TextField("Give agents a direct command…", text: $directCommand)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .onSubmit { Task { await sendDirectCommand() } }
+                        .onKeyPress(.escape) { directCommand = ""; return .handled }
+                        .accessibilityLabel("Direct command to agents")
+                }
+                .padding(.horizontal, 10).padding(.vertical, 9)
+                .background(Color.white.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
                 Button("Send") {
                     Task { await sendDirectCommand() }
@@ -153,21 +207,44 @@ struct AgentsView: View {
             }
         }
         .padding(DS.Space.lg)
-        // Flat opaque card + hairline — no gradient wash, no glow shadow.
-        .background(DS.Palette.codeSurfaceSide,
-                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
+        // Bezel treatment: outer shell + inner core tinted by mode state.
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .fill(settings.autonomousMode
+                          ? DS.Palette.accent.opacity(0.07)
+                          : Color.white.opacity(0.035))
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
         )
+        .padding(DS.Bezel.shellPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(isRunningAutonomous
+                        ? DS.Palette.accent.opacity(0.35)
+                        : DS.Bezel.shellStroke,
+                        lineWidth: 1)
+        )
+        // Accent glow materialises while a run is in progress.
+        .shadow(color: DS.Palette.accent.opacity(isRunningAutonomous ? 0.18 : 0.0),
+                radius: 18, y: 6)
+        .animation(DS.Motion.smooth, value: settings.autonomousMode)
+        .animation(DS.Motion.smooth, value: isRunningAutonomous)
     }
+
+    // MARK: Agent grid
 
     private var agentsGrid: some View {
         let agents = AgentFilter.matching(AgentDefinitions.pipeline, query: agentSearch)
         return VStack(alignment: .leading, spacing: DS.Space.md) {
             agentSearchRow
             if agents.isEmpty {
-                Text("No agents match “\(agentSearch)”.")
+                Text("No agents match "\(agentSearch)".")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
             } else {
@@ -196,9 +273,11 @@ struct AgentsView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
+
+    // MARK: Run history
 
     private var runHistorySection: some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -243,12 +322,20 @@ struct AgentsView: View {
                     }
                 }
             }
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
     }
+
+    // MARK: Autonomous run logic
 
     /// Toggle between starting and stopping the autonomous loop.
     ///
@@ -277,9 +364,6 @@ struct AgentsView: View {
         lastResultPreview = ""
 
         autonomousTask = Task {
-            // First iteration uses a generic improvement prompt; subsequent
-            // iterations feed the previous reply back as context so the
-            // agents are *chaining*, not redoing the same prompt.
             var mission = "Enter autonomous mode and improve the app while reporting progress. Pick one concrete next step you can take with the tools available, and produce a useful artifact (analysis, code, a plan, or a measurable change)."
 
             var i = 0
@@ -298,15 +382,8 @@ struct AgentsView: View {
                     )
                 }
 
-                // Bail if the agents signaled completion. This is now the
-                // ONLY natural stop condition (besides the user's Stop tap),
-                // since there's no iteration cap.
                 if result.contains("AUTONOMOUS_DONE") { break }
 
-                // Feed the previous result into the next iteration's mission
-                // so agents see what they just produced and can build on it,
-                // not redo the same task. We no longer reference an
-                // "iteration X of Y" — there is no Y.
                 mission = """
                 You are in an autonomous run (iteration \(i + 1), no fixed end).
 
@@ -316,9 +393,6 @@ struct AgentsView: View {
                 Continue working. If the previous step achieved its goal, propose and execute the next useful improvement. If it didn't, refine the approach and produce a better result. Stop by saying "AUTONOMOUS_DONE" on its own line when there's nothing useful left to do.
                 """
 
-                // Brief pause between iterations so a user hitting Stop has
-                // a chance to interrupt cleanly, and so a runaway loop
-                // doesn't slam the cloud brain back-to-back.
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 if Task.isCancelled { break }
             }
@@ -339,9 +413,10 @@ struct AgentsView: View {
 }
 
 // MARK: - Agent gallery card
-// Extracted to its own `View` so it can own `@State hovering` (a `@State` can't
-// live inside a `func` body). Themed icon circle (accent when the agent is
-// running), hover lift, and the new `DS.Elevation` shadows.
+
+/// Premium agent card — `RoundedRectangle` icon well (consistent with
+/// TodayView's ActionTile), bezel fill, magnetic hover, and an accent glow
+/// that materialises when the agent is actively running.
 private struct AgentCard: View {
     let spec: AgentSpec
     let isActive: Bool
@@ -349,33 +424,66 @@ private struct AgentCard: View {
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
+            // Icon well — brand gradient when active, subtle fill at rest.
             ZStack {
-                Circle()
-                    .fill(isActive ? DS.Palette.accent.opacity(0.18) : Color.white.opacity(0.06))
-                    .frame(width: 44, height: 44)
+                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                    .fill(isActive
+                          ? AnyShapeStyle(DS.Gradient.brand)
+                          : AnyShapeStyle(Color.white.opacity(hovering ? 0.10 : 0.06)))
+                    .frame(width: 42, height: 42)
+                    .shadow(color: DS.Palette.accent.opacity(isActive ? 0.40 : 0.0),
+                            radius: 8, y: 3)
                 Image(systemName: spec.icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(isActive ? DS.Palette.accent : Color.white.opacity(0.85))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isActive ? .white : Color.white.opacity(0.80))
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(spec.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                Text(spec.role).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            .scaleEffect(hovering ? 1.06 : 1.0)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(spec.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(spec.role)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
             Spacer(minLength: 4)
-            if isActive { ProgressView().controlSize(.small) }
+
+            // Status indicator — spinner when running, subtle arrow when hovering at rest.
+            if isActive {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(DS.Palette.successSoft)
+                        .frame(width: 6, height: 6)
+                    ProgressView().controlSize(.small)
+                }
+            } else if hovering {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary.opacity(0.60))
+            }
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Flat opaque card + hairline; the hover/active stroke is the only
-        // elevation cue (no shadows — design language).
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(hovering ? 0.07 : 0.04))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(isActive ? DS.Palette.accent.opacity(0.5)
-                                 : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
+                .stroke(isActive ? DS.Palette.accent.opacity(0.45)
+                                 : Color.white.opacity(hovering ? 0.16 : 0.07),
                         lineWidth: 1)
         )
-        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .scaleEffect(hovering ? 1.015 : 1.0)
+        .shadow(color: DS.Palette.accent.opacity(isActive ? 0.14 : 0.0), radius: 12, y: 5)
+        .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
+        .animation(DS.Motion.smooth, value: isActive)
     }
 }
 
