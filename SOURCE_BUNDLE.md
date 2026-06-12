@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:50 +03 · Swift files: 150 · Swift LOC: 33578_
+_Generated: 2026-06-12 22:53 +03 · Swift files: 150 · Swift LOC: 33584_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17508,7 +17508,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2814 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2820 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17955,33 +17955,36 @@ struct ContentView: View {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if Self.needsSeparator(prev: prev, curr: msg) {
-                                        TimeSeparator(date: msg.timestamp)
-                                    }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
-                                    MessageBubble(message: msg,
-                                                  highlight: searchHighlight,
-                                                  onRegenerate: vm.regenerate,
-                                                  onEdit: { m in
-                                                      if let text = vm.extractForEdit(m) {
-                                                          mission = text
+                                    Group {
+                                        if Self.needsSeparator(prev: prev, curr: msg) {
+                                            TimeSeparator(date: msg.timestamp)
+                                        }
+                                        MessageBubble(message: msg,
+                                                      highlight: searchHighlight,
+                                                      onRegenerate: vm.regenerate,
+                                                      onEdit: { m in
+                                                          if let text = vm.extractForEdit(m) {
+                                                              mission = text
+                                                              inputFocused = true
+                                                          }
+                                                      },
+                                                      onQuote: { text in
+                                                          let q = Self.quoted(text)
+                                                          mission = mission.isEmpty ? q + "\n\n"
+                                                                                    : mission + "\n" + q + "\n"
                                                           inputFocused = true
-                                                      }
-                                                  },
-                                                  onQuote: { text in
-                                                      let q = Self.quoted(text)
-                                                      mission = mission.isEmpty ? q + "\n\n"
-                                                                                : mission + "\n" + q + "\n"
-                                                      inputFocused = true
-                                                  },
-                                                  onTogglePin: { vm.togglePin($0) },
-                                                  onSaveToNotes: { text in
-                                                      ScratchpadStore.shared.addNote(text)
-                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
-                                                  },
-                                                  onRate: { vm.rate($0, up: $1) })
-                                        .equatable()
-                                        .padding(.top, isFirst ? 14 : 0)
+                                                      },
+                                                      onTogglePin: { vm.togglePin($0) },
+                                                      onSaveToNotes: { text in
+                                                          ScratchpadStore.shared.addNote(text)
+                                                          withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                      },
+                                                      onRate: { vm.rate($0, up: $1) })
+                                            .equatable()
+                                            .padding(.top, isFirst ? 14 : 0)
+                                    }
+                                    .transition(.opacity.combined(with: .offset(y: 8)))
                                 }
                                 // Wrapping VStack isolates the animation scope so
                                 // the transition only runs on this indicator —
@@ -18004,6 +18007,7 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            .animation(DS.Motion.smooth, value: vm.messages.count)
                             // Centered reading column (design language): content
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
@@ -18671,9 +18675,11 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
                         .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
                     }
                 }
+                .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
                 .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
@@ -36146,7 +36152,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3522 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3527 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39630,10 +39636,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
+**What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.
+**Files:** `Views/ContentView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CT: CodeView slash autocomplete, file search + code chat bubble transitions (Chat A)
 **What:** Three more CodeView list transitions. (1) Slash-command autocomplete popup: `.transition(.opacity.combined(with: .offset(y: 4)))` on each Button row + `.animation(DS.Motion.smooth, value: matches.count)` on the VStack — command rows fade+slide when user types and the filtered list changes. (2) File-search results: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `fileRow` + `.animation(DS.Motion.smooth, value: shown.count)` on the LazyVStack — file rows slide in/out when the filter updates. (3) Code-tab chat bubbles: `.transition(.opacity.combined(with: .offset(y: 8)))` on each `codeBubble` — new AI/user messages fade+slide up; the container LazyVStack already had `.animation(value: messages.count)` so no additional animation context needed.
 **Files:** `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `ee4824a`
 
 ## 2026-06-12 — marathon CS: insertion/removal transitions across 4 more list containers (Chat A)
 **What:** Four list containers that previously snapped on filter/data changes now animate smoothly. (1) `CommandPalette` ⌘K results: `.transition(.opacity.combined(with: .offset(y: 6)))` on each row button + `.animation(DS.Motion.smooth, value: filtered.count)` on the `LazyVStack` — filtering the palette fades rows in/out. (2) `ChatHistoryView` search results: ForEach contents wrapped in `Group { row + divider }` with `.transition(.opacity.combined(with: .move(edge: .leading)))` per Group + `.animation(DS.Motion.smooth, value: shown.count)` on the VStack — conversation items slide when search filters. (3) `CodeView` changed-files list: same leading-edge slide treatment + `ws.changedFiles.count` keyed animation. (4) `CodeView` activity-step list: `.transition(.opacity.combined(with: .offset(y: 6)))` on each step row + `progress.steps.count` animation — steps fade+slide up as the agent pipeline appends them.

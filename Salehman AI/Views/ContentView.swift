@@ -443,33 +443,36 @@ struct ContentView: View {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if Self.needsSeparator(prev: prev, curr: msg) {
-                                        TimeSeparator(date: msg.timestamp)
-                                    }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
-                                    MessageBubble(message: msg,
-                                                  highlight: searchHighlight,
-                                                  onRegenerate: vm.regenerate,
-                                                  onEdit: { m in
-                                                      if let text = vm.extractForEdit(m) {
-                                                          mission = text
+                                    Group {
+                                        if Self.needsSeparator(prev: prev, curr: msg) {
+                                            TimeSeparator(date: msg.timestamp)
+                                        }
+                                        MessageBubble(message: msg,
+                                                      highlight: searchHighlight,
+                                                      onRegenerate: vm.regenerate,
+                                                      onEdit: { m in
+                                                          if let text = vm.extractForEdit(m) {
+                                                              mission = text
+                                                              inputFocused = true
+                                                          }
+                                                      },
+                                                      onQuote: { text in
+                                                          let q = Self.quoted(text)
+                                                          mission = mission.isEmpty ? q + "\n\n"
+                                                                                    : mission + "\n" + q + "\n"
                                                           inputFocused = true
-                                                      }
-                                                  },
-                                                  onQuote: { text in
-                                                      let q = Self.quoted(text)
-                                                      mission = mission.isEmpty ? q + "\n\n"
-                                                                                : mission + "\n" + q + "\n"
-                                                      inputFocused = true
-                                                  },
-                                                  onTogglePin: { vm.togglePin($0) },
-                                                  onSaveToNotes: { text in
-                                                      ScratchpadStore.shared.addNote(text)
-                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
-                                                  },
-                                                  onRate: { vm.rate($0, up: $1) })
-                                        .equatable()
-                                        .padding(.top, isFirst ? 14 : 0)
+                                                      },
+                                                      onTogglePin: { vm.togglePin($0) },
+                                                      onSaveToNotes: { text in
+                                                          ScratchpadStore.shared.addNote(text)
+                                                          withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                      },
+                                                      onRate: { vm.rate($0, up: $1) })
+                                            .equatable()
+                                            .padding(.top, isFirst ? 14 : 0)
+                                    }
+                                    .transition(.opacity.combined(with: .offset(y: 8)))
                                 }
                                 // Wrapping VStack isolates the animation scope so
                                 // the transition only runs on this indicator —
@@ -492,6 +495,7 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            .animation(DS.Motion.smooth, value: vm.messages.count)
                             // Centered reading column (design language): content
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
@@ -1159,9 +1163,11 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
                         .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
                     }
                 }
+                .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
                 .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))

@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
+**What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.
+**Files:** `Views/ContentView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CT: CodeView slash autocomplete, file search + code chat bubble transitions (Chat A)
 **What:** Three more CodeView list transitions. (1) Slash-command autocomplete popup: `.transition(.opacity.combined(with: .offset(y: 4)))` on each Button row + `.animation(DS.Motion.smooth, value: matches.count)` on the VStack — command rows fade+slide when user types and the filtered list changes. (2) File-search results: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `fileRow` + `.animation(DS.Motion.smooth, value: shown.count)` on the LazyVStack — file rows slide in/out when the filter updates. (3) Code-tab chat bubbles: `.transition(.opacity.combined(with: .offset(y: 8)))` on each `codeBubble` — new AI/user messages fade+slide up; the container LazyVStack already had `.animation(value: messages.count)` so no additional animation context needed.
 **Files:** `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `ee4824a`
 
 ## 2026-06-12 — marathon CS: insertion/removal transitions across 4 more list containers (Chat A)
 **What:** Four list containers that previously snapped on filter/data changes now animate smoothly. (1) `CommandPalette` ⌘K results: `.transition(.opacity.combined(with: .offset(y: 6)))` on each row button + `.animation(DS.Motion.smooth, value: filtered.count)` on the `LazyVStack` — filtering the palette fades rows in/out. (2) `ChatHistoryView` search results: ForEach contents wrapped in `Group { row + divider }` with `.transition(.opacity.combined(with: .move(edge: .leading)))` per Group + `.animation(DS.Motion.smooth, value: shown.count)` on the VStack — conversation items slide when search filters. (3) `CodeView` changed-files list: same leading-edge slide treatment + `ws.changedFiles.count` keyed animation. (4) `CodeView` activity-step list: `.transition(.opacity.combined(with: .offset(y: 6)))` on each step row + `progress.steps.count` animation — steps fade+slide up as the agent pipeline appends them.
