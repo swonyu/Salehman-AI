@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DB: LiveTranscriptionView search + empty state + partial text transitions (Chat A)
+**What:** Three UI moments in `LiveTranscriptionView` that previously snapped now animate. (1) Search-field clear button (×): `.transition(.opacity)` + `.animation(DS.Motion.magnetic, value: searchText.isEmpty)` on the HStack — button fades in/out as user types rather than snapping. (2) Empty-state placeholder text ("Listening…" / "Press Start"): `.transition(.opacity.combined(with: .offset(y: 4)))` + already-present LazyVStack animation drives it up as transcription begins. (3) In-flight partial text row (live: true): `.transition(.opacity)` + new `.animation(DS.Motion.smooth, value: live.partialThem.isEmpty)` on the LazyVStack so the partial bubble fades in when the first syllable arrives and fades out when finalized.
+**Files:** `Views/LiveTranscriptionView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DA: ScratchpadView inline-edit transitions (Chat A)
 **What:** Clicking the edit pencil or pressing Escape in ScratchpadView's task/note rows previously caused an instant snap between `Text` and `TextField`. Three-part fix: (1) `startEdit` and `cancelEdit` now wrap `editingId` mutations in `withAnimation(DS.Motion.smooth)` so SwiftUI's transition engine fires. (2) Both branches of each `if editingId == id { TextField } else { Text }` if/else now carry `.transition(.opacity)` — the label crossfades into the editable field. (3) The conditional `editButton` (shown only when not editing) also gets `.transition(.opacity)` in both task and note rows so the pencil icon fades out when editing begins rather than snapping away.
 **Files:** `Views/ScratchpadView.swift`.
-**Commit:** TBD
+**Commit:** `a5d22e1`
 
 ## 2026-06-12 — marathon CZ: status/error text fade-in transitions + test status crossfades (Chat A)
 **What:** Error messages and test-result texts now animate rather than snap. (1) `MarketsView` monitor error text: `.transition(.opacity.combined(with: .offset(y: -4)))` so it slides down from above when an alert monitor error arrives; `.animation(DS.Motion.smooth, value: monitorError.isEmpty)` on the inner VStack drives it. (2) `SettingsView` Unsloth Studio + vLLM test result texts: same slide-from-above transition + `.animation(DS.Motion.smooth, value: testStatus == nil)` on the containing VStack — "Connected ✓" / error text fades in instead of snapping. (3) `SettingsView` persistent test status subtitles (Grok, generic `keyRow`, Gemini): `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` so the subtitle crossfades between "Tap Test..." and "Connected..." states.

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:10 +03 · Swift files: 150 · Swift LOC: 33659_
+_Generated: 2026-06-12 23:11 +03 · Swift files: 150 · Swift LOC: 33664_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21302,7 +21302,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (317 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (322 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21485,10 +21485,12 @@ struct LiveTranscriptionView: View {
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
+        .animation(DS.Motion.magnetic, value: searchText.isEmpty)
     }
 
     // MARK: Transcript (speaker bubbles + live partials)
@@ -21500,6 +21502,7 @@ struct LiveTranscriptionView: View {
                         Text(live.isRunning ? "Listening…" : "Press Start to transcribe the audio.")
                             .font(.system(size: 14)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
+                            .transition(.opacity.combined(with: .offset(y: 4)))
                     }
 
                     ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
@@ -21509,10 +21512,12 @@ struct LiveTranscriptionView: View {
                     // In-flight (not yet finalized) text, shown faded.
                     if searchText.isEmpty && !live.partialThem.isEmpty {
                         lineView(text: live.partialThem, live: true)
+                            .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .animation(DS.Motion.smooth, value: live.lines.count)
+                .animation(DS.Motion.smooth, value: live.partialThem.isEmpty)
                 .padding(.vertical, 4)
             }
             .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
@@ -36227,7 +36232,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3557 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3562 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39711,10 +39716,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DB: LiveTranscriptionView search + empty state + partial text transitions (Chat A)
+**What:** Three UI moments in `LiveTranscriptionView` that previously snapped now animate. (1) Search-field clear button (×): `.transition(.opacity)` + `.animation(DS.Motion.magnetic, value: searchText.isEmpty)` on the HStack — button fades in/out as user types rather than snapping. (2) Empty-state placeholder text ("Listening…" / "Press Start"): `.transition(.opacity.combined(with: .offset(y: 4)))` + already-present LazyVStack animation drives it up as transcription begins. (3) In-flight partial text row (live: true): `.transition(.opacity)` + new `.animation(DS.Motion.smooth, value: live.partialThem.isEmpty)` on the LazyVStack so the partial bubble fades in when the first syllable arrives and fades out when finalized.
+**Files:** `Views/LiveTranscriptionView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DA: ScratchpadView inline-edit transitions (Chat A)
 **What:** Clicking the edit pencil or pressing Escape in ScratchpadView's task/note rows previously caused an instant snap between `Text` and `TextField`. Three-part fix: (1) `startEdit` and `cancelEdit` now wrap `editingId` mutations in `withAnimation(DS.Motion.smooth)` so SwiftUI's transition engine fires. (2) Both branches of each `if editingId == id { TextField } else { Text }` if/else now carry `.transition(.opacity)` — the label crossfades into the editable field. (3) The conditional `editButton` (shown only when not editing) also gets `.transition(.opacity)` in both task and note rows so the pencil icon fades out when editing begins rather than snapping away.
 **Files:** `Views/ScratchpadView.swift`.
-**Commit:** TBD
+**Commit:** `a5d22e1`
 
 ## 2026-06-12 — marathon CZ: status/error text fade-in transitions + test status crossfades (Chat A)
 **What:** Error messages and test-result texts now animate rather than snap. (1) `MarketsView` monitor error text: `.transition(.opacity.combined(with: .offset(y: -4)))` so it slides down from above when an alert monitor error arrives; `.animation(DS.Motion.smooth, value: monitorError.isEmpty)` on the inner VStack drives it. (2) `SettingsView` Unsloth Studio + vLLM test result texts: same slide-from-above transition + `.animation(DS.Motion.smooth, value: testStatus == nil)` on the containing VStack — "Connected ✓" / error text fades in instead of snapping. (3) `SettingsView` persistent test status subtitles (Grok, generic `keyRow`, Gemini): `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` so the subtitle crossfades between "Tap Test..." and "Connected..." states.

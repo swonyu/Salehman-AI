@@ -179,10 +179,12 @@ struct LiveTranscriptionView: View {
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
+        .animation(DS.Motion.magnetic, value: searchText.isEmpty)
     }
 
     // MARK: Transcript (speaker bubbles + live partials)
@@ -194,6 +196,7 @@ struct LiveTranscriptionView: View {
                         Text(live.isRunning ? "Listening…" : "Press Start to transcribe the audio.")
                             .font(.system(size: 14)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
+                            .transition(.opacity.combined(with: .offset(y: 4)))
                     }
 
                     ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
@@ -203,10 +206,12 @@ struct LiveTranscriptionView: View {
                     // In-flight (not yet finalized) text, shown faded.
                     if searchText.isEmpty && !live.partialThem.isEmpty {
                         lineView(text: live.partialThem, live: true)
+                            .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .animation(DS.Motion.smooth, value: live.lines.count)
+                .animation(DS.Motion.smooth, value: live.partialThem.isEmpty)
                 .padding(.vertical, 4)
             }
             .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
