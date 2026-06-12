@@ -54,6 +54,7 @@ struct KnowledgeView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 12)
                     .animation(DS.Motion.entrance.delay(0.14), value: appeared)
+                    .animation(DS.Motion.smooth, value: docs.isEmpty)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -72,8 +73,10 @@ struct KnowledgeView: View {
                     .overlay(Label("Drop to add to Knowledge", systemImage: "tray.and.arrow.down.fill")
                         .font(.headline).foregroundStyle(.white))
                     .padding(8).allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: dropTargeted)
         .sheet(isPresented: $showPaste) { pasteSheet }
         .sheet(item: $detailDoc) { doc in DocDetailSheet(doc: doc) { detailDoc = nil } }
     }
@@ -122,9 +125,14 @@ struct KnowledgeView: View {
                 .accessibilityLabel("Paste text").disabled(ingesting)
             Button(action: addFile) {
                 HStack(spacing: 6) {
-                    if ingesting { ProgressView().controlSize(.small).tint(.white) }
-                    else { Image(systemName: "plus") }
+                    Group {
+                        if ingesting { ProgressView().controlSize(.small).tint(.white).transition(.opacity) }
+                        else { Image(systemName: "plus").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: ingesting)
                     Text(ingesting ? "Reading…" : "Add file")
+                        .contentTransition(.opacity)
+                        .animation(DS.Motion.smooth, value: ingesting)
                 }
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.white)
@@ -147,8 +155,11 @@ struct KnowledgeView: View {
                     .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent).transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: asking)
                 }
                 .buttonStyle(.plain).help("Ask your documents").accessibilityLabel("Ask")
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
@@ -253,27 +264,28 @@ struct KnowledgeView: View {
                             ? .spring(duration: 2.2, bounce: 0.06)
                             : .easeOut(duration: 1.8)
                     }
-                    Image(systemName: "books.vertical.fill")
+                    Image(systemName: “books.vertical.fill”)
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
                 .padding(.bottom, 4)
-                Text("START YOUR VAULT")
+                Text(“START YOUR VAULT”)
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundStyle(DS.Palette.accent)
-                Text("No documents yet")
+                Text(“No documents yet”)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("Add PDFs, text, or notes. Everything stays on this Mac.")
+                Text(“Add PDFs, text, or notes. Everything stays on this Mac.”)
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
+            .transition(.opacity)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Text(“\(docs.count) document\(docs.count == 1 ? “” : “s”)”).font(.caption).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
@@ -281,21 +293,27 @@ struct KnowledgeView: View {
                         Menu {
                             ForEach(KnowledgeSort.allCases) { s in
                                 Button { docSort = s } label: {
-                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
+                                    Label(s.title, systemImage: docSort == s ? “checkmark” : “”)
                                 }
                             }
                         } label: {
-                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
+                            Label(“Sort: \(docSort.title)”, systemImage: “arrow.up.arrow.down”)
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel(“Sort documents”)
+                        .transition(.opacity)
                     }
                 }
-                if docs.count > 10 { docFilterRow }
+                .animation(DS.Motion.smooth, value: docs.count > 1)
+                if docs.count > 10 {
+                    docFilterRow
+                        .transition(.opacity)
+                }
                 if shown.isEmpty {
-                    Text("No documents match “\(docFilter)”.")
+                    Text(“No documents match “\(docFilter)”.”)
                         .font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
+                        .transition(.opacity)
                 } else {
                     VStack(spacing: 1) {
                         ForEach(shown) { doc in
@@ -314,8 +332,12 @@ struct KnowledgeView: View {
                     )
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: docs.count > 10)
+            .animation(DS.Motion.smooth, value: shown.isEmpty)
+            .transition(.opacity)
         }
     }
 

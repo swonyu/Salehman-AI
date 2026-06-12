@@ -2776,6 +2776,24 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors (`xcodebuild` grep for `.swift: error:` returns empty). All CodeView motion sites now animated end-to-end.
 
 ---
+## 2026-06-13 — Marathon DX: KnowledgeView animation gaps
+
+**What changed:** `Salehman AI/Views/KnowledgeView.swift`
+
+- **"Add file" button** (ingesting spinner swap): wrapped the `if ingesting { ProgressView } else { Image("plus") }` in `Group { ... }.animation(DS.Motion.smooth, value: ingesting)`; added `.contentTransition(.opacity).animation(DS.Motion.smooth, value: ingesting)` to the label Text — spinner and text both crossfade rather than hard-cutting.
+- **"Ask" button** (asking spinner swap): same `Group { ... }.animation(DS.Motion.smooth, value: asking)` pattern for the `ProgressView` ↔ `Image` swap.
+- **Drop-target overlay**: added `.transition(.opacity)` to the dashed `RoundedRectangle` and `.animation(DS.Motion.snappy, value: dropTargeted)` after the `.overlay` — the drag-to-add highlight now fades in/out instead of popping.
+- **`documentsSection` call site**: added `.animation(DS.Motion.smooth, value: docs.isEmpty)` — the empty-state ↔ doc-list branch switch now animates when the first document is ingested.
+- **`documentsSection` branches**: added `.transition(.opacity)` to both the empty-state VStack and the doc-list VStack so SwiftUI can crossfade them.
+- **Sort menu**: added `.transition(.opacity)` on the Menu + `.animation(DS.Motion.smooth, value: docs.count > 1)` on the parent HStack — the sort menu fades in once there are 2+ docs.
+- **Filter row**: added `.transition(.opacity)` to `docFilterRow` conditional + `.animation(DS.Motion.smooth, value: docs.count > 10)` to the outer VStack.
+- **No-match text / doc VStack**: added `.transition(.opacity)` to both branches + `.animation(DS.Motion.smooth, value: shown.isEmpty)` to the outer VStack — searching/clearing the doc filter now crossfades.
+
+**Why:** KnowledgeView had several conditionals that appeared/disappeared with hard cuts — the spinner swaps in buttons, the drop-target overlay, and the empty ↔ populated document section transitions all needed animation context and `.transition` declarations.
+
+**Result:** Zero Swift compilation errors (xcodebuild grep clean). All KnowledgeView state transitions are now animated end-to-end.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

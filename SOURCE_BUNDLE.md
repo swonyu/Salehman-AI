@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:34 +03 · Swift files: 150 · Swift LOC: 33847_
+_Generated: 2026-06-13 00:40 +03 · Swift files: 150 · Swift LOC: 33869_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20737,7 +20737,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (670 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (692 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20795,6 +20795,7 @@ struct KnowledgeView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 12)
                     .animation(DS.Motion.entrance.delay(0.14), value: appeared)
+                    .animation(DS.Motion.smooth, value: docs.isEmpty)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -20813,8 +20814,10 @@ struct KnowledgeView: View {
                     .overlay(Label("Drop to add to Knowledge", systemImage: "tray.and.arrow.down.fill")
                         .font(.headline).foregroundStyle(.white))
                     .padding(8).allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: dropTargeted)
         .sheet(isPresented: $showPaste) { pasteSheet }
         .sheet(item: $detailDoc) { doc in DocDetailSheet(doc: doc) { detailDoc = nil } }
     }
@@ -20863,9 +20866,14 @@ struct KnowledgeView: View {
                 .accessibilityLabel("Paste text").disabled(ingesting)
             Button(action: addFile) {
                 HStack(spacing: 6) {
-                    if ingesting { ProgressView().controlSize(.small).tint(.white) }
-                    else { Image(systemName: "plus") }
+                    Group {
+                        if ingesting { ProgressView().controlSize(.small).tint(.white).transition(.opacity) }
+                        else { Image(systemName: "plus").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: ingesting)
                     Text(ingesting ? "Reading…" : "Add file")
+                        .contentTransition(.opacity)
+                        .animation(DS.Motion.smooth, value: ingesting)
                 }
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.white)
@@ -20888,8 +20896,11 @@ struct KnowledgeView: View {
                     .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent).transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: asking)
                 }
                 .buttonStyle(.plain).help("Ask your documents").accessibilityLabel("Ask")
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
@@ -20994,27 +21005,28 @@ struct KnowledgeView: View {
                             ? .spring(duration: 2.2, bounce: 0.06)
                             : .easeOut(duration: 1.8)
                     }
-                    Image(systemName: "books.vertical.fill")
+                    Image(systemName: “books.vertical.fill”)
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
                 .padding(.bottom, 4)
-                Text("START YOUR VAULT")
+                Text(“START YOUR VAULT”)
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundStyle(DS.Palette.accent)
-                Text("No documents yet")
+                Text(“No documents yet”)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("Add PDFs, text, or notes. Everything stays on this Mac.")
+                Text(“Add PDFs, text, or notes. Everything stays on this Mac.”)
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
+            .transition(.opacity)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    Text(“\(docs.count) document\(docs.count == 1 ? “” : “s”)”).font(.caption).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
@@ -21022,21 +21034,27 @@ struct KnowledgeView: View {
                         Menu {
                             ForEach(KnowledgeSort.allCases) { s in
                                 Button { docSort = s } label: {
-                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
+                                    Label(s.title, systemImage: docSort == s ? “checkmark” : “”)
                                 }
                             }
                         } label: {
-                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
+                            Label(“Sort: \(docSort.title)”, systemImage: “arrow.up.arrow.down”)
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel(“Sort documents”)
+                        .transition(.opacity)
                     }
                 }
-                if docs.count > 10 { docFilterRow }
+                .animation(DS.Motion.smooth, value: docs.count > 1)
+                if docs.count > 10 {
+                    docFilterRow
+                        .transition(.opacity)
+                }
                 if shown.isEmpty {
-                    Text("No documents match “\(docFilter)”.")
+                    Text(“No documents match “\(docFilter)”.”)
                         .font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
+                        .transition(.opacity)
                 } else {
                     VStack(spacing: 1) {
                         ForEach(shown) { doc in
@@ -21055,8 +21073,12 @@ struct KnowledgeView: View {
                     )
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: docs.count > 10)
+            .animation(DS.Motion.smooth, value: shown.isEmpty)
+            .transition(.opacity)
         }
     }
 
@@ -36415,7 +36437,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3819 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3837 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39192,6 +39214,24 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CodeView's rightPanel and welcome section had several orphaned conditionals that appeared/disappeared with hard cuts — no `.transition` and no parent animation context. The `TimelineView` periodic re-render doesn't install a SwiftUI animation transaction, so that site needed an explicit `.animation(value:)` pair.
 
 **Result:** Zero Swift compilation errors (`xcodebuild` grep for `.swift: error:` returns empty). All CodeView motion sites now animated end-to-end.
+
+---
+## 2026-06-13 — Marathon DX: KnowledgeView animation gaps
+
+**What changed:** `Salehman AI/Views/KnowledgeView.swift`
+
+- **"Add file" button** (ingesting spinner swap): wrapped the `if ingesting { ProgressView } else { Image("plus") }` in `Group { ... }.animation(DS.Motion.smooth, value: ingesting)`; added `.contentTransition(.opacity).animation(DS.Motion.smooth, value: ingesting)` to the label Text — spinner and text both crossfade rather than hard-cutting.
+- **"Ask" button** (asking spinner swap): same `Group { ... }.animation(DS.Motion.smooth, value: asking)` pattern for the `ProgressView` ↔ `Image` swap.
+- **Drop-target overlay**: added `.transition(.opacity)` to the dashed `RoundedRectangle` and `.animation(DS.Motion.snappy, value: dropTargeted)` after the `.overlay` — the drag-to-add highlight now fades in/out instead of popping.
+- **`documentsSection` call site**: added `.animation(DS.Motion.smooth, value: docs.isEmpty)` — the empty-state ↔ doc-list branch switch now animates when the first document is ingested.
+- **`documentsSection` branches**: added `.transition(.opacity)` to both the empty-state VStack and the doc-list VStack so SwiftUI can crossfade them.
+- **Sort menu**: added `.transition(.opacity)` on the Menu + `.animation(DS.Motion.smooth, value: docs.count > 1)` on the parent HStack — the sort menu fades in once there are 2+ docs.
+- **Filter row**: added `.transition(.opacity)` to `docFilterRow` conditional + `.animation(DS.Motion.smooth, value: docs.count > 10)` to the outer VStack.
+- **No-match text / doc VStack**: added `.transition(.opacity)` to both branches + `.animation(DS.Motion.smooth, value: shown.isEmpty)` to the outer VStack — searching/clearing the doc filter now crossfades.
+
+**Why:** KnowledgeView had several conditionals that appeared/disappeared with hard cuts — the spinner swaps in buttons, the drop-target overlay, and the empty ↔ populated document section transitions all needed animation context and `.transition` declarations.
+
+**Result:** Zero Swift compilation errors (xcodebuild grep clean). All KnowledgeView state transitions are now animated end-to-end.
 
 ---
 ## Standing notes / known issues
