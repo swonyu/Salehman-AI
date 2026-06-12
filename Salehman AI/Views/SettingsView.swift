@@ -143,7 +143,7 @@ struct SettingsView: View {
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
-                               "After Salehman answers, a reasoner-class critic (free, NVIDIA-hosted) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
+                               "After Salehman answers, a self-critic pass analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower. OFF by default for speed; turn on for max quality.",
                                "arrow.triangle.2.circlepath", $settings.salehmanRefine)
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
@@ -193,10 +193,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Salehman runs CLOUD-FIRST (free DeepSeek V4 via NVIDIA → free
-                    // frontier/120B tiers); the rows below
-                    // configure its LOCAL floor for offline use.
-                    section("Salehman engine", "Salehman runs cloud-first on big models (free DeepSeek V4 via NVIDIA → free frontier tiers). These rows set its LOCAL fallback for offline use: a standalone on-device MLX engine, or your own Ollama model. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
+                    section("Salehman engine", "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud is ever contacted. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
                         // The truly-standalone path. Visible regardless of
                         // package status; the inline state explains what to do.
                         mlxEngineRow
@@ -248,78 +245,10 @@ struct SettingsView: View {
                         vllmTestRow
                     }
 
-                    // Free providers (zero-cost tiers / `:free` models). Count
-                    // badge tells the user how many they've configured without
-                    // having to expand. State persisted via `@AppStorage`.
-                    collapsibleGroup(
-                        "Free API keys",
-                        configured: [geminiKeySaved, groqKeySaved, mistralKeySaved,
-                                     cerebrasKeySaved, openRouterKeySaved].filter { $0 }.count,
-                        total: 5,
-                        isExpanded: $showFreeKeys
-                    ) {
-                        section("Google Gemini (Cloud · free tier)", "Sends your messages to Google. Get a key at aistudio.google.com.") {
-                            geminiKeyRow
-                            geminiModelRow
-                            geminiTestRow
-                        }
-                        section("Groq (Cloud · free tier)", "Blazing-fast Llama / Mixtral. Get a key at console.groq.com.") {
-                            cloudKeyRow(provider: GroqClient.shared,
-                                        keySaved: $groqKeySaved, draft: $groqKeyDraft)
-                            cloudModelRow(displayName: "Groq",
-                                          models: GroqClient.allModels,
-                                          selection: $settings.groqModel)
-                            cloudTestRow(provider: GroqClient.shared,
-                                         keySaved: $groqKeySaved,
-                                         testing: $groqTesting, status: $groqTestStatus)
-                        }
-                        section("Mistral (Cloud · free tier · EU-hosted)", "Sends your messages to Mistral. Get a key at console.mistral.ai.") {
-                            cloudKeyRow(provider: MistralClient.shared,
-                                        keySaved: $mistralKeySaved, draft: $mistralKeyDraft)
-                            cloudModelRow(displayName: "Mistral",
-                                          models: MistralClient.allModels,
-                                          selection: $settings.mistralModel)
-                            cloudTestRow(provider: MistralClient.shared,
-                                         keySaved: $mistralKeySaved,
-                                         testing: $mistralTesting, status: $mistralTestStatus)
-                        }
-                        section("Cerebras (Cloud · free tier · ~2000 tok/s Llama)", "Sends your messages to Cerebras. Get a key at cloud.cerebras.ai.") {
-                            cloudKeyRow(provider: CerebrasClient.shared,
-                                        keySaved: $cerebrasKeySaved, draft: $cerebrasKeyDraft)
-                            cloudModelRow(displayName: "Cerebras",
-                                          models: CerebrasClient.allModels,
-                                          selection: $settings.cerebrasModel)
-                            cloudTestRow(provider: CerebrasClient.shared,
-                                         keySaved: $cerebrasKeySaved,
-                                         testing: $cerebrasTesting, status: $cerebrasTestStatus)
-                        }
-                        section("OpenRouter (Cloud · free models)", "Aggregator with free `:free` models — no credit card. Get a key at openrouter.ai/keys.") {
-                            cloudKeyRow(provider: OpenRouterClient.shared,
-                                        keySaved: $openRouterKeySaved, draft: $openRouterKeyDraft)
-                            cloudModelRow(displayName: "OpenRouter",
-                                          models: OpenRouterClient.allModels,
-                                          selection: $settings.openRouterModel)
-                            cloudTestRow(provider: OpenRouterClient.shared,
-                                         keySaved: $openRouterKeySaved,
-                                         testing: $openRouterTesting, status: $openRouterTestStatus)
-                        }
-
-                        section("NVIDIA (Cloud · free tier · REAL DeepSeek V4 for free)", "Hosts the actual deepseek-ai/deepseek-v4 weights at $0 — DeepSeek's own API and OpenRouter are paid-only. Get a free key at build.nvidia.com. Salehman uses this first so it leads on real DeepSeek for free.") {
-                            cloudKeyRow(provider: NvidiaClient.shared,
-                                        keySaved: $nvidiaKeySaved, draft: $nvidiaKeyDraft)
-                            cloudTestRow(provider: NvidiaClient.shared,
-                                         keySaved: $nvidiaKeySaved,
-                                         testing: $nvidiaTesting, status: $nvidiaTestStatus)
-                        }
-                    }
-
-                    // Paid providers (Claude / xAI Grok / Codex-OpenAI / GitHub
-                    // Copilot) are HIDDEN per owner request ("hide every paid
-                    // api"). Their key-entry rows (claudeKeyRow, grokKeyRow,
-                    // copilotRow, the OpenAI cloud rows) and `showPaidKeys` are
-                    // retained but unmounted — restore by re-adding a
-                    // `collapsibleGroup("Paid keys", …)` here, gated on the same
-                    // `BrainPreference.isPaid` set used by the Brain grid above.
+                    // Cloud provider API key sections removed per owner: "i just want salehman alone".
+                    // NVIDIA, Gemini, Groq, Mistral, Cerebras, OpenRouter, Claude, Grok, OpenAI,
+                    // Copilot sections all removed 2026-06-12. NVIDIA toggle is in the Salehman
+                    // engine section above since NVIDIA is SalehmanEngine's free cloud ladder.
 
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
                         HStack(spacing: 10) {

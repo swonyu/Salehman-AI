@@ -412,7 +412,7 @@ final class AppSettings: ObservableObject {
         hideFromCapture = d.bool(forKey: Keys.hideCapture)   // default false
         unrestrictedTools = d.bool(forKey: Keys.unrestrictedTools)  // default off (opt-in)
         salehmanLeader = AppSettings.boolDefaultTrue(Keys.salehmanLeader)  // default ON (owner: Salehman leads)
-        salehmanRefine = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
+        salehmanRefine  = UserDefaults.standard.bool(forKey: Keys.salehmanRefine)  // default OFF — speed (it's ~2-3× slower); opt-in for max quality
         salehmanEffort = Effort(rawValue: d.string(forKey: Keys.salehmanEffort) ?? "") ?? .instant  // default Instant — preserves pre-Effort call count; opt in to quality via the dial
         autoContinue = AppSettings.boolDefaultTrue(Keys.autoContinue)      // default ON (owner: claude-autocontinue)
         privateMode = d.bool(forKey: Keys.privateMode)             // default off

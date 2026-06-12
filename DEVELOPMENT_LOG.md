@@ -1431,6 +1431,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Settings: remove cloud-provider API sections + OllamaClient tuned() fix (Chat C)**
+
+**What changed:**
+- `Views/SettingsView.swift`: Removed the "Free API keys" collapsible group (Gemini, Groq, Mistral, Cerebras, OpenRouter, NVIDIA sections). Updated "Salehman engine" section description to reflect local-first engine. Updated `salehmanRefine` toggle description (no longer mentions NVIDIA). Cloud provider sections are gone from the UI — aligned with "i just want salehman alone".
+- `LLM/OllamaClient.swift` (linter): Improved `Generation.tuned()` to also match `qwen2.5:14b*` models for the 5-min keep-alive / 4096-ctx knobs (the owner's salehman fine-tune).
+- `App/AppSettings.swift` (linter): Minor cleanup (removed stale comment, no @Published changes).
+
+**Why:** Owner: "remove old apis in the settings" + "i just want salehman alone." SalehmanEngine was already made local-only in the previous commit; this aligns the Settings UI with that reality.
+
+**Files:** `Views/SettingsView.swift`, `LLM/OllamaClient.swift`, `App/AppSettings.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
