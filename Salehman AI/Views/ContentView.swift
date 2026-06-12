@@ -524,11 +524,15 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                .animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)
                 // Pinned-message jump chips ride ABOVE the transcript as an
                 // inset (not inside the scroll) so they're always reachable;
                 // zero chrome when nothing is pinned.
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                    if !pinnedMessages.isEmpty {
+                        pinnedStrip(proxy)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
             }
         }

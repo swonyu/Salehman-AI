@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:40 +03 · Swift files: 150 · Swift LOC: 33543_
+_Generated: 2026-06-12 22:42 +03 · Swift files: 150 · Swift LOC: 33551_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17489,7 +17489,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2810 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2814 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18017,11 +18017,15 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                .animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)
                 // Pinned-message jump chips ride ABOVE the transcript as an
                 // inset (not inside the scroll) so they're always reachable;
                 // zero chrome when nothing is pinned.
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                    if !pinnedMessages.isEmpty {
+                        pinnedStrip(proxy)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
             }
         }
@@ -23374,7 +23378,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (627 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (631 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23430,11 +23434,15 @@ struct ScratchpadView: View {
                 Group {
                     if store.tasks.count + store.notes.count > 5 { searchRow }
                     if pad == .tasks { tasksList } else { notesList }
-                    if !aiResult.isEmpty { aiResultCard }
+                    if !aiResult.isEmpty {
+                        aiResultCard
+                            .transition(.opacity.combined(with: .offset(y: 8)))
+                    }
                 }
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 6)
                 .animation(DS.Motion.lux.delay(0.14), value: appeared)
+                .animation(DS.Motion.smooth, value: aiResult.isEmpty)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -36111,7 +36119,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3502 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3507 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39595,10 +39603,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CQ: more panel transitions (Chat A)
+**What:** Two more conditional-panel transitions. (1) `ContentView` pinned-message strip: `.transition(.move(edge: .top).combined(with: .opacity))` on the strip + `.animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)` on the ScrollView context — the strip now slides down from the top edge when the first message is pinned and slides back up when unpinned. (2) `ScratchpadView` AI result card: `.transition(.opacity.combined(with: .offset(y: 8)))` on `aiResultCard` + `.animation(DS.Motion.smooth, value: aiResult.isEmpty)` on the parent Group so the LLM-generated result fades+slides in when it arrives.
+**Files:** `Views/ContentView.swift`, `Views/ScratchpadView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CP: panel entry/exit transitions + AgentCard active indicator (Chat A)
 **What:** Five targeted panel/item transitions. (1) `ContentView` chat search bar: `.transition(.move(edge: .top).combined(with: .opacity))` so ⌘F slides the bar down from the top instead of snapping. (2) `ContentView` attachment chips row: `.transition(.scale(0.8)+.opacity)` on each chip + `.animation(DS.Motion.smooth, value: attachments.count)` on HStack + `.transition(.opacity+.offset(y: 8))` on the whole row + `.animation(DS.Motion.smooth, value: attachments.isEmpty)` on the inputBar VStack — chips scale in/out and the row fades+slides as it appears/disappears. (3) `AgentsView` AgentCard active indicator: `.transition(.scale(0.7)+.opacity)` on the pulsing-dot+spinner HStack + `.transition(.opacity)` on the rest arrow — they animate in/out when an agent starts/stops.
 **Files:** `Views/ContentView.swift`, `Views/AgentsView.swift`.
-**Commit:** `(next)`
+**Commit:** `7bb1b42`
 
 ## 2026-06-12 — marathon CO: list insertion/removal transitions (Chat A)
 **What:** Three views gain animated entry/exit transitions for data list items. `MemoryView` fact rows: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `row(fact)` + `.animation(DS.Motion.smooth, value: facts)` on the VStack — fact deletions now slide out from the leading edge instead of vanishing. `KnowledgeView` doc rows: same treatment keyed on `docs.count` so doc additions/deletions fade+slide. `MarketsView` signal cards list: `.transition(.opacity+.move(edge: .leading))` on each card + `.animation(value: store.symbols.count)` on the signalList VStack. `MarketsView` heatmap tiles: `.transition(.scale(0.7)+.opacity)` on each tile + `.animation(value: store.symbols.count)` on the LazyVGrid so tiles scale in/out when the watchlist changes.

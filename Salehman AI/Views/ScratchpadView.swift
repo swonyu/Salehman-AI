@@ -52,11 +52,15 @@ struct ScratchpadView: View {
                 Group {
                     if store.tasks.count + store.notes.count > 5 { searchRow }
                     if pad == .tasks { tasksList } else { notesList }
-                    if !aiResult.isEmpty { aiResultCard }
+                    if !aiResult.isEmpty {
+                        aiResultCard
+                            .transition(.opacity.combined(with: .offset(y: 8)))
+                    }
                 }
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 6)
                 .animation(DS.Motion.lux.delay(0.14), value: appeared)
+                .animation(DS.Motion.smooth, value: aiResult.isEmpty)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.

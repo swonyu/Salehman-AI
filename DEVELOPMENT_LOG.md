@@ -3481,6 +3481,11 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CQ: more panel transitions (Chat A)
+**What:** Two more conditional-panel transitions. (1) `ContentView` pinned-message strip: `.transition(.move(edge: .top).combined(with: .opacity))` on the strip + `.animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)` on the ScrollView context — the strip now slides down from the top edge when the first message is pinned and slides back up when unpinned. (2) `ScratchpadView` AI result card: `.transition(.opacity.combined(with: .offset(y: 8)))` on `aiResultCard` + `.animation(DS.Motion.smooth, value: aiResult.isEmpty)` on the parent Group so the LLM-generated result fades+slides in when it arrives.
+**Files:** `Views/ContentView.swift`, `Views/ScratchpadView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CP: panel entry/exit transitions + AgentCard active indicator (Chat A)
 **What:** Five targeted panel/item transitions. (1) `ContentView` chat search bar: `.transition(.move(edge: .top).combined(with: .opacity))` so ⌘F slides the bar down from the top instead of snapping. (2) `ContentView` attachment chips row: `.transition(.scale(0.8)+.opacity)` on each chip + `.animation(DS.Motion.smooth, value: attachments.count)` on HStack + `.transition(.opacity+.offset(y: 8))` on the whole row + `.animation(DS.Motion.smooth, value: attachments.isEmpty)` on the inputBar VStack — chips scale in/out and the row fades+slides as it appears/disappears. (3) `AgentsView` AgentCard active indicator: `.transition(.scale(0.7)+.opacity)` on the pulsing-dot+spinner HStack + `.transition(.opacity)` on the rest arrow — they animate in/out when an agent starts/stops.
 **Files:** `Views/ContentView.swift`, `Views/AgentsView.swift`.
