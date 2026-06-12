@@ -911,9 +911,22 @@ struct CodeView: View {
 
     private var emptyTreeHint: some View {
         VStack(spacing: 11) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 23, weight: .light))
-                .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            ZStack {
+                PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.08
+                        ? .spring(duration: 2.2, bounce: 0.05)
+                        : .easeOut(duration: 2.0)
+                }
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 23, weight: .light))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            }
             Text("Open a project folder\nto start coding")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -2079,16 +2092,29 @@ struct CodeView: View {
                         .foregroundStyle(.secondary.opacity(0.7))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(.secondary.opacity(0.48))
-                        .frame(width: 54, height: 54)
-                        .background(Color.white.opacity(0.04), in: Circle())
-                        .overlay(Circle().stroke(
-                            LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 1))
-                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    ZStack {
+                        PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                            Circle()
+                                .fill(Color.white.opacity(opacity))
+                                .frame(width: 72, height: 72)
+                                .blur(radius: 18)
+                                .allowsHitTesting(false)
+                        } animation: { opacity in
+                            opacity > 0.07
+                                ? .spring(duration: 2.4, bounce: 0.04)
+                                : .easeOut(duration: 2.2)
+                        }
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.48))
+                            .frame(width: 54, height: 54)
+                            .background(Color.white.opacity(0.04), in: Circle())
+                            .overlay(Circle().stroke(
+                                LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 1))
+                            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    }
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 11.5)).foregroundStyle(.secondary.opacity(0.65))
                         .multilineTextAlignment(.center)

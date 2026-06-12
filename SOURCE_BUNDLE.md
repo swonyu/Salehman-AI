@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:56 +03 · Swift files: 150 · Swift LOC: 34001_
+_Generated: 2026-06-13 01:59 +03 · Swift files: 150 · Swift LOC: 34027_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14792,7 +14792,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2617 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2643 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15707,9 +15707,22 @@ struct CodeView: View {
 
     private var emptyTreeHint: some View {
         VStack(spacing: 11) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 23, weight: .light))
-                .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            ZStack {
+                PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.08
+                        ? .spring(duration: 2.2, bounce: 0.05)
+                        : .easeOut(duration: 2.0)
+                }
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 23, weight: .light))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            }
             Text("Open a project folder\nto start coding")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -16875,16 +16888,29 @@ struct CodeView: View {
                         .foregroundStyle(.secondary.opacity(0.7))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(.secondary.opacity(0.48))
-                        .frame(width: 54, height: 54)
-                        .background(Color.white.opacity(0.04), in: Circle())
-                        .overlay(Circle().stroke(
-                            LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 1))
-                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    ZStack {
+                        PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                            Circle()
+                                .fill(Color.white.opacity(opacity))
+                                .frame(width: 72, height: 72)
+                                .blur(radius: 18)
+                                .allowsHitTesting(false)
+                        } animation: { opacity in
+                            opacity > 0.07
+                                ? .spring(duration: 2.4, bounce: 0.04)
+                                : .easeOut(duration: 2.2)
+                        }
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.48))
+                            .frame(width: 54, height: 54)
+                            .background(Color.white.opacity(0.04), in: Circle())
+                            .overlay(Circle().stroke(
+                                LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 1))
+                            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    }
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 11.5)).foregroundStyle(.secondary.opacity(0.65))
                         .multilineTextAlignment(.center)
@@ -36569,7 +36595,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4018 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4031 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39545,6 +39571,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Views/MarketsView.swift`, `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`, `Views/MemoryView.swift`, `Views/SettingsView.swift`
 
 **Result:** Zero Swift compiler errors. Single DS token controls the machined card fill level app-wide.
+
+---
+## 2026-06-13 — Marathon EL: CodeView empty states — PhaseAnimator breathing glows
+
+**What:** Both CodeView empty states lacked the PhaseAnimator breathing glow that all other empty states in the app use. Added:
+- `emptyTreeHint` (sidebar, no project open): `PhaseAnimator([0, 0.16, 0])` accent glow circle behind the folder icon
+- Right-panel "no file selected": `PhaseAnimator([0, 0.14, 0])` white glow circle behind the magnifyingglass icon
+
+Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView, MemoryView, VoiceModeView, etc.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Result:** Zero Swift compiler errors. CodeView empty states now visually consistent with all other empty states in the app.
 
 ---
 ## Standing notes / known issues
