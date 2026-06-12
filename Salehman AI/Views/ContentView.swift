@@ -2289,8 +2289,7 @@ struct MessageBubble: View, Equatable {
             // the composer core so user turns read as physical tiles.
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
-                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
             )
             // Comfortable wrap measure — long pastes shouldn't span the
             // full 780 column just because they're the user's.

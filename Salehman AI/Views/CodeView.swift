@@ -2445,8 +2445,7 @@ struct CodeMessageRow: View {
                     // core, so user turns read as physical objects in the flow.
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
-                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
                     )
             }
         } else {

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:49 +03 · Swift files: 150 · Swift LOC: 34000_
+_Generated: 2026-06-13 01:53 +03 · Swift files: 150 · Swift LOC: 33998_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14789,7 +14789,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2618 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2617 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17238,8 +17238,7 @@ struct CodeMessageRow: View {
                     // core, so user turns read as physical objects in the flow.
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
-                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
                     )
             }
         } else {
@@ -17610,7 +17609,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2852 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2851 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19903,8 +19902,7 @@ struct MessageBubble: View, Equatable {
             // the composer core so user turns read as physical tiles.
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
-                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
             )
             // Comfortable wrap measure — long pastes shouldn't span the
             // full 780 column just because they're the user's.
@@ -36568,7 +36566,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4000 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4009 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39526,6 +39524,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/BottomShortcutBar.swift`
 
 **Result:** Zero Swift compiler errors. All 26 view files in the Views directory audited and fully polished. Every interactive surface now uses the same top-lit gradient key badge pattern.
+
+---
+## 2026-06-13 — Marathon EJ: DS token DRY — inline coreInnerHighlight gradient → DS.Bezel token
+
+**What:** Both `ContentView` (chat user bubble) and `CodeView` (code-chat user bubble) inlined the same `[white@0.14 → white@0.02]` LinearGradient for the machined tile stroke. Replaced both with `DS.Bezel.coreInnerHighlight` — the canonical token already present in DesignSystem.swift — so a future highlight-level adjustment in the DS propagates to all machined tiles automatically. Zero visual change, pure DRY.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Result:** Zero Swift compiler errors. Single source of truth for the machined tile gradient across the whole app.
 
 ---
 ## Standing notes / known issues

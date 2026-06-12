@@ -2957,6 +2957,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compiler errors. All 26 view files in the Views directory audited and fully polished. Every interactive surface now uses the same top-lit gradient key badge pattern.
 
 ---
+## 2026-06-13 — Marathon EJ: DS token DRY — inline coreInnerHighlight gradient → DS.Bezel token
+
+**What:** Both `ContentView` (chat user bubble) and `CodeView` (code-chat user bubble) inlined the same `[white@0.14 → white@0.02]` LinearGradient for the machined tile stroke. Replaced both with `DS.Bezel.coreInnerHighlight` — the canonical token already present in DesignSystem.swift — so a future highlight-level adjustment in the DS propagates to all machined tiles automatically. Zero visual change, pure DRY.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Result:** Zero Swift compiler errors. Single source of truth for the machined tile gradient across the whole app.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
