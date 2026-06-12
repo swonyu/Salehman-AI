@@ -173,22 +173,22 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
-        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
-            TextField("https://….trycloudflare.com", text: $connectURL)
-            Button("Cancel", role: .cancel) { }
-            Button("Connect") {
+        .alert(“Connect to your cloud GPU”, isPresented: $showConnect) {
+            TextField(“https://….trycloudflare.com”, text: $connectURL)
+            Button(“Cancel”, role: .cancel) { }
+            Button(“Connect”) {
                 if let url = Self.normalizedServerURL(connectURL) {
-                    settings.unslothStudioEndpoint = url
-                    settings.unslothStudioModel = "salehman"
-                    settings.brainPreference = .unslothStudio
-                    noticeText = "Connected — Custom server → \(url), model “salehman”. Replies now come from the cloud GPU; pick Salehman in the Brain menu to go back to local."
+                    settings.vllmEndpoint = url
+                    settings.vllmModel = “salehman”
+                    settings.brainPreference = .vllm
+                    noticeText = “Connected — vLLM → \(url), model “salehman”. Replies now come from the cloud GPU; pin Salehman in Settings → Brain to go back to local.”
                 } else {
-                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
+                    noticeText = “That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints.”
                 }
                 showNotice = true
             }
         } message: {
-            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
+            Text(“Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).”)
         }
         .alert("Cloud GPU", isPresented: $showNotice) {
             Button("OK", role: .cancel) { }
@@ -330,6 +330,13 @@ struct ContentView: View {
                 Divider()
                 Button { TrainingExporter.savePanel(messages: vm.messages) } label: {
                     Label("Export Training Data (JSONL)…", systemImage: "brain")
+                }
+                let ratedCount = vm.messages.filter { $0.rating == true }.count
+                if ratedCount > 0 {
+                    Button { TrainingExporter.savePanel(messages: vm.messages, ratedOnly: true) } label: {
+                        Label("Export Best Replies (\(ratedCount) rated)…",
+                              systemImage: "hand.thumbsup")
+                    }
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
