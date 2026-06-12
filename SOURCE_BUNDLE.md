@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:06 +03 · Swift files: 150 · Swift LOC: 32390_
+_Generated: 2026-06-12 09:07 +03 · Swift files: 150 · Swift LOC: 32392_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13406,7 +13406,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (393 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (394 lines) =====
 ```swift
 import SwiftUI
 
@@ -13591,6 +13591,7 @@ struct AgentsView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Filter agents…", text: $agentSearch)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { agentSearch = ""; return .handled }
                 .accessibilityLabel("Filter agents")
             if !agentSearch.isEmpty {
                 Button { agentSearch = "" } label: {
@@ -20237,7 +20238,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (538 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (539 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20481,6 +20482,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
                 Button { docFilter = "" } label: {
@@ -34958,7 +34960,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2790 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2803 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36878,6 +36880,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Row was showing "1 messages" for single-message archives. Also, the absolute date alone gave no sense of recency — the relative age label (reusing the same helper as ScratchpadView + KnowledgeView) makes it immediately scannable.
 
 **Result:** Row subtitle now reads e.g. "Jun 10, 2:30 PM · 5 messages · yesterday". SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AP — Escape-to-clear on AgentsView and KnowledgeView search filters
+
+**What changed:**
+- `AgentsView.swift` agent search TextField: `.onKeyPress(.escape) { agentSearch = ""; return .handled }`
+- `KnowledgeView.swift` doc filter TextField: `.onKeyPress(.escape) { docFilter = ""; return .handled }`
+
+**Files:** `AgentsView.swift`, `KnowledgeView.swift`
+
+**Why:** `ContentView`'s chat search already had Escape-to-clear (line 625). These two search filters had an X button but no keyboard equivalent, breaking the consistent Escape = clear pattern.
+
+**Result:** Escape key now clears all three search filter fields consistently. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues

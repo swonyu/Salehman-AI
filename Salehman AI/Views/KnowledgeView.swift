@@ -240,6 +240,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
                 Button { docFilter = "" } label: {

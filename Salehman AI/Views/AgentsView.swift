@@ -181,6 +181,7 @@ struct AgentsView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Filter agents…", text: $agentSearch)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { agentSearch = ""; return .handled }
                 .accessibilityLabel("Filter agents")
             if !agentSearch.isEmpty {
                 Button { agentSearch = "" } label: {

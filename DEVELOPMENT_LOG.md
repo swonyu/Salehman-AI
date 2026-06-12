@@ -1919,6 +1919,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Row subtitle now reads e.g. "Jun 10, 2:30 PM · 5 messages · yesterday". SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AP — Escape-to-clear on AgentsView and KnowledgeView search filters
+
+**What changed:**
+- `AgentsView.swift` agent search TextField: `.onKeyPress(.escape) { agentSearch = ""; return .handled }`
+- `KnowledgeView.swift` doc filter TextField: `.onKeyPress(.escape) { docFilter = ""; return .handled }`
+
+**Files:** `AgentsView.swift`, `KnowledgeView.swift`
+
+**Why:** `ContentView`'s chat search already had Escape-to-clear (line 625). These two search filters had an X button but no keyboard equivalent, breaking the consistent Escape = clear pattern.
+
+**Result:** Escape key now clears all three search filter fields consistently. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
