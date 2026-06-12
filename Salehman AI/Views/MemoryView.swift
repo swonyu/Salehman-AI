@@ -47,10 +47,11 @@ struct MemoryView: View {
     @State private var facts: [String] = []
     @State private var confirmClear = false
     @State private var query = ""
-    @State private var sort: MemorySort = .newest
+    @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
     @State private var newFact = ""
     @State private var copiedFact: String?
+    @FocusState private var addFocused: Bool
 
     var body: some View {
         ZStack {
@@ -258,6 +259,7 @@ struct MemoryView: View {
             TextField("Add a memory…", text: $newFact)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .focused($addFocused)
                 .onSubmit { addFact() }
                 .onKeyPress(.escape) { newFact = ""; return .handled }
                 .accessibilityLabel("New memory text")
@@ -280,6 +282,7 @@ struct MemoryView: View {
         guard !trimmed.isEmpty else { return }
         MemoryStore.shared.remember(trimmed)
         newFact = ""
+        addFocused = true
         reload()
     }
 

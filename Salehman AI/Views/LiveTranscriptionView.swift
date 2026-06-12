@@ -165,7 +165,7 @@ struct LiveTranscriptionView: View {
     private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool) {
         guard searchText.isEmpty else { return }
         if animated {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)) { proxy.scrollTo("bottom", anchor: .bottom) }
         } else {
             proxy.scrollTo("bottom", anchor: .bottom)   // partials: no animation (was a lag source)
         }
@@ -211,9 +211,16 @@ struct LiveTranscriptionView: View {
                 guard !text.isEmpty else { return }
                 onAsk(Self.answerPrompt(transcript: text))
                 dismiss()
-            } label: { Label("Answer the questions", systemImage: "sparkles") }
-                .buttonStyle(.borderedProminent)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Answer the questions", systemImage: "sparkles")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Spacer()
             // Honest footer: only say "On-device" when every active recognizer

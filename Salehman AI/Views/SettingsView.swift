@@ -1177,12 +1177,12 @@ struct SettingsView: View {
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
             case .installed(let name):
-                Image(systemName: “checkmark.circle.fill”).foregroundStyle(DS.Palette.successSoft)
-                Text(“”\(name)” is installed — Salehman's offline floor is ready.”)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
             case .missing(let name):
-                Image(systemName: “exclamationmark.circle.fill”).foregroundStyle(DS.Palette.warningSoft)
-                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button {
                     let pb = NSPasteboard.general
@@ -1190,7 +1190,7 @@ struct SettingsView: View {
                     pb.setString("ollama create \(name) -f Modelfile", forType: .string)
                 } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.bordered).controlSize(.small)
-                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
@@ -1355,7 +1355,7 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Is “\(settings.brainPreference.title)” working?")
+                Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(settings.brainPreference == .ensemble
                      ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."

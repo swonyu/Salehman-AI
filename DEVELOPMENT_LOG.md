@@ -2091,6 +2091,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); the bug fix is structural (moving modifiers to the correct statement) with no visual or behavioral impact beyond VoiceOver.
 
 ---
+
+### 2026-06-12 — Marathon BA: Focus retention + session persistence for MemoryView & ScratchpadView
+
+**What:** Three targeted UX improvements: (1) `MemoryView` — added `@FocusState` to the add-fact TextField so the cursor stays in the field after each Entry submitted via Return/button, enabling rapid multi-entry without re-clicking; (2) `MemoryView` — changed `sort` from `@State` to `@AppStorage("ui.memorySort")` so the user's chosen sort order persists across sessions; (3) `ScratchpadView` — changed `pad` (Tasks vs Notes picker) from `@State` to `@AppStorage("ui.scratchpadPad")` so the last-active tab is remembered across app launches. The `applyFocusTrigger()` programmatic switch to `.notes` still works — `@AppStorage` is mutated the same way `@State` is.
+
+**Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** All three `@State` vars had the same pattern: reset to default on every app launch, forcing the user to re-choose their preference. `@AppStorage` on `RawRepresentable` String enums is zero-boilerplate persistence.
+
+**Result:** Build not yet run (owner-side); all changes are additive property-wrapper replacements with no logic impact.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -7,7 +7,7 @@ import SwiftUI
 struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
     @ObservedObject private var app = AppState.shared
-    @State private var pad: Pad = .tasks
+    @AppStorage("ui.scratchpadPad") private var pad: Pad = .tasks
     @State private var newText = ""
     @State private var search = ""
     @State private var aiResult = ""

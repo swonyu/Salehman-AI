@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:36 +03 · Swift files: 150 · Swift LOC: 32459_
+_Generated: 2026-06-12 09:39 +03 · Swift files: 150 · Swift LOC: 32462_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22113,7 +22113,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (297 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (300 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22164,10 +22164,11 @@ struct MemoryView: View {
     @State private var facts: [String] = []
     @State private var confirmClear = false
     @State private var query = ""
-    @State private var sort: MemorySort = .newest
+    @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
     @State private var newFact = ""
     @State private var copiedFact: String?
+    @FocusState private var addFocused: Bool
 
     var body: some View {
         ZStack {
@@ -22375,6 +22376,7 @@ struct MemoryView: View {
             TextField("Add a memory…", text: $newFact)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .focused($addFocused)
                 .onSubmit { addFact() }
                 .onKeyPress(.escape) { newFact = ""; return .handled }
                 .accessibilityLabel("New memory text")
@@ -22397,6 +22399,7 @@ struct MemoryView: View {
         guard !trimmed.isEmpty else { return }
         MemoryStore.shared.remember(trimmed)
         newFact = ""
+        addFocused = true
         reload()
     }
 
@@ -22721,7 +22724,7 @@ import SwiftUI
 struct ScratchpadView: View {
     @ObservedObject private var store = ScratchpadStore.shared
     @ObservedObject private var app = AppState.shared
-    @State private var pad: Pad = .tasks
+    @AppStorage("ui.scratchpadPad") private var pad: Pad = .tasks
     @State private var newText = ""
     @State private var search = ""
     @State private var aiResult = ""
@@ -24633,12 +24636,12 @@ struct SettingsView: View {
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
             case .installed(let name):
-                Image(systemName: “checkmark.circle.fill”).foregroundStyle(DS.Palette.successSoft)
-                Text(“”\(name)” is installed — Salehman's offline floor is ready.”)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
             case .missing(let name):
-                Image(systemName: “exclamationmark.circle.fill”).foregroundStyle(DS.Palette.warningSoft)
-                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button {
                     let pb = NSPasteboard.general
@@ -24646,7 +24649,7 @@ struct SettingsView: View {
                     pb.setString("ollama create \(name) -f Modelfile", forType: .string)
                 } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.bordered).controlSize(.small)
-                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
@@ -24811,7 +24814,7 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Is “\(settings.brainPreference.title)” working?")
+                Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(settings.brainPreference == .ensemble
                      ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."
@@ -35027,7 +35030,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2962 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2974 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37119,6 +37122,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The sidebar button VoiceOver label was wrong ("Rescan project files" instead of "Hide the file tree"), making it inaccessible. Found during a comprehensive icon-only button audit.
 
 **Result:** Build not yet run (owner-side); the bug fix is structural (moving modifiers to the correct statement) with no visual or behavioral impact beyond VoiceOver.
+
+---
+
+### 2026-06-12 — Marathon BA: Focus retention + session persistence for MemoryView & ScratchpadView
+
+**What:** Three targeted UX improvements: (1) `MemoryView` — added `@FocusState` to the add-fact TextField so the cursor stays in the field after each Entry submitted via Return/button, enabling rapid multi-entry without re-clicking; (2) `MemoryView` — changed `sort` from `@State` to `@AppStorage("ui.memorySort")` so the user's chosen sort order persists across sessions; (3) `ScratchpadView` — changed `pad` (Tasks vs Notes picker) from `@State` to `@AppStorage("ui.scratchpadPad")` so the last-active tab is remembered across app launches. The `applyFocusTrigger()` programmatic switch to `.notes` still works — `@AppStorage` is mutated the same way `@State` is.
+
+**Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** All three `@State` vars had the same pattern: reset to default on every app launch, forcing the user to re-choose their preference. `@AppStorage` on `RawRepresentable` String enums is zero-boilerplate persistence.
+
+**Result:** Build not yet run (owner-side); all changes are additive property-wrapper replacements with no logic impact.
 
 ---
 ## Standing notes / known issues
