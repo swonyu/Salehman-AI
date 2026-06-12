@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:27 +03 · Swift files: 150 · Swift LOC: 33165_
+_Generated: 2026-06-12 21:29 +03 · Swift files: 150 · Swift LOC: 33193_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13419,7 +13419,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (507 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (514 lines) =====
 ```swift
 import SwiftUI
 
@@ -13873,12 +13873,19 @@ private struct AgentCard: View {
             }
             Spacer(minLength: 4)
 
-            // Status indicator — spinner when running, subtle arrow when hovering at rest.
+            // Status indicator — pulsing dot + spinner when running, subtle
+            // arrow at rest. PhaseAnimator gives the dot a heartbeat glow.
             if isActive {
                 HStack(spacing: 5) {
-                    Circle()
-                        .fill(DS.Palette.successSoft)
-                        .frame(width: 6, height: 6)
+                    PhaseAnimator([false, true]) { bright in
+                        Circle()
+                            .fill(DS.Palette.successSoft)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
+                                    radius: bright ? 4 : 1)
+                    } animation: { bright in
+                        bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                    }
                     ProgressView().controlSize(.small)
                 }
             } else if hovering {
@@ -20473,7 +20480,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (627 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (636 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20706,7 +20713,16 @@ struct KnowledgeView: View {
         if docs.isEmpty {
             VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 100)
+                            .blur(radius: 24)
+                    } animation: { opacity in
+                        opacity > 0.23
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
@@ -22443,7 +22459,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (330 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (336 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22608,10 +22624,16 @@ struct MemoryView: View {
             // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
             // pattern so an empty sheet still feels lived-in, not abandoned.
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 84, height: 84)
-                    .blur(radius: 16)
+                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 84, height: 84)
+                        .blur(radius: 16)
+                } animation: { opacity in
+                    opacity > 0.18
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 40))
                     .foregroundStyle(DS.Palette.accent.opacity(0.85))
@@ -23082,7 +23104,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (590 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (596 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23560,11 +23582,17 @@ struct ScratchpadView: View {
     private func emptyState(_ text: String, _ icon: String) -> some View {
         VStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 100)
-                    .blur(radius: 28)
-                    .allowsHitTesting(false)
+                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 100)
+                        .blur(radius: 28)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.18
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
                 Image(systemName: icon)
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(DS.Palette.accent)
@@ -35733,7 +35761,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3232 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3247 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38093,6 +38121,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - VoiceModeView inner orb: removed `@State private var pulse` + `onAppear { pulse = true }`; replaced with `PhaseAnimator([false, true])` looping with phase-aware timing — listening uses 0.70s (snappy heartbeat), speaking uses 1.10s (measured output pulse). `animate` guard keeps the orb still during `.idle` / `.thinking` phases.
 
 **Why:** Both used the pre-PhaseAnimator pattern: a `@State` Bool flipped in `onAppear`, driven by `.repeatForever`. With `PhaseAnimator` (macOS 14+), the looping is declarative, state-free, and supports distinct animations per phase — improving both code clarity and the listening vs. speaking visual distinction.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
+### [2026-06-12] Marathon BU — PhaseAnimator status/empty-state indicators (4 views)
+
+**Files:** `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`
+
+**Changes:**
+- AgentsView `AgentCard` status dot: static `Circle()` → `PhaseAnimator([false, true])` glowing shadow pulse; easeIn 0.60s bright, easeOut 1.0s dim — active agent's dot now has a heartbeat while running.
+- MemoryView empty-state halo: static orb → `PhaseAnimator([0.14, 0.22, 0.14])` spring expand / easeOut contract (~6s cycle).
+- ScratchpadView empty-state halo: same pattern — `PhaseAnimator([0.14, 0.22, 0.14])` breathing.
+- KnowledgeView empty-state halo: `PhaseAnimator([0.18, 0.28, 0.18])` with matching timing.
+
+**Why:** Four static indicator orbs replaced with `PhaseAnimator` loops; all use the same "third phase = dead frame pause" trick as TodayView orb (BS). Consistent PhaseAnimator cadence across all status/empty surfaces.
 
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 

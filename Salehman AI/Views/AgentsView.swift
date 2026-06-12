@@ -450,12 +450,19 @@ private struct AgentCard: View {
             }
             Spacer(minLength: 4)
 
-            // Status indicator — spinner when running, subtle arrow when hovering at rest.
+            // Status indicator — pulsing dot + spinner when running, subtle
+            // arrow at rest. PhaseAnimator gives the dot a heartbeat glow.
             if isActive {
                 HStack(spacing: 5) {
-                    Circle()
-                        .fill(DS.Palette.successSoft)
-                        .frame(width: 6, height: 6)
+                    PhaseAnimator([false, true]) { bright in
+                        Circle()
+                            .fill(DS.Palette.successSoft)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
+                                    radius: bright ? 4 : 1)
+                    } animation: { bright in
+                        bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                    }
                     ProgressView().controlSize(.small)
                 }
             } else if hovering {

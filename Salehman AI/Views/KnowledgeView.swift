@@ -229,7 +229,16 @@ struct KnowledgeView: View {
         if docs.isEmpty {
             VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 100)
+                            .blur(radius: 24)
+                    } animation: { opacity in
+                        opacity > 0.23
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))

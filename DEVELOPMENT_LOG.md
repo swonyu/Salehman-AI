@@ -2361,6 +2361,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
+### [2026-06-12] Marathon BU — PhaseAnimator status/empty-state indicators (4 views)
+
+**Files:** `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`
+
+**Changes:**
+- AgentsView `AgentCard` status dot: static `Circle()` → `PhaseAnimator([false, true])` glowing shadow pulse; easeIn 0.60s bright, easeOut 1.0s dim — active agent's dot now has a heartbeat while running.
+- MemoryView empty-state halo: static orb → `PhaseAnimator([0.14, 0.22, 0.14])` spring expand / easeOut contract (~6s cycle).
+- ScratchpadView empty-state halo: same pattern — `PhaseAnimator([0.14, 0.22, 0.14])` breathing.
+- KnowledgeView empty-state halo: `PhaseAnimator([0.18, 0.28, 0.18])` with matching timing.
+
+**Why:** Four static indicator orbs replaced with `PhaseAnimator` loops; all use the same "third phase = dead frame pause" trick as TodayView orb (BS). Consistent PhaseAnimator cadence across all status/empty surfaces.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

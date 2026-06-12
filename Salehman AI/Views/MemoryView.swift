@@ -161,10 +161,16 @@ struct MemoryView: View {
             // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
             // pattern so an empty sheet still feels lived-in, not abandoned.
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 84, height: 84)
-                    .blur(radius: 16)
+                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 84, height: 84)
+                        .blur(radius: 16)
+                } animation: { opacity in
+                    opacity > 0.18
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 40))
                     .foregroundStyle(DS.Palette.accent.opacity(0.85))

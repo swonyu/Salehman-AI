@@ -474,11 +474,17 @@ struct ScratchpadView: View {
     private func emptyState(_ text: String, _ icon: String) -> some View {
         VStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 100)
-                    .blur(radius: 28)
-                    .allowsHitTesting(false)
+                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 100)
+                        .blur(radius: 28)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.18
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
                 Image(systemName: icon)
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(DS.Palette.accent)
