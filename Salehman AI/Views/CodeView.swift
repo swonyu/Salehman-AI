@@ -437,11 +437,19 @@ struct ActivityStepRow: View {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            step.status == .running ? DS.Palette.accent.opacity(0.07) : Color.white.opacity(0.03),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .leading) {
+            if step.status == .running {
+                DS.Palette.accent.frame(width: 2.5)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
         // Machined top bevel — each step card reads as a physical tile.
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(LinearGradient(colors: [.white.opacity(0.09), .white.opacity(0.01)],
+                .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
     }
@@ -493,10 +501,10 @@ struct ChangedFileRow: View {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
-                            Text("+\(stat.added)").foregroundStyle(Color.green.opacity(0.85))
+                            Text("+\(stat.added)").foregroundStyle(DS.Palette.successSoft.opacity(0.85))
                         }
                         if stat.removed > 0 {
-                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                            Text("−\(stat.removed)").foregroundStyle(DS.Palette.danger.opacity(0.8))
                         }
                     }
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
@@ -510,12 +518,13 @@ struct ChangedFileRow: View {
         .buttonStyle(.plain)
         .help("Show this file's diff")
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(DS.Motion.press, value: hovering)
     }
 }
 
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
+    @ObservedObject private var app = AppState.shared
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -545,6 +554,7 @@ struct CodeView: View {
     /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
     /// onAppear, so the capture would otherwise photograph an invisible welcome).
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
     // the message history with a subtle wash on the current match.
     @State private var convoSearching = false
@@ -605,7 +615,7 @@ struct CodeView: View {
             // slow local model (or can't fit the codebase). Tap "Add key" → Settings
             // (ContentView stays mounted in RootView, so its sheet handles this).
             if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { AppState.shared.showSettingsRequested = true },
+                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
@@ -680,6 +690,27 @@ struct CodeView: View {
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
             if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+        }
+        // Edge-triggers from BottomShortcutBar hints (same actions as the local shortcuts).
+        .onChange(of: app.reviewProjectRequested) { _, req in
+            guard req else { return }
+            app.reviewProjectRequested = false
+            reviewProject()
+        }
+        .onChange(of: app.toggleCodeFindRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeFindRequested = false
+            if ws.selectedFile != nil { rightPane = .file; findFocused = true }
+        }
+        .onChange(of: app.focusCodeInputRequested) { _, req in
+            guard req else { return }
+            app.focusCodeInputRequested = false
+            inputFocused = true
+        }
+        .onChange(of: app.toggleCodeTreeRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeTreeRequested = false
+            withAnimation(CodeView.lux) { treeCollapsed.toggle() }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -762,14 +793,14 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Rescan project files")
+                        .accessibilityLabel("Rescan project files")
                     Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Hide the file tree")
                     .accessibilityLabel("Hide the file tree")
-                        .help("Rescan project files")
-                        .accessibilityLabel("Rescan project files")
                 }
             }
             .padding(10)
@@ -840,6 +871,7 @@ struct CodeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
             TextField("Filter files", text: $fileFilter)
                 .textFieldStyle(.plain).font(.system(size: 11))
+                .onKeyPress(.escape) { fileFilter = ""; return .handled }
             if !fileFilter.isEmpty {
                 Button { fileFilter = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 10))
@@ -850,6 +882,7 @@ struct CodeView: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
@@ -864,11 +897,11 @@ struct CodeView: View {
             Button(action: ws.openFolder) {
                 Text("Open Folder")
                     .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 13).padding(.vertical, 6)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.38), lineWidth: 1))
             }
-            .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+            .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
             .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -897,14 +930,18 @@ struct CodeView: View {
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
-                    Circle().fill(Color.orange.opacity(0.75)).frame(width: 5, height: 5)
+                    Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(isSel ? Color.white.opacity(0.08)
-                        : (hoveredFile == url ? Color.white.opacity(0.04) : .clear),
+            .background(isSel ? Color.white.opacity(0.10)
+                        : (hoveredFile == url ? Color.white.opacity(0.05) : .clear),
                         in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
+            )
             .contentShape(Rectangle())
             .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
         }
@@ -948,6 +985,7 @@ struct CodeView: View {
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
                             .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .background(Color.white.opacity(0.05), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                             .help(contextPct >= 100
                                   ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
@@ -959,6 +997,7 @@ struct CodeView: View {
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
                         .padding(.horizontal, 7).padding(.vertical, 2.5)
+                        .background(Color.white.opacity(0.05), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
@@ -1001,6 +1040,7 @@ struct CodeView: View {
                                 .onAppear {
                                     guard !welcomeAppeared else { return }
                                     withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
+                                    withAnimation(Self.lux.delay(0.22)) { welcomeContentAppeared = true }
                                 }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
@@ -1029,7 +1069,7 @@ struct CodeView: View {
                     // read edge-to-edge on a wide window — cap and center.
                     .frame(maxWidth: 780)
                     .frame(maxWidth: .infinity)
-                    .animation(.easeOut(duration: 0.15), value: messages.count)
+                    .animation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -1105,10 +1145,13 @@ struct CodeView: View {
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Close search")
         }
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1190,7 +1233,7 @@ struct CodeView: View {
     ]
 
     private var welcome: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             // Eyebrow tag (design-language): microscopic tracked caps above the hero.
             Text("PAIR PROGRAMMER")
                 .font(.system(size: 9, weight: .semibold)).tracking(2.2)
@@ -1198,16 +1241,23 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 3.5)
                 .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
-                .frame(width: 60, height: 60)
-                .background(DS.Palette.accent.opacity(0.12), in: Circle())
-                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+                .frame(width: 68, height: 68)
+                .background(
+                    RadialGradient(colors: [DS.Palette.accent.opacity(0.24), DS.Palette.accent.opacity(0.07)],
+                                   center: .center, startRadius: 0, endRadius: 34),
+                    in: Circle())
+                .overlay(Circle().stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.10)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.38), radius: 28, y: 4)
+                .shadow(color: DS.Palette.accent.opacity(0.18), radius: 6, y: 1)
             Text("What are we building, Saleh?")
-                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
-                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.52))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1218,15 +1268,16 @@ struct CodeView: View {
                     // the capsule's leading padding. Press = physical compression.
                     Button { input = ex.text } label: {
                         HStack(spacing: 7) {
-                            Image(systemName: ex.icon).font(.system(size: 9.5))
+                            Image(systemName: ex.icon).font(.system(size: 10))
                                 .foregroundStyle(DS.Palette.accent)
-                                .frame(width: 19, height: 19)
-                                .background(DS.Palette.accent.opacity(0.13), in: Circle())
-                            Text(ex.text).font(.system(size: 11.5, weight: .medium))
+                                .frame(width: 22, height: 22)
+                                .background(DS.Palette.accent.opacity(0.14), in: Circle())
+                                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.24), lineWidth: 1))
+                            Text(ex.text).font(.system(size: 12, weight: .medium))
                         }
-                        .padding(.leading, 5).padding(.trailing, 13).padding(.vertical, 5)
-                        .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .padding(.leading, 5).padding(.trailing, 14).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
                         .contentShape(Capsule())
                     }
                     .buttonStyle(LuxPressStyle())
@@ -1234,6 +1285,8 @@ struct CodeView: View {
                 }
             }
             .padding(.top, 6)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 10)
             HStack(spacing: 16) {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
@@ -1241,6 +1294,8 @@ struct CodeView: View {
                 shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
 
             // Recent projects — one click back into anything you worked on lately
             // (the tree may be collapsed, so the welcome carries its own way in).
@@ -1278,17 +1333,25 @@ struct CodeView: View {
         // over a large void (QA renders). containerRelativeFrame sizes the
         // empty state to the visible area, like the main chat's welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
+        .background {
+            RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
+                           center: .init(x: 0.5, y: 0.32),
+                           startRadius: 0, endRadius: 280)
+                .allowsHitTesting(false)
+        }
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
     @ViewBuilder
     private func shortcutHint(_ key: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text(key)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.82))
         }
     }
 
@@ -1296,11 +1359,11 @@ struct CodeView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Progress header — "Working · done/total" (the Background-tasks feel).
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
-                Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                PulsingDot().scaleEffect(0.75)
+                Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                 Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
@@ -1315,7 +1378,13 @@ struct CodeView: View {
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(step.status == .running ? DS.Palette.accent.opacity(0.14) : Color.white.opacity(0.05), in: Capsule())
+                        .background(step.status == .running ? DS.Palette.accent.opacity(0.12) : Color.white.opacity(0.05), in: Capsule())
+                        .overlay(
+                            Capsule().stroke(
+                                step.status == .running ? DS.Palette.accent.opacity(0.42) : Color.clear,
+                                lineWidth: 1
+                            )
+                        )
                     }
                 }
                 .padding(.horizontal, 12).padding(.bottom, 8)
@@ -1638,10 +1707,10 @@ struct CodeView: View {
     private var rightPanel: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
-                    .foregroundStyle(DS.Palette.accent)
-                Text("ACTIVITY").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(.secondary)
+                Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 11))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.90))
+                Text("ACTIVITY").font(.system(size: 9.5, weight: .semibold)).tracking(1.6)
+                    .foregroundStyle(.secondary.opacity(0.85))
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -1727,8 +1796,9 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             HStack(spacing: 6) {
                 Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
-                Text("CHANGED FILES").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(.secondary)
+                    .shadow(color: DS.Palette.accent.opacity(0.60), radius: 4)
+                Text("CHANGED FILES").font(.system(size: 9.5, weight: .semibold)).tracking(1.5)
+                    .foregroundStyle(.secondary.opacity(0.85))
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
@@ -1793,29 +1863,38 @@ struct CodeView: View {
     }
 
     @ViewBuilder private var activityIdle: some View {
-        VStack(spacing: 8) {
-            Image(systemName: isRunning ? "ellipsis.circle" : "checkmark.circle")
-                .font(.system(size: 22, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
-            Text(isRunning ? "Working…" : "No activity yet")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+        VStack(spacing: 10) {
+            Image(systemName: isRunning ? "sparkles" : "bolt.horizontal.circle")
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(.secondary.opacity(0.42))
+                .frame(width: 48, height: 48)
+                .background(Color.white.opacity(0.04), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            Text(isRunning ? "Working…" : "Ready")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.82))
             if !isRunning {
-                Text("Run a task and the steps appear here.")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                Text("Send a message and\nagent steps appear here.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary.opacity(0.50))
                     .multilineTextAlignment(.center)
+                    .lineSpacing(1.5)
                 // Last local run's engine + measured speed — the "is my model
                 // fast right now" answer lives where the run activity lives.
                 if let stats = OllamaClient.lastStats {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill").font(.system(size: 8))
-                        Text("\(stats.model) · \(String(format: "%.0f tok/s", stats.tps))")
+                    HStack(spacing: 5) {
+                        Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
+                        Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
+                            .font(.system(size: 9.5, weight: .medium))
                     }
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.75))
-                    .padding(.top, 2)
+                    .foregroundStyle(.secondary.opacity(0.62))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.white.opacity(0.04), in: Capsule())
+                    .padding(.top, 4)
                 }
             }
         }
-        .padding(16)
+        .padding(20)
     }
 
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
@@ -1887,12 +1966,12 @@ struct CodeView: View {
                     let stats = diffStats
                     HStack(spacing: 8) {
                         HStack(spacing: 3) {
-                            Circle().fill(Color.green.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.green)
+                            Circle().fill(DS.Palette.successSoft.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                         }
                         HStack(spacing: 3) {
-                            Circle().fill(Color.red.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red)
+                            Circle().fill(DS.Palette.danger.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.danger)
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -1929,15 +2008,17 @@ struct CodeView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 23, weight: .light))
-                        .foregroundStyle(.secondary.opacity(0.55))
-                        .frame(width: 52, height: 52)
-                        .background(Color.white.opacity(0.03), in: Circle())
-                        .overlay(Circle().stroke(LinearGradient(
-                            colors: [.white.opacity(0.10), .white.opacity(0.01)],
-                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(.secondary.opacity(0.48))
+                        .frame(width: 54, height: 54)
+                        .background(Color.white.opacity(0.04), in: Circle())
+                        .overlay(Circle().stroke(
+                            LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                     Text("Select a file to view it,\nor run a task to see diffs.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary.opacity(0.65))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1969,6 +2050,7 @@ struct CodeView: View {
                 .textFieldStyle(.plain).font(.system(size: 11))
                 .focused($findFocused)
                 .onSubmit { jumpMatch(+1) }
+                .onKeyPress(.escape) { clearSearch(); return .handled }
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))
@@ -2091,11 +2173,13 @@ struct CodeView: View {
     }
 
     private func symbol(_ k: DiffLine.Kind) -> String { k == .add ? "+" : (k == .remove ? "−" : "") }
-    private func color(_ k: DiffLine.Kind) -> Color { k == .add ? .green : (k == .remove ? .red : .secondary) }
+    private func color(_ k: DiffLine.Kind) -> Color {
+        k == .add ? Color(red: 0.35, green: 0.82, blue: 0.48) : (k == .remove ? Color(red: 1.0, green: 0.40, blue: 0.40) : .secondary)
+    }
     private func bg(_ k: DiffLine.Kind) -> Color {
         switch k {
-        case .add:    return Color.green.opacity(0.12)
-        case .remove: return Color.red.opacity(0.12)
+        case .add:    return Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.10)
+        case .remove: return Color(red: 1.0, green: 0.40, blue: 0.40).opacity(0.11)
         case .same:   return .clear
         }
     }
@@ -2271,6 +2355,7 @@ struct CodeMessageRow: View {
     var onRegenerate: (() -> Void)? = nil
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
+    @State private var copied = false
 
     var body: some View {
         if msg.isUser {
@@ -2279,14 +2364,14 @@ struct CodeMessageRow: View {
                 Text(msg.text)
                     .font(.system(size: 13.5))
                     .textSelection(.enabled)
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.white.opacity(0.11),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     // Machined tile: the same top-bevel hairline as the composer
                     // core, so user turns read as physical objects in the flow.
                     .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 1)
                     )
             }
@@ -2298,21 +2383,27 @@ struct CodeMessageRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.trailing, 64)   // room for the hover action pill
             .overlay(alignment: .topTrailing) {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     action(speech.speakingID == msg.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                            "Read aloud", active: speech.speakingID == msg.id) {
                         speech.toggle(msg.text, id: msg.id)
                     }
-                    action("doc.on.doc", "Copy") {
+                    action(copied ? "checkmark" : "doc.on.doc", "Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(msg.text, forType: .string)
+                        copied = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
                     }
                     if let regen = onRegenerate {
                         action("arrow.clockwise", "Regenerate", regen)
                     }
                 }
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background(Color.white.opacity(0.05), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.09), lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
                 .opacity(hovering ? 1 : 0)
-                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(DS.Motion.fade, value: hovering)
             }
             // Make the ENTIRE row (text + the empty gap + the button area) a single
             // solid hover target. Without this, the transparent space between the
@@ -2327,11 +2418,11 @@ struct CodeMessageRow: View {
     private func action(_ icon: String, _ help: String, active: Bool = false,
                         _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Image(systemName: icon).font(.system(size: 11))
-                .foregroundStyle(active ? DS.Palette.accent : .secondary)
-                .frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: icon).font(.system(size: 11, weight: .medium))
+                .foregroundStyle(active ? DS.Palette.accent : Color.white.opacity(0.55))
+                .frame(width: 22, height: 22).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LuxPressStyle())
         .help(help)
         .accessibilityLabel(help)
     }
@@ -2344,7 +2435,7 @@ struct PulsingDot: View {
         Circle().fill(DS.Palette.accent)
             .frame(width: 7, height: 7)
             .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
             .accessibilityHidden(true)
     }
 }

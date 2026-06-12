@@ -12,7 +12,8 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var archives: [ChatStore.ArchivedChat] = []
+    @State private var archives: [ChatStore.ArchivedChat] =
+        ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
     @State private var query = ""
     /// Staggered row reveal on open (capped at 8 steps so deep lists don't
@@ -21,7 +22,11 @@ struct ChatHistoryView: View {
     @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
     /// Archive summaries decode up to 100 JSON files — that work now runs
     /// off-main (it was a visible hitch on sheet-open with a deep history).
-    @State private var loaded = false
+    /// QA launches load SYNCHRONOUSLY instead (the `archives` initializer
+    /// above): offscreen renders never pump `.task`, so the capture
+    /// photographed the ProgressView placeholder — the nonBlank probe caught
+    /// it (7 sampled colors). Same gotcha class as the `revealed` pre-flip.
+    @State private var loaded = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -76,6 +81,7 @@ struct ChatHistoryView: View {
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
                 }
                 .padding(.horizontal, 18).padding(.vertical, 8)
@@ -125,13 +131,19 @@ struct ChatHistoryView: View {
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
-                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) messages")
+                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) message\(item.messageCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: item.date))")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                if !item.preview.isEmpty {
+                    Text(item.preview)
+                        .font(.system(size: 10.5).italic())
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
@@ -139,6 +151,18 @@ struct ChatHistoryView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
                 .help("Replace the current conversation with this one (the current one is archived first)")
+            Button {
+                let msgs = ChatStore.loadArchive(item.id)
+                guard !msgs.isEmpty else { return }
+                ChatExporter.savePanel(msgs)
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Export this conversation as Markdown")
+            .accessibilityLabel("Export \(item.title)")
             Button {
                 ChatStore.deleteArchive(item.id)
                 archives.removeAll { $0.id == item.id }

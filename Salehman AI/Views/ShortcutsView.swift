@@ -5,17 +5,19 @@ import SwiftUI
 /// command palette for discoverability.
 struct ShortcutsView: View {
     let onClose: () -> Void
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var hoveredID: UUID?
 
     private struct Shortcut: Identifiable { let id = UUID(); let keys: String; let label: String }
     private struct ShortcutGroup: Identifiable { let id = UUID(); let title: String; let items: [Shortcut] }
 
     private let groups: [ShortcutGroup] = [
-        .init(title: "General", items: [
+        .init(title: "GENERAL", items: [
             .init(keys: "⌘K", label: "Command palette"),
             .init(keys: "⌘,", label: "Settings"),
             .init(keys: "⌘/", label: "This shortcuts sheet"),
         ]),
-        .init(title: "Navigation", items: {
+        .init(title: "NAVIGATION", items: {
             var nav: [Shortcut] = [
                 .init(keys: "⌘1", label: "Today"),
                 .init(keys: "⌘2", label: "Chat"),
@@ -25,57 +27,127 @@ struct ShortcutsView: View {
                 .init(keys: "⌘6", label: "Notes"),
                 .init(keys: "⌘7", label: "Knowledge"),
             ]
-            // Hidden tabs (owner directive — see `AppTab.hidden`) drop their
-            // row so this sheet never lists a shortcut that does nothing.
-            // The other ⌘-numbers keep their tabs (⌘5 is simply absent).
-            if AppTab.hidden.contains(.markets) {
-                nav.removeAll { $0.label == "Markets" }
-            }
+            if AppTab.hidden.contains(.markets) { nav.removeAll { $0.label == "Markets" } }
             return nav
         }()),
-        .init(title: "Conversation", items: [
+        .init(title: "CONVERSATION", items: [
             .init(keys: "⌘N", label: "New chat"),
             .init(keys: "⌘J", label: "Hands-free voice"),
             .init(keys: "⌘F", label: "Find in conversation"),
             .init(keys: "⌘.", label: "Stop generating"),
             .init(keys: "⌘L", label: "Live transcription"),
         ]),
+        .init(title: "CODE TAB", items: [
+            .init(keys: "⌘R",  label: "Review project"),
+            .init(keys: "⌘F",  label: "Find in file"),
+            .init(keys: "⌘⌥F", label: "Find in conversation"),
+            .init(keys: "⌘L",  label: "Focus chat input"),
+            .init(keys: "⌘⇧E", label: "Toggle file tree"),
+            .init(keys: "⌘⇧I", label: "Toggle right panel"),
+            .init(keys: "⌘⇧O", label: "Open folder"),
+        ]),
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Keyboard Shortcuts")
-                    .font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Spacer()
-                Button { onClose() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain).accessibilityLabel("Close")
-            }
-            .padding(.bottom, DS.Space.md)
+        ZStack {
+            DS.Gradient.bgVertical.ignoresSafeArea()
 
-            ForEach(groups) { group in
-                Eyebrow(text: group.title)
-                    .padding(.top, DS.Space.sm).padding(.bottom, 4)
-                ForEach(group.items) { s in
-                    HStack {
-                        Text(s.label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.9))
-                        Spacer()
-                        Text(s.keys)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+            // Ambient accent glow — depth on the flat canvas.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.14))
+                .frame(width: 220)
+                .blur(radius: 80)
+                .offset(x: 130, y: -150)
+                .allowsHitTesting(false)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("KEYBOARD SHORTCUTS")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .tracking(2)
+                            .foregroundStyle(DS.Palette.accent)
+                        Text("Every shortcut in one place")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
                     }
-                    .padding(.vertical, 5)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(s.label), \(s.keys)")
+                    Spacer()
+                    Button { onClose() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20)).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("Close")
+                }
+                .padding(.bottom, DS.Space.lg)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: DS.Space.lg) {
+                        ForEach(groups) { group in groupSection(group) }
+                    }
                 }
             }
-            Spacer()
+            .padding(DS.Space.xl)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 14)
         }
-        .padding(DS.Space.xl)
-        .frame(width: 380, height: 470)
-        .background(DS.Palette.bgTop)
+        .frame(width: 400, height: 500)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Keyboard Shortcuts")
+    }
+
+    private func groupSection(_ group: ShortcutGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(group.title)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.8)
+                .foregroundStyle(DS.Palette.accent)
+                .padding(.bottom, 4)
+
+            VStack(spacing: 1) {
+                ForEach(group.items) { s in shortcutRow(s) }
+            }
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        }
+    }
+
+    private func shortcutRow(_ s: Shortcut) -> some View {
+        let hovered = hoveredID == s.id
+        return HStack {
+            Text(s.label)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.9))
+            Spacer()
+            Text(s.keys)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(hovered ? 0.14 : 0.08))
+                        // Top-lit edge highlight — key badge reads dimensional.
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(LinearGradient(
+                                colors: [.white.opacity(0.45), .white.opacity(0.04)],
+                                startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                )
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredID = s.id }
+                else if hoveredID == s.id { hoveredID = nil }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(s.label), \(s.keys)")
     }
 }

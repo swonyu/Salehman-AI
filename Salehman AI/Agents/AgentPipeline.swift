@@ -397,7 +397,7 @@ enum AgentPipeline {
             return await LocalLLM.generateFreeAuto(contextualMission)
         }
 
-        // FreeCoding: a coding-focused loop over the free coders + DeepSeek. Always
+        // FreeCoding: a coding-focused loop over the free coders. Always
         // tool-capable (coding wants to build/run/test), so it bypasses the
         // multi-agent team too and routes straight to `freeCodingReply`.
         if LocalLLM.isFreeCodingMode {
@@ -455,7 +455,12 @@ enum AgentPipeline {
         // concurrent task-group closures. A mutable `var` stays "accessible to
         // main-actor code", so sending such a closure is a Swift 6 data-race error.
         let baseTranscript = await ConversationStore.shared.transcript()
-        let memories = MemoryStore.shared.recall(mission)
+        // NLEmbedding model load + cosine scan — off main actor so the UI stays
+        // responsive during mission setup (can take ~50–200ms on first call).
+        // `MemoryStore.shared` is captured before the hop (main-actor property);
+        // the store itself is `@unchecked Sendable` and safe to pass across.
+        let _store = MemoryStore.shared
+        let memories = await Task.detached { _store.recall(mission) }.value
         let history = memories.isEmpty
             ? baseTranscript
             : "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + baseTranscript

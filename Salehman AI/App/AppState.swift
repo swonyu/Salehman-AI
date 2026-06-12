@@ -25,6 +25,32 @@ final class AppState: ObservableObject {
     /// ⌘J hands-free Voice Mode (talk↔listen) — presented over the root window.
     @Published var showVoiceModeRequested = false
 
+    /// Set `true` when an AI reply completes while the user is on a non-Chat tab.
+    /// `TabSwitcherBar` uses it to render a pulse dot on the Chat pill; cleared
+    /// automatically when the user switches to the Chat tab.
+    @Published var chatHasUnread = false
+
+    /// Mirrors `ChatViewModel.isRunning` so components outside ContentView's
+    /// subtree (e.g. `BottomShortcutBar`) can show a Stop hint without wiring
+    /// the view model through the whole hierarchy.
+    @Published var aiIsRunning = false
+
+    /// Edge-trigger: set `true` to ask `ScratchpadView` to focus its add field
+    /// on the next appear or on change. Cleared by the view after acting.
+    @Published var focusScratchpadAddFieldRequested = false
+
+    /// Companion to `focusScratchpadAddFieldRequested`: when `true`, `ScratchpadView`
+    /// also switches its segmented picker to Notes mode before focusing. Set by
+    /// any action that means "create a note" (e.g. Today's "New Note" tile).
+    @Published var scratchpadFocusNotesMode = false
+
+    /// Edge-triggers for Code-tab actions that originate outside CodeView
+    /// (e.g. BottomShortcutBar hints). CodeView observes these and clears them.
+    @Published var reviewProjectRequested    = false
+    @Published var toggleCodeFindRequested   = false
+    @Published var focusCodeInputRequested   = false
+    @Published var toggleCodeTreeRequested   = false
+
     private init() {}
 }
 
@@ -47,6 +73,16 @@ enum AppTab: String, CaseIterable, Identifiable {
     /// The user-visible tab roster — navigation surfaces iterate THIS, never
     /// `allCases`, so a hidden tab vanishes everywhere at once.
     nonisolated static var visible: [AppTab] { allCases.filter { !hidden.contains($0) } }
+
+    /// Owner directive (2026-06-12): Notes + Knowledge render as SMALL corner
+    /// icon buttons in the tab bar's right cluster ("really small like the
+    /// copy button", in the old market-pill spot) instead of full-width
+    /// pills. They stay real tabs — ⌘6/⌘7, the palette, and the shortcuts
+    /// sheet all still navigate to them.
+    nonisolated static let corner: [AppTab] = [.scratchpad, .knowledge]
+
+    /// The full-size pill roster: visible tabs minus the compact corner tabs.
+    nonisolated static var pills: [AppTab] { visible.filter { !corner.contains($0) } }
 
     var title: String {
         switch self {

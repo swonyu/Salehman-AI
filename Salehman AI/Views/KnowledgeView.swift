@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -30,6 +31,9 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    @State private var hoveredDocID: UUID?
+    /// Pulses briefly after "Save to Notes" to confirm the action.
+    @State private var answerSaved = false
 
     var body: some View {
         ScrollView {
@@ -62,24 +66,45 @@ struct KnowledgeView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                .accessibilityLabel("Paste text").disabled(ingesting)
-            Button(action: addFile) {
-                HStack(spacing: 6) {
-                    if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
-                    Text(ingesting ? "Reading…" : "Add file")
+        ZStack(alignment: .topLeading) {
+            // Ambient glow — soft depth behind the title area.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.13))
+                .frame(width: 200)
+                .blur(radius: 70)
+                .offset(x: -30, y: -40)
+                .allowsHitTesting(false)
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("KNOWLEDGE VAULT")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(2)
+                        .foregroundStyle(DS.Palette.accent)
+                    Text("Knowledge")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Chat with your own documents — private, on this Mac.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
+                Spacer()
+                Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
+                    .buttonStyle(.bordered).controlSize(.small).help("Paste text")
+                    .accessibilityLabel("Paste text").disabled(ingesting)
+                Button(action: addFile) {
+                    HStack(spacing: 6) {
+                        if ingesting { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "plus") }
+                        Text(ingesting ? "Reading…" : "Add file")
+                    }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                }
+                .buttonStyle(LuxPressStyle())
+                .disabled(ingesting)
             }
-            .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
-            .disabled(ingesting)
         }
     }
 
@@ -90,6 +115,7 @@ struct KnowledgeView: View {
                 TextField("Ask your documents…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 15))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
@@ -120,6 +146,32 @@ struct KnowledgeView: View {
                     }
                     .padding(.top, 4)
                 }
+                // Quick actions on the answer — Copy and Save to Notes.
+                HStack(spacing: 16) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(answer, forType: .string)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .help("Copy answer to clipboard")
+                    .accessibilityLabel("Copy answer")
+                    Button {
+                        ScratchpadStore.shared.addNote(answer)
+                        answerSaved = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                    } label: {
+                        Label(answerSaved ? "Saved!" : "Save to Notes",
+                              systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                    }
+                    .help("Save answer as a note")
+                    .accessibilityLabel("Save answer to Notes")
+                    Spacer(minLength: 0)
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -134,16 +186,25 @@ struct KnowledgeView: View {
 
     @ViewBuilder private var documentsSection: some View {
         if docs.isEmpty {
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.14)).frame(width: 84, height: 84).blur(radius: 16)
-                    Image(systemName: "books.vertical.fill").font(.system(size: 38)).foregroundStyle(DS.Palette.accent.opacity(0.85))
+                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
-                Text("No documents yet").font(.headline).foregroundStyle(.white)
+                .padding(.bottom, 4)
+                Text("START YOUR VAULT")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(DS.Palette.accent)
+                Text("No documents yet")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
                 Text("Add PDFs, text, or notes. Everything stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 30)
+            .frame(maxWidth: .infinity).padding(.vertical, 40)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
@@ -185,6 +246,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
                 Button { docFilter = "" } label: {
@@ -199,28 +261,47 @@ struct KnowledgeView: View {
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
-        HStack(spacing: 12) {
+        let hovered = hoveredDocID == doc.id
+        return HStack(spacing: 12) {
             // Tapping the row opens the detail sheet (on-device summary + info).
             Button { detailDoc = doc } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: doc.icon).font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 20)
+                    Image(systemName: doc.icon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
+                        .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(doc.name).font(.system(size: 14, weight: .medium)).foregroundStyle(.white).lineLimit(1)
-                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s")")
+                        Text(doc.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                            .lineLimit(1)
+                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: doc.addedAt))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.6) : .secondary)
             }
             .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredDocID = doc.id }
+                else if hoveredDocID == doc.id { hoveredDocID = nil }
+            }
+        }
     }
 
     // MARK: Actions
@@ -285,9 +366,16 @@ struct KnowledgeView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { showPaste = false }.buttonStyle(.plain).foregroundStyle(.secondary)
-                Button("Add to Knowledge", action: addPastedText)
-                    .buttonStyle(.borderedProminent).tint(DS.Palette.accent)
-                    .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(action: addPastedText) {
+                    Text("Add to Knowledge")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                }
+                .buttonStyle(LuxPressStyle())
+                .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(DS.Space.xl)
@@ -356,6 +444,7 @@ private struct DocDetailSheet: View {
     @State private var question = ""
     @State private var answer = ""
     @State private var asking = false
+    @State private var answerSaved = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -391,6 +480,24 @@ private struct DocDetailSheet: View {
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 16) {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(answer, forType: .string)
+                            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                            .help("Copy answer to clipboard").accessibilityLabel("Copy answer")
+                            Button {
+                                ScratchpadStore.shared.addNote(answer)
+                                answerSaved = true
+                                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                            } label: {
+                                Label(answerSaved ? "Saved!" : "Save to Notes",
+                                      systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                            }
+                            .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
             }
@@ -401,6 +508,7 @@ private struct DocDetailSheet: View {
                 TextField("Ask about this document…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
                     else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }

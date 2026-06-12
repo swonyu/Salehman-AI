@@ -6,6 +6,10 @@ import AppKit
 /// inline code). No third-party dependencies.
 struct MarkdownText: View {
     let text: String
+    /// Find-in-conversation term to highlight (case-insensitive). Empty = no
+    /// highlight, the common path. Threaded down to every rendered run so a
+    /// match lights up wherever it lands — prose, list item, table cell, code.
+    var highlight: String = ""
 
     var body: some View {
         let parsed = MarkdownText.segments(for: text)
@@ -13,7 +17,7 @@ struct MarkdownText: View {
             ForEach(Array(parsed.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .code(let language, let code):
-                    CodeBlock(language: language, code: code)
+                    CodeBlock(language: language, code: code, highlight: highlight)
                 case .text(let body):
                     // Render block-by-block so `##` headings, `- `/`1.` lists, and
                     // `| a | b |` tables read as real structure instead of literal text.
@@ -21,11 +25,11 @@ struct MarkdownText: View {
                         ForEach(Array(MarkdownText.blocks(for: body).enumerated()), id: \.offset) { _, block in
                             switch block {
                             case .table(let header, let rows):
-                                MarkdownText.tableView(header: header, rows: rows)
+                                MarkdownText.tableView(header: header, rows: rows, highlight: highlight)
                             case .lines(let chunk):
                                 VStack(alignment: .leading, spacing: 5) {
                                     ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
-                                        MarkdownText.lineView(raw)
+                                        MarkdownText.lineView(raw, highlight: highlight)
                                     }
                                 }
                             }
@@ -125,17 +129,43 @@ struct MarkdownText: View {
         return attr
     }
 
+    /// Amber wash painted behind find-in-conversation matches. Deliberately NOT
+    /// the red brand accent — red reads as "error/active brain" in this UI and
+    /// would muddy the meaning of a match. Amber is the universal "found it" cue.
+    private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
+
+    /// Overlay a search highlight on an already-rendered (and cached) attributed
+    /// string. Applied AFTER the markdown cache so the parse cache stays
+    /// query-independent — only this cheap O(text) attribute pass re-runs as the
+    /// query changes. Highlights EVERY case-insensitive occurrence, not just the
+    /// first. Returns `base` untouched when `query` is blank (the hot path).
+    static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return base }
+        var out = base
+        var cursor = out.startIndex
+        // Setting color attributes never changes the character count, so indices
+        // stay valid across iterations — we just walk forward past each hit.
+        while cursor < out.endIndex,
+              let hit = out[cursor..<out.endIndex].range(of: q, options: .caseInsensitive) {
+            out[hit].backgroundColor = highlightWash
+            out[hit].foregroundColor = .white   // matches pop a touch over the 0.92 body
+            cursor = hit.upperBound
+        }
+        return out
+    }
+
     /// Render one source line with block-level styling (headings, bullets,
     /// numbered items) on top of the inline markdown. LLM replies lean on `##`
     /// headings and `- ` lists that the old single-`Text` renderer showed as
     /// literal "##" / "-" — this makes them read as real document structure.
     @ViewBuilder
-    static func lineView(_ raw: String) -> some View {
+    static func lineView(_ raw: String, highlight: String = "") -> some View {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty {
             Color.clear.frame(height: 3)
         } else if let h = heading(trimmed) {
-            Text(inlineMarkdown(h.text))
+            Text(highlighted(inlineMarkdown(h.text), query: highlight))
                 .font(.system(size: h.level == 1 ? 19 : (h.level == 2 ? 16 : 14.5),
                               weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
@@ -143,13 +173,13 @@ struct MarkdownText: View {
         } else if let item = bullet(trimmed) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•").font(.system(size: 14, weight: .bold)).foregroundStyle(DS.Palette.accent)
-                Text(inlineMarkdown(item)).font(.system(size: 14))
+                Text(highlighted(inlineMarkdown(item), query: highlight)).font(.system(size: 14))
             }
             .padding(.leading, 2)
         } else if let num = numbered(trimmed) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(num.marker).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                Text(inlineMarkdown(num.text)).font(.system(size: 14))
+                Text(highlighted(inlineMarkdown(num.text), query: highlight)).font(.system(size: 14))
             }
             .padding(.leading, 2)
         } else if trimmed == "---" || trimmed == "***" || trimmed == "___" {
@@ -162,13 +192,13 @@ struct MarkdownText: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(DS.Palette.accent.opacity(0.7))
                     .frame(width: 3)
-                Text(inlineMarkdown(quote))
+                Text(highlighted(inlineMarkdown(quote), query: highlight))
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         } else {
-            Text(inlineMarkdown(raw)).font(.system(size: 14))
+            Text(highlighted(inlineMarkdown(raw), query: highlight)).font(.system(size: 14))
         }
     }
 
@@ -261,12 +291,12 @@ struct MarkdownText: View {
     /// ideal (single-line) width, so long cells overflowed the message column and
     /// were clipped mid-word (owner hit this). Wide tables h-scroll as the escape.
     @ViewBuilder
-    static func tableView(header: [String], rows: [[String]]) -> some View {
+    static func tableView(header: [String], rows: [[String]], highlight: String = "") -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(inlineMarkdown(cell))
+                        Text(highlighted(inlineMarkdown(cell), query: highlight))
                             .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: 300, alignment: .leading)
@@ -276,7 +306,7 @@ struct MarkdownText: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                            Text(highlighted(inlineMarkdown(cell), query: highlight)).font(.system(size: 13.5))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: 300, alignment: .leading)
                         }
@@ -293,6 +323,8 @@ struct MarkdownText: View {
 struct CodeBlock: View {
     let language: String
     let code: String
+    /// Find-in-conversation term, painted over the syntax colors. Empty = none.
+    var highlight: String = ""
     @State private var copied = false
 
     /// Map a fenced-block language label → an extension `CodeSyntax` understands
@@ -313,16 +345,22 @@ struct CodeBlock: View {
     /// Very large blocks fall back to plain text — highlighting re-runs on every
     /// redraw (incl. token-by-token while streaming), which is O(n²) on size.
     private var highlightedCode: AttributedString {
-        guard code.count < 6000 else {
-            var a = AttributedString(code); a.foregroundColor = CodeSyntax.base; return a
+        let base: AttributedString
+        if code.count < 6000 {
+            let lines = code.components(separatedBy: "\n")
+            var result = AttributedString()
+            for (i, line) in lines.enumerated() {
+                result.append(CodeSyntax.highlight(line, ext: ext))
+                if i < lines.count - 1 { result.append(AttributedString("\n")) }
+            }
+            base = result
+        } else {
+            // Big block: skip syntax highlighting (O(n²) on every redraw).
+            var a = AttributedString(code); a.foregroundColor = CodeSyntax.base; base = a
         }
-        let lines = code.components(separatedBy: "\n")
-        var result = AttributedString()
-        for (i, line) in lines.enumerated() {
-            result.append(CodeSyntax.highlight(line, ext: ext))
-            if i < lines.count - 1 { result.append(AttributedString("\n")) }
-        }
-        return result
+        // Search highlight is a cheap attribute pass, applied even on the big-block
+        // fallback so a match in a long block still lights up.
+        return MarkdownText.highlighted(base, query: highlight)
     }
 
     var body: some View {

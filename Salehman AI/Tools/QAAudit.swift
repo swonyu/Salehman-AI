@@ -207,7 +207,7 @@ enum QAAudit {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let data = try? encoder.encode(report) {
-            try? data.write(to: snapshotsDir.appendingPathComponent("AUDIT.json"))
+            try? data.write(to: snapshotsDir.appendingPathComponent("AUDIT.json"), options: .atomic)
         }
 
         // Trend trail: one JSONL line per audit run (timestamp, fail count,

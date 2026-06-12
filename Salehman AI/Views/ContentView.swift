@@ -28,6 +28,13 @@ struct ContentView: View {
     /// Clamped against the CURRENT matches at use-time; reset when typing
     /// changes the query.
     @State private var slashSelection = 0
+    /// ↑/↓ recall: which past user message is currently shown in the composer
+    /// (-1 = not in recall mode). ↑ moves backward through history, ↓ moves
+    /// forward. Any manual keystroke resets this via `onChange(of: mission)`.
+    @State private var recallIdx = -1
+    /// Prevents `onChange(of: mission)` from resetting `recallIdx` when the
+    /// change was TRIGGERED BY the recall handlers (not by the user typing).
+    @State private var inRecall = false
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
@@ -52,10 +59,16 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showStats = false
     @State private var statsBlurb = ""
+    // /connect — paste the cloud-GPU tunnel URL, the app wires itself.
+    @State private var showConnect = false
+    @State private var connectURL = ""
+    @State private var showNotice = false
+    @State private var noticeText = ""
     /// Welcome entrance choreography (Code-tab parity): pre-revealed on QA
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
@@ -73,6 +86,9 @@ struct ContentView: View {
     @ObservedObject private var library = PromptLibrary.shared
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
+    /// Drives the self-dismissing "Saved to Notes" banner. Set true on save;
+    /// a .task(id:) clears it automatically after 1.8s.
+    @State private var noteSavedPulse = false
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
@@ -158,6 +174,26 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
+        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
+            TextField("https://….trycloudflare.com", text: $connectURL)
+            Button("Cancel", role: .cancel) { }
+            Button("Connect") {
+                if let url = Self.normalizedServerURL(connectURL) {
+                    settings.vllmEndpoint = url
+                    settings.vllmModel = "salehman"
+                    settings.brainPreference = .vllm
+                    noticeText = "Connected — vLLM → \(url), model \"salehman\". Replies now come from the cloud GPU; pin Salehman in Settings → Brain to go back to local."
+                } else {
+                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
+                }
+                showNotice = true
+            }
+        } message: {
+            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
+        }
+        .alert("Cloud GPU", isPresented: $showNotice) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(noticeText) }
         .alert("Save prompt", isPresented: $savingPrompt) {
             TextField("Name", text: $newPromptTitle)
             Button("Save") { library.add(title: newPromptTitle, text: mission) }
@@ -181,7 +217,9 @@ struct ContentView: View {
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
             // Restore an unsent draft (quitting mid-thought shouldn't eat it).
-            if mission.isEmpty {
+            // Skip under --uitesting so UITests always start with an empty composer.
+            let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+            if mission.isEmpty && !isUITesting {
                 mission = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
             }
         }
@@ -191,6 +229,10 @@ struct ContentView: View {
             UserDefaults.standard.set(draft, forKey: Self.draftKey)
             // Typing changes the slash query → selection restarts at the top.
             slashSelection = 0
+            // Recall state: a change triggered by the ↑/↓ recall handlers
+            // sets `inRecall = true` first. Clear the flag this frame and
+            // preserve recallIdx. Any OTHER change (user typing) resets recall.
+            if inRecall { inRecall = false } else { recallIdx = -1 }
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -206,7 +248,7 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
                     unrestrictedPulse = true
                 }
             } else {
@@ -290,6 +332,13 @@ struct ContentView: View {
                 Button { TrainingExporter.savePanel(messages: vm.messages) } label: {
                     Label("Export Training Data (JSONL)…", systemImage: "brain")
                 }
+                let ratedCount = vm.messages.filter { $0.rating == true }.count
+                if ratedCount > 0 {
+                    Button { TrainingExporter.savePanel(messages: vm.messages, ratedOnly: true) } label: {
+                        Label("Export Best Replies (\(ratedCount) rated)…",
+                              systemImage: "hand.thumbsup")
+                    }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 14, weight: .semibold))
@@ -361,6 +410,14 @@ struct ContentView: View {
         return vm.messages.filter { $0.text.localizedCaseInsensitiveContains(q) }
     }
 
+    /// The term to paint inside each bubble — only while the search bar is open
+    /// with a non-blank query, otherwise "" (no highlight). Threaded into every
+    /// MessageBubble so the matched word lights up wherever it sits in the reply.
+    private var searchHighlight: String {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (searching && !q.isEmpty) ? q : ""
+    }
+
     private var conversation: some View {
         VStack(spacing: 0) {
             if searching { searchBar }
@@ -370,6 +427,8 @@ struct ContentView: View {
                         if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
                                 .padding(.horizontal, 24)
+                        } else if searching && filteredMessages.isEmpty {
+                            searchNoResultsState
                         } else {
                             // Reading rhythm: 10pt within a same-sender burst,
                             // +14 leading a new burst (= 24 between speakers) —
@@ -389,6 +448,7 @@ struct ContentView: View {
                                     }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
+                                                  highlight: searchHighlight,
                                                   onRegenerate: vm.regenerate,
                                                   onEdit: { m in
                                                       if let text = vm.extractForEdit(m) {
@@ -402,7 +462,12 @@ struct ContentView: View {
                                                                                 : mission + "\n" + q + "\n"
                                                       inputFocused = true
                                                   },
-                                                  onTogglePin: { vm.togglePin($0) })
+                                                  onTogglePin: { vm.togglePin($0) },
+                                                  onSaveToNotes: { text in
+                                                      ScratchpadStore.shared.addNote(text)
+                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                  },
+                                                  onRate: { vm.rate($0, up: $1) })
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -562,7 +627,7 @@ struct ContentView: View {
                     return .handled
                 }
             if !searchQuery.isEmpty {
-                Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
+                Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -593,14 +658,15 @@ struct ContentView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "sparkles")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
-                .frame(width: 60, height: 60)
-                .background(DS.Palette.accent.opacity(0.12), in: Circle())
-                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+                .frame(width: 68, height: 68)
+                .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.22), DS.Palette.accent.opacity(0.07)], center: .center, startRadius: 0, endRadius: 34), in: Circle())
+                .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.35), radius: 28, y: 4)
+                .shadow(color: DS.Palette.accent.opacity(0.12), radius: 6, y: 1)
             Text(greetingLine)
-                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("Ask me anything, or let me run things on your Mac — inspect it, find files, check storage, tidy things up.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -609,10 +675,13 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 ForEach(suggestions.prefix(3), id: \.self) { s in
                     Button { submit(s.prompt) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: s.icon).font(.system(size: 10.5))
+                        HStack(spacing: 6) {
+                            Image(systemName: s.icon).font(.system(size: 10))
                                 .foregroundStyle(DS.Palette.accent)
-                            Text(s.title).font(.system(size: 11.5, weight: .medium))
+                                .frame(width: 22, height: 22)
+                                .background(DS.Palette.accent.opacity(0.10), in: Circle())
+                                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                            Text(s.title).font(.system(size: 12, weight: .medium))
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
@@ -629,12 +698,16 @@ struct ContentView: View {
                 }
             }
             .padding(.top, 6)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             HStack(spacing: 16) {
                 welcomeShortcutHint("⌘N", "New chat")
                 welcomeShortcutHint("⌘F", "Find")
                 welcomeShortcutHint("⌘J", "Voice")
             }
             .padding(.top, 10)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             // Honest status, Code-tab position (replaces the old eyebrow
             // capsule — the Code welcome has no eyebrow): offline mode wins,
             // else the live fine-tune when it's actually pulled.
@@ -664,6 +737,11 @@ struct ContentView: View {
                 .help("Browse and restore archived conversations")
             }
         }
+        .background {
+            RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
+                           center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)
+                .allowsHitTesting(false)
+        }
         .frame(maxWidth: .infinity)
         // Entrance: same heavy fade-up the Code welcome performs (lux curve,
         // 16pt rise, 0.05s settle delay). QA launches skip it via the
@@ -673,6 +751,7 @@ struct ContentView: View {
         .onAppear {
             guard !welcomeAppeared else { return }
             withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+            withAnimation(DS.Motion.lux.delay(0.22)) { welcomeContentAppeared = true }
         }
         // The chat viewport starts 55pt lower than the Code tab's (header row
         // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
@@ -690,6 +769,29 @@ struct ContentView: View {
         }
     }
 
+    /// Shown in place of the transcript when a search query produces zero matches.
+    /// Lets the user clear without hunting for the Done button or the ×.
+    private var searchNoResultsState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.6))
+            Text("No messages match \"\(searchQuery.trimmingCharacters(in: .whitespaces))\"")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+            Button("Clear search") {
+                withAnimation(DS.Motion.snappy) { searchQuery = "" }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(DS.Palette.accent)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .containerRelativeFrame(.vertical, alignment: .center)
+    }
+
     /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
     /// welcome footer so the two landing surfaces speak the same language.
     private func welcomeShortcutHint(_ key: String, _ label: String) -> some View {
@@ -697,7 +799,9 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
     }
@@ -786,7 +890,23 @@ struct ContentView: View {
                                           budget: Int = 2_000) -> (label: String, warn: Bool)? {
         let words = text.split(whereSeparator: \.isWhitespace).count
         guard words >= floor else { return nil }
-        return ("\(words) words", words >= budget)
+        let approxTok = Int((Double(words) * 1.3).rounded())
+        return ("~\(approxTok) tok", words >= budget)
+    }
+
+    /// Normalizes a pasted tunnel/server URL for the Custom-server brain:
+    /// trims, defaults the scheme to https, requires http(s) + a host, strips
+    /// trailing slashes, appends `/v1` exactly once. nil = unusable. Pure.
+    nonisolated static func normalizedServerURL(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if !s.contains("://") { s = "https://" + s }
+        guard let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.hasSuffix("/v1") ? s : s + "/v1"
     }
 
     /// Horizontal chip rail: click a chip to jump to (and center) its message.
@@ -799,24 +919,46 @@ struct ContentView: View {
                     .foregroundStyle(DS.Palette.accent)
                     .accessibilityHidden(true)
                 ForEach(pinnedMessages) { m in
-                    Button {
-                        withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
-                    } label: {
-                        Text(Self.pinPreview(m.text))
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                            .padding(.horizontal, 9).padding(.vertical, 4)
-                            .background(Color.white.opacity(0.06), in: Capsule())
+                    HStack(spacing: 0) {
+                        Button {
+                            withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
+                        } label: {
+                            Text(Self.pinPreview(m.text))
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .padding(.leading, 9).padding(.trailing, 5).padding(.vertical, 4)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .help(m.text)
+                        .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                        // Unpin directly from the strip — no need to scroll to the message first.
+                        Button { vm.togglePin(m) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.trailing, 7).padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Unpin this message")
+                        .accessibilityLabel("Unpin: \(Self.pinPreview(m.text))")
                     }
-                    .buttonStyle(PressableStyle())
-                    .help(m.text)
-                    .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                    .background(Color.white.opacity(0.06), in: Capsule())
                 }
             }
             .padding(.horizontal, 18).padding(.vertical, 6)
         }
         .frame(maxWidth: 780)
         .accessibilityIdentifier("chat.pinnedstrip")
+    }
+
+    /// Returns the user message at recall position `idx` (0 = most recent sent,
+    /// 1 = second-most-recent, …). `nil` when `idx` is out of range. Pure for
+    /// tests so the recall contract can be pinned without mocking state.
+    nonisolated static func recalledMessage(idx: Int, from messages: [ChatMessage]) -> String? {
+        guard idx >= 0 else { return nil }
+        let users = messages.filter(\.isUser).map(\.text)
+        guard idx < users.count else { return nil }
+        return users[users.count - 1 - idx]
     }
 
     /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
@@ -872,6 +1014,18 @@ struct ContentView: View {
         .init(id: "stats", icon: "chart.bar",
               blurb: "Conversation statistics",
               kind: .action("stats")),
+        .init(id: "connect", icon: "bolt.horizontal.circle",
+              blurb: "Connect to your cloud-GPU Salehman (paste tunnel URL)",
+              kind: .action("connect")),
+        .init(id: "shot", icon: "camera.viewfinder",
+              blurb: "Attach your latest screenshot as context",
+              kind: .action("shot")),
+        .init(id: "pin", icon: "pin",
+              blurb: "Pin the last AI reply to the top strip",
+              kind: .action("pin")),
+        .init(id: "note", icon: "note.text.badge.plus",
+              blurb: "Save the last AI reply as a Note",
+              kind: .action("note")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -905,6 +1059,19 @@ struct ContentView: View {
             case "stats":
                 statsBlurb = ChatStats.summarize(vm.messages).blurb
                 showStats = true
+            case "connect":
+                connectURL = ""
+                showConnect = true
+            case "shot": Task { await attachLastScreenshot() }
+            case "pin":
+                if let last = vm.messages.last(where: { !$0.isUser }) {
+                    vm.togglePin(last)
+                }
+            case "note":
+                if let last = vm.messages.last(where: { !$0.isUser }) {
+                    ScratchpadStore.shared.addNote(last.text)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                }
             default: break
             }
         }
@@ -913,6 +1080,25 @@ struct ContentView: View {
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
+            // Self-dismissing "Saved to Notes" confirmation banner.
+            if noteSavedPulse {
+                HStack(spacing: 6) {
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.successSoft)
+                    Text("Saved to Notes")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .task(id: noteSavedPulse) {
+                    guard noteSavedPulse else { return }
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = false }
+                }
+            }
             // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
                 attachmentChip(icon: "hourglass", title: "Reading attachment…")
@@ -966,6 +1152,7 @@ struct ContentView: View {
                 .transition(.scale(scale: 0.97, anchor: .bottom)
                     .combined(with: .opacity)
                     .combined(with: .move(edge: .bottom)))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("chat.composer.slashmenu")
             }
 
@@ -989,22 +1176,35 @@ struct ContentView: View {
                             applyChatSlash(chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)])
                         } else { submit(mission) }
                     }
-                    // ↑: move the slash selection when the menu is open; in an
-                    // EMPTY composer, recall the last message (no conflict —
-                    // an open menu implies a non-empty composer).
+                    // ↑: slash selection when menu is open; otherwise cycle
+                    // BACKWARD through user messages (terminal-history style).
+                    // Guarded so it only activates from an empty composer or
+                    // while already in recall mode — normal text editing is
+                    // not captured. ↓ reverses the cycle.
                     .onKeyPress(.upArrow) {
                         if !chatSlashMatches.isEmpty {
                             slashSelection = max(0, min(slashSelection, chatSlashMatches.count - 1) - 1)
                             return .handled
                         }
-                        guard mission.isEmpty,
-                              let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
-                        mission = last
+                        guard mission.isEmpty || recallIdx >= 0 else { return .ignored }
+                        let next = recallIdx + 1
+                        guard let text = Self.recalledMessage(idx: next, from: vm.messages) else { return .handled }
+                        inRecall = true; recallIdx = next; mission = text
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
-                        guard !chatSlashMatches.isEmpty else { return .ignored }
-                        slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
+                        if !chatSlashMatches.isEmpty {
+                            slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
+                            return .handled
+                        }
+                        guard recallIdx >= 0 else { return .ignored }
+                        if recallIdx == 0 {
+                            inRecall = true; recallIdx = -1; mission = ""
+                            return .handled
+                        }
+                        let prev = recallIdx - 1
+                        guard let text = Self.recalledMessage(idx: prev, from: vm.messages) else { return .handled }
+                        inRecall = true; recallIdx = prev; mission = text
                         return .handled
                     }
                     // Esc: stop a running generation first; otherwise dismiss a
@@ -1220,10 +1420,12 @@ struct ContentView: View {
 
     @MainActor private func attachLastScreenshot() async {
         attachmentLoads += 1
-        if let url = AttachmentLoader.lastScreenshot() {
+        // Use ScreenshotGrabber so the lookup respects `com.apple.screencapture
+        // location` — the same picker the Code tab's /shot uses.
+        let dir = ScreenshotGrabber.screenshotsDirectory()
+        if let url = ScreenshotGrabber.latestScreenshot(in: dir) {
             attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
-            // No saved screenshot found — capture the screen right now instead.
             attachments.append(await AttachmentLoader.load(url: url))
         } else {
             attachments.append(Attachment(name: "No screenshot found", kind: "note",
@@ -1264,6 +1466,7 @@ struct ContentView: View {
         vm.startNewChat()
         searching = false
         searchQuery = ""
+        inputFocused = true     // ready to type immediately after clearing
     }
 
     /// Replace the live conversation with an archived one. Symmetric with
@@ -1421,6 +1624,9 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
     /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
     var pinned: Bool? = nil
+    /// User rating: `true` = thumbs-up, `false` = thumbs-down, `nil` = none.
+    /// Same optional-Codable trick as `pinned` — old history decodes unchanged.
+    var rating: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -1458,6 +1664,12 @@ enum ChatStore {
         let title: String
         let date: Date       // last activity (newest message timestamp)
         let messageCount: Int
+        let preview: String  // first non-empty line of the first AI reply
+
+        nonisolated init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
+            self.id = id; self.title = title; self.date = date
+            self.messageCount = messageCount; self.preview = preview
+        }
     }
 
     nonisolated private static var archiveDir: URL {
@@ -1473,6 +1685,15 @@ enum ChatStore {
             .components(separatedBy: "\n").first?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return firstLine.isEmpty ? "Conversation" : String(firstLine.prefix(60))
+    }
+
+    /// First non-empty line of the first assistant reply, truncated for the row.
+    /// Pure for tests; returns "" when there are no assistant messages.
+    nonisolated static func archivePreview(for messages: [ChatMessage]) -> String {
+        guard let reply = messages.first(where: { !$0.isUser }) else { return "" }
+        let first = reply.text.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        return String(first.trimmingCharacters(in: .whitespacesAndNewlines).prefix(90))
     }
 
     /// Snapshot the CURRENT (on-disk) conversation into the archive. No-op for
@@ -1512,9 +1733,27 @@ enum ChatStore {
                 return ArchivedChat(id: url,
                                     title: archiveTitle(for: msgs),
                                     date: msgs.map(\.timestamp).max() ?? .distantPast,
-                                    messageCount: msgs.count)
+                                    messageCount: msgs.count,
+                                    preview: archivePreview(for: msgs))
             }
             .sorted { $0.date > $1.date }
+    }
+
+    /// Count of archived conversations whose last-modified date is today.
+    /// Uses filesystem metadata only (no JSON decode) — safe to call off-main.
+    nonisolated static func archivedTodayCount() -> Int {
+        let cal = Calendar.current
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: archiveDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles)) ?? []
+        return urls.filter { url in
+            guard url.pathExtension == "json",
+                  let vals = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+                  let mod = vals.contentModificationDate
+            else { return false }
+            return cal.isDateInToday(mod)
+        }.count
     }
 
     nonisolated static func loadArchive(_ url: URL) -> [ChatMessage] {
@@ -1657,12 +1896,19 @@ struct ChatStats: Equatable {
     let yours: Int
     let replies: Int
     let words: Int
-    let avgReplySeconds: Double?     // nil when no reply carries a duration
-    let spanSeconds: TimeInterval?   // nil for 0–1 messages
+    let approxTokens: Int           // rough English estimate: words × 1.3
+    let longestReplyWords: Int?     // word count of the longest assistant reply
+    let ratedUp: Int                // replies marked thumbs-up
+    let ratedDown: Int              // replies marked thumbs-down
+    let avgReplySeconds: Double?    // nil when no reply carries a duration
+    let spanSeconds: TimeInterval?  // nil for 0–1 messages
 
     nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
         let yours = msgs.filter(\.isUser).count
         let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        let assistantMsgs = msgs.filter { !$0.isUser }
+        let replyWordCounts = assistantMsgs
+            .map { $0.text.split(whereSeparator: \.isWhitespace).count }
         let durations = msgs.compactMap(\.duration)
         let stamps = msgs.map(\.timestamp)
         var span: TimeInterval? = nil
@@ -1672,6 +1918,10 @@ struct ChatStats: Equatable {
         return ChatStats(
             messages: msgs.count, yours: yours, replies: msgs.count - yours,
             words: words,
+            approxTokens: Int((Double(words) * 1.3).rounded()),
+            longestReplyWords: replyWordCounts.max(),
+            ratedUp: assistantMsgs.filter { $0.rating == true }.count,
+            ratedDown: assistantMsgs.filter { $0.rating == false }.count,
             avgReplySeconds: durations.isEmpty ? nil
                 : durations.reduce(0, +) / Double(durations.count),
             spanSeconds: span)
@@ -1693,10 +1943,62 @@ struct ChatStats: Equatable {
     /// is locale-independent, so tests can pin the exact string.
     nonisolated var blurb: String {
         let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
-        var tail = counted(words, "word")
+        var tail = counted(words, "word") + " · ~\(approxTokens) tok"
+        if let lw = longestReplyWords { tail += " · longest: \(lw)w" }
+        if ratedUp > 0 || ratedDown > 0 {
+            tail += " · \(ratedUp)↑ \(ratedDown)↓"
+        }
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail
+    }
+}
+
+/// Pure helpers behind find-in-conversation. Kept free of view state so the
+/// counting logic is unit-testable (ChatTranscriptLogicTests) — the searchBar
+/// just renders `matchLabel(...)`.
+enum ChatSearch {
+    /// Count NON-overlapping, case-insensitive occurrences of `query` in `text`.
+    /// "aa" in "aaaa" → 2, not 3 — we advance past each whole match (mirrors how
+    /// a user reading the highlight counts them, and how the highlighter paints
+    /// them). Blank query → 0.
+    nonisolated static func occurrences(of query: String, in text: String) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        var count = 0
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let r = text.range(of: q, options: .caseInsensitive,
+                                 range: searchStart..<text.endIndex) {
+            count += 1
+            // Advance past the whole match so overlaps aren't double-counted; the
+            // guard against an empty match keeps this from looping forever.
+            searchStart = r.upperBound > r.lowerBound ? r.upperBound
+                                                      : text.index(after: r.lowerBound)
+        }
+        return count
+    }
+
+    /// Total occurrences across every message — the number the searchBar shows.
+    nonisolated static func totalMatches(of query: String, in messages: [ChatMessage]) -> Int {
+        messages.reduce(0) { $0 + occurrences(of: query, in: $1.text) }
+    }
+
+    /// How many messages contain at least one occurrence (the filtered-row count).
+    nonisolated static func matchingMessageCount(of query: String, in messages: [ChatMessage]) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.count
+    }
+
+    /// SearchBar caption: total matches, plus how many messages they span when
+    /// the two differ (e.g. "5 matches in 3 messages"). "No matches" when none.
+    nonisolated static func matchLabel(of query: String, in messages: [ChatMessage]) -> String {
+        let total = totalMatches(of: query, in: messages)
+        guard total > 0 else { return "No matches" }
+        let msgs = matchingMessageCount(of: query, in: messages)
+        let head = counted(total, "match", "matches")
+        return msgs == total ? head : "\(head) in \(counted(msgs, "message"))"
     }
 }
 
@@ -1718,10 +2020,16 @@ struct MessageBubble: View, Equatable {
     /// the point); `.equatable()` at the call site is REQUIRED, conformance
     /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
     static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
-        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+        lhs.message == rhs.message
+            && lhs.qaShowActions == rhs.qaShowActions
+            && lhs.highlight == rhs.highlight
     }
 
     let message: ChatMessage
+    /// Active find-in-conversation term to highlight inside this bubble's text.
+    /// Empty in the common (not-searching) case. MUST be in `==` above — a stale
+    /// equality would freeze the highlight when the query changes (see warning).
+    var highlight: String = ""
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     /// Edit-and-resend on user rows: the view model truncates the transcript
     /// from this message and the composer reloads its text. nil hides the action.
@@ -1730,12 +2038,18 @@ struct MessageBubble: View, Equatable {
     var onQuote: ((String) -> Void)? = nil
     /// Pin/unpin this message (context menu, either side). nil hides it.
     var onTogglePin: ((ChatMessage) -> Void)? = nil
+    /// Save this message's text as a note in ScratchpadStore. nil hides it.
+    var onSaveToNotes: ((String) -> Void)? = nil
+    /// Rate this assistant reply: `true` = thumbs-up, `false` = thumbs-down.
+    /// Excluded from `==` (closure); `message.rating` is in `==` via ChatMessage.
+    var onRate: ((ChatMessage, Bool) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
     @State private var appeared = false   // drives fade-up-blur entry
+    @State private var copied = false
 
     /// Same `offMessage` → `unavailableMessage` swap that `StreamingBubble` does.
     /// See the discussion above `bubbleRow` for the trade-off and why we now
@@ -1822,6 +2136,25 @@ struct MessageBubble: View, Equatable {
                         Label("Regenerate", systemImage: "arrow.clockwise")
                     }
                 }
+                if onSaveToNotes != nil {
+                    Button { onSaveToNotes?(displayedText) } label: {
+                        Label("Save as Note", systemImage: "note.text.badge.plus")
+                    }
+                }
+                if onRate != nil {
+                    Button { onRate?(message, true) } label: {
+                        Label(message.rating == true ? "Remove Good Rating" : "Mark as Good Response",
+                              systemImage: message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    }
+                    Button { onRate?(message, false) } label: {
+                        Label(message.rating == false ? "Remove Poor Rating" : "Mark as Poor Response",
+                              systemImage: message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                    }
+                }
+                Divider()
+                Button { copyPlainText() } label: {
+                    Label("Copy as Plain Text", systemImage: "doc.plaintext")
+                }
             }
         }
         .onHover { hovering = $0 }
@@ -1855,7 +2188,7 @@ struct MessageBubble: View, Equatable {
             RoundedRectangle(cornerRadius: 1)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
-            Text(quote)
+            Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
                 .font(.system(size: 12))
                 .lineSpacing(1.2)
                 .foregroundStyle(.white.opacity(0.55))
@@ -1873,14 +2206,14 @@ struct MessageBubble: View, Equatable {
         if let split = Self.splitLeadingQuote(message.text) {
             quoteCard(split.quote)
             if !split.body.isEmpty {
-                Text(split.body)
+                Text(MarkdownText.highlighted(AttributedString(split.body), query: highlight))
                     .font(.system(size: 13.5))
                     .lineSpacing(1.5)
                     .textSelection(.enabled)
                     .foregroundStyle(.white)
             }
         } else {
-            Text(message.text)
+            Text(MarkdownText.highlighted(AttributedString(message.text), query: highlight))
                 .font(.system(size: 13.5))
                 .lineSpacing(1.5)
                 .textSelection(.enabled)
@@ -1911,12 +2244,26 @@ struct MessageBubble: View, Equatable {
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 2) {
+                    // Send time — same metadata-on-demand pattern as the
+                    // assistant's duration label. Appears at leading edge of
+                    // the pill so timestamp scans left-to-right like reading.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                     if onEdit != nil {
                         actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
                             onEdit?(message)
                         }
                     }
-                    actionButton("doc.on.doc", "Copy") { copyText() }
+                    actionButton(copied ? "checkmark" : "doc.on.doc", "Copy") { copyText() }
+                    if onTogglePin != nil {
+                        actionButton(message.pinned == true ? "pin.slash" : "pin",
+                                     message.pinned == true ? "Unpin" : "Pin to top") {
+                            onTogglePin?(message)
+                        }
+                    }
                 }
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(DS.Palette.codeSurfaceSide,
@@ -1932,7 +2279,7 @@ struct MessageBubble: View, Equatable {
 
     private var assistantRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MarkdownText(text: displayedText)
+            MarkdownText(text: displayedText, highlight: highlight)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
             // Failure rows get an INLINE retry — hover-regenerate exists but
@@ -1971,6 +2318,15 @@ struct MessageBubble: View, Equatable {
                         // Full stats on demand (the pill only renders on
                         // hover, so the word count split is effectively free).
                         .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
+                } else {
+                    // Fallback for history-loaded replies that have no recorded
+                    // duration — still show the timestamp so every bubble has
+                    // time context on hover.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                 }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {
@@ -1984,6 +2340,22 @@ struct MessageBubble: View, Equatable {
                 }
                 if onRegenerate != nil {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
+                }
+                if onTogglePin != nil {
+                    actionButton(message.pinned == true ? "pin.slash" : "pin",
+                                 message.pinned == true ? "Unpin" : "Pin to top") {
+                        onTogglePin?(message)
+                    }
+                }
+                if onRate != nil {
+                    actionButton(message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup",
+                                 "Good response", active: message.rating == true) {
+                        onRate?(message, true)
+                    }
+                    actionButton(message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+                                 "Poor response", active: message.rating == false) {
+                        onRate?(message, false)
+                    }
                 }
             }
             .padding(.horizontal, 5).padding(.vertical, 3)
@@ -2014,6 +2386,49 @@ struct MessageBubble: View, Equatable {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
+        copied = true
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+    }
+
+    private func copyPlainText() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Self.plainText(message.text), forType: .string)
+    }
+
+    /// Strips common Markdown markers to produce clean plain text suitable for
+    /// pasting into non-markdown contexts (emails, notes, etc.). Pure — tested
+    /// directly. Keeps code content (strips fences / backticks), strips images,
+    /// and converts links to their display text. Not a full CommonMark parser —
+    /// covers the patterns Salehman's replies actually produce.
+    nonisolated static func plainText(_ markdown: String) -> String {
+        var s = markdown
+        // Fenced code blocks: remove fence lines, keep code body
+        s = s.replacingOccurrences(of: "(?s)```\\w*\\n(.*?)```",
+                                    with: "$1", options: .regularExpression)
+        // Remaining unmatched fences (no trailing ```)
+        s = s.replacingOccurrences(of: "```\\w*", with: "", options: .regularExpression)
+        // Inline code: keep content, drop backticks
+        s = s.replacingOccurrences(of: "`([^`\n]+)`", with: "$1", options: .regularExpression)
+        // ATX headings (# to ######)
+        s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
+        // Bold+italic (***), bold (**), italic (*) — non-greedy, no cross-line
+        s = s.replacingOccurrences(of: "\\*{3}(.+?)\\*{3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*{2}(.+?)\\*{2}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*([^*\n]+)\\*",   with: "$1", options: .regularExpression)
+        // Bold+italic (___), bold (__), italic (_)
+        s = s.replacingOccurrences(of: "_{3}(.+?)_{3}",    with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_{2}(.+?)_{2}",    with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_([^_\n]+)_",      with: "$1", options: .regularExpression)
+        // Images (drop entirely) then links (keep display text)
+        s = s.replacingOccurrences(of: "!\\[.*?\\]\\(.*?\\)", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\[(.+?)\\]\\(.*?\\)", with: "$1", options: .regularExpression)
+        // Blockquote leaders
+        s = s.replacingOccurrences(of: "(?m)^> ?", with: "", options: .regularExpression)
+        // Unordered list markers
+        s = s.replacingOccurrences(of: "(?m)^[-*+]\\s+", with: "", options: .regularExpression)
+        // Ordered list markers
+        s = s.replacingOccurrences(of: "(?m)^\\d+\\.\\s+", with: "", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -2116,7 +2531,7 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
             } else {
                 pulse = false
             }

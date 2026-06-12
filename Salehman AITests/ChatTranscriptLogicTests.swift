@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import SwiftUI   // search-highlight tests inspect the .backgroundColor attribute
 @testable import Salehman_AI
 
 // MARK: - Chat transcript pure logic — exporter format
@@ -106,11 +107,13 @@ struct ChatStatsTests {
             msg("one two", user: true, at: 0),
             msg("three", user: false, at: 90, duration: 1.5),
         ])
-        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · avg reply 1.5s · spans 1m")
+        // approxTokens = Int(3 * 1.3 rounded) = 4; longestReplyWords = 1 ("three")
+        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · ~4 tok · longest: 1w · avg reply 1.5s · spans 1m")
     }
 
     @Test func emptyConversationBlurbIsCalm() {
-        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words")
+        // approxTokens = 0; longestReplyWords = nil (no replies) → no "longest:" segment
+        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words · ~0 tok")
     }
 }
 
@@ -191,6 +194,30 @@ struct TranscriptCadenceTests {
         #expect(!ContentView.isFirstInGroup(idx: 1, list: list))   // same sender, 1 min
         #expect(ContentView.isFirstInGroup(idx: 2, list: list))    // sender flip
         #expect(ContentView.isFirstInGroup(idx: 3, list: list))    // 8 min > 5 min
+    }
+}
+
+// MARK: - /connect server-URL normalizer
+
+struct ConnectURLTests {
+
+    @Test func addsSchemeAndV1() {
+        #expect(ContentView.normalizedServerURL("abc-def.trycloudflare.com")
+                == "https://abc-def.trycloudflare.com/v1")
+    }
+
+    @Test func stripsTrailingSlashesAndKeepsExistingV1() {
+        #expect(ContentView.normalizedServerURL("https://x.trycloudflare.com/")
+                == "https://x.trycloudflare.com/v1")
+        #expect(ContentView.normalizedServerURL("http://localhost:11434/v1")
+                == "http://localhost:11434/v1")
+    }
+
+    @Test func rejectsJunk() {
+        #expect(ContentView.normalizedServerURL("") == nil)
+        #expect(ContentView.normalizedServerURL("   ") == nil)
+        #expect(ContentView.normalizedServerURL("not a url") == nil)
+        #expect(ContentView.normalizedServerURL("ftp://x.com") == nil)
     }
 }
 
@@ -275,6 +302,53 @@ struct ChatHistoryFilterTests {
     }
 }
 
+// MARK: - Archive preview snippet
+
+struct ArchivePreviewTests {
+
+    private func msg(_ text: String, isUser: Bool) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: isUser,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func emptyMessagesYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: []) == "")
+    }
+
+    @Test func noAssistantReplyYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: [msg("Hello", isUser: true)]) == "")
+    }
+
+    @Test func firstAssistantFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("Hello! How can I help?\nMore text.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Hello! How can I help?")
+    }
+
+    @Test func skipsBlankFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("\nActual content.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Actual content.")
+    }
+
+    @Test func truncatesLongLine() {
+        let long = String(repeating: "word ", count: 40)   // 200 chars
+        let msgs = [msg("Hi", isUser: true), msg(long, isUser: false)]
+        let preview = ChatStore.archivePreview(for: msgs)
+        #expect(preview.count <= 90)
+        #expect(!preview.isEmpty)
+    }
+
+    @Test func firstAssistantPickedWhenManyMessages() {
+        // Only the FIRST assistant message should be used, even if there are more.
+        let msgs = [msg("Hi", isUser: true),
+                    msg("First reply.", isUser: false),
+                    msg("Follow-up", isUser: true),
+                    msg("Second reply.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "First reply.")
+    }
+}
+
 // MARK: - Composer length readout
 
 struct ComposerCountTests {
@@ -285,14 +359,179 @@ struct ComposerCountTests {
     }
 
     @Test func labelsAtTheFloorWithoutWarning() {
+        // 120 words × 1.3 = 156 tokens (rounded)
         let draft = Array(repeating: "w", count: 120).joined(separator: " ")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "120 words" && c?.warn == false)
+        #expect(c?.label == "~156 tok" && c?.warn == false)
     }
 
     @Test func warnsAtTheBudget() {
+        // 2000 words × 1.3 = 2600 tokens
         let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
         let c = ContentView.composerCount(draft)
-        #expect(c?.label == "2000 words" && c?.warn == true)
+        #expect(c?.label == "~2600 tok" && c?.warn == true)
+    }
+
+    @Test func tokenLabelRoundsCorrectly() {
+        // 100 words × 1.3 = 130.0 — even; 77 words × 1.3 = 100.1 → 100 tok
+        let c100 = ContentView.composerCount(
+            Array(repeating: "w", count: 100).joined(separator: " "), floor: 1)
+        #expect(c100?.label == "~130 tok")
+        let c77 = ContentView.composerCount(
+            Array(repeating: "w", count: 77).joined(separator: " "), floor: 1)
+        #expect(c77?.label == "~100 tok")
+    }
+}
+
+// MARK: - Find-in-conversation: occurrence counting + caption
+
+struct ChatSearchTests {
+
+    private func msg(_ text: String) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: false,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func occurrencesAreCaseInsensitiveAndNonOverlapping() {
+        #expect(ChatSearch.occurrences(of: "the", in: "The theory of the THE") == 4)
+        #expect(ChatSearch.occurrences(of: "aa", in: "aaaa") == 2)   // non-overlapping
+        #expect(ChatSearch.occurrences(of: "x", in: "no match here") == 0)
+    }
+
+    @Test func blankQueryCountsNothing() {
+        #expect(ChatSearch.occurrences(of: "", in: "anything") == 0)
+        #expect(ChatSearch.occurrences(of: "   ", in: "anything") == 0)
+    }
+
+    @Test func totalMatchesSumAcrossMessagesAndMessageCount() {
+        let msgs = [msg("alpha alpha"), msg("ALPHA beta"), msg("gamma")]
+        #expect(ChatSearch.totalMatches(of: "alpha", in: msgs) == 3)
+        #expect(ChatSearch.matchingMessageCount(of: "alpha", in: msgs) == 2)
+    }
+
+    @Test func labelCollapsesWhenOneMatchPerMessage() {
+        // 2 matches across 2 messages → no "in N messages" tail.
+        let msgs = [msg("alpha"), msg("alpha beta")]
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "2 matches")
+    }
+
+    @Test func labelShowsSpanWhenMatchesExceedMessages() {
+        let msgs = [msg("alpha alpha alpha"), msg("alpha")]   // 4 matches, 2 messages
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "4 matches in 2 messages")
+    }
+
+    @Test func labelSingularGrammarAndNoMatches() {
+        #expect(ChatSearch.matchLabel(of: "alpha", in: [msg("alpha beta gamma")]) == "1 match")
+        #expect(ChatSearch.matchLabel(of: "zzz", in: [msg("nothing here")]) == "No matches")
+    }
+}
+
+// MARK: - Find-in-conversation: highlight attribute overlay
+
+struct MarkdownHighlightTests {
+
+    /// The matched substrings, lowercased, in document order.
+    private func marked(_ s: AttributedString) -> [String] {
+        s.runs.filter { $0.backgroundColor != nil }
+            .map { String(s[$0.range].characters).lowercased() }
+    }
+
+    @Test func preservesCharactersAndMarksEveryMatch() {
+        let out = MarkdownText.highlighted(AttributedString("find the word find"), query: "find")
+        #expect(String(out.characters) == "find the word find")   // text untouched
+        #expect(marked(out) == ["find", "find"])
+    }
+
+    @Test func matchIsCaseInsensitive() {
+        let out = MarkdownText.highlighted(AttributedString("Swift swift SWIFT"), query: "swift")
+        #expect(marked(out).count == 3)
+    }
+
+    @Test func blankQueryLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("nothing to mark"), query: "  ")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+
+    @Test func noMatchLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("alpha beta"), query: "zzz")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+}
+
+// MARK: - TrainingExporter.jsonl — rating-filtered export contract
+//
+// `jsonl(from:ratedOnly:)` is pure on its inputs; tests verify the pair-
+// extraction, quality guard, and `ratedOnly` filter in isolation.
+
+struct TrainingExporterTests {
+
+    private func pair(user: String, assistant: String,
+                      rating: Bool? = nil) -> [ChatMessage] {
+        let a = ChatMessage(id: UUID(), text: user, isUser: true, timestamp: .now)
+        var b = ChatMessage(id: UUID(), text: assistant, isUser: false, timestamp: .now)
+        b.rating = rating
+        return [a, b]
+    }
+
+    @Test func validPairBecomesOneExample() {
+        let msgs = pair(user: "Tell me about Swift concurrency.",
+                        assistant: "Swift concurrency uses async/await to structure asynchronous code.")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 1)
+        #expect(stats.skipped == 0)
+    }
+
+    @Test func shortPairIsSkipped() {
+        let msgs = pair(user: "Hi", assistant: "Hello")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 0)
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func emptyConversationHasNoExamples() {
+        let (content, stats) = TrainingExporter.jsonl(from: [])
+        #expect(stats.examples == 0)
+        #expect(content.isEmpty)
+    }
+
+    @Test func ratedOnlySkipsUnratedPairs() {
+        let rated = pair(user: "Explain async/await in Swift clearly please.",
+                         assistant: "Async/await lets you write asynchronous code that reads like synchronous code.",
+                         rating: true)
+        let unrated = pair(user: "What is a Swift protocol and how does it work?",
+                           assistant: "A Swift protocol defines a blueprint of methods, properties, and requirements.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: rated + unrated, ratedOnly: true)
+        #expect(stats.examples == 1)
+        // The unrated pair is counted as skipped.
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func ratedOnlySkipsThumbsDownPairs() {
+        let downvoted = pair(user: "Please write me a poem about coding.",
+                             assistant: "In circuits deep and logic gates abound, A coder's world is beautifully profound.",
+                             rating: false)
+        let (_, stats) = TrainingExporter.jsonl(from: downvoted, ratedOnly: true)
+        #expect(stats.examples == 0)
+    }
+
+    @Test func defaultExportIncludesUnratedPairs() {
+        let unrated = pair(user: "Tell me about Swift protocols and generics.",
+                           assistant: "Swift protocols define contracts; generics let you write reusable parameterized code.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: unrated, ratedOnly: false)
+        #expect(stats.examples == 1)
+    }
+
+    @Test func outputIsValidJSONL() throws {
+        let msgs = pair(user: "How does SwiftUI differ from UIKit in Swift development?",
+                        assistant: "SwiftUI is a declarative framework while UIKit is imperative; both target Apple platforms.",
+                        rating: true)
+        let (content, stats) = TrainingExporter.jsonl(from: msgs)
+        guard stats.examples > 0 else { return }
+        for line in content.components(separatedBy: "\n") where !line.isEmpty {
+            let data = Data(line.utf8)
+            _ = try JSONSerialization.jsonObject(with: data)
+        }
     }
 }

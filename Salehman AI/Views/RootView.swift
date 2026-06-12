@@ -73,24 +73,28 @@ struct RootView: View {
                         MarketsView()
                             .opacity(app.selectedTab == .markets ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .markets)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
 
                     if visitedScratchpad || app.selectedTab == .scratchpad {
                         ScratchpadView()
                             .opacity(app.selectedTab == .scratchpad ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .scratchpad)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
 
                     if visitedKnowledge || app.selectedTab == .knowledge {
                         KnowledgeView()
                             .opacity(app.selectedTab == .knowledge ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .knowledge)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
 
                     if visitedToday || app.selectedTab == .today {
                         TodayView()
                             .opacity(app.selectedTab == .today ? 1 : 0)
                             .allowsHitTesting(app.selectedTab == .today)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
                     }
                 }
 
@@ -100,7 +104,7 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         .onChange(of: app.selectedTab) { _, tab in
-            if tab == .chat    { visitedChat = true }
+            if tab == .chat    { visitedChat = true; app.chatHasUnread = false }
             if tab == .markets { visitedMarkets = true }
             if tab == .agents  { visitedAgents = true }
             if tab == .code    { visitedCode = true }

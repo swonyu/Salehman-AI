@@ -386,7 +386,7 @@ struct CloudKeyHintBanner: View {
             Button("Add key", action: onAddKey)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .tint(.orange)
+                .tint(DS.Palette.warningSoft)
                 .font(.caption)
                 .accessibilityLabel("Add a cloud key in Settings")
             Button(action: onDismiss) {
@@ -397,8 +397,8 @@ struct CloudKeyHintBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 5)
-        .background(Color.orange.opacity(0.12))
-        .foregroundStyle(Color.orange)
+        .background(DS.Palette.warningSoft.opacity(0.12))
+        .foregroundStyle(DS.Palette.warningSoft)
     }
 }
 

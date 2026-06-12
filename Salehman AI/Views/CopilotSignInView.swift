@@ -35,8 +35,15 @@ struct CopilotSignInView: View {
                             .buttonStyle(.bordered)
                         Button {
                             if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
-                        } label: { Label("Open GitHub", systemImage: "arrow.up.forward.app") }
-                            .buttonStyle(.borderedProminent)
+                        } label: {
+                            Label("Open GitHub", systemImage: "arrow.up.forward.app")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(DS.Palette.accent, in: Capsule())
+                                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                        }
+                        .buttonStyle(LuxPressStyle())
                     }
                     .controlSize(.small)
                 }

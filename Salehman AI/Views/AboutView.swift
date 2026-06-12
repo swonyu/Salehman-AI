@@ -22,11 +22,11 @@ struct AboutView: View {
 
     private let capabilities: [Capability] = [
         .init(icon: "lock.shield.fill",
-              title: "Private when you want it",
-              body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
+              title: "Fully private, on this Mac",
+              body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
         .init(icon: "brain.head.profile",
-              title: "Many brains, one Salehman",
-              body: "MLX, Ollama, DeepSeek, and many free cloud brains. Check several to rotate through them — one per message."),
+              title: "Your model, your identity",
+              body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
         .init(icon: "wrench.and.screwdriver.fill",
               title: "Real tools, with approval",
               body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
@@ -93,7 +93,7 @@ struct AboutView: View {
                     .accessibilityLabel("Close")
                 }
 
-                Text("Your AI — cloud-first with a local fallback, built by Saleh. Many brains, real tools, your own model.")
+                Text("Your AI — on-device, private, built by Saleh. Your own model, real tools, nothing leaves this Mac.")
                     .font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)

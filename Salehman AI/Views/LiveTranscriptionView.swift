@@ -5,6 +5,7 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    @State private var copied = false
     var onAsk: (String) -> Void
 
     private var filteredLines: [TranscriptLine] {
@@ -66,10 +67,11 @@ struct LiveTranscriptionView: View {
                 }
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(live.isRunning ? AnyShapeStyle(Color.red) : AnyShapeStyle(Theme.brand), in: Capsule())
+                .background(live.isRunning ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(Theme.brand), in: Capsule())
                 .foregroundStyle(.white)
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 6, y: 2)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
 
             Picker("", selection: $live.language) {
                 ForEach(LiveLang.allCases) { Text($0.title).tag($0) }
@@ -82,8 +84,9 @@ struct LiveTranscriptionView: View {
 
             if live.isRunning {
                 HStack(spacing: 6) {
-                    Circle().fill(.red).frame(width: 8, height: 8)
-                    Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(.red)
+                    Circle().fill(DS.Palette.accent).frame(width: 8, height: 8)
+                        .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
             }
         }
@@ -95,8 +98,17 @@ struct LiveTranscriptionView: View {
             Text("Allow Screen Recording to hear the audio — it does NOT show your screen.")
                 .font(.caption).foregroundStyle(.white.opacity(0.9))
             Spacer()
-            Button("Open Settings") { live.openScreenRecordingSettings() }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+            Button {
+                live.openScreenRecordingSettings()
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+            }
+            .buttonStyle(LuxPressStyle())
         }
         .padding(10)
         // Brand-accent tint instead of off-brand yellow; subtle stroke gives it
@@ -112,6 +124,7 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
@@ -153,7 +166,7 @@ struct LiveTranscriptionView: View {
     private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool) {
         guard searchText.isEmpty else { return }
         if animated {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)) { proxy.scrollTo("bottom", anchor: .bottom) }
         } else {
             proxy.scrollTo("bottom", anchor: .bottom)   // partials: no animation (was a lag source)
         }
@@ -181,7 +194,9 @@ struct LiveTranscriptionView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
-            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                copied = true
+                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .buttonStyle(.bordered)
                 .disabled(live.combinedText.isEmpty)
 
@@ -199,9 +214,16 @@ struct LiveTranscriptionView: View {
                 guard !text.isEmpty else { return }
                 onAsk(Self.answerPrompt(transcript: text))
                 dismiss()
-            } label: { Label("Answer the questions", systemImage: "sparkles") }
-                .buttonStyle(.borderedProminent)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Answer the questions", systemImage: "sparkles")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Spacer()
             // Honest footer: only say "On-device" when every active recognizer

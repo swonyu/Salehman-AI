@@ -13,6 +13,9 @@ struct TodayView: View {
     /// KnowledgeStore isn't an ObservableObject, so its count is cached and
     /// refreshed whenever this tab becomes active (cheap, no timer).
     @State private var knowledgeCount = 0
+    /// Count of chat archives modified today — refreshed off-main alongside
+    /// knowledge count so the Today dashboard shows live usage.
+    @State private var todayChats = 0
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -48,7 +51,8 @@ struct TodayView: View {
     private func refresh() {
         Task.detached(priority: .utility) {
             let n = KnowledgeStore.shared.allDocuments().count
-            await MainActor.run { knowledgeCount = n }
+            let c = ChatStore.archivedTodayCount()
+            await MainActor.run { knowledgeCount = n; todayChats = c }
         }
     }
 
@@ -58,7 +62,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
                 .font(DS.Typography.titleXL).foregroundStyle(.white)
-            Text("Welcome back to Salehman AI — many brains, real tools, your own model.")
+            Text("Welcome back — your model, your data, always on this Mac.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -87,14 +91,21 @@ struct TodayView: View {
             }
             ActionTile(icon: "note.text.badge.plus", title: "New Note") {
                 app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = true
+                app.focusScratchpadAddFieldRequested = true
             }
         }
     }
 
     private var statCards: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: DS.Space.md)], spacing: DS.Space.md) {
+            StatTile(icon: "bubble.left.and.bubble.right.fill", title: "Chat",
+                     value: "\(todayChats)",
+                     detail: todayChats == 1 ? "conversation today" : "conversations today") {
+                app.selectedTab = .chat
+            }
             StatTile(icon: "checklist", title: "Notes",
-                     value: "\(scratchpad.notes.count)",
+                     value: "\(scratchpad.notes.count + scratchpad.tasks.count)",
                      detail: openTasks == 0 ? "no open tasks" : "\(openTasks) open task\(openTasks == 1 ? "" : "s")") {
                 app.selectedTab = .scratchpad
             }
@@ -110,7 +121,7 @@ struct TodayView: View {
                 StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
                          value: market.session.shortLabel,
                          detail: market.session.isOpen ? "open now" : "closed",
-                         accent: market.session.isOpen ? DS.Palette.success : .white) {
+                         accent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
                 }
             }

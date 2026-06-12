@@ -53,10 +53,13 @@ struct VoiceModeView: View {
                     Spacer()
                     Button { saveToNotes() } label: {
                         Image(systemName: savedConfirmation ? "checkmark.circle.fill" : "square.and.arrow.down")
-                            .font(.system(size: 19))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(savedConfirmation ? DS.Palette.successSoft : .secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.09), lineWidth: 1))
                     }
-                    .buttonStyle(.plain).disabled(session.turns.isEmpty)
+                    .buttonStyle(LuxPressStyle()).disabled(session.turns.isEmpty)
                     .help("Save this conversation to Notes")
                     .accessibilityLabel(savedConfirmation ? "Saved to Notes" : "Save conversation to Notes")
                     Button { onClose() } label: {
@@ -93,7 +96,7 @@ struct VoiceModeView: View {
             Circle().fill(phaseColor.opacity(0.18)).frame(width: 170, height: 170).blur(radius: 20)
             Circle().fill(phaseColor.opacity(0.28)).frame(width: 124, height: 124)
                 .scaleEffect(animate && pulse ? 1.10 : 1.0)
-                .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: pulse)
+                .animation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.95).repeatForever(autoreverses: true), value: pulse)
             Image(systemName: session.phase == .speaking ? "speaker.wave.2.fill" : "mic.fill")
                 .font(.system(size: 42, weight: .bold)).foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))
@@ -107,9 +110,10 @@ struct VoiceModeView: View {
             ForEach(session.turns.suffix(3)) { turn in
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: turn.role == .salehman ? "sparkles" : "person.fill")
-                        .font(.caption2)
+                        .font(.system(size: 9))
                         .foregroundStyle(turn.role == .salehman ? DS.Palette.accent : .secondary)
-                        .frame(width: 14)
+                        .frame(width: 18, height: 18)
+                        .background((turn.role == .salehman ? DS.Palette.accent : Color.white).opacity(0.08), in: Circle())
                     Text(turn.text)
                         .font(.caption)
                         .foregroundStyle(turn.role == .salehman ? .white.opacity(0.9) : .secondary)

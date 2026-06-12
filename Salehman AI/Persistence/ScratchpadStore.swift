@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 /// A captured note (free text).
 struct Note: Codable, Identifiable, Equatable, Sendable {
@@ -28,6 +29,9 @@ final class ScratchpadStore: ObservableObject {
 
     @Published private(set) var notes: [Note] = []
     @Published private(set) var tasks: [TaskItem] = []
+
+    /// Count of open (not-done) tasks — drives the badge on the Notes tab icon.
+    var pendingTaskCount: Int { tasks.filter { !$0.done }.count }
 
     private let store: JSONFileStore<Snapshot>
 
@@ -72,6 +76,28 @@ final class ScratchpadStore: ObservableObject {
         tasks[i].done = true
         save()
         return true
+    }
+
+    func moveNote(from offsets: IndexSet, to dest: Int) {
+        notes.move(fromOffsets: offsets, toOffset: dest)
+        save()
+    }
+
+    func moveTask(from offsets: IndexSet, to dest: Int) {
+        tasks.move(fromOffsets: offsets, toOffset: dest)
+        save()
+    }
+
+    func updateNote(_ id: UUID, text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let i = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[i].text = t; save()
+    }
+
+    func updateTask(_ id: UUID, title: String) {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[i].title = t; save()
     }
 
     func deleteNote(_ id: UUID) { notes.removeAll { $0.id == id }; save() }

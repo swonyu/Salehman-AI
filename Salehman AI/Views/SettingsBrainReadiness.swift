@@ -34,7 +34,6 @@ struct BrainReadiness {
     var groq = false
     var mistral = false
     var cerebras = false
-    var deepSeek = false
     var openAI = false
     var copilot = false
     var openRouter = false
@@ -44,19 +43,14 @@ struct BrainReadiness {
     var localFloor: Bool { ollamaUp && hasCoder }
 
     /// FREE cloud keys only — the set `.freeAuto` is allowed to race.
-    /// (DeepSeek joins `.freeCoding`/`.cloudCoding`, deliberately not here.)
     var anyFreeCloud: Bool { groq || gemini || cerebras || mistral || openRouter }
 
     /// The cloud coder pool shared by `.freeCoding` and `.cloudCoding`.
-    var anyCloudCoder: Bool { deepSeek || groq || cerebras || mistral || openRouter }
+    var anyCloudCoder: Bool { groq || cerebras || mistral || openRouter }
 
-    /// Mirrors `SalehmanEngine.hasAnyCloud` (hosted endpoint or ANY chain
-    /// key) over the cached flags — the `.salehman` cloud-first gate.
-    var salehmanAnyCloud: Bool {
-        vllmConfigured || unslothConfigured
-            || nvidia || openRouter || cerebras || groq || mistral || deepSeek
-            || gemini || grok || openAI || anthropic
-    }
+    /// Mirrors `SalehmanEngine.hasAnyCloud` — local endpoint engines only.
+    /// Salehman is pure local-first; cloud API keys are NOT checked.
+    var salehmanAnyCloud: Bool { vllmConfigured || unslothConfigured }
 
     /// Whether `pref` is reachable right now. Exact behavior copy of the old
     /// `SettingsView.brainReady` switch — if reachability rules change,
@@ -72,25 +66,24 @@ struct BrainReadiness {
         case .groq:        return groq
         case .mistral:     return mistral
         case .cerebras:    return cerebras
-        case .deepSeek:    return deepSeek
         case .codex:       return openAI
         case .copilot:     return copilot
         case .openRouter:  return openRouter
         // Ensemble is "ready" if ANY brain is reachable — a local one or any
-        // keyed cloud one. (DeepSeek / NVIDIA / endpoint engines were never
-        // counted here — preserved as-is from the original switch.)
+        // keyed cloud one. (NVIDIA / endpoint engines were never counted
+        // here — preserved as-is from the original switch.)
         case .ensemble:
             return localFloor || anthropic || grok || gemini || groq
                 || mistral || cerebras || openAI || copilot || openRouter
         // Free · Auto never spends: the local floor or a FREE key only.
         case .freeAuto:    return localFloor || anyFreeCloud
-        // FreeCoding mirrors Free·Auto's pool plus DeepSeek (opted in).
+        // FreeCoding mirrors Free·Auto's coder pool.
         case .freeCoding:  return localFloor || anyCloudCoder
         // Cloud Coding is cloud-ONLY — no local floor.
         case .cloudCoding: return anyCloudCoder
-        // Salehman is CLOUD-FIRST: any cloud engine, or the user's own Ollama
-        // model plausibly present (the exact pulled-model check stays async
-        // at runtime via `OllamaClient.hasCustomModel`).
+        // Salehman is LOCAL-FIRST: vLLM or Unsloth endpoint configured, or
+        // the user's own Ollama model (named + server up). Cloud API keys do
+        // NOT light this — Salehman never contacts third-party clouds.
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured

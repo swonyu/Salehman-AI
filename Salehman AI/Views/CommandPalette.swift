@@ -10,6 +10,7 @@ struct CommandPalette: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var query = ""
     @State private var hoveredID: UUID?
+    @State private var selectedIndex: Int = 0
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -45,6 +46,18 @@ struct CommandPalette: View {
             .init(title: "Keyboard Shortcuts", subtitle: "See every ⌘ shortcut at a glance", icon: "keyboard") { app.showShortcutsRequested = true },
             .init(title: "About Salehman AI", subtitle: "Identity, capabilities, privacy", icon: "info.circle.fill") { app.showAboutRequested = true },
             .init(title: "Hands-Free Voice", subtitle: "Talk to Salehman, eyes-free", icon: "waveform") { app.showVoiceModeRequested = true },
+            .init(title: "New Note", subtitle: "Open Notes and focus the add field", icon: "note.text.badge.plus") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = true
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "New Task", subtitle: "Open Notes in tasks mode", icon: "checklist.checked") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = false
+                app.focusScratchpadAddFieldRequested = true },
+            .init(title: "Review Project", subtitle: "Pack folder and ask Salehman to review it", icon: "sparkles") {
+                app.selectedTab = .code; app.reviewProjectRequested = true },
+            .init(title: "Find in File", subtitle: "Search the open file in Code tab", icon: "doc.text.magnifyingglass") {
+                app.selectedTab = .code; app.toggleCodeFindRequested = true },
         ]
         // One "switch brain" command per selectable (non-paid) brain.
         for pref in BrainPreference.selectableCases {
@@ -68,53 +81,90 @@ struct CommandPalette: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($searchFocused)
-                    .onSubmit { run(filtered.first) }
+                    .onSubmit {
+                        let list = filtered
+                        run(selectedIndex < list.count ? list[selectedIndex] : list.first)
+                    }
+                    // Arrow keys navigate the result list; .handled prevents
+                    // the TextField from moving its cursor instead.
+                    .onKeyPress(.upArrow) {
+                        selectedIndex = max(0, selectedIndex - 1); return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        selectedIndex = min(filtered.count - 1, selectedIndex + 1); return .handled
+                    }
                     .accessibilityLabel("Command search")
                 Text("esc")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
             }
             .padding(16)
 
             Divider().overlay(DS.Palette.hairline)
 
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(filtered) { cmd in
-                        Button { run(cmd) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: cmd.icon)
-                                    .font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 22)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                                    if !cmd.subtitle.isEmpty {
-                                        Text(cmd.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, cmd in
+                            let isSelected = idx == selectedIndex
+                            Button { run(cmd) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: cmd.icon)
+                                        .font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                                        .frame(width: 26, height: 26)
+                                        .background(DS.Palette.accent.opacity(0.10), in: Circle())
+                                        .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                                        if !cmd.subtitle.isEmpty {
+                                            Text(cmd.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                        }
                                     }
+                                    Spacer(minLength: 4)
                                 }
-                                Spacer(minLength: 4)
+                                .padding(.horizontal, 12).padding(.vertical, 9)
+                                .background(
+                                    (hoveredID == cmd.id || isSelected)
+                                        ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
+                                        : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 12).padding(.vertical, 9)
-                            .background(hoveredID == cmd.id ? DS.Palette.accent.opacity(0.14) : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .id(idx)
+                            .onHover { over in
+                                hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
+                                if over { selectedIndex = idx }
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .onHover { hoveredID = $0 ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID) }
+                        if filtered.isEmpty {
+                            Text("No matching commands")
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                        }
                     }
-                    if filtered.isEmpty {
-                        Text("No matching commands")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 28)
-                    }
+                    .padding(8)
                 }
-                .padding(8)
+                .frame(maxHeight: 340)
+                // Auto-scroll to keep the selected row visible when using arrows.
+                .onChange(of: selectedIndex) { _, idx in
+                    withAnimation { proxy.scrollTo(idx, anchor: .center) }
+                }
             }
-            .frame(maxHeight: 340)
         }
         .frame(width: 560)
         .background(DS.Palette.bgTop)
         .onAppear { searchFocused = true }
+        // Reset selection to top whenever the result list changes.
+        .onChange(of: query) { _, _ in selectedIndex = 0 }
     }
 
     private func run(_ cmd: Command?) {

@@ -58,10 +58,6 @@ struct SettingsView: View {
     @State private var openRouterTesting: Bool = false
     @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
 
-    @State private var deepSeekKeyDraft: String = ""
-    @State private var deepSeekTestStatus: String? = nil
-    @State private var deepSeekTesting: Bool = false
-    @State private var deepSeekKeySaved: Bool = DeepSeekClient.shared.hasKey()
 
     // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
     @State private var nvidiaKeyDraft: String = ""
@@ -139,7 +135,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
 
-                    section("Intelligence", "How Salehman thinks — cloud-first, with a local floor.") {
+                    section("Intelligence", "How Salehman thinks — local-first: vLLM → Unsloth Studio → MLX → Ollama.") {
                         toggle("Offline mode (local only)",
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
@@ -147,7 +143,7 @@ struct SettingsView: View {
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
-                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
+                               "After Salehman answers, a self-critic pass analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower. OFF by default for speed; turn on for max quality.",
                                "arrow.triangle.2.circlepath", $settings.salehmanRefine)
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
@@ -197,10 +193,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Salehman runs CLOUD-FIRST (free DeepSeek V4 via NVIDIA → free
-                    // frontier/120B tiers → DeepSeek paid backstop); the rows below
-                    // configure its LOCAL floor for offline use.
-                    section("Salehman engine", "Salehman runs cloud-first on big models (free DeepSeek V4 via NVIDIA → free frontier tiers). These rows set its LOCAL fallback for offline use: a standalone on-device MLX engine, or your own Ollama model. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
+                    section("Salehman engine", "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud is ever contacted. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
                         // The truly-standalone path. Visible regardless of
                         // package status; the inline state explains what to do.
                         mlxEngineRow
@@ -240,6 +233,7 @@ struct SettingsView: View {
                         unslothStudioModelRow
                         unslothStudioTestRow
                         unslothStudioKeyRow
+                        hfTokenRow
                         claudeCodeUsageRow
                     }
 
@@ -251,89 +245,10 @@ struct SettingsView: View {
                         vllmTestRow
                     }
 
-                    // Free providers (zero-cost tiers / `:free` models). Count
-                    // badge tells the user how many they've configured without
-                    // having to expand. State persisted via `@AppStorage`.
-                    collapsibleGroup(
-                        "Free API keys",
-                        configured: [geminiKeySaved, groqKeySaved, mistralKeySaved,
-                                     cerebrasKeySaved, openRouterKeySaved, deepSeekKeySaved].filter { $0 }.count,
-                        total: 5,
-                        isExpanded: $showFreeKeys
-                    ) {
-                        section("Google Gemini (Cloud · free tier)", "Sends your messages to Google. Get a key at aistudio.google.com.") {
-                            geminiKeyRow
-                            geminiModelRow
-                            geminiTestRow
-                        }
-                        section("Groq (Cloud · free tier)", "Blazing-fast Llama / Mixtral. Get a key at console.groq.com.") {
-                            cloudKeyRow(provider: GroqClient.shared,
-                                        keySaved: $groqKeySaved, draft: $groqKeyDraft)
-                            cloudModelRow(displayName: "Groq",
-                                          models: GroqClient.allModels,
-                                          selection: $settings.groqModel)
-                            cloudTestRow(provider: GroqClient.shared,
-                                         keySaved: $groqKeySaved,
-                                         testing: $groqTesting, status: $groqTestStatus)
-                        }
-                        section("Mistral (Cloud · free tier · EU-hosted)", "Sends your messages to Mistral. Get a key at console.mistral.ai.") {
-                            cloudKeyRow(provider: MistralClient.shared,
-                                        keySaved: $mistralKeySaved, draft: $mistralKeyDraft)
-                            cloudModelRow(displayName: "Mistral",
-                                          models: MistralClient.allModels,
-                                          selection: $settings.mistralModel)
-                            cloudTestRow(provider: MistralClient.shared,
-                                         keySaved: $mistralKeySaved,
-                                         testing: $mistralTesting, status: $mistralTestStatus)
-                        }
-                        section("Cerebras (Cloud · free tier · ~2000 tok/s Llama)", "Sends your messages to Cerebras. Get a key at cloud.cerebras.ai.") {
-                            cloudKeyRow(provider: CerebrasClient.shared,
-                                        keySaved: $cerebrasKeySaved, draft: $cerebrasKeyDraft)
-                            cloudModelRow(displayName: "Cerebras",
-                                          models: CerebrasClient.allModels,
-                                          selection: $settings.cerebrasModel)
-                            cloudTestRow(provider: CerebrasClient.shared,
-                                         keySaved: $cerebrasKeySaved,
-                                         testing: $cerebrasTesting, status: $cerebrasTestStatus)
-                        }
-                        section("OpenRouter (Cloud · free models)", "Aggregator with free `:free` models — no credit card. Get a key at openrouter.ai/keys.") {
-                            cloudKeyRow(provider: OpenRouterClient.shared,
-                                        keySaved: $openRouterKeySaved, draft: $openRouterKeyDraft)
-                            cloudModelRow(displayName: "OpenRouter",
-                                          models: OpenRouterClient.allModels,
-                                          selection: $settings.openRouterModel)
-                            cloudTestRow(provider: OpenRouterClient.shared,
-                                         keySaved: $openRouterKeySaved,
-                                         testing: $openRouterTesting, status: $openRouterTestStatus)
-                        }
-
-                        section("DeepSeek (Cloud · cheap, elite coder · runs the terminal)", "Pay-as-you-go but pennies; one of the strongest coding/reasoning models. Get a key at platform.deepseek.com/api_keys.") {
-                            cloudKeyRow(provider: DeepSeekClient.shared,
-                                        keySaved: $deepSeekKeySaved, draft: $deepSeekKeyDraft)
-                            cloudModelRow(displayName: "DeepSeek",
-                                          models: DeepSeekClient.allModels,
-                                          selection: $settings.deepSeekModel)
-                            cloudTestRow(provider: DeepSeekClient.shared,
-                                         keySaved: $deepSeekKeySaved,
-                                         testing: $deepSeekTesting, status: $deepSeekTestStatus)
-                        }
-
-                        section("NVIDIA (Cloud · free tier · REAL DeepSeek V4 for free)", "Hosts the actual deepseek-ai/deepseek-v4 weights at $0 — DeepSeek's own API and OpenRouter are paid-only. Get a free key at build.nvidia.com. Salehman uses this first so it leads on real DeepSeek for free.") {
-                            cloudKeyRow(provider: NvidiaClient.shared,
-                                        keySaved: $nvidiaKeySaved, draft: $nvidiaKeyDraft)
-                            cloudTestRow(provider: NvidiaClient.shared,
-                                         keySaved: $nvidiaKeySaved,
-                                         testing: $nvidiaTesting, status: $nvidiaTestStatus)
-                        }
-                    }
-
-                    // Paid providers (Claude / xAI Grok / Codex-OpenAI / GitHub
-                    // Copilot) are HIDDEN per owner request ("hide every paid
-                    // api"). Their key-entry rows (claudeKeyRow, grokKeyRow,
-                    // copilotRow, the OpenAI cloud rows) and `showPaidKeys` are
-                    // retained but unmounted — restore by re-adding a
-                    // `collapsibleGroup("Paid keys", …)` here, gated on the same
-                    // `BrainPreference.isPaid` set used by the Brain grid above.
+                    // Cloud provider API key sections removed per owner: "i just want salehman alone".
+                    // NVIDIA, Gemini, Groq, Mistral, Cerebras, OpenRouter, Claude, Grok, OpenAI,
+                    // Copilot sections all removed 2026-06-12. NVIDIA toggle is in the Salehman
+                    // engine section above since NVIDIA is SalehmanEngine's free cloud ladder.
 
                     section("Performance", "Your Mac: \(MachineInfo.summary). Higher = smarter but heavier.") {
                         HStack(spacing: 10) {
@@ -341,10 +256,15 @@ struct SettingsView: View {
                             Text("Recommended for your Mac: \(MachineInfo.recommendedMode.title)")
                                 .font(.caption).foregroundStyle(.white.opacity(0.9))
                             Spacer()
-                            Button("Use") { settings.applyRecommendedMode() }
-                                .font(.caption.weight(.semibold))
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
+                            Button { settings.applyRecommendedMode() } label: {
+                                Text("Use")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(DS.Palette.accent, in: Capsule())
+                                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                            }
+                            .buttonStyle(LuxPressStyle())
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
 
@@ -486,7 +406,7 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if settings.responseMode == mode {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
@@ -530,7 +450,6 @@ struct SettingsView: View {
             groq: groqKeySaved,
             mistral: mistralKeySaved,
             cerebras: cerebrasKeySaved,
-            deepSeek: deepSeekKeySaved,
             openAI: openAIKeySaved,
             copilot: copilotAuthed,
             openRouter: openRouterKeySaved,
@@ -685,12 +604,15 @@ struct SettingsView: View {
         } else {
             switch mlxState {
             case .unavailable:
-                Button("Download Model") {
-                    Task { await MLXSalehmanEngine.shared.downloadAndLoad() }
+                Button { Task { await MLXSalehmanEngine.shared.downloadAndLoad() } } label: {
+                    Text("Download Model")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DS.Palette.accent)
-                .controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .accessibilityLabel("Download standalone Salehman model")
 
             case .downloading(let p):
@@ -871,7 +793,7 @@ struct SettingsView: View {
             if let status = unslothStudioTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -936,7 +858,7 @@ struct SettingsView: View {
             if let status = vllmTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -991,6 +913,57 @@ struct SettingsView: View {
     /// env-var snippet (below) so the copy-to-clipboard payload uses the user's
     /// real token instead of a placeholder. Per CLAUDE.md, the key lives ONLY
     /// in Keychain — never UserDefaults, logs, or source.
+    /// Hugging Face token — the free cloud-GPU notebook needs it to download
+    /// the private salehman GGUF. Keychain-only (never UserDefaults/files);
+    /// Copy puts it on the clipboard for pasting into Colab's login box.
+    private var hfTokenRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hugging Face token").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(hfTokenSaved
+                     ? "Saved in macOS Keychain · Copy → paste into the cloud-GPU notebook's token box"
+                     : "For the free cloud-GPU notebook (downloads your private salehman model). Read scope is enough.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("hf_…", text: $hfTokenDraft)
+                .textFieldStyle(.plain).frame(width: 140)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+                .accessibilityLabel("Hugging Face token")
+            Button("Save") {
+                let trimmed = hfTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .hfToken)
+                hfTokenDraft = ""                      // Wipe the in-memory copy immediately.
+                hfTokenSaved = true
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(hfTokenDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if hfTokenSaved {
+                Button("Copy") {
+                    if let token = KeychainStore.read(.hfToken) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(token, forType: .string)
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("Copies the token for pasting into the Colab notebook")
+                .accessibilityLabel("Copy Hugging Face token")
+                Button("Clear") {
+                    _ = KeychainStore.delete(.hfToken)
+                    hfTokenSaved = false
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .accessibilityLabel("Clear Hugging Face token")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
+    @State private var hfTokenDraft: String = ""
+
     private var unslothStudioKeyRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
@@ -1087,7 +1060,7 @@ struct SettingsView: View {
                 // Small indicator so the user knows what will be on the clipboard.
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
-                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.success : .secondary)
+                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -1212,12 +1185,12 @@ struct SettingsView: View {
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
             case .installed(let name):
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
-                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
             case .missing(let name):
-                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
-                Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button {
                     let pb = NSPasteboard.general
@@ -1225,7 +1198,7 @@ struct SettingsView: View {
                     pb.setString("ollama create \(name) -f Modelfile", forType: .string)
                 } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.bordered).controlSize(.small)
-                    .help("Copy “ollama create \(name) -f Modelfile”")
+                    .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
@@ -1365,9 +1338,15 @@ struct SettingsView: View {
                     .font(.caption.weight(.semibold)).buttonStyle(.bordered)
                     .controlSize(.small).tint(.red)
                 } else {
-                    Button("Sign in with GitHub") { showCopilotSignIn = true }
-                        .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button { showCopilotSignIn = true } label: {
+                        Text("Sign in with GitHub")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(DS.Palette.accent, in: Capsule())
+                            .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                    }
+                    .buttonStyle(LuxPressStyle())
                 }
             }
             if copilotAuthed {
@@ -1390,7 +1369,7 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Is “\(settings.brainPreference.title)” working?")
+                Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(settings.brainPreference == .ensemble
                      ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."
@@ -1461,9 +1440,9 @@ struct SettingsView: View {
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                    .foregroundStyle(working ? .green : .red)
+                    .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
                 Text(working ? "Working" : "Not working")
-                    .font(.caption2).foregroundStyle(working ? .green : .orange)
+                    .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
@@ -1777,7 +1756,7 @@ struct SettingsView: View {
                          ? "Connected — Anthropic accepted the saved key."
                          : status)
                         .font(.caption2)
-                        .foregroundStyle(status.isEmpty ? .green : .orange)
+                        .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -1808,7 +1787,7 @@ struct SettingsView: View {
     /// otherwise. Drives attention to the "saved the wrong key" failure mode.
     private var anthropicSubtitleColor: Color {
         AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
-            ? .orange : .secondary
+            ? DS.Palette.warningSoft : .secondary
     }
 
     /// Hit Anthropic with a one-token prompt and surface the actual error.
@@ -1911,7 +1890,7 @@ struct SettingsView: View {
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(ok ? .green : .red).frame(width: 22)
+                .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft).frame(width: 22)
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)

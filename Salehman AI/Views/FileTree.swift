@@ -101,6 +101,7 @@ struct FileTreeRow: View {
     @Binding var expanded: Set<String>
     @ObservedObject var ws: CodeWorkspace
     let onSelect: (URL) -> Void
+    @State private var hovering = false
 
     var body: some View {
         if node.isDir {
@@ -114,11 +115,13 @@ struct FileTreeRow: View {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
                     Text(node.name)
-                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.8))
+                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(hovering ? 1.0 : 0.8))
                         .lineLimit(1).truncationMode(.middle)
                 }
+                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .accessibilityLabel("\(node.name) folder, \(isOpen ? "expanded" : "collapsed")")
 
             if isOpen {
@@ -136,14 +139,18 @@ struct FileTreeRow: View {
                         .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : icon.tint).frame(width: 9)
                     Text(node.name)
                         .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
+                        .foregroundStyle(isSel ? .white : Color.white.opacity(hovering ? 0.92 : 0.72))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
                 }
-                .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(
+                    isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
             }
             .buttonStyle(.plain)
+            .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .contextMenu { fileActionsMenu(url) }
         }
     }

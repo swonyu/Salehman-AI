@@ -143,4 +143,93 @@ struct ChatMessageCodecTests {
         #expect(decoded.last?.text == "hello")
         #expect(decoded.last?.imagePath == "/tmp/x.png")
     }
+
+    /// `rating: Bool?` uses Optional Codable: absent key → nil.
+    /// This test pins forward-compat: JSON written BEFORE marathon U (no
+    /// "rating" key) must decode without error and give `nil`.
+    @Test func oldJsonWithoutRatingDecodesWithNil() throws {
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000001","text":"hi","isUser":true,
+         "timestamp":0,"imagePath":null}
+        """
+        let msg = try JSONDecoder().decode(ChatMessage.self, from: Data(json.utf8))
+        #expect(msg.rating == nil)
+    }
+
+    @Test func ratingRoundTrips() throws {
+        var m = ChatMessage(id: UUID(), text: "reply", isUser: false, timestamp: Date())
+        m.rating = true
+        let data = try JSONEncoder().encode(m)
+        let back = try JSONDecoder().decode(ChatMessage.self, from: data)
+        #expect(back.rating == true)
+    }
+
+    @Test func ratingNilRoundTrips() throws {
+        var m = ChatMessage(id: UUID(), text: "reply", isUser: false, timestamp: Date())
+        m.rating = nil
+        let data = try JSONEncoder().encode(m)
+        let back = try JSONDecoder().decode(ChatMessage.self, from: data)
+        #expect(back.rating == nil)
+    }
+}
+
+// MARK: - MarkdownText.blocks — table detection and block splitting
+
+struct MarkdownTextBlockTests {
+
+    @Test func plainLinesReturnSingleLinesBlock() {
+        let body = "line one\nline two\nline three"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .lines(let text) = blocks[0] {
+            #expect(text.contains("line one"))
+        } else { Issue.record("Expected .lines") }
+    }
+
+    @Test func tableDetectedWhenSeparatorFollowsHeader() {
+        let body = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .table(let header, let rows) = blocks[0] {
+            #expect(header == ["A", "B"])
+            #expect(rows.count == 2)
+            #expect(rows[0] == ["1", "2"])
+        } else { Issue.record("Expected .table") }
+    }
+
+    @Test func pipeRowWithoutSeparatorBecomesLines() {
+        // A | row not followed by |---| should be plain lines.
+        let body = "| A | B |\n| 1 | 2 |"
+        let blocks = MarkdownText.blocks(for: body)
+        // No separator → not a table
+        if case .table = blocks.first {
+            Issue.record("Should NOT be a table")
+        }
+    }
+
+    @Test func tableFollowedByProseYieldsTwoBlocks() {
+        let body = "| X |\n|---|\n| v |\n\nSome prose after."
+        let blocks = MarkdownText.blocks(for: body)
+        // Table + lines
+        #expect(blocks.count == 2)
+        if case .table = blocks[0] { /* ok */ } else { Issue.record("First block should be table") }
+        if case .lines = blocks[1] { /* ok */ } else { Issue.record("Second block should be lines") }
+    }
+
+    @Test func separatorWithAlignmentColonsIsRecognised() {
+        let body = "| Name | Score |\n|:------|------:|\n| Alice | 99 |"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .table(let header, _) = blocks[0] {
+            #expect(header.contains("Name"))
+        } else { Issue.record("Expected .table") }
+    }
+
+    @Test func emptyBodyYieldsNoTables() {
+        // blocks() splits on newline, so empty body gives 1 .lines block — no tables.
+        let empty = MarkdownText.blocks(for: "")
+        for b in empty { if case .table = b { Issue.record("Empty body must not yield a table") } }
+        let blank = MarkdownText.blocks(for: "   ")
+        for b in blank { if case .table = b { Issue.record("Blank body must not yield a table") } }
+    }
 }

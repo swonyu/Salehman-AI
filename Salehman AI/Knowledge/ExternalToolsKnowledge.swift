@@ -89,7 +89,7 @@ enum ExternalToolsKnowledge {
         GitHub's AI surface: GitHub Models lets you prototype and test major LLMs with
         your normal developer credentials (no separate hosting), plus Copilot. Useful to
         try a model before wiring it in. Salehman AI already supports many OpenAI-compatible
-        and native providers directly (Groq, Cerebras, OpenRouter, DeepSeek, NVIDIA, …).
+        and native providers directly (Groq, Cerebras, OpenRouter, NVIDIA, …).
         """),
         ("claude-autocontinue", "automation", "forward.end.alt", """
         claude-autocontinue — github.com/timothy22000/claude-autocontinue
