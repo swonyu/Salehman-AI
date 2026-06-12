@@ -2643,6 +2643,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** 7 targeted fixes across 3 files; app-wide motion language is now fully tokenized.
 
 ---
+### 2026-06-13 — Marathon DN: Slash/palette dropdown hover-highlight smoothing
+
+**What changed:**
+- `Views/CommandPalette.swift`: added `.animation(DS.Motion.magnetic, value: isSelected)` on each row (so keyboard arrow-key navigation crossfades the selection highlight) + wrapped `hoveredID` mutation inside `withAnimation(DS.Motion.magnetic)` in the `onHover` closure.
+- `Views/ContentView.swift`: same two fixes on the chat composer's slash-command dropdown — `.animation(DS.Motion.magnetic, value: cmd.id == selected)` on each row, plus `withAnimation(DS.Motion.magnetic)` around the `hoveredChatSlash` mutation.
+- `Views/CodeView.swift` → `SlashMenuView`: wrapped `hovered` binding mutation in `withAnimation(DS.Motion.magnetic)` inside the `onHover` closure.
+
+**Files:** `Views/CommandPalette.swift`, `Views/ContentView.swift`, `Views/CodeView.swift`
+
+**Why:** All three slash/palette dropdowns had raw state mutations in their `onHover` closures (no `withAnimation`) and no per-row `.animation` keyed to the selection state. Hover transitions snapped instantly; keyboard navigation through the ⌘K palette or `/` slash menus flicked the highlight without interpolation.
+
+**Result:** Hover and keyboard-navigation highlights in all three command dropdowns now crossfade with the magnetic spring.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

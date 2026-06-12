@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:56 +03 · Swift files: 150 · Swift LOC: 33763_
+_Generated: 2026-06-13 00:00 +03 · Swift files: 150 · Swift LOC: 33775_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14764,7 +14764,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2589 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2593 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15171,7 +15171,11 @@ struct SlashMenuView: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity.combined(with: .offset(y: 4)))
-                .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
+                .onHover { over in
+                    withAnimation(DS.Motion.magnetic) {
+                        hovered = over ? cmd.id : (hovered == cmd.id ? nil : hovered)
+                    }
+                }
             }
         }
         .animation(DS.Motion.smooth, value: matches.count)
@@ -17357,7 +17361,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (192 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (195 lines) =====
 ```swift
 import SwiftUI
 
@@ -17513,10 +17517,13 @@ struct CommandPalette: View {
                             .offset(y: appeared ? 0 : 8)
                             .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
                                        value: appeared)
+                            .animation(DS.Motion.magnetic, value: isSelected)
                             .transition(.opacity.combined(with: .offset(y: 6)))
                             .onHover { over in
-                                hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
-                                if over { selectedIndex = idx }
+                                withAnimation(DS.Motion.magnetic) {
+                                    hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
+                                    if over { selectedIndex = idx }
+                                }
                             }
                         }
                         if filtered.isEmpty {
@@ -17553,7 +17560,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2828 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2833 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18726,8 +18733,13 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .animation(DS.Motion.magnetic, value: cmd.id == selected)
                         .transition(.opacity.combined(with: .offset(y: 4)))
-                        .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
+                        .onHover { over in
+                            withAnimation(DS.Motion.magnetic) {
+                                hoveredChatSlash = over ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash)
+                            }
+                        }
                     }
                 }
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)
@@ -36331,7 +36343,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3686 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3700 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38975,6 +38987,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Bare `withAnimation {}` uses SwiftUI's default easeInOut(0.35s) instead of the design-system spring tokens, creating subtle motion inconsistency across interaction moments. All 5 state-toggle mutations that drive visual transitions now use the canonical `DS.Motion.smooth` spring. The phase-label Text in VoiceModeView also had no crossfade when transitioning between voice session phases.
 
 **Result:** 7 targeted fixes across 3 files; app-wide motion language is now fully tokenized.
+
+---
+### 2026-06-13 — Marathon DN: Slash/palette dropdown hover-highlight smoothing
+
+**What changed:**
+- `Views/CommandPalette.swift`: added `.animation(DS.Motion.magnetic, value: isSelected)` on each row (so keyboard arrow-key navigation crossfades the selection highlight) + wrapped `hoveredID` mutation inside `withAnimation(DS.Motion.magnetic)` in the `onHover` closure.
+- `Views/ContentView.swift`: same two fixes on the chat composer's slash-command dropdown — `.animation(DS.Motion.magnetic, value: cmd.id == selected)` on each row, plus `withAnimation(DS.Motion.magnetic)` around the `hoveredChatSlash` mutation.
+- `Views/CodeView.swift` → `SlashMenuView`: wrapped `hovered` binding mutation in `withAnimation(DS.Motion.magnetic)` inside the `onHover` closure.
+
+**Files:** `Views/CommandPalette.swift`, `Views/ContentView.swift`, `Views/CodeView.swift`
+
+**Why:** All three slash/palette dropdowns had raw state mutations in their `onHover` closures (no `withAnimation`) and no per-row `.animation` keyed to the selection state. Hover transitions snapped instantly; keyboard navigation through the ⌘K palette or `/` slash menus flicked the highlight without interpolation.
+
+**Result:** Hover and keyboard-navigation highlights in all three command dropdowns now crossfade with the magnetic spring.
 
 ---
 ## Standing notes / known issues

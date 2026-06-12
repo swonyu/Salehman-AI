@@ -403,7 +403,11 @@ struct SlashMenuView: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity.combined(with: .offset(y: 4)))
-                .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
+                .onHover { over in
+                    withAnimation(DS.Motion.magnetic) {
+                        hovered = over ? cmd.id : (hovered == cmd.id ? nil : hovered)
+                    }
+                }
             }
         }
         .animation(DS.Motion.smooth, value: matches.count)

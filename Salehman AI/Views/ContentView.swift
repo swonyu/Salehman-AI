@@ -1169,8 +1169,13 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .animation(DS.Motion.magnetic, value: cmd.id == selected)
                         .transition(.opacity.combined(with: .offset(y: 4)))
-                        .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
+                        .onHover { over in
+                            withAnimation(DS.Motion.magnetic) {
+                                hoveredChatSlash = over ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash)
+                            }
+                        }
                     }
                 }
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)

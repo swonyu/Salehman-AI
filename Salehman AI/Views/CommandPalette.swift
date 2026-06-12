@@ -152,10 +152,13 @@ struct CommandPalette: View {
                             .offset(y: appeared ? 0 : 8)
                             .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
                                        value: appeared)
+                            .animation(DS.Motion.magnetic, value: isSelected)
                             .transition(.opacity.combined(with: .offset(y: 6)))
                             .onHover { over in
-                                hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
-                                if over { selectedIndex = idx }
+                                withAnimation(DS.Motion.magnetic) {
+                                    hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
+                                    if over { selectedIndex = idx }
+                                }
                             }
                         }
                         if filtered.isEmpty {
