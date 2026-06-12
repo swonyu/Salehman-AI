@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CS: insertion/removal transitions across 4 more list containers (Chat A)
+**What:** Four list containers that previously snapped on filter/data changes now animate smoothly. (1) `CommandPalette` ⌘K results: `.transition(.opacity.combined(with: .offset(y: 6)))` on each row button + `.animation(DS.Motion.smooth, value: filtered.count)` on the `LazyVStack` — filtering the palette fades rows in/out. (2) `ChatHistoryView` search results: ForEach contents wrapped in `Group { row + divider }` with `.transition(.opacity.combined(with: .move(edge: .leading)))` per Group + `.animation(DS.Motion.smooth, value: shown.count)` on the VStack — conversation items slide when search filters. (3) `CodeView` changed-files list: same leading-edge slide treatment + `ws.changedFiles.count` keyed animation. (4) `CodeView` activity-step list: `.transition(.opacity.combined(with: .offset(y: 6)))` on each step row + `progress.steps.count` animation — steps fade+slide up as the agent pipeline appends them.
+**Files:** `Views/CommandPalette.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CR: MarketsView alert + portfolio list transitions (Chat A)
 **What:** Added insertion/removal animations to the two remaining plain `ForEach` lists in `MarketsView`. (1) Alert signals list: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `signalAlertRow` + `.animation(DS.Motion.smooth, value: alertSignals.count)` on the `VStack(spacing: 1)` container — alert rows now slide in/out from the leading edge when the monitor scan updates the signal list. (2) Portfolio positions list: same treatment — `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `positionRow` + `.animation(DS.Motion.smooth, value: portfolio.positions.count)` — position rows animate when added/removed.
 **Files:** `Views/MarketsView.swift`.
-**Commit:** `(next)`
+**Commit:** `db48e5c`
 
 ## 2026-06-12 — marathon CQ: more panel transitions (Chat A)
 **What:** Two more conditional-panel transitions. (1) `ContentView` pinned-message strip: `.transition(.move(edge: .top).combined(with: .opacity))` on the strip + `.animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)` on the ScrollView context — the strip now slides down from the top edge when the first message is pinned and slides back up when unpinned. (2) `ScratchpadView` AI result card: `.transition(.opacity.combined(with: .offset(y: 8)))` on `aiResultCard` + `.animation(DS.Motion.smooth, value: aiResult.isEmpty)` on the parent Group so the LLM-generated result fades+slides in when it arrives.

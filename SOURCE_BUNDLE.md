@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:46 +03 · Swift files: 150 · Swift LOC: 33559_
+_Generated: 2026-06-12 22:49 +03 · Swift files: 150 · Swift LOC: 33571_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14099,7 +14099,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (235 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (239 lines) =====
 ```swift
 import SwiftUI
 
@@ -14243,16 +14243,20 @@ struct ChatHistoryView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
-                                row(item)
-                                    // Staggered mask reveal — each row fades up
-                                    // 40ms after the one above (lux curve).
-                                    .opacity(revealed ? 1 : 0)
-                                    .offset(y: revealed ? 0 : 12)
-                                    .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
-                                               value: revealed)
-                                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                Group {
+                                    row(item)
+                                        // Staggered mask reveal — each row fades up
+                                        // 40ms after the one above (lux curve).
+                                        .opacity(revealed ? 1 : 0)
+                                        .offset(y: revealed ? 0 : 12)
+                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                                   value: revealed)
+                                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
                             }
                         }
+                        .animation(DS.Motion.smooth, value: shown.count)
                     }
                 }
             }
@@ -14742,7 +14746,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2550 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2556 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16579,8 +16583,10 @@ struct CodeView: View {
                             ws.select(url)
                             rightPane = .diff
                         }
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 .padding(.horizontal, 5).padding(.bottom, 6)
             }
             .frame(maxHeight: 110)
@@ -16595,8 +16601,12 @@ struct CodeView: View {
         if isRunning && !progress.steps.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(progress.steps) { activityStepRow($0) }
+                    ForEach(progress.steps) {
+                        activityStepRow($0)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: progress.steps.count)
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -17296,7 +17306,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (189 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (191 lines) =====
 ```swift
 import SwiftUI
 
@@ -17452,6 +17462,7 @@ struct CommandPalette: View {
                             .offset(y: appeared ? 0 : 8)
                             .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
                                        value: appeared)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
                             .onHover { over in
                                 hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
                                 if over { selectedIndex = idx }
@@ -17463,6 +17474,7 @@ struct CommandPalette: View {
                                 .frame(maxWidth: .infinity).padding(.vertical, 28)
                         }
                     }
+                    .animation(DS.Motion.smooth, value: filtered.count)
                     .padding(8)
                 }
                 .frame(maxHeight: 340)
@@ -36127,7 +36139,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3512 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3517 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39611,10 +39623,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CS: insertion/removal transitions across 4 more list containers (Chat A)
+**What:** Four list containers that previously snapped on filter/data changes now animate smoothly. (1) `CommandPalette` ⌘K results: `.transition(.opacity.combined(with: .offset(y: 6)))` on each row button + `.animation(DS.Motion.smooth, value: filtered.count)` on the `LazyVStack` — filtering the palette fades rows in/out. (2) `ChatHistoryView` search results: ForEach contents wrapped in `Group { row + divider }` with `.transition(.opacity.combined(with: .move(edge: .leading)))` per Group + `.animation(DS.Motion.smooth, value: shown.count)` on the VStack — conversation items slide when search filters. (3) `CodeView` changed-files list: same leading-edge slide treatment + `ws.changedFiles.count` keyed animation. (4) `CodeView` activity-step list: `.transition(.opacity.combined(with: .offset(y: 6)))` on each step row + `progress.steps.count` animation — steps fade+slide up as the agent pipeline appends them.
+**Files:** `Views/CommandPalette.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CR: MarketsView alert + portfolio list transitions (Chat A)
 **What:** Added insertion/removal animations to the two remaining plain `ForEach` lists in `MarketsView`. (1) Alert signals list: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `signalAlertRow` + `.animation(DS.Motion.smooth, value: alertSignals.count)` on the `VStack(spacing: 1)` container — alert rows now slide in/out from the leading edge when the monitor scan updates the signal list. (2) Portfolio positions list: same treatment — `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `positionRow` + `.animation(DS.Motion.smooth, value: portfolio.positions.count)` — position rows animate when added/removed.
 **Files:** `Views/MarketsView.swift`.
-**Commit:** `(next)`
+**Commit:** `db48e5c`
 
 ## 2026-06-12 — marathon CQ: more panel transitions (Chat A)
 **What:** Two more conditional-panel transitions. (1) `ContentView` pinned-message strip: `.transition(.move(edge: .top).combined(with: .opacity))` on the strip + `.animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)` on the ScrollView context — the strip now slides down from the top edge when the first message is pinned and slides back up when unpinned. (2) `ScratchpadView` AI result card: `.transition(.opacity.combined(with: .offset(y: 8)))` on `aiResultCard` + `.animation(DS.Motion.smooth, value: aiResult.isEmpty)` on the parent Group so the LLM-generated result fades+slides in when it arrives.

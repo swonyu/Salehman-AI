@@ -1833,8 +1833,10 @@ struct CodeView: View {
                             ws.select(url)
                             rightPane = .diff
                         }
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 .padding(.horizontal, 5).padding(.bottom, 6)
             }
             .frame(maxHeight: 110)
@@ -1849,8 +1851,12 @@ struct CodeView: View {
         if isRunning && !progress.steps.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(progress.steps) { activityStepRow($0) }
+                    ForEach(progress.steps) {
+                        activityStepRow($0)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: progress.steps.count)
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

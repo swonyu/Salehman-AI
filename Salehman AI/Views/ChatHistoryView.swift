@@ -140,16 +140,20 @@ struct ChatHistoryView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
-                                row(item)
-                                    // Staggered mask reveal — each row fades up
-                                    // 40ms after the one above (lux curve).
-                                    .opacity(revealed ? 1 : 0)
-                                    .offset(y: revealed ? 0 : 12)
-                                    .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
-                                               value: revealed)
-                                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                Group {
+                                    row(item)
+                                        // Staggered mask reveal — each row fades up
+                                        // 40ms after the one above (lux curve).
+                                        .opacity(revealed ? 1 : 0)
+                                        .offset(y: revealed ? 0 : 12)
+                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                                   value: revealed)
+                                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
                             }
                         }
+                        .animation(DS.Motion.smooth, value: shown.count)
                     }
                 }
             }
