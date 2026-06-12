@@ -1880,6 +1880,33 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** "New Note" from Today lands in the correct notes mode with a clean field. Switching segments always clears stale input. SourceKit false positives expected.
 
 ---
+
+## 2026-06-12 — Design polish pass: ScratchpadView + ContentView welcome + TabSwitcherBar
+
+**What changed:**
+- `Views/ScratchpadView.swift`: Organize/Summarize button replaced `.borderedProminent` with `LuxPressStyle` pill (accent bg + shadow inside label); emptyState icon upgraded to 54pt RadialGradient-bg circle with gradient stroke + shadow (matching CodeView activityIdle treatment); completed task checkmark color blue→DS green `(0.35,0.82,0.48)`; row hover animations `.smooth`→`.press` for snap; aiResultCard "Save as Note" button gets Capsule pill bg+stroke with `LuxPressStyle`.
+- `Views/ContentView.swift` (Chat B lane, owner-authorized): emptyState hero icon 60→68pt, `RadialGradient` bg, `LinearGradient` gradient stroke, double shadow; title 19→20pt `.rounded`; suggestion card icons get 22pt circle bg+border; `welcomeContentAppeared` state + 0.22s-delayed opacity/offset stagger on suggestions+shortcuts rows; `welcomeShortcutHint` keycap stroke+shadow overlay; ambient RadialGradient glow.
+- `Views/TabSwitcherBar.swift`: brand tile ZStack gets `.shadow(accent.opacity(0.30), radius:8, y:2)`.
+
+**Files:** `Views/ScratchpadView.swift`, `Views/ContentView.swift`, `Views/TabSwitcherBar.swift`
+
+**Why:** Owner: `/high-end-visual-design` + "all" → apply Awwwards-tier polish to every tab/view.
+
+**Result:** `** BUILD SUCCEEDED **`. Chat B notified in COORDINATION.md re ContentView welcome changes.
+
+---
+### 2026-06-12 — Marathon AN — RootView: consistent spring fade for all tab-switch transitions
+
+**What changed:**
+- `RootView.swift` — added `.animation(DS.Motion.spring, value: app.selectedTab)` to `MarketsView`, `ScratchpadView`, `KnowledgeView`, and `TodayView` tab slots; `ContentView`/`CodeView`/`AgentsView` already had it
+
+**Files:** `RootView.swift`
+
+**Why:** Three of the seven tabs were missing the opacity spring animation that the others had, causing an inconsistent snap-vs-fade experience when switching tabs.
+
+**Result:** All seven tabs now fade in/out consistently with the same spring timing. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
