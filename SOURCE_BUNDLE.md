@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:45 +03 · Swift files: 150 · Swift LOC: 31092_
+_Generated: 2026-06-12 06:47 +03 · Swift files: 150 · Swift LOC: 31195_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (802 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (805 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -551,7 +551,10 @@ enum AgentPipeline {
         let baseTranscript = await ConversationStore.shared.transcript()
         // NLEmbedding model load + cosine scan — off main actor so the UI stays
         // responsive during mission setup (can take ~50–200ms on first call).
-        let memories = await Task.detached { MemoryStore.shared.recall(mission) }.value
+        // `MemoryStore.shared` is captured before the hop (main-actor property);
+        // the store itself is `@unchecked Sendable` and safe to pass across.
+        let _store = MemoryStore.shared
+        let memories = await Task.detached { _store.recall(mission) }.value
         let history = memories.isEmpty
             ? baseTranscript
             : "Known about the user (from long-term memory):\n" + memories.map { "• \(String($0.prefix(280)))" }.joined(separator: "\n") + "\n\n" + baseTranscript
@@ -21681,7 +21684,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (234 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (250 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21733,6 +21736,7 @@ struct MemoryView: View {
     @State private var confirmClear = false
     @State private var query = ""
     @State private var sort: MemorySort = .newest
+    @State private var hoveredFact: String?
 
     var body: some View {
         ZStack {
@@ -21889,25 +21893,40 @@ struct MemoryView: View {
     }
 
     private func row(_ fact: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "sparkle").foregroundStyle(DS.Palette.accent).frame(width: 18)
-            Text(fact).font(.system(size: 14)).foregroundStyle(.white)
+        let hovered = hoveredFact == fact
+        return HStack(spacing: 12) {
+            Image(systemName: "sparkle")
+                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.7))
+                .frame(width: 18)
+            Text(fact).font(.system(size: 14))
+                .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             Button { copy(fact) } label: {
-                Image(systemName: "doc.on.doc").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
             }
             .buttonStyle(.plain)
             .help("Copy")
             .accessibilityLabel("Copy memory")
             Button { MemoryStore.shared.delete(fact); reload() } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : .secondary)
             }
             .buttonStyle(.plain)
             .help("Forget this")
             .accessibilityLabel("Forget this memory")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
+        .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.press) {
+                hoveredFact = over ? fact : (hoveredFact == fact ? nil : hoveredFact)
+            }
+        }
     }
 
     private func copy(_ s: String) {
@@ -25045,7 +25064,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
                 .font(DS.Typography.titleXL).foregroundStyle(.white)
-            Text("Welcome back to Salehman AI — many brains, real tools, your own model.")
+            Text("Welcome back — your model, your data, always on this Mac.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -25767,7 +25786,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (504 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (588 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26227,6 +26246,90 @@ struct ChatRecallTests {
 
     @Test func emptyHistoryReturnsNil() {
         #expect(ContentView.recalledMessage(idx: 0, from: []) == nil)
+    }
+}
+
+// MARK: - Chat pin feature — togglingPin + pinPreview contracts
+//
+// Both helpers are `nonisolated static`, so tests are hermetic. `togglingPin`
+// is the mutation kernel — the VM just wraps it. `pinPreview` is the chip
+// label; truncation + newline stripping are the fragile bits.
+
+struct ChatPinTests {
+
+    private func msg(_ text: String, pinned: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)
+        m.pinned = pinned
+        return m
+    }
+
+    // MARK: togglingPin
+
+    @Test func pinSetsNilToTrue() {
+        let m = msg("hello", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [m], id: m.id)
+        #expect(result.first?.pinned == true)
+    }
+
+    @Test func unpinSetsTrueToNil() {
+        let m = msg("hello", pinned: true)
+        let result = ChatViewModel.togglingPin(in: [m], id: m.id)
+        #expect(result.first?.pinned == nil)
+    }
+
+    @Test func unknownIdIsNoOp() {
+        let m = msg("hello", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [m], id: UUID())
+        #expect(result.first?.pinned == nil)
+    }
+
+    @Test func onlyTargetedMessageChanges() {
+        let a = msg("alpha", pinned: nil)
+        let b = msg("beta",  pinned: true)
+        let c = msg("gamma", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [a, b, c], id: b.id)
+        #expect(result[0].pinned == nil)   // a: unchanged
+        #expect(result[1].pinned == nil)   // b: unpinned
+        #expect(result[2].pinned == nil)   // c: unchanged
+    }
+
+    // MARK: pinPreview
+
+    @Test func shortTextPassesThrough() {
+        #expect(ContentView.pinPreview("Short message") == "Short message")
+    }
+
+    @Test func longTextIsTruncatedWithEllipsis() {
+        let long = String(repeating: "a", count: 50)
+        let result = ContentView.pinPreview(long)
+        #expect(result.hasSuffix("…"))
+        // prefix(40) + "…" → 41 characters (one Swift scalar for the ellipsis)
+        #expect(result.count == 41)
+    }
+
+    @Test func exactlyAtMaxPassesThroughWithoutEllipsis() {
+        let exact = String(repeating: "x", count: 40)
+        let result = ContentView.pinPreview(exact)
+        #expect(result == exact)
+        #expect(!result.hasSuffix("…"))
+    }
+
+    @Test func multilineUsesOnlyFirstLine() {
+        let result = ContentView.pinPreview("First line\nSecond line\nThird")
+        #expect(result == "First line")
+    }
+
+    @Test func customMaxIsRespected() {
+        let text = "Hello world this is more than ten characters"
+        let result = ContentView.pinPreview(text, max: 10)
+        #expect(result.hasSuffix("…"))
+        // The prefix(10) may end in a space which is trimmed before "…" is appended.
+        #expect(result.count <= 11)
+    }
+
+    @Test func blankFirstLineFallsBackToEmpty() {
+        let result = ContentView.pinPreview("\nSecond line")
+        #expect(result == "")
     }
 }
 
@@ -33643,7 +33746,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2369 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2391 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35142,6 +35245,28 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
 
 **Result:** Build-capable session confirms compile; 8 new unit tests (total ~53). Sandbox prevents `xcodebuild` in this session — owner to run tests.
+
+---
+**2026-06-12 — AgentPipeline: offload MemoryStore.recall to background thread (Chat C)**
+
+**What changed:**
+- `Agents/AgentPipeline.swift` line 458: `MemoryStore.shared.recall(mission)` now runs in a `Task.detached` closure. Previously it blocked the implicit `@MainActor` context while loading the NLEmbedding model + running cosine similarity (~50–200 ms on first call). Fix: capture `MemoryStore.shared` before the hop, then `await Task.detached { _store.recall(mission) }.value`.
+
+**Why:** `SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` makes `AgentPipeline.run` implicitly `@MainActor`. The recall call did NLEmbedding model-load + O(n) cosine scan on the main thread, hitching the UI on every mission dispatch.
+
+**Files:** `Agents/AgentPipeline.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
+## 2026-06-12 — Marathon T: unit tests for pin feature (togglingPin + pinPreview)
+
+**What changed:**
+- `ChatComposerLogicTests.swift`: added `ChatPinTests` (10 tests covering `ChatViewModel.togglingPin` and `ContentView.pinPreview`). Both helpers are `nonisolated static` and had zero prior test coverage. Tests: nil→true pin, true→nil unpin, unknown-id no-op, only-target-changes, short/long/exact-max/multiline/custom-max/blank-first-line preview.
+
+**Files:** `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~63. No production code changes.
 
 ---
 ## Standing notes / known issues

@@ -1510,6 +1510,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon T: unit tests for pin feature (togglingPin + pinPreview)
+
+**What changed:**
+- `ChatComposerLogicTests.swift`: added `ChatPinTests` (10 tests covering `ChatViewModel.togglingPin` and `ContentView.pinPreview`). Both helpers are `nonisolated static` and had zero prior test coverage. Tests: nil→true pin, true→nil unpin, unknown-id no-op, only-target-changes, short/long/exact-max/multiline/custom-max/blank-first-line preview.
+
+**Files:** `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~63. No production code changes.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

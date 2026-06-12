@@ -459,6 +459,90 @@ struct ChatRecallTests {
     }
 }
 
+// MARK: - Chat pin feature — togglingPin + pinPreview contracts
+//
+// Both helpers are `nonisolated static`, so tests are hermetic. `togglingPin`
+// is the mutation kernel — the VM just wraps it. `pinPreview` is the chip
+// label; truncation + newline stripping are the fragile bits.
+
+struct ChatPinTests {
+
+    private func msg(_ text: String, pinned: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)
+        m.pinned = pinned
+        return m
+    }
+
+    // MARK: togglingPin
+
+    @Test func pinSetsNilToTrue() {
+        let m = msg("hello", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [m], id: m.id)
+        #expect(result.first?.pinned == true)
+    }
+
+    @Test func unpinSetsTrueToNil() {
+        let m = msg("hello", pinned: true)
+        let result = ChatViewModel.togglingPin(in: [m], id: m.id)
+        #expect(result.first?.pinned == nil)
+    }
+
+    @Test func unknownIdIsNoOp() {
+        let m = msg("hello", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [m], id: UUID())
+        #expect(result.first?.pinned == nil)
+    }
+
+    @Test func onlyTargetedMessageChanges() {
+        let a = msg("alpha", pinned: nil)
+        let b = msg("beta",  pinned: true)
+        let c = msg("gamma", pinned: nil)
+        let result = ChatViewModel.togglingPin(in: [a, b, c], id: b.id)
+        #expect(result[0].pinned == nil)   // a: unchanged
+        #expect(result[1].pinned == nil)   // b: unpinned
+        #expect(result[2].pinned == nil)   // c: unchanged
+    }
+
+    // MARK: pinPreview
+
+    @Test func shortTextPassesThrough() {
+        #expect(ContentView.pinPreview("Short message") == "Short message")
+    }
+
+    @Test func longTextIsTruncatedWithEllipsis() {
+        let long = String(repeating: "a", count: 50)
+        let result = ContentView.pinPreview(long)
+        #expect(result.hasSuffix("…"))
+        // prefix(40) + "…" → 41 characters (one Swift scalar for the ellipsis)
+        #expect(result.count == 41)
+    }
+
+    @Test func exactlyAtMaxPassesThroughWithoutEllipsis() {
+        let exact = String(repeating: "x", count: 40)
+        let result = ContentView.pinPreview(exact)
+        #expect(result == exact)
+        #expect(!result.hasSuffix("…"))
+    }
+
+    @Test func multilineUsesOnlyFirstLine() {
+        let result = ContentView.pinPreview("First line\nSecond line\nThird")
+        #expect(result == "First line")
+    }
+
+    @Test func customMaxIsRespected() {
+        let text = "Hello world this is more than ten characters"
+        let result = ContentView.pinPreview(text, max: 10)
+        #expect(result.hasSuffix("…"))
+        // The prefix(10) may end in a space which is trimmed before "…" is appended.
+        #expect(result.count <= 11)
+    }
+
+    @Test func blankFirstLineFallsBackToEmpty() {
+        let result = ContentView.pinPreview("\nSecond line")
+        #expect(result == "")
+    }
+}
+
 // MARK: - ChatHistoryView.filtered — pure title search contract
 //
 // `nonisolated static` function added by the linter; tested here because the
