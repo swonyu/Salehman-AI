@@ -66,10 +66,11 @@ struct LiveTranscriptionView: View {
                 }
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(live.isRunning ? AnyShapeStyle(Color.red) : AnyShapeStyle(Theme.brand), in: Capsule())
+                .background(live.isRunning ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(Theme.brand), in: Capsule())
                 .foregroundStyle(.white)
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 6, y: 2)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
 
             Picker("", selection: $live.language) {
                 ForEach(LiveLang.allCases) { Text($0.title).tag($0) }
@@ -82,8 +83,9 @@ struct LiveTranscriptionView: View {
 
             if live.isRunning {
                 HStack(spacing: 6) {
-                    Circle().fill(.red).frame(width: 8, height: 8)
-                    Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(.red)
+                    Circle().fill(DS.Palette.accent).frame(width: 8, height: 8)
+                        .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
             }
         }
@@ -95,8 +97,17 @@ struct LiveTranscriptionView: View {
             Text("Allow Screen Recording to hear the audio — it does NOT show your screen.")
                 .font(.caption).foregroundStyle(.white.opacity(0.9))
             Spacer()
-            Button("Open Settings") { live.openScreenRecordingSettings() }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+            Button {
+                live.openScreenRecordingSettings()
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+            }
+            .buttonStyle(LuxPressStyle())
         }
         .padding(10)
         // Brand-accent tint instead of off-brand yellow; subtle stroke gives it

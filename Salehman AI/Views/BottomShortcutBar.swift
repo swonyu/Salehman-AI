@@ -56,6 +56,9 @@ struct BottomShortcutBar: View {
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Color.white.opacity(hinted ? 0.14 : 0.08),
                                         in: RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.white.opacity(hinted ? 0.22 : 0.12), lineWidth: 1))
+                            .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
                         Text(hint.label)
                             .font(.system(size: 11))
                             .foregroundStyle(hinted ? Color.white.opacity(0.7) : Color.secondary)

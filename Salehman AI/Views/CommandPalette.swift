@@ -86,6 +86,8 @@ struct CommandPalette: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
             }
             .padding(16)
 
@@ -99,7 +101,10 @@ struct CommandPalette: View {
                             Button { run(cmd) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: cmd.icon)
-                                        .font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 22)
+                                        .font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                                        .frame(width: 26, height: 26)
+                                        .background(DS.Palette.accent.opacity(0.10), in: Circle())
+                                        .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {
@@ -114,6 +119,10 @@ struct CommandPalette: View {
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
                                     in: RoundedRectangle(cornerRadius: 8)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
                             }
