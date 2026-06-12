@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:03 +03 · Swift files: 150 · Swift LOC: 33649_
+_Generated: 2026-06-12 23:10 +03 · Swift files: 150 · Swift LOC: 33659_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23442,7 +23442,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (631 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (641 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23758,11 +23758,13 @@ struct ScratchpadView: View {
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: false, id: t.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(t.title)
                     .font(.system(size: 14))
                     .foregroundStyle(t.done ? Color.secondary : (hovered ? .white : .white.opacity(0.9)))
                     .strikethrough(t.done)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != t.id {
@@ -23773,6 +23775,7 @@ struct ScratchpadView: View {
             }
             if editingId != t.id {
                 editButton { startEdit(id: t.id, text: t.title) }
+                    .transition(.opacity)
             }
             deleteButton { store.deleteTask(t.id) }
         }
@@ -23841,11 +23844,13 @@ struct ScratchpadView: View {
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: true, id: n.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(n.text)
                     .font(.system(size: 14))
                     .foregroundStyle(hovered ? .white : .white.opacity(0.9))
                     .textSelection(.enabled)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != n.id {
@@ -23856,6 +23861,7 @@ struct ScratchpadView: View {
             }
             if editingId != n.id {
                 editButton { startEdit(id: n.id, text: n.text) }
+                    .transition(.opacity)
             }
             deleteButton { store.deleteNote(n.id) }
         }
@@ -23886,7 +23892,8 @@ struct ScratchpadView: View {
     }
 
     private func startEdit(id: UUID, text: String) {
-        editingId = id; editingText = text
+        withAnimation(DS.Motion.smooth) { editingId = id }
+        editingText = text
     }
 
     private func commitEdit(isNote: Bool, id: UUID) {
@@ -23895,7 +23902,10 @@ struct ScratchpadView: View {
         cancelEdit()
     }
 
-    private func cancelEdit() { editingId = nil; editingText = "" }
+    private func cancelEdit() {
+        withAnimation(DS.Motion.smooth) { editingId = nil }
+        editingText = ""
+    }
 
     private func editButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -36217,7 +36227,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3552 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3557 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39701,10 +39711,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DA: ScratchpadView inline-edit transitions (Chat A)
+**What:** Clicking the edit pencil or pressing Escape in ScratchpadView's task/note rows previously caused an instant snap between `Text` and `TextField`. Three-part fix: (1) `startEdit` and `cancelEdit` now wrap `editingId` mutations in `withAnimation(DS.Motion.smooth)` so SwiftUI's transition engine fires. (2) Both branches of each `if editingId == id { TextField } else { Text }` if/else now carry `.transition(.opacity)` — the label crossfades into the editable field. (3) The conditional `editButton` (shown only when not editing) also gets `.transition(.opacity)` in both task and note rows so the pencil icon fades out when editing begins rather than snapping away.
+**Files:** `Views/ScratchpadView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon CZ: status/error text fade-in transitions + test status crossfades (Chat A)
 **What:** Error messages and test-result texts now animate rather than snap. (1) `MarketsView` monitor error text: `.transition(.opacity.combined(with: .offset(y: -4)))` so it slides down from above when an alert monitor error arrives; `.animation(DS.Motion.smooth, value: monitorError.isEmpty)` on the inner VStack drives it. (2) `SettingsView` Unsloth Studio + vLLM test result texts: same slide-from-above transition + `.animation(DS.Motion.smooth, value: testStatus == nil)` on the containing VStack — "Connected ✓" / error text fades in instead of snapping. (3) `SettingsView` persistent test status subtitles (Grok, generic `keyRow`, Gemini): `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` so the subtitle crossfades between "Tap Test..." and "Connected..." states.
 **Files:** `Views/MarketsView.swift`, `Views/SettingsView.swift`.
-**Commit:** `(next)`
+**Commit:** `939ec68`
 
 ## 2026-06-12 — marathon CY: numericText on unread count + tok/s displays (Chat A)
 **What:** Three live numeric `Text` views now use `.contentTransition(.numericText())` so digits morph instead of snapping when values update. (1) `ContentView` "scroll to latest" button label — `"\(unreadCount) new"` rolls to the updated count as messages arrive while scrolled up; `.animation(DS.Motion.smooth, value: unreadCount)` drives the transition. (2) `CodeView` completed-reply tok/s badge — the local-model speed number in the header blends when set. (3) `CodeView` streaming tok/s in the live right-panel — continuously updating toks/sec in the TimelineView gets numeric morphing.

@@ -312,11 +312,13 @@ struct ScratchpadView: View {
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: false, id: t.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(t.title)
                     .font(.system(size: 14))
                     .foregroundStyle(t.done ? Color.secondary : (hovered ? .white : .white.opacity(0.9)))
                     .strikethrough(t.done)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != t.id {
@@ -327,6 +329,7 @@ struct ScratchpadView: View {
             }
             if editingId != t.id {
                 editButton { startEdit(id: t.id, text: t.title) }
+                    .transition(.opacity)
             }
             deleteButton { store.deleteTask(t.id) }
         }
@@ -395,11 +398,13 @@ struct ScratchpadView: View {
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: true, id: n.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(n.text)
                     .font(.system(size: 14))
                     .foregroundStyle(hovered ? .white : .white.opacity(0.9))
                     .textSelection(.enabled)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != n.id {
@@ -410,6 +415,7 @@ struct ScratchpadView: View {
             }
             if editingId != n.id {
                 editButton { startEdit(id: n.id, text: n.text) }
+                    .transition(.opacity)
             }
             deleteButton { store.deleteNote(n.id) }
         }
@@ -440,7 +446,8 @@ struct ScratchpadView: View {
     }
 
     private func startEdit(id: UUID, text: String) {
-        editingId = id; editingText = text
+        withAnimation(DS.Motion.smooth) { editingId = id }
+        editingText = text
     }
 
     private func commitEdit(isNote: Bool, id: UUID) {
@@ -449,7 +456,10 @@ struct ScratchpadView: View {
         cancelEdit()
     }
 
-    private func cancelEdit() { editingId = nil; editingText = "" }
+    private func cancelEdit() {
+        withAnimation(DS.Motion.smooth) { editingId = nil }
+        editingText = ""
+    }
 
     private func editButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
