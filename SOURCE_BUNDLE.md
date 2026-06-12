@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:48 +03 · Swift files: 150 · Swift LOC: 33131_
+_Generated: 2026-06-12 21:24 +03 · Swift files: 150 · Swift LOC: 33150_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21099,7 +21099,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (291 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (300 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21217,8 +21217,17 @@ struct LiveTranscriptionView: View {
 
             if live.isRunning {
                 HStack(spacing: 6) {
-                    Circle().fill(DS.Palette.accent).frame(width: 8, height: 8)
-                        .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    // PhaseAnimator pulses the glow shadow continuously while
+                    // recording — makes the dot read as "actively capturing".
+                    PhaseAnimator([false, true]) { bright in
+                        Circle()
+                            .fill(DS.Palette.accent)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: DS.Palette.accent.opacity(bright ? 0.80 : 0.30),
+                                    radius: bright ? 5 : 2)
+                    } animation: { bright in
+                        bright ? .easeIn(duration: 0.65) : .easeOut(duration: 1.10)
+                    }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
             }
@@ -26243,7 +26252,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (343 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (353 lines) =====
 ```swift
 import SwiftUI
 
@@ -26373,12 +26382,22 @@ struct TodayView: View {
         // Ambient glow: rendered in the background layer so it clips to the
         // bezel shell and never bleeds into adjacent tiles.
         .background(alignment: .leading) {
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.20))
-                .frame(width: 140, height: 140)
-                .blur(radius: 55)
-                .offset(x: -20, y: 0)
-                .allowsHitTesting(false)
+            // PhaseAnimator cycles rest→pulse→rest continuously, giving the glow
+            // a slow organic "breath". The third 0.20 phase acts as a dead frame
+            // (same values as the first) — a pause before the next exhale.
+            PhaseAnimator([0.20, 0.30, 0.20]) { opacity in
+                Circle()
+                    .fill(DS.Palette.accent.opacity(opacity))
+                    .frame(width: opacity > 0.25 ? 162 : 140,
+                           height: opacity > 0.25 ? 162 : 140)
+                    .blur(radius: 55)
+                    .offset(x: -20, y: 0)
+                    .allowsHitTesting(false)
+            } animation: { opacity in
+                opacity > 0.25
+                    ? .spring(duration: 2.4, bounce: 0.08)
+                    : .easeOut(duration: 2.0)
+            }
         }
         // Inner core: brand-tinted fill + top-lit inner highlight.
         .background(
@@ -35699,7 +35718,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3206 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3219 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38035,6 +38054,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** LiveTranscriptionView was the only user-visible sheet with no brand tile, no ambient glow, no entrance animation, and a 24pt display-sized title — visually jarring relative to all other sheets now polished BG–BQ.
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/LiveTranscriber references; xcodebuild resolves fine.
+
+---
+### [2026-06-12] Marathon BS — PhaseAnimator breathing orb (TodayView) + pulsing LIVE dot (LiveTranscriptionView)
+
+**Files:** `Salehman AI/Views/TodayView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Changes:**
+- TodayView ambient orb: static `Circle()` → `PhaseAnimator([0.20, 0.30, 0.20])` looping variant; cycles rest→pulse→rest with `.spring(duration: 2.4, bounce: 0.08)` for expand and `.easeOut(duration: 2.0)` for contract. Size breathes 140→162→140 px. Third phase acts as dead-frame pause between breaths.
+- LiveTranscriptionView LIVE indicator: static `Circle().fill(accent)` with fixed shadow → `PhaseAnimator([false, true])` looping; glow shadow pulses bright→dim with asymmetric timing (easeIn 0.65s, easeOut 1.10s) while recording.
+
+**Why:** Deep research (SwiftUI 6 APIs) confirmed `PhaseAnimator` is the idiomatic macOS 14+ API for discrete animation phase cycling — no `@State` pulse variable or `repeatForever` needed. The orb was the first "static" surface left in TodayView after the marathon-polished brand tile. The LIVE dot was a flat indicator; pulsing glow makes active recording status instantly legible.
+
+**Result:** Both changes compile cleanly (SourceKit false positives are pre-existing cross-file module references, not code errors).
 
 ---
 ## Standing notes / known issues

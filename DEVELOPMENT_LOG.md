@@ -2335,6 +2335,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/LiveTranscriber references; xcodebuild resolves fine.
 
 ---
+### [2026-06-12] Marathon BS — PhaseAnimator breathing orb (TodayView) + pulsing LIVE dot (LiveTranscriptionView)
+
+**Files:** `Salehman AI/Views/TodayView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Changes:**
+- TodayView ambient orb: static `Circle()` → `PhaseAnimator([0.20, 0.30, 0.20])` looping variant; cycles rest→pulse→rest with `.spring(duration: 2.4, bounce: 0.08)` for expand and `.easeOut(duration: 2.0)` for contract. Size breathes 140→162→140 px. Third phase acts as dead-frame pause between breaths.
+- LiveTranscriptionView LIVE indicator: static `Circle().fill(accent)` with fixed shadow → `PhaseAnimator([false, true])` looping; glow shadow pulses bright→dim with asymmetric timing (easeIn 0.65s, easeOut 1.10s) while recording.
+
+**Why:** Deep research (SwiftUI 6 APIs) confirmed `PhaseAnimator` is the idiomatic macOS 14+ API for discrete animation phase cycling — no `@State` pulse variable or `repeatForever` needed. The orb was the first "static" surface left in TodayView after the marathon-polished brand tile. The LIVE dot was a flat indicator; pulsing glow makes active recording status instantly legible.
+
+**Result:** Both changes compile cleanly (SourceKit false positives are pre-existing cross-file module references, not code errors).
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

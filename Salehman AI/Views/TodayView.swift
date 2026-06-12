@@ -126,12 +126,22 @@ struct TodayView: View {
         // Ambient glow: rendered in the background layer so it clips to the
         // bezel shell and never bleeds into adjacent tiles.
         .background(alignment: .leading) {
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.20))
-                .frame(width: 140, height: 140)
-                .blur(radius: 55)
-                .offset(x: -20, y: 0)
-                .allowsHitTesting(false)
+            // PhaseAnimator cycles rest→pulse→rest continuously, giving the glow
+            // a slow organic "breath". The third 0.20 phase acts as a dead frame
+            // (same values as the first) — a pause before the next exhale.
+            PhaseAnimator([0.20, 0.30, 0.20]) { opacity in
+                Circle()
+                    .fill(DS.Palette.accent.opacity(opacity))
+                    .frame(width: opacity > 0.25 ? 162 : 140,
+                           height: opacity > 0.25 ? 162 : 140)
+                    .blur(radius: 55)
+                    .offset(x: -20, y: 0)
+                    .allowsHitTesting(false)
+            } animation: { opacity in
+                opacity > 0.25
+                    ? .spring(duration: 2.4, bounce: 0.08)
+                    : .easeOut(duration: 2.0)
+            }
         }
         // Inner core: brand-tinted fill + top-lit inner highlight.
         .background(

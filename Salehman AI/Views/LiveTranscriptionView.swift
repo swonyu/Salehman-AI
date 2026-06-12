@@ -114,8 +114,17 @@ struct LiveTranscriptionView: View {
 
             if live.isRunning {
                 HStack(spacing: 6) {
-                    Circle().fill(DS.Palette.accent).frame(width: 8, height: 8)
-                        .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    // PhaseAnimator pulses the glow shadow continuously while
+                    // recording — makes the dot read as "actively capturing".
+                    PhaseAnimator([false, true]) { bright in
+                        Circle()
+                            .fill(DS.Palette.accent)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: DS.Palette.accent.opacity(bright ? 0.80 : 0.30),
+                                    radius: bright ? 5 : 2)
+                    } animation: { bright in
+                        bright ? .easeIn(duration: 0.65) : .easeOut(duration: 1.10)
+                    }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
             }
