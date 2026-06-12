@@ -1367,6 +1367,14 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** typecheck EXIT 0; standing AITests request grows by 3 (41 total in ChatTranscriptLogicTests). Owner runbook: colab.research.google.com → Upload → salehman_cloud_gpu.ipynb → Runtime=T4 → Run all → paste hf token → copy printed URL → /connect in the app.
 
+## 2026-06-12 · Settings: Hugging Face token row (Keychain + Copy-for-notebook) — Chat B
+
+**Files:** `LLM/KeychainStore.swift` (new `.hfToken` account), `Views/SettingsView.swift` (`hfTokenRow` in the Unsloth Studio section)
+
+**What & why:** Owner wants the HF token kept in the app instead of retyped per Colab session. Row mirrors the established key-row pattern: SecureField + Save (Keychain write, in-memory draft wiped), **Copy** (clipboard, for the notebook's login box — the notebook itself stays token-free), Clear. The pasted token was also written directly to the Keychain via `security` under the app's service/account, so the row shows Saved immediately. Token characters appear in NO source/log/UserDefaults. Note: the token transited chat → flagged to owner to rotate once and store the replacement via this row (transcripts feed `ingest_sessions.py`).
+
+**Result:** typecheck EXIT 0; AITests request unchanged. Free-GPU flow is now: Settings→Copy → Colab Run-all → paste token → /connect the printed URL.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
