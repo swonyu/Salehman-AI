@@ -18,6 +18,7 @@ struct ScratchpadView: View {
     @State private var editingText = ""
     @State private var hoveredTaskID: UUID?
     @State private var hoveredNoteID: UUID?
+    @State private var copyAllPulse = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -70,6 +71,18 @@ struct ScratchpadView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button { copyAll() } label: {
+                    Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 13))
+                        .foregroundStyle(copyAllPulse ? DS.Palette.success : .secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
+                .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
+                .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
+
                 Button { Task { await runAI() } } label: {
                     HStack(spacing: 6) {
                         if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
@@ -169,6 +182,16 @@ struct ScratchpadView: View {
     private func copyText(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func copyAll() {
+        let md = pad == .tasks
+            ? ScratchpadList.markdownList(tasks: store.tasks)
+            : ScratchpadList.markdownList(notes: store.notes)
+        guard !md.isEmpty else { return }
+        copyText(md)
+        copyAllPulse = true
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copyAllPulse = false }
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
@@ -433,4 +456,17 @@ enum ScratchpadList {
         return t.isEmpty ? all : all.filter { $0.text.lowercased().contains(t) }
     }
     static func completedCount(_ all: [TaskItem]) -> Int { all.filter(\.done).count }
+
+    /// GFM task-list Markdown for the full task list — open: `- [ ] …`, done: `- [x] …`.
+    /// Pure for tests; returns "" when the list is empty.
+    static func markdownList(tasks: [TaskItem]) -> String {
+        guard !tasks.isEmpty else { return "" }
+        return tasks.map { "- [\($0.done ? "x" : " ")] \($0.title)" }.joined(separator: "\n")
+    }
+
+    /// Plain-list Markdown for notes — each note becomes `- Note text`. Pure.
+    static func markdownList(notes: [Note]) -> String {
+        guard !notes.isEmpty else { return "" }
+        return notes.map { "- \($0.text)" }.joined(separator: "\n")
+    }
 }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:15 +03 · Swift files: 150 · Swift LOC: 31731_
+_Generated: 2026-06-12 07:19 +03 · Swift files: 150 · Swift LOC: 31810_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -18688,7 +18688,7 @@ enum ChatStore {
         let messageCount: Int
         let preview: String  // first non-empty line of the first AI reply
 
-        init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
+        nonisolated init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
             self.id = id; self.title = title; self.date = date
             self.messageCount = messageCount; self.preview = preview
         }
@@ -22319,7 +22319,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (436 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (472 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22341,6 +22341,7 @@ struct ScratchpadView: View {
     @State private var editingText = ""
     @State private var hoveredTaskID: UUID?
     @State private var hoveredNoteID: UUID?
+    @State private var copyAllPulse = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -22393,6 +22394,18 @@ struct ScratchpadView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button { copyAll() } label: {
+                    Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 13))
+                        .foregroundStyle(copyAllPulse ? DS.Palette.success : .secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
+                .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
+                .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
+
                 Button { Task { await runAI() } } label: {
                     HStack(spacing: 6) {
                         if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
@@ -22492,6 +22505,16 @@ struct ScratchpadView: View {
     private func copyText(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func copyAll() {
+        let md = pad == .tasks
+            ? ScratchpadList.markdownList(tasks: store.tasks)
+            : ScratchpadList.markdownList(notes: store.notes)
+        guard !md.isEmpty else { return }
+        copyText(md)
+        copyAllPulse = true
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copyAllPulse = false }
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
@@ -22756,6 +22779,19 @@ enum ScratchpadList {
         return t.isEmpty ? all : all.filter { $0.text.lowercased().contains(t) }
     }
     static func completedCount(_ all: [TaskItem]) -> Int { all.filter(\.done).count }
+
+    /// GFM task-list Markdown for the full task list — open: `- [ ] …`, done: `- [x] …`.
+    /// Pure for tests; returns "" when the list is empty.
+    static func markdownList(tasks: [TaskItem]) -> String {
+        guard !tasks.isEmpty else { return "" }
+        return tasks.map { "- [\($0.done ? "x" : " ")] \($0.title)" }.joined(separator: "\n")
+    }
+
+    /// Plain-list Markdown for notes — each note becomes `- Note text`. Pure.
+    static func markdownList(notes: [Note]) -> String {
+        guard !notes.isEmpty else { return "" }
+        return notes.map { "- \($0.text)" }.joined(separator: "\n")
+    }
 }
 ```
 
@@ -25978,7 +26014,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (704 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (747 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26262,6 +26298,49 @@ struct NoteFromChatTests {
         // After inserts: ["z","y","x"]. Move index 2 ("x") to top (index 0) → ["x","z","y"]
         store.moveTask(from: IndexSet(integer: 2), to: 0)
         #expect(store.tasks.map(\.title) == ["x", "z", "y"])
+    }
+}
+
+// MARK: - ScratchpadList.markdownList — copy-all export format
+
+struct ScratchpadMarkdownTests {
+
+    private func task(_ title: String, done: Bool = false) -> TaskItem {
+        TaskItem(title: title, done: done)
+    }
+    private func note(_ text: String) -> Note { Note(text: text) }
+
+    @Test func emptyTaskListYieldsEmpty() {
+        #expect(ScratchpadList.markdownList(tasks: []) == "")
+    }
+
+    @Test func emptyNoteListYieldsEmpty() {
+        #expect(ScratchpadList.markdownList(notes: []) == "")
+    }
+
+    @Test func openTaskUsesUncheckedBox() {
+        let md = ScratchpadList.markdownList(tasks: [task("Buy milk")])
+        #expect(md == "- [ ] Buy milk")
+    }
+
+    @Test func doneTaskUsesCheckedBox() {
+        let md = ScratchpadList.markdownList(tasks: [task("Done thing", done: true)])
+        #expect(md == "- [x] Done thing")
+    }
+
+    @Test func multipleTasksJoinedByNewline() {
+        let md = ScratchpadList.markdownList(tasks: [task("A"), task("B", done: true), task("C")])
+        #expect(md == "- [ ] A\n- [x] B\n- [ ] C")
+    }
+
+    @Test func singleNoteFormattedAsBullet() {
+        let md = ScratchpadList.markdownList(notes: [note("Remember this")])
+        #expect(md == "- Remember this")
+    }
+
+    @Test func multipleNotesJoinedByNewline() {
+        let md = ScratchpadList.markdownList(notes: [note("One"), note("Two")])
+        #expect(md == "- One\n- Two")
     }
 }
 
@@ -34282,7 +34361,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2506 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2520 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35863,6 +35942,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Views/SettingsView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
 
 **Result:** `** BUILD SUCCEEDED **`
+
+---
+**2026-06-12 — Marathon AA: Notes "Copy all" — Markdown-format clipboard export**
+
+**What changed:**
+- `Views/ScratchpadView.swift`: header gains a clipboard icon button ("Copy all tasks/notes as Markdown") that appears before the AI button; disabled when the list is empty. `copyAll()` helper calls `ScratchpadList.markdownList` and pulses the icon to a checkmark for 1.5s. New `copyAllPulse: Bool` state drives the visual pulse.
+- `Views/ScratchpadView.swift` → `ScratchpadList`: two new pure static functions — `markdownList(tasks:)` renders GFM task-list format (`- [ ] open`, `- [x] done`); `markdownList(notes:)` renders `- Note text`. Both return `""` for empty input.
+- `Salehman AITests/ChatComposerLogicTests.swift`: added `ScratchpadMarkdownTests` (7 tests): empty tasks, empty notes, open-box format, checked-box format, multi-task newline join, single-note bullet, multi-note newline join.
+
+**Why:** Notes tab had no bulk clipboard path — users had to copy each note/task individually. The GFM format pastes cleanly into any Markdown editor (Obsidian, Notion, GitHub).
+
+**Files:** `Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
 
 ---
 **2026-06-12 — Marathon Z: History row preview snippets**

@@ -1580,6 +1580,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Marathon AA: Notes "Copy all" — Markdown-format clipboard export**
+
+**What changed:**
+- `Views/ScratchpadView.swift`: header gains a clipboard icon button ("Copy all tasks/notes as Markdown") that appears before the AI button; disabled when the list is empty. `copyAll()` helper calls `ScratchpadList.markdownList` and pulses the icon to a checkmark for 1.5s. New `copyAllPulse: Bool` state drives the visual pulse.
+- `Views/ScratchpadView.swift` → `ScratchpadList`: two new pure static functions — `markdownList(tasks:)` renders GFM task-list format (`- [ ] open`, `- [x] done`); `markdownList(notes:)` renders `- Note text`. Both return `""` for empty input.
+- `Salehman AITests/ChatComposerLogicTests.swift`: added `ScratchpadMarkdownTests` (7 tests): empty tasks, empty notes, open-box format, checked-box format, multi-task newline join, single-note bullet, multi-note newline join.
+
+**Why:** Notes tab had no bulk clipboard path — users had to copy each note/task individually. The GFM format pastes cleanly into any Markdown editor (Obsidian, Notion, GitHub).
+
+**Files:** `Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
+
+---
 **2026-06-12 — Marathon Z: History row preview snippets**
 
 **What changed:**

@@ -283,6 +283,49 @@ struct NoteFromChatTests {
     }
 }
 
+// MARK: - ScratchpadList.markdownList — copy-all export format
+
+struct ScratchpadMarkdownTests {
+
+    private func task(_ title: String, done: Bool = false) -> TaskItem {
+        TaskItem(title: title, done: done)
+    }
+    private func note(_ text: String) -> Note { Note(text: text) }
+
+    @Test func emptyTaskListYieldsEmpty() {
+        #expect(ScratchpadList.markdownList(tasks: []) == "")
+    }
+
+    @Test func emptyNoteListYieldsEmpty() {
+        #expect(ScratchpadList.markdownList(notes: []) == "")
+    }
+
+    @Test func openTaskUsesUncheckedBox() {
+        let md = ScratchpadList.markdownList(tasks: [task("Buy milk")])
+        #expect(md == "- [ ] Buy milk")
+    }
+
+    @Test func doneTaskUsesCheckedBox() {
+        let md = ScratchpadList.markdownList(tasks: [task("Done thing", done: true)])
+        #expect(md == "- [x] Done thing")
+    }
+
+    @Test func multipleTasksJoinedByNewline() {
+        let md = ScratchpadList.markdownList(tasks: [task("A"), task("B", done: true), task("C")])
+        #expect(md == "- [ ] A\n- [x] B\n- [ ] C")
+    }
+
+    @Test func singleNoteFormattedAsBullet() {
+        let md = ScratchpadList.markdownList(notes: [note("Remember this")])
+        #expect(md == "- Remember this")
+    }
+
+    @Test func multipleNotesJoinedByNewline() {
+        let md = ScratchpadList.markdownList(notes: [note("One"), note("Two")])
+        #expect(md == "- One\n- Two")
+    }
+}
+
 // MARK: - MessageBubble.plainText — markdown stripping contract
 //
 // `copyPlainText` writes this to the pasteboard for users pasting into
