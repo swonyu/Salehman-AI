@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CW: spinner↔icon/text crossfades on all test/check buttons (Chat A)
+**What:** Seven "loading state" button label swaps now crossfade instead of snapping. Pattern: the conditional `ProgressView`↔`Image`/`Text` block wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: theFlag)`. Files + buttons: `MarketsView` "Check now" (checkingAlerts — icon + contentTransition on label text), `SettingsView` "Test connection" for Unsloth Studio + vLLM (spinner slides in alongside the label text), "Test" button for Grok / generic cloud-key helper (`keyRow`) / Gemini / Anthropic (spinner crossfades with the "Test" text). Every test-button in the app now fades smoothly when a connection check starts or ends.
+**Files:** `Views/MarketsView.swift`, `Views/SettingsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CV: live transcript line entry + briefing button/body crossfades (Chat A)
 **What:** Two files. (1) `LiveTranscriptionView`: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each finalized transcript line row + `.animation(DS.Motion.smooth, value: live.lines.count)` on the `LazyVStack` — new transcribed lines slide in from the leading edge as they're finalized. (2) `MarketsView` briefing panel: ProgressView↔sparkles icon swap wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: loadingBriefing)` so the button icon fades between states; button label text gets `.contentTransition(.opacity)` for the same; briefing body `Text` gets `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: briefing.isEmpty)` so the AI-generated text crossfades in instead of snapping.
 **Files:** `Views/LiveTranscriptionView.swift`, `Views/MarketsView.swift`.
-**Commit:** `(next)`
+**Commit:** `357a3f9`
 
 ## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
 **What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.

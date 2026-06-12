@@ -162,9 +162,15 @@ struct MarketsView: View {
                 }
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
-                        if checkingAlerts { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.clockwise") }
+                        Group {
+                            if checkingAlerts { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.clockwise") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: checkingAlerts)
                         Text(checkingAlerts ? "Checking…" : "Check now")
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: checkingAlerts)
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)

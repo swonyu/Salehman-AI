@@ -831,9 +831,13 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if unslothStudioTesting { ProgressView().controlSize(.small) }
+                    if unslothStudioTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: unslothStudioTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(unslothStudioTesting || settings.unslothStudioEndpoint.isEmpty)
@@ -896,9 +900,13 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if vllmTesting { ProgressView().controlSize(.small) }
+                    if vllmTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: vllmTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(vllmTesting || settings.vllmEndpoint.isEmpty)
@@ -1351,8 +1359,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if grokTesting { ProgressView().controlSize(.small) }
-                else           { Text("Test") }
+                Group {
+                    if grokTesting { ProgressView().controlSize(.small) }
+                    else           { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: grokTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(grokTesting || !grokKeySaved)
@@ -1617,8 +1629,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if testing.wrappedValue { ProgressView().controlSize(.small) }
-                else                    { Text("Test") }
+                Group {
+                    if testing.wrappedValue { ProgressView().controlSize(.small) }
+                    else                    { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: testing.wrappedValue)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(testing.wrappedValue || !keySaved.wrappedValue)
@@ -1725,8 +1741,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if geminiTesting { ProgressView().controlSize(.small) }
-                else             { Text("Test") }
+                Group {
+                    if geminiTesting { ProgressView().controlSize(.small) }
+                    else             { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: geminiTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(geminiTesting || !geminiKeySaved)
@@ -1782,8 +1802,12 @@ struct SettingsView: View {
                             }
                         }
                     } label: {
-                        if anthropicTesting { ProgressView().controlSize(.small) }
-                        else                { Text("Test") }
+                        Group {
+                            if anthropicTesting { ProgressView().controlSize(.small) }
+                            else                { Text("Test") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: anthropicTesting)
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(anthropicTesting)

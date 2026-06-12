@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:55 +03 · Swift files: 150 · Swift LOC: 33594_
+_Generated: 2026-06-12 22:57 +03 · Swift files: 150 · Swift LOC: 33624_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22068,7 +22068,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (674 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (680 lines) =====
 ```swift
 import SwiftUI
 
@@ -22234,9 +22234,15 @@ struct MarketsView: View {
                 }
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
-                        if checkingAlerts { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.clockwise") }
+                        Group {
+                            if checkingAlerts { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.clockwise") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: checkingAlerts)
                         Text(checkingAlerts ? "Checking…" : "Check now")
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: checkingAlerts)
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
@@ -24229,7 +24235,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1991 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2015 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25064,9 +25070,13 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if unslothStudioTesting { ProgressView().controlSize(.small) }
+                    if unslothStudioTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: unslothStudioTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(unslothStudioTesting || settings.unslothStudioEndpoint.isEmpty)
@@ -25129,9 +25139,13 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if vllmTesting { ProgressView().controlSize(.small) }
+                    if vllmTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: vllmTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(vllmTesting || settings.vllmEndpoint.isEmpty)
@@ -25584,8 +25598,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if grokTesting { ProgressView().controlSize(.small) }
-                else           { Text("Test") }
+                Group {
+                    if grokTesting { ProgressView().controlSize(.small) }
+                    else           { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: grokTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(grokTesting || !grokKeySaved)
@@ -25850,8 +25868,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if testing.wrappedValue { ProgressView().controlSize(.small) }
-                else                    { Text("Test") }
+                Group {
+                    if testing.wrappedValue { ProgressView().controlSize(.small) }
+                    else                    { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: testing.wrappedValue)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(testing.wrappedValue || !keySaved.wrappedValue)
@@ -25958,8 +25980,12 @@ struct SettingsView: View {
                     }
                 }
             } label: {
-                if geminiTesting { ProgressView().controlSize(.small) }
-                else             { Text("Test") }
+                Group {
+                    if geminiTesting { ProgressView().controlSize(.small) }
+                    else             { Text("Test") }
+                }
+                .transition(.opacity)
+                .animation(DS.Motion.smooth, value: geminiTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(geminiTesting || !geminiKeySaved)
@@ -26015,8 +26041,12 @@ struct SettingsView: View {
                             }
                         }
                     } label: {
-                        if anthropicTesting { ProgressView().controlSize(.small) }
-                        else                { Text("Test") }
+                        Group {
+                            if anthropicTesting { ProgressView().controlSize(.small) }
+                            else                { Text("Test") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: anthropicTesting)
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(anthropicTesting)
@@ -36162,7 +36192,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3532 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3537 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39646,10 +39676,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CW: spinner↔icon/text crossfades on all test/check buttons (Chat A)
+**What:** Seven "loading state" button label swaps now crossfade instead of snapping. Pattern: the conditional `ProgressView`↔`Image`/`Text` block wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: theFlag)`. Files + buttons: `MarketsView` "Check now" (checkingAlerts — icon + contentTransition on label text), `SettingsView` "Test connection" for Unsloth Studio + vLLM (spinner slides in alongside the label text), "Test" button for Grok / generic cloud-key helper (`keyRow`) / Gemini / Anthropic (spinner crossfades with the "Test" text). Every test-button in the app now fades smoothly when a connection check starts or ends.
+**Files:** `Views/MarketsView.swift`, `Views/SettingsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CV: live transcript line entry + briefing button/body crossfades (Chat A)
 **What:** Two files. (1) `LiveTranscriptionView`: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each finalized transcript line row + `.animation(DS.Motion.smooth, value: live.lines.count)` on the `LazyVStack` — new transcribed lines slide in from the leading edge as they're finalized. (2) `MarketsView` briefing panel: ProgressView↔sparkles icon swap wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: loadingBriefing)` so the button icon fades between states; button label text gets `.contentTransition(.opacity)` for the same; briefing body `Text` gets `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: briefing.isEmpty)` so the AI-generated text crossfades in instead of snapping.
 **Files:** `Views/LiveTranscriptionView.swift`, `Views/MarketsView.swift`.
-**Commit:** `(next)`
+**Commit:** `357a3f9`
 
 ## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
 **What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.
