@@ -53,6 +53,11 @@ struct VoiceModeView: View {
                             .fill(DS.Gradient.brand)
                             .frame(width: 32, height: 32)
                             .dsShadow(DS.Elevation.accentGlow(0.35))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                            )
                         Image(systemName: "waveform")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
@@ -146,6 +151,9 @@ struct VoiceModeView: View {
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(turn.role == .salehman ? DS.Palette.accent : .secondary)
                     }
+                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                     Text(turn.text)
                         .font(.caption)
                         .foregroundStyle(turn.role == .salehman ? .white.opacity(0.9) : .secondary)

@@ -3174,6 +3174,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+---
+
+## 2026-06-13 — Marathon EFB: VoiceModeView + AboutView icon well strokes
+
+**What changed:** Added 0.75pt top-lit gradient stroke to all remaining bare icon wells in VoiceModeView (32px brand tile header `[white@0.48, white@0.02]`; 20px scrollback transcript wells `[white@0.20, white@0.04]`) and AboutView (28px capability row wells `[white@0.22, white@0.04]`). AboutView's brand tile and VoiceModeView's circular save button were confirmed already correct. All primary-directive views (Agents, Knowledge, Memory, Scratchpad, Settings, VoiceMode, About, Onboarding) now carry the full icon-well depth language.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`
+
+**Why:** Completing the icon-well audit sweep across the full marathon directive list. Circular elements (save button, orb) correctly kept flat per design rule — direction is imperceptible on small circles.
+
+**Result:** Build exit 0, 0 real Swift errors (grep).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

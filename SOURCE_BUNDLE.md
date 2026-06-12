@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:49 +03 · Swift files: 150 · Swift LOC: 34206_
+_Generated: 2026-06-13 02:51 +03 · Swift files: 150 · Swift LOC: 34217_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13311,7 +13311,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (187 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (190 lines) =====
 ```swift
 import SwiftUI
 
@@ -13480,6 +13480,9 @@ struct AboutView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(cap.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
@@ -27649,7 +27652,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (189 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (197 lines) =====
 ```swift
 import SwiftUI
 
@@ -27706,6 +27709,11 @@ struct VoiceModeView: View {
                             .fill(DS.Gradient.brand)
                             .frame(width: 32, height: 32)
                             .dsShadow(DS.Elevation.accentGlow(0.35))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                            )
                         Image(systemName: "waveform")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
@@ -27799,6 +27807,9 @@ struct VoiceModeView: View {
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(turn.role == .salehman ? DS.Palette.accent : .secondary)
                     }
+                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                     Text(turn.text)
                         .font(.caption)
                         .foregroundStyle(turn.role == .salehman ? .white.opacity(0.9) : .secondary)
@@ -36774,7 +36785,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4217 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4231 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39948,6 +39959,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** The 2026-06-11 icon-well audit identified SettingsView as the last view with bare ZStack icon wells. Adding the stroke to `toggle()` in one shot propagates to every toggle row (memory, stream, auto-scroll, unrestricted mode, show-agents, etc.) without per-row edits.
 
 **Result:** Build exit 0, `grep -c '\.swift:[0-9]*:[0-9]*: error:' log` → 0. SourceKit cross-module false positives only (pre-existing).
+
+---
+
+---
+
+## 2026-06-13 — Marathon EFB: VoiceModeView + AboutView icon well strokes
+
+**What changed:** Added 0.75pt top-lit gradient stroke to all remaining bare icon wells in VoiceModeView (32px brand tile header `[white@0.48, white@0.02]`; 20px scrollback transcript wells `[white@0.20, white@0.04]`) and AboutView (28px capability row wells `[white@0.22, white@0.04]`). AboutView's brand tile and VoiceModeView's circular save button were confirmed already correct. All primary-directive views (Agents, Knowledge, Memory, Scratchpad, Settings, VoiceMode, About, Onboarding) now carry the full icon-well depth language.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/AboutView.swift`
+
+**Why:** Completing the icon-well audit sweep across the full marathon directive list. Circular elements (save button, orb) correctly kept flat per design rule — direction is imperceptible on small circles.
+
+**Result:** Build exit 0, 0 real Swift errors (grep).
 
 ---
 
