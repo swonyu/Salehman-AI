@@ -264,6 +264,7 @@ struct AgentsView: View {
                 Text("No agents match "\(agentSearch)".")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
+                    .transition(.opacity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
                     ForEach(agents) { spec in
@@ -271,8 +272,10 @@ struct AgentsView: View {
                                   isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: agents.isEmpty)
     }
 
     private var agentSearchRow: some View {
@@ -287,8 +290,10 @@ struct AgentsView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -339,8 +344,10 @@ struct AgentsView: View {
                             else if hoveredRunID == entry.id { hoveredRunID = nil }
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .animation(DS.Motion.smooth, value: runHistory.count)
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)

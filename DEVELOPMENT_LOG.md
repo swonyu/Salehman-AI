@@ -2845,6 +2845,24 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors.
 
 ---
+## 2026-06-13 — Marathon EB: AgentsView remaining animation gaps
+
+**What changed:**
+- `AgentsView.swift` — 5 targeted edits:
+  - `agentSearchRow` clear X button: added `.transition(.opacity)` on the Button inside the conditional, and `.animation(DS.Motion.magnetic, value: agentSearch.isEmpty)` on the parent HStack so the pop-in is smooth
+  - `agentsGrid` empty-state Text branch: added `.transition(.opacity)`
+  - `agentsGrid` LazyVGrid else branch: added `.transition(.opacity)`
+  - `agentsGrid` outer VStack: added `.animation(DS.Motion.smooth, value: agents.isEmpty)` to drive the branch swap when a search term empties/fills the grid
+  - `runHistorySection` ForEach row HStack: added `.transition(.opacity.combined(with: .move(edge: .top)))` — new run entries slide in from top (matches how they're prepended)
+  - `runHistorySection` rows VStack: added `.animation(DS.Motion.smooth, value: runHistory.count)` before `.background` so insertions/removals animate
+
+**Files:** `Salehman AI/Views/AgentsView.swift`
+
+**Why:** The last remaining animation gaps in the marathon sweep. `agentsGrid` branches were orphaned — the parent VStack had no `.animation` driver, and neither branch had `.transition`, so toggling between "no match" text and the full grid was an abrupt swap. Run history rows had hover effects but popped in hard — the rows VStack lacked a `runHistory.count` driver despite the count badge already having one.
+
+**Result:** Zero Swift compilation errors (sandbox blocks DerivedData writes; real compile errors verified absent by grepping build output for `.swift:[line]:[col]: error:` — empty).
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

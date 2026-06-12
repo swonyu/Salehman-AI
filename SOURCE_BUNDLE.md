@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:47 +03 · Swift files: 150 · Swift LOC: 33896_
+_Generated: 2026-06-13 00:53 +03 · Swift files: 150 · Swift LOC: 33903_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13437,7 +13437,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (537 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (544 lines) =====
 ```swift
 import SwiftUI
 
@@ -13705,6 +13705,7 @@ struct AgentsView: View {
                 Text("No agents match "\(agentSearch)".")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
+                    .transition(.opacity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
                     ForEach(agents) { spec in
@@ -13712,8 +13713,10 @@ struct AgentsView: View {
                                   isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: agents.isEmpty)
     }
 
     private var agentSearchRow: some View {
@@ -13728,8 +13731,10 @@ struct AgentsView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -13780,8 +13785,10 @@ struct AgentsView: View {
                             else if hoveredRunID == entry.id { hoveredRunID = nil }
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .animation(DS.Motion.smooth, value: runHistory.count)
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
@@ -36464,7 +36471,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3888 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3906 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39310,6 +39317,24 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** VoiceModeView's scrollback panel had no transition on individual turns — new turns popped in hard as the conversation progressed. BottomShortcutBar's per-button `.transition` declaration was orphaned on tab switches because only `app.aiIsRunning` was wired as an animation driver; the tab-context hints change had no context.
 
 **Result:** Zero Swift compilation errors.
+
+---
+## 2026-06-13 — Marathon EB: AgentsView remaining animation gaps
+
+**What changed:**
+- `AgentsView.swift` — 5 targeted edits:
+  - `agentSearchRow` clear X button: added `.transition(.opacity)` on the Button inside the conditional, and `.animation(DS.Motion.magnetic, value: agentSearch.isEmpty)` on the parent HStack so the pop-in is smooth
+  - `agentsGrid` empty-state Text branch: added `.transition(.opacity)`
+  - `agentsGrid` LazyVGrid else branch: added `.transition(.opacity)`
+  - `agentsGrid` outer VStack: added `.animation(DS.Motion.smooth, value: agents.isEmpty)` to drive the branch swap when a search term empties/fills the grid
+  - `runHistorySection` ForEach row HStack: added `.transition(.opacity.combined(with: .move(edge: .top)))` — new run entries slide in from top (matches how they're prepended)
+  - `runHistorySection` rows VStack: added `.animation(DS.Motion.smooth, value: runHistory.count)` before `.background` so insertions/removals animate
+
+**Files:** `Salehman AI/Views/AgentsView.swift`
+
+**Why:** The last remaining animation gaps in the marathon sweep. `agentsGrid` branches were orphaned — the parent VStack had no `.animation` driver, and neither branch had `.transition`, so toggling between "no match" text and the full grid was an abrupt swap. Run history rows had hover effects but popped in hard — the rows VStack lacked a `runHistory.count` driver despite the count badge already having one.
+
+**Result:** Zero Swift compilation errors (sandbox blocks DerivedData writes; real compile errors verified absent by grepping build output for `.swift:[line]:[col]: error:` — empty).
 
 ---
 ## Standing notes / known issues
