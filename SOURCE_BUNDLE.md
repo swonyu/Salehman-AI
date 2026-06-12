@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:49 +03 · Swift files: 150 · Swift LOC: 33761_
+_Generated: 2026-06-12 23:56 +03 · Swift files: 150 · Swift LOC: 33763_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15793,7 +15793,7 @@ struct CodeView: View {
                     }
                     Spacer()
                     headerIcon("square.and.pencil", "New chat") {
-                        if !isRunning { withAnimation { messages.removeAll() } }
+                        if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
                     }
                     headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
@@ -16003,7 +16003,7 @@ struct CodeView: View {
             input = ""
             switch a {
             case "shot": attachLatestScreenshot()
-            case "clear": if !isRunning { withAnimation { messages.removeAll() } }
+            case "clear": if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
             case "copy":
                 let md = messages
                     .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
@@ -20088,7 +20088,7 @@ struct TypingIndicator: View {
         .onAppear { animating = true }
         .task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            withAnimation { warmHint = true }
+            withAnimation(DS.Motion.smooth) { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }
@@ -27208,7 +27208,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (185 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (187 lines) =====
 ```swift
 import SwiftUI
 
@@ -27246,10 +27246,10 @@ struct VoiceModeView: View {
         let lines = session.turns.map { "\($0.role == .salehman ? "Salehman" : "You"): \($0.text)" }
         let transcript = "🎙 Voice conversation\n\n" + lines.joined(separator: "\n")
         ScratchpadStore.shared.addNote(transcript)
-        withAnimation { savedConfirmation = true }
+        withAnimation(DS.Motion.smooth) { savedConfirmation = true }
         Task {
             try? await Task.sleep(nanoseconds: 1_600_000_000)
-            withAnimation { savedConfirmation = false }
+            withAnimation(DS.Motion.smooth) { savedConfirmation = false }
         }
     }
 
@@ -27299,6 +27299,8 @@ struct VoiceModeView: View {
 
                 orb
                 Text(phaseLabel).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: session.phase)
 
                 Text(session.liveCaption.isEmpty ? " " : session.liveCaption)
                     .font(.system(size: 18)).foregroundStyle(.white)
@@ -36329,7 +36331,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3672 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3686 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38959,6 +38961,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Typing a filter caused the tree to snap to a flat list with no animation. The xmark button popped in/out. Both are high-frequency interactions in the code file browser.
 
 **Result:** Filtering/clearing in the CodeView file tree now crossfades between tree and filtered list.
+
+---
+### 2026-06-12 — Marathon DM: DS.Motion token consistency + VoiceModeView phase-label crossfade
+
+**What changed:**
+- `Views/VoiceModeView.swift`: replaced 2 bare `withAnimation { }` in `saveToNotes()` with `withAnimation(DS.Motion.smooth)`. Added `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: session.phase)` to the `phaseLabel` Text so it crossfades when the session phase changes (idle → listening → thinking → speaking).
+- `Views/CodeView.swift`: replaced 2 bare `withAnimation { messages.removeAll() }` (new-chat header icon + `/clear` slash command handler) with `withAnimation(DS.Motion.smooth)`.
+- `Views/ContentView.swift`: replaced bare `withAnimation { warmHint = true }` (5-second delayed warm-hint reveal in the typing indicator) with `withAnimation(DS.Motion.smooth)`.
+
+**Files:** `Views/VoiceModeView.swift`, `Views/CodeView.swift`, `Views/ContentView.swift`
+
+**Why:** Bare `withAnimation {}` uses SwiftUI's default easeInOut(0.35s) instead of the design-system spring tokens, creating subtle motion inconsistency across interaction moments. All 5 state-toggle mutations that drive visual transitions now use the canonical `DS.Motion.smooth` spring. The phase-label Text in VoiceModeView also had no crossfade when transitioning between voice session phases.
+
+**Result:** 7 targeted fixes across 3 files; app-wide motion language is now fully tokenized.
 
 ---
 ## Standing notes / known issues

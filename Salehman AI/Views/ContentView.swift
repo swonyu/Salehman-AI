@@ -2531,7 +2531,7 @@ struct TypingIndicator: View {
         .onAppear { animating = true }
         .task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            withAnimation { warmHint = true }
+            withAnimation(DS.Motion.smooth) { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }

@@ -2629,6 +2629,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Filtering/clearing in the CodeView file tree now crossfades between tree and filtered list.
 
 ---
+### 2026-06-12 — Marathon DM: DS.Motion token consistency + VoiceModeView phase-label crossfade
+
+**What changed:**
+- `Views/VoiceModeView.swift`: replaced 2 bare `withAnimation { }` in `saveToNotes()` with `withAnimation(DS.Motion.smooth)`. Added `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: session.phase)` to the `phaseLabel` Text so it crossfades when the session phase changes (idle → listening → thinking → speaking).
+- `Views/CodeView.swift`: replaced 2 bare `withAnimation { messages.removeAll() }` (new-chat header icon + `/clear` slash command handler) with `withAnimation(DS.Motion.smooth)`.
+- `Views/ContentView.swift`: replaced bare `withAnimation { warmHint = true }` (5-second delayed warm-hint reveal in the typing indicator) with `withAnimation(DS.Motion.smooth)`.
+
+**Files:** `Views/VoiceModeView.swift`, `Views/CodeView.swift`, `Views/ContentView.swift`
+
+**Why:** Bare `withAnimation {}` uses SwiftUI's default easeInOut(0.35s) instead of the design-system spring tokens, creating subtle motion inconsistency across interaction moments. All 5 state-toggle mutations that drive visual transitions now use the canonical `DS.Motion.smooth` spring. The phase-label Text in VoiceModeView also had no crossfade when transitioning between voice session phases.
+
+**Result:** 7 targeted fixes across 3 files; app-wide motion language is now fully tokenized.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -34,10 +34,10 @@ struct VoiceModeView: View {
         let lines = session.turns.map { "\($0.role == .salehman ? "Salehman" : "You"): \($0.text)" }
         let transcript = "🎙 Voice conversation\n\n" + lines.joined(separator: "\n")
         ScratchpadStore.shared.addNote(transcript)
-        withAnimation { savedConfirmation = true }
+        withAnimation(DS.Motion.smooth) { savedConfirmation = true }
         Task {
             try? await Task.sleep(nanoseconds: 1_600_000_000)
-            withAnimation { savedConfirmation = false }
+            withAnimation(DS.Motion.smooth) { savedConfirmation = false }
         }
     }
 
@@ -87,6 +87,8 @@ struct VoiceModeView: View {
 
                 orb
                 Text(phaseLabel).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: session.phase)
 
                 Text(session.liveCaption.isEmpty ? " " : session.liveCaption)
                     .font(.system(size: 18)).foregroundStyle(.white)

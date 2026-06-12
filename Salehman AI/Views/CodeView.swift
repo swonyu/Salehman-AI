@@ -1025,7 +1025,7 @@ struct CodeView: View {
                     }
                     Spacer()
                     headerIcon("square.and.pencil", "New chat") {
-                        if !isRunning { withAnimation { messages.removeAll() } }
+                        if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
                     }
                     headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
@@ -1235,7 +1235,7 @@ struct CodeView: View {
             input = ""
             switch a {
             case "shot": attachLatestScreenshot()
-            case "clear": if !isRunning { withAnimation { messages.removeAll() } }
+            case "clear": if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
             case "copy":
                 let md = messages
                     .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
