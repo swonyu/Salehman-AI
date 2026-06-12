@@ -159,6 +159,7 @@ struct MarketsView: View {
                 }
                 if !monitorError.isEmpty {
                     Text(monitorError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
@@ -175,6 +176,7 @@ struct MarketsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
             }
+            .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))

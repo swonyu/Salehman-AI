@@ -849,9 +849,11 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: unslothStudioTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -918,9 +920,11 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: vllmTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -1346,6 +1350,8 @@ struct SettingsView: View {
                 Text(testStatusText(grokTestStatus))
                     .font(.caption2)
                     .foregroundStyle(testStatusColor(grokTestStatus))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: grokTestStatus)
             }
             Spacer()
             Button {
@@ -1616,6 +1622,8 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(testStatusText(status.wrappedValue))
                     .font(.caption2).foregroundStyle(testStatusColor(status.wrappedValue))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: status.wrappedValue)
             }
             Spacer()
             Button {
@@ -1728,6 +1736,8 @@ struct SettingsView: View {
                 Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(testStatusText(geminiTestStatus))
                     .font(.caption2).foregroundStyle(testStatusColor(geminiTestStatus))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: geminiTestStatus)
             }
             Spacer()
             Button {

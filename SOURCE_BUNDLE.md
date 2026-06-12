@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:01 +03 · Swift files: 150 · Swift LOC: 33637_
+_Generated: 2026-06-12 23:03 +03 · Swift files: 150 · Swift LOC: 33649_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22081,7 +22081,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (680 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (682 lines) =====
 ```swift
 import SwiftUI
 
@@ -22244,6 +22244,7 @@ struct MarketsView: View {
                 }
                 if !monitorError.isEmpty {
                     Text(monitorError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
@@ -22260,6 +22261,7 @@ struct MarketsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
             }
+            .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -24248,7 +24250,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2015 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2025 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25101,9 +25103,11 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: unslothStudioTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -25170,9 +25174,11 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: vllmTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -25598,6 +25604,8 @@ struct SettingsView: View {
                 Text(testStatusText(grokTestStatus))
                     .font(.caption2)
                     .foregroundStyle(testStatusColor(grokTestStatus))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: grokTestStatus)
             }
             Spacer()
             Button {
@@ -25868,6 +25876,8 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(testStatusText(status.wrappedValue))
                     .font(.caption2).foregroundStyle(testStatusColor(status.wrappedValue))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: status.wrappedValue)
             }
             Spacer()
             Button {
@@ -25980,6 +25990,8 @@ struct SettingsView: View {
                 Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(testStatusText(geminiTestStatus))
                     .font(.caption2).foregroundStyle(testStatusColor(geminiTestStatus))
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: geminiTestStatus)
             }
             Spacer()
             Button {
@@ -36205,7 +36217,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3547 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3552 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39689,10 +39701,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CZ: status/error text fade-in transitions + test status crossfades (Chat A)
+**What:** Error messages and test-result texts now animate rather than snap. (1) `MarketsView` monitor error text: `.transition(.opacity.combined(with: .offset(y: -4)))` so it slides down from above when an alert monitor error arrives; `.animation(DS.Motion.smooth, value: monitorError.isEmpty)` on the inner VStack drives it. (2) `SettingsView` Unsloth Studio + vLLM test result texts: same slide-from-above transition + `.animation(DS.Motion.smooth, value: testStatus == nil)` on the containing VStack — "Connected ✓" / error text fades in instead of snapping. (3) `SettingsView` persistent test status subtitles (Grok, generic `keyRow`, Gemini): `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` so the subtitle crossfades between "Tap Test..." and "Connected..." states.
+**Files:** `Views/MarketsView.swift`, `Views/SettingsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CY: numericText on unread count + tok/s displays (Chat A)
 **What:** Three live numeric `Text` views now use `.contentTransition(.numericText())` so digits morph instead of snapping when values update. (1) `ContentView` "scroll to latest" button label — `"\(unreadCount) new"` rolls to the updated count as messages arrive while scrolled up; `.animation(DS.Motion.smooth, value: unreadCount)` drives the transition. (2) `CodeView` completed-reply tok/s badge — the local-model speed number in the header blends when set. (3) `CodeView` streaming tok/s in the live right-panel — continuously updating toks/sec in the TimelineView gets numeric morphing.
 **Files:** `Views/ContentView.swift`, `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `6b229a3`
 
 ## 2026-06-12 — marathon CX: animated hover on ChatHistoryView rows + CodeView file rows (Chat A)
 **What:** Two `onHover` handlers that were doing bare state mutation (no `withAnimation`) so the hover highlight snapped: (1) `ChatHistoryView` conversation row background — wrapped assignment in `withAnimation(DS.Motion.magnetic)` so the row tint fades in/out on mouse enter/leave. (2) `CodeView` file panel `fileRow` — same fix; the `hoveredFile` set now fades rather than snapping.
