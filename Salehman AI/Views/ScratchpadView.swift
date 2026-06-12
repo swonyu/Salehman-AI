@@ -23,6 +23,7 @@ struct ScratchpadView: View {
     /// Whether the "X Completed" disclosure group is expanded. Default collapsed
     /// so done tasks don't clutter the active-work view.
     @State private var showCompleted = false
+    @State private var appeared = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -34,14 +35,28 @@ struct ScratchpadView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.lux, value: appeared)
                 Picker("Scratchpad section", selection: $pad) {
                     ForEach(Pad.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .animation(DS.Motion.lux.delay(0.06), value: appeared)
                 addRow
-                if store.tasks.count + store.notes.count > 5 { searchRow }
-                if pad == .tasks { tasksList } else { notesList }
-                if !aiResult.isEmpty { aiResultCard }
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 8)
+                    .animation(DS.Motion.lux.delay(0.10), value: appeared)
+                Group {
+                    if store.tasks.count + store.notes.count > 5 { searchRow }
+                    if pad == .tasks { tasksList } else { notesList }
+                    if !aiResult.isEmpty { aiResultCard }
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 6)
+                .animation(DS.Motion.lux.delay(0.14), value: appeared)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -54,6 +69,7 @@ struct ScratchpadView: View {
         // the user can start typing immediately after the tab switch.
         // scratchpadFocusNotesMode switches the picker to Notes before focusing.
         .onAppear {
+            appeared = true
             if app.focusScratchpadAddFieldRequested {
                 applyFocusTrigger()
             }
@@ -90,9 +106,18 @@ struct ScratchpadView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: pad == .tasks ? "checklist" : "note.text")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {

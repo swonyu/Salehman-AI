@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:38 +03 · Swift files: 150 · Swift LOC: 33287_
+_Generated: 2026-06-12 21:45 +03 · Swift files: 150 · Swift LOC: 33312_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23180,7 +23180,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (596 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (621 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23207,6 +23207,7 @@ struct ScratchpadView: View {
     /// Whether the "X Completed" disclosure group is expanded. Default collapsed
     /// so done tasks don't clutter the active-work view.
     @State private var showCompleted = false
+    @State private var appeared = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -23218,14 +23219,28 @@ struct ScratchpadView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.lux, value: appeared)
                 Picker("Scratchpad section", selection: $pad) {
                     ForEach(Pad.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .animation(DS.Motion.lux.delay(0.06), value: appeared)
                 addRow
-                if store.tasks.count + store.notes.count > 5 { searchRow }
-                if pad == .tasks { tasksList } else { notesList }
-                if !aiResult.isEmpty { aiResultCard }
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 8)
+                    .animation(DS.Motion.lux.delay(0.10), value: appeared)
+                Group {
+                    if store.tasks.count + store.notes.count > 5 { searchRow }
+                    if pad == .tasks { tasksList } else { notesList }
+                    if !aiResult.isEmpty { aiResultCard }
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 6)
+                .animation(DS.Motion.lux.delay(0.14), value: appeared)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -23238,6 +23253,7 @@ struct ScratchpadView: View {
         // the user can start typing immediately after the tab switch.
         // scratchpadFocusNotesMode switches the picker to Notes before focusing.
         .onAppear {
+            appeared = true
             if app.focusScratchpadAddFieldRequested {
                 applyFocusTrigger()
             }
@@ -23274,9 +23290,18 @@ struct ScratchpadView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: pad == .tasks ? "checklist" : "note.text")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
@@ -35855,7 +35880,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3302 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3314 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38287,6 +38312,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** All brand tile icons across the app now have consistent `KeyframeAnimator` pop-in on first appear. Previously only About, Onboarding, Shortcuts, Settings, Memory had it. Agents, Knowledge, and LiveTranscription were the remaining outliers.
 
 **Result:** `KeyframeAnimator` is now the standard brand-tile entrance treatment across all 8 views that have `appeared` state.
+
+---
+
+## 2026-06-12 · Marathon BZ — ScratchpadView staggered entrance + KeyframeAnimator brand tile
+
+**What:** Added `@State private var appeared = false` to `ScratchpadView`; flipped it in `onAppear` alongside the existing focus-trigger logic. Four top-level VStack sections (header, picker, addRow, content group) now cascade in with `DS.Motion.lux` at 0 / 60 / 100 / 140 ms delays — opacity 0→1 + offset 12→0 pt. Brand tile icon (`checklist` / `note.text`) upgraded from a static Image to `KeyframeAnimator(trigger: appeared)` with the standard compress→overshoot→settle chain (0.60 → 1.18 → 1.0).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** ScratchpadView was the last view without an `appeared`-driven entrance. The block-level stagger (sections, not rows) was chosen because task/note rows are inside complex `reorderList`/`listCard` containers where per-row `ForEach(enumerated(...))` would require intrusive refactoring. Four-block cascade gives the same polished feel at lower complexity.
+
+**Result:** All views in the marathon now have entrance animation. ScratchpadView joins the consistent brand-tile KeyframeAnimator treatment.
 
 ---
 ## Standing notes / known issues

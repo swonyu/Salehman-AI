@@ -2431,6 +2431,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `KeyframeAnimator` is now the standard brand-tile entrance treatment across all 8 views that have `appeared` state.
 
 ---
+
+## 2026-06-12 · Marathon BZ — ScratchpadView staggered entrance + KeyframeAnimator brand tile
+
+**What:** Added `@State private var appeared = false` to `ScratchpadView`; flipped it in `onAppear` alongside the existing focus-trigger logic. Four top-level VStack sections (header, picker, addRow, content group) now cascade in with `DS.Motion.lux` at 0 / 60 / 100 / 140 ms delays — opacity 0→1 + offset 12→0 pt. Brand tile icon (`checklist` / `note.text`) upgraded from a static Image to `KeyframeAnimator(trigger: appeared)` with the standard compress→overshoot→settle chain (0.60 → 1.18 → 1.0).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** ScratchpadView was the last view without an `appeared`-driven entrance. The block-level stagger (sections, not rows) was chosen because task/note rows are inside complex `reorderList`/`listCard` containers where per-row `ForEach(enumerated(...))` would require intrusive refactoring. Four-block cascade gives the same polished feel at lower complexity.
+
+**Result:** All views in the marathon now have entrance animation. ScratchpadView joins the consistent brand-tile KeyframeAnimator treatment.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
