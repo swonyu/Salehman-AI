@@ -32,7 +32,10 @@ struct LiveTranscriptionView: View {
                 header
                 controls
 
-                if live.needsScreenPermission { permissionBanner }
+                if live.needsScreenPermission {
+                    permissionBanner
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
 
                 Label(live.status, systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
@@ -46,6 +49,7 @@ struct LiveTranscriptionView: View {
             .padding(22)
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 10)
+            .animation(DS.Motion.smooth, value: live.needsScreenPermission)
         }
         .frame(width: 640, height: 660)
         .preferredColorScheme(.dark)

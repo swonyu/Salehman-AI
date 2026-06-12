@@ -2794,6 +2794,25 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors (xcodebuild grep clean). All KnowledgeView state transitions are now animated end-to-end.
 
 ---
+## 2026-06-13 — Marathon DY: MarketsView + LiveTranscriptionView animation gaps
+
+**What changed:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**LiveTranscriptionView:**
+- Permission banner (`if live.needsScreenPermission { permissionBanner }`): added `.transition(.opacity.combined(with: .offset(y: -4)))` on the banner and `.animation(DS.Motion.smooth, value: live.needsScreenPermission)` to the parent VStack — the screen-permission prompt now slides in from above rather than hard-cutting.
+
+**MarketsView:**
+- `sampleBanner`: added `.transition(.opacity.combined(with: .offset(y: -4)))` to the `if store.isSampleData` block and `.animation(DS.Motion.smooth, value: store.isSampleData)` to the parent VStack — sample-data notice fades out when real data loads.
+- `alertsSection`: added `.transition(.opacity)` to both the empty-state Text and the alert VStack; added `.animation(DS.Motion.smooth, value: alertSignals.isEmpty)` to the outer VStack — alerts list crossfades with the placeholder text.
+- `portfolioSection`: same treatment — `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: portfolio.positions.isEmpty)` on the outer VStack.
+- `heatmap`: added `.transition(.opacity)` to the `emptyState` and the `LazyVGrid` branches; added `.animation(DS.Motion.smooth, value: store.symbols.isEmpty)` to the parent Group.
+- `signalList`: added `.transition(.opacity)` to the `emptyState` branch — the existing `.animation(DS.Motion.smooth, value: store.symbols.count)` on the VStack already provides animation context.
+
+**Why:** All these conditionals had animation context for per-row changes (via `ForEach` items' `.transition`) but no context for the top-level empty ↔ populated branch switches — first data load and data-clear both hard-cut.
+
+**Result:** Zero Swift compilation errors. All MarketsView and LiveTranscriptionView state transitions are now animated end-to-end.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

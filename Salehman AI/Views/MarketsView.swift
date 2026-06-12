@@ -45,6 +45,7 @@ struct MarketsView: View {
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 8)
                             .animation(DS.Motion.lux.delay(0.05), value: appeared)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
                     }
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
@@ -55,6 +56,7 @@ struct MarketsView: View {
                         .offset(y: appeared ? 0 : 6)
                         .animation(DS.Motion.lux.delay(0.12), value: appeared)
                 }
+                .animation(DS.Motion.smooth, value: store.isSampleData)
                 .padding(DS.Space.xl)
                 // Centered content column, same as the chat surfaces.
                 .frame(maxWidth: 780, alignment: .leading)
@@ -184,9 +186,10 @@ struct MarketsView: View {
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if alertSignals.isEmpty {
-                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
+                Text(“No strong signals right now — mostly Hold. Tap “Check now” to scan again.”)
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
                     ForEach(alertSignals, id: \.symbol) {
@@ -198,8 +201,10 @@ struct MarketsView: View {
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: alertSignals.isEmpty)
     }
 
     private func signalAlertRow(_ s: StockSageSignal) -> some View {
@@ -263,6 +268,7 @@ struct MarketsView: View {
                 Text("No holdings yet — add one above to track value & P&L.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
                     ForEach(portfolio.positions) {
@@ -274,8 +280,10 @@ struct MarketsView: View {
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: portfolio.positions.isEmpty)
     }
 
     private var portfolioSummary: some View {
@@ -386,6 +394,7 @@ struct MarketsView: View {
         Group {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                     ForEach(store.symbols) { sym in
@@ -422,8 +431,10 @@ struct MarketsView: View {
                     }
                 }
                 .animation(DS.Motion.smooth, value: store.symbols.count)
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.symbols.isEmpty)
     }
 
     /// Tile color: green-to-red by change magnitude (gain → green, loss → red,
@@ -440,6 +451,7 @@ struct MarketsView: View {
         VStack(spacing: DS.Space.sm) {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 HStack {
                     Spacer()

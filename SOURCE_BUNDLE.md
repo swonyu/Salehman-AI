@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:40 +03 · Swift files: 150 · Swift LOC: 33869_
+_Generated: 2026-06-13 00:42 +03 · Swift files: 150 · Swift LOC: 33885_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21433,7 +21433,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (324 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (328 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21469,7 +21469,10 @@ struct LiveTranscriptionView: View {
                 header
                 controls
 
-                if live.needsScreenPermission { permissionBanner }
+                if live.needsScreenPermission {
+                    permissionBanner
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
 
                 Label(live.status, systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
@@ -21483,6 +21486,7 @@ struct LiveTranscriptionView: View {
             .padding(22)
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 10)
+            .animation(DS.Motion.smooth, value: live.needsScreenPermission)
         }
         .frame(width: 640, height: 660)
         .preferredColorScheme(.dark)
@@ -22219,7 +22223,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (687 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (699 lines) =====
 ```swift
 import SwiftUI
 
@@ -22268,6 +22272,7 @@ struct MarketsView: View {
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 8)
                             .animation(DS.Motion.lux.delay(0.05), value: appeared)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
                     }
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
@@ -22278,6 +22283,7 @@ struct MarketsView: View {
                         .offset(y: appeared ? 0 : 6)
                         .animation(DS.Motion.lux.delay(0.12), value: appeared)
                 }
+                .animation(DS.Motion.smooth, value: store.isSampleData)
                 .padding(DS.Space.xl)
                 // Centered content column, same as the chat surfaces.
                 .frame(maxWidth: 780, alignment: .leading)
@@ -22407,9 +22413,10 @@ struct MarketsView: View {
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if alertSignals.isEmpty {
-                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
+                Text(“No strong signals right now — mostly Hold. Tap “Check now” to scan again.”)
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
                     ForEach(alertSignals, id: \.symbol) {
@@ -22421,8 +22428,10 @@ struct MarketsView: View {
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: alertSignals.isEmpty)
     }
 
     private func signalAlertRow(_ s: StockSageSignal) -> some View {
@@ -22486,6 +22495,7 @@ struct MarketsView: View {
                 Text("No holdings yet — add one above to track value & P&L.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
                     ForEach(portfolio.positions) {
@@ -22497,8 +22507,10 @@ struct MarketsView: View {
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: portfolio.positions.isEmpty)
     }
 
     private var portfolioSummary: some View {
@@ -22609,6 +22621,7 @@ struct MarketsView: View {
         Group {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                     ForEach(store.symbols) { sym in
@@ -22645,8 +22658,10 @@ struct MarketsView: View {
                     }
                 }
                 .animation(DS.Motion.smooth, value: store.symbols.count)
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.symbols.isEmpty)
     }
 
     /// Tile color: green-to-red by change magnitude (gain → green, loss → red,
@@ -22663,6 +22678,7 @@ struct MarketsView: View {
         VStack(spacing: DS.Space.sm) {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 HStack {
                     Spacer()
@@ -36437,7 +36453,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3837 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3856 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39232,6 +39248,25 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** KnowledgeView had several conditionals that appeared/disappeared with hard cuts — the spinner swaps in buttons, the drop-target overlay, and the empty ↔ populated document section transitions all needed animation context and `.transition` declarations.
 
 **Result:** Zero Swift compilation errors (xcodebuild grep clean). All KnowledgeView state transitions are now animated end-to-end.
+
+---
+## 2026-06-13 — Marathon DY: MarketsView + LiveTranscriptionView animation gaps
+
+**What changed:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**LiveTranscriptionView:**
+- Permission banner (`if live.needsScreenPermission { permissionBanner }`): added `.transition(.opacity.combined(with: .offset(y: -4)))` on the banner and `.animation(DS.Motion.smooth, value: live.needsScreenPermission)` to the parent VStack — the screen-permission prompt now slides in from above rather than hard-cutting.
+
+**MarketsView:**
+- `sampleBanner`: added `.transition(.opacity.combined(with: .offset(y: -4)))` to the `if store.isSampleData` block and `.animation(DS.Motion.smooth, value: store.isSampleData)` to the parent VStack — sample-data notice fades out when real data loads.
+- `alertsSection`: added `.transition(.opacity)` to both the empty-state Text and the alert VStack; added `.animation(DS.Motion.smooth, value: alertSignals.isEmpty)` to the outer VStack — alerts list crossfades with the placeholder text.
+- `portfolioSection`: same treatment — `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: portfolio.positions.isEmpty)` on the outer VStack.
+- `heatmap`: added `.transition(.opacity)` to the `emptyState` and the `LazyVGrid` branches; added `.animation(DS.Motion.smooth, value: store.symbols.isEmpty)` to the parent Group.
+- `signalList`: added `.transition(.opacity)` to the `emptyState` branch — the existing `.animation(DS.Motion.smooth, value: store.symbols.count)` on the VStack already provides animation context.
+
+**Why:** All these conditionals had animation context for per-row changes (via `ForEach` items' `.transition`) but no context for the top-level empty ↔ populated branch switches — first data load and data-clear both hard-cut.
+
+**Result:** Zero Swift compilation errors. All MarketsView and LiveTranscriptionView state transitions are now animated end-to-end.
 
 ---
 ## Standing notes / known issues
