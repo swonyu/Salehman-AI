@@ -73,16 +73,28 @@ struct TabSwitcherBar: View {
             HStack(spacing: 8) {
                 // Notes + Knowledge — compact corner tabs (owner directive:
                 // "really small like the copy button", in the old market-pill
-                // spot). Same metrics as the Settings gear; the brand-filled
-                // circle marks the selected tab (the pill row's sliding
-                // highlight simply rests while a corner tab is active).
-                ForEach(AppTab.corner.filter { !AppTab.hidden.contains($0) }) { tab in
-                    CircleIconButton(systemName: tab.icon,
-                                     size: 28, iconSize: 13,
-                                     filled: selection == tab,
-                                     help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
-                                     accessibilityLabel: tab.title) {
-                        withAnimation(DS.Motion.snappy) { selection = tab }
+                // spot). Same 28pt metric line as the Settings gear; the
+                // brand-filled circle marks the selected tab (the pill row's
+                // sliding highlight simply rests while a corner tab is active).
+                //
+                // Sizing/spacing pass (owner → design chat, 2026-06-12): the
+                // nav PAIR groups tighter (6pt) than the outer cluster gap
+                // (8pt + divider padding ≈ 10pt) — Gestalt proximity: siblings
+                // hug, zones breathe. Unselected nav tint is white@0.70 to
+                // match the unselected pills' documented brightening (the
+                // gear deliberately stays quieter `.secondary`: navigation
+                // reads one step brighter than utility).
+                let cornerTabs = AppTab.corner.filter { !AppTab.hidden.contains($0) }
+                HStack(spacing: 6) {
+                    ForEach(cornerTabs) { tab in
+                        CircleIconButton(systemName: tab.icon,
+                                         size: 28, iconSize: 13,
+                                         tint: Color.white.opacity(0.70),
+                                         filled: selection == tab,
+                                         help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
+                                         accessibilityLabel: tab.title) {
+                            withAnimation(DS.Motion.snappy) { selection = tab }
+                        }
                     }
                 }
 
@@ -117,6 +129,20 @@ struct TabSwitcherBar: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Market")
                 .accessibilityValue(market.session.isOpen ? "Open" : "Closed")
+                }
+
+                // Hairline divider: navigation/status zone ◦ utility zone. The
+                // gear opens a sheet; the circles to its left change tabs —
+                // the separator keeps three identical circles from reading as
+                // one undifferentiated row (macOS toolbar grouping convention).
+                // Decorative only, so it's hidden from accessibility; guarded
+                // so it never floats alone if every left-zone item is hidden.
+                if !cornerTabs.isEmpty || !AppTab.hidden.contains(.markets) {
+                    RoundedRectangle(cornerRadius: 0.5)
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, 2)
+                        .accessibilityHidden(true)
                 }
 
                 // Settings — moved up from the chat header per owner request so it's

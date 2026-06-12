@@ -12,7 +12,8 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var archives: [ChatStore.ArchivedChat] = []
+    @State private var archives: [ChatStore.ArchivedChat] =
+        ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
     @State private var query = ""
     /// Staggered row reveal on open (capped at 8 steps so deep lists don't
@@ -21,7 +22,11 @@ struct ChatHistoryView: View {
     @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
     /// Archive summaries decode up to 100 JSON files — that work now runs
     /// off-main (it was a visible hitch on sheet-open with a deep history).
-    @State private var loaded = false
+    /// QA launches load SYNCHRONOUSLY instead (the `archives` initializer
+    /// above): offscreen renders never pump `.task`, so the capture
+    /// photographed the ProgressView placeholder — the nonBlank probe caught
+    /// it (7 sampled colors). Same gotcha class as the `revealed` pre-flip.
+    @State private var loaded = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).

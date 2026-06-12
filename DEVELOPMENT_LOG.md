@@ -1409,6 +1409,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** repo-wide symbol sweep = zero surviving code references; whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test` → **TEST SUCCEEDED**, 0 failures, all 4 patched suites (BrainRoutingDispatch/SettingsBrainReady/AgentPipelineConcurrency/ToolLoop) re-ran green.
 
+## 2026-06-12 · design(tab-bar): corner-cluster sizing/spacing pass + chat_history QA-capture fix (Chat B)
+
+**Files:** `Views/TabSwitcherBar.swift`, `Views/ChatHistoryView.swift`
+
+**Corner cluster (Chat D's owner handoff — "send it chat for sizing and spacing"):** the Notes/Knowledge corner tabs and the Settings gear rendered as three identical 28pt circles at uniform 8pt gaps — navigation and utility undifferentiated. Pass: (1) nav PAIR groups tighter (6pt inner vs ~10pt outer — Gestalt proximity: siblings hug, zones breathe); (2) hairline divider (1×16, white@0.10, `accessibilityHidden`, guarded against floating alone if the left zone is ever all-hidden) between the nav/status zone and the gear — macOS toolbar grouping convention; (3) unselected nav tint white@0.70 matching the pill row's documented brightening, gear stays quieter `.secondary` (brightness encodes the same nav-vs-utility split the divider draws). Kept the 28pt/13pt metric line. **Verified by eyes on the live app** (fresh `screencapture` of the running window — `window_0_live` is a stale Jun-11 baseline, per the handoff warning): pair-divider-gear rhythm renders exactly as designed.
+
+**chat_history QA regression (found in the same run, my own marathon change):** moving the archive decode off-main behind `.task` + ProgressView (perf fix) broke the offscreen QA capture — `.task` never pumps in offscreen renders, so the capture photographed the spinner; the nonBlank probe caught it (`7 distinct sampled colors`, Δ1.08% FAIL). Fix: QA launches (`--qa`) load archives SYNCHRONOUSLY via the `@State` initializers (`archives`/`loaded` pre-set) — same gotcha class and same pattern as the existing `revealed` pre-flip and the eager `transcriptStack`. Re-ran the full capture cycle: **FAILURES: none — all surfaces pass**, chat_history Δ0.00%.
+
+**Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 04:00 +03 · Swift files: 150 · Swift LOC: 30637_
+_Generated: 2026-06-12 04:14 +03 · Swift files: 150 · Swift LOC: 30668_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14056,7 +14056,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (159 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (164 lines) =====
 ```swift
 import SwiftUI
 
@@ -14072,7 +14072,8 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var archives: [ChatStore.ArchivedChat] = []
+    @State private var archives: [ChatStore.ArchivedChat] =
+        ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
     @State private var query = ""
     /// Staggered row reveal on open (capped at 8 steps so deep lists don't
@@ -14081,7 +14082,11 @@ struct ChatHistoryView: View {
     @State private var revealed = ProcessInfo.processInfo.arguments.contains("--qa")
     /// Archive summaries decode up to 100 JSON files — that work now runs
     /// off-main (it was a visible hitch on sheet-open with a deep history).
-    @State private var loaded = false
+    /// QA launches load SYNCHRONOUSLY instead (the `archives` initializer
+    /// above): offscreen renders never pump `.task`, so the capture
+    /// photographed the ProgressView placeholder — the nonBlank probe caught
+    /// it (7 sampled colors). Same gotcha class as the `revealed` pre-flip.
+    @State private var loaded = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// Title filter — case/diacritic-insensitive substring; blank = everything.
     /// Pure for tests (same pattern as the Knowledge/Agents filters).
@@ -24622,7 +24627,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (193 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (219 lines) =====
 ```swift
 import SwiftUI
 
@@ -24699,16 +24704,28 @@ struct TabSwitcherBar: View {
             HStack(spacing: 8) {
                 // Notes + Knowledge — compact corner tabs (owner directive:
                 // "really small like the copy button", in the old market-pill
-                // spot). Same metrics as the Settings gear; the brand-filled
-                // circle marks the selected tab (the pill row's sliding
-                // highlight simply rests while a corner tab is active).
-                ForEach(AppTab.corner.filter { !AppTab.hidden.contains($0) }) { tab in
-                    CircleIconButton(systemName: tab.icon,
-                                     size: 28, iconSize: 13,
-                                     filled: selection == tab,
-                                     help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
-                                     accessibilityLabel: tab.title) {
-                        withAnimation(DS.Motion.snappy) { selection = tab }
+                // spot). Same 28pt metric line as the Settings gear; the
+                // brand-filled circle marks the selected tab (the pill row's
+                // sliding highlight simply rests while a corner tab is active).
+                //
+                // Sizing/spacing pass (owner → design chat, 2026-06-12): the
+                // nav PAIR groups tighter (6pt) than the outer cluster gap
+                // (8pt + divider padding ≈ 10pt) — Gestalt proximity: siblings
+                // hug, zones breathe. Unselected nav tint is white@0.70 to
+                // match the unselected pills' documented brightening (the
+                // gear deliberately stays quieter `.secondary`: navigation
+                // reads one step brighter than utility).
+                let cornerTabs = AppTab.corner.filter { !AppTab.hidden.contains($0) }
+                HStack(spacing: 6) {
+                    ForEach(cornerTabs) { tab in
+                        CircleIconButton(systemName: tab.icon,
+                                         size: 28, iconSize: 13,
+                                         tint: Color.white.opacity(0.70),
+                                         filled: selection == tab,
+                                         help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
+                                         accessibilityLabel: tab.title) {
+                            withAnimation(DS.Motion.snappy) { selection = tab }
+                        }
                     }
                 }
 
@@ -24743,6 +24760,20 @@ struct TabSwitcherBar: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Market")
                 .accessibilityValue(market.session.isOpen ? "Open" : "Closed")
+                }
+
+                // Hairline divider: navigation/status zone ◦ utility zone. The
+                // gear opens a sheet; the circles to its left change tabs —
+                // the separator keeps three identical circles from reading as
+                // one undifferentiated row (macOS toolbar grouping convention).
+                // Decorative only, so it's hidden from accessibility; guarded
+                // so it never floats alone if every left-zone item is hidden.
+                if !cornerTabs.isEmpty || !AppTab.hidden.contains(.markets) {
+                    RoundedRectangle(cornerRadius: 0.5)
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, 2)
+                        .accessibilityHidden(true)
                 }
 
                 // Settings — moved up from the chat header per owner request so it's
@@ -32113,7 +32144,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (134 lines) =====
+===== FILE: COORDINATION.md (135 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -32177,7 +32208,8 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 
 | Session/Tab | Claimed Files (be specific) | Since | Status / Current Work Item | Released? |
 |-------------|-----------------------------|-------|----------------------------|-----------|
-| **Claude Chat B — DEEPSEEK REMOVAL (2026-06-12 ~04:0x)** | `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/SalehmanPersona.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift` (owner-directed REMOVAL of deepSeek entries — exception to append-only), `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift` (1 hit), `Knowledge/ExternalToolsKnowledge.swift` (1 hit), tests: `BrainRoutingDispatchTests`, `SettingsBrainReadyTests`, `AgentPipelineConcurrencyTests`, `ToolLoopTests` | now | **Owner: "remove deepseek."** Removing the DIRECT DeepSeek API provider end-to-end (`.deepSeek` BrainPreference + `CloudProvider.deepSeek` + `DeepSeekClient` + `deepSeekAPIKey` + Settings UI + race rosters + paid-backstop rungs + stored Keychain item). NVIDIA NIM free DeepSeek-V4 tier STAYS (different provider/key — `.salehman`'s $0 ladder). Will leave green: typecheck + canonical xcodebuild test before release. | no |
+| **Claude Chat B — CORNER-TAB SIZING (2026-06-12 ~04:3x)** | `Views/TabSwitcherBar.swift` + `Views/ChatHistoryView.swift` (QA fix found en route) | now | **DONE.** Handoff executed: nav pair tightened to 6pt, hairline divider (1×16 white@0.10, a11y-hidden, guarded) before the gear, unselected nav tint white@0.70 (gear stays `.secondary` — brightness encodes nav-vs-utility). 28pt metric line kept. Eyes-verified on the live window (fresh screencapture — NOT the stale window_0_live). Bonus: fixed MY chat_history QA regression (off-main `.task` load → capture photographed the spinner; QA launches now load synchronously). Full cycle: **FAILURES: none**, build SUCCEEDED. | **released** |
+| **Claude Chat B — DEEPSEEK REMOVAL (2026-06-12 ~04:0x)** | `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/SalehmanPersona.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift` (owner-directed REMOVAL of deepSeek entries — exception to append-only), `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift` (1 hit), `Knowledge/ExternalToolsKnowledge.swift` (1 hit), tests: `BrainRoutingDispatchTests`, `SettingsBrainReadyTests`, `AgentPipelineConcurrencyTests`, `ToolLoopTests` | now | **Owner: "remove deepseek." DONE.** DIRECT DeepSeek API provider removed end-to-end (13 app files + 4 test files; stored Keychain item deleted). NVIDIA NIM free DeepSeek-V4 tier kept (`.salehman`'s $0 ladder — now entirely free-tier, paid backstop gone). Heads-up routing/Settings owners: `CloudProvider` is 9 cases now, `BrainPreference.deepSeek` is gone (stored prefs fall back to `.salehman`), `BrainReadiness.deepSeek` flag removed. Verified: symbol sweep clean, typecheck EXIT 0, canonical `xcodebuild test` **TEST SUCCEEDED** 0 failures. | **released** |
 | Codex CLI | Build unblock: moved untracked non-app artifacts out of synchronized `Salehman AI/` app source root; docs touched `COORDINATION.md`, `DEVELOPMENT_LOG.md` | 2026-06-08 | Duplicate Xcode build inputs fixed; build + `Salehman AITests` green. | **released** |
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
 | **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Shipped so far: ✅1 slash commands `38c38a8` ✅2 edit-and-resend `a32c411` ✅3 quote-reply + Esc `5cdc39a` ✅4 slash UI tests `eb5e00d` ✅5 multi-attachments `edfa32e` (merge-at-submit — pipeline untouched) ✅6 prompt-slash + draft persistence `490891f` + gallery quote sample `85ffa4b`. 18 new unit tests in `ChatComposerLogicTests` (thanks for the `import Foundation` catch, whoever built it) + 2 UI flows. PROJECT_CONTEXT chat rows refreshed. Second half: ✅7 PROJECT_CONTEXT sync `fd65594` ✅8 inline Retry on failure rows `4a2621a` ✅9 slash ↑/↓ keyboard nav `5fb2deb` ✅10 right-click context menus `da25c59` ✅11 **CONVERSATION HISTORY** `50fd398` (new chat ARCHIVES to `chats/*.json`, NEW `Views/ChatHistoryView.swift` sheet + header clock + `/history`, restore is symmetric-archive) + `chat_history` QA surface. Now 26 unit tests in `ChatComposerLogicTests` + 8 UI flows. chat_samples drift eyes-verified + baselines adopted (post-adopt cycle: failures `[]`, all within budget). Finale: ✅12 reply-stats tooltip `8b44b44` ✅13 history UI flow + a11y `e2d0e19` ✅14 archive prune(100) `974cfdf` ✅15 welcome history link + honest /clear copy `91f4423` ✅16 **adversarial self-review fixes `82f55ad`** (multi-load race → counter; restore-under-stream → stop first). FINAL TALLY: 16 slices, ~30 unit tests + 9 UI flows, conversation history + slash commands + multi-attachments + edit/quote/retry shipped; all typecheck-green, pictures verified, baselines adopted. ⚠️ STILL OWED by a build-capable session: one `AITests` + `Salehman AIUITests` run (sandbox can't execute tests — written conservative, mirrors existing idioms). False-alarm note: the 21.7% `agents` drift was MY image-preview inverting a dark PNG — raw pixels/histogram confirm the capture is healthy dark (your `4d3deb6` polish, passing); no action needed. | **released** |
@@ -33186,7 +33218,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2233 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2243 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34597,6 +34629,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Migration safety:** `brainPreferenceCurrent` falls back to `.salehman` for the removed rawValue; `rotationBrains` compactMaps it away; the freeAuto cooldown bookkeeping keyed by rawValue simply never sees "DeepSeek" again. The historic ensemble counted-but-not-rostered DeepSeek drift dissolved with the provider.
 
 **Verification:** repo-wide symbol sweep = zero surviving code references; whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test` → **TEST SUCCEEDED**, 0 failures, all 4 patched suites (BrainRoutingDispatch/SettingsBrainReady/AgentPipelineConcurrency/ToolLoop) re-ran green.
+
+## 2026-06-12 · design(tab-bar): corner-cluster sizing/spacing pass + chat_history QA-capture fix (Chat B)
+
+**Files:** `Views/TabSwitcherBar.swift`, `Views/ChatHistoryView.swift`
+
+**Corner cluster (Chat D's owner handoff — "send it chat for sizing and spacing"):** the Notes/Knowledge corner tabs and the Settings gear rendered as three identical 28pt circles at uniform 8pt gaps — navigation and utility undifferentiated. Pass: (1) nav PAIR groups tighter (6pt inner vs ~10pt outer — Gestalt proximity: siblings hug, zones breathe); (2) hairline divider (1×16, white@0.10, `accessibilityHidden`, guarded against floating alone if the left zone is ever all-hidden) between the nav/status zone and the gear — macOS toolbar grouping convention; (3) unselected nav tint white@0.70 matching the pill row's documented brightening, gear stays quieter `.secondary` (brightness encodes the same nav-vs-utility split the divider draws). Kept the 28pt/13pt metric line. **Verified by eyes on the live app** (fresh `screencapture` of the running window — `window_0_live` is a stale Jun-11 baseline, per the handoff warning): pair-divider-gear rhythm renders exactly as designed.
+
+**chat_history QA regression (found in the same run, my own marathon change):** moving the archive decode off-main behind `.task` + ProgressView (perf fix) broke the offscreen QA capture — `.task` never pumps in offscreen renders, so the capture photographed the spinner; the nonBlank probe caught it (`7 distinct sampled colors`, Δ1.08% FAIL). Fix: QA launches (`--qa`) load archives SYNCHRONOUSLY via the `@State` initializers (`archives`/`loaded` pre-set) — same gotcha class and same pattern as the existing `revealed` pre-flip and the eager `transcriptStack`. Re-ran the full capture cycle: **FAILURES: none — all surfaces pass**, chat_history Δ0.00%.
+
+**Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
 
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
