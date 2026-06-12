@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:11 +03 · Swift files: 150 · Swift LOC: 33795_
+_Generated: 2026-06-13 00:14 +03 · Swift files: 150 · Swift LOC: 33805_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13246,7 +13246,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (182 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (187 lines) =====
 ```swift
 import SwiftUI
 
@@ -13365,7 +13365,12 @@ struct AboutView: View {
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
                     VStack(spacing: 1) {
-                        ForEach(capabilities) { cap in capabilityRow(cap) }
+                        ForEach(Array(capabilities.enumerated()), id: \.element.id) { idx, cap in
+                            capabilityRow(cap)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.06), value: appeared)
+                        }
                     }
                     .background(
                         ZStack {
@@ -26423,7 +26428,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (180 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (185 lines) =====
 ```swift
 import SwiftUI
 
@@ -26531,7 +26536,12 @@ struct ShortcutsView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: DS.Space.lg) {
-                        ForEach(groups) { group in groupSection(group) }
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { idx, group in
+                            groupSection(group)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.07), value: appeared)
+                        }
                     }
                 }
             }
@@ -36363,7 +36373,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3726 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3739 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39034,6 +39044,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DQ: AboutView + ShortcutsView staggered entrance animation
+
+**What changed:**
+- `Views/AboutView.swift`: capability rows now stagger in on appearance — changed `ForEach(capabilities)` to `ForEach(Array(capabilities.enumerated()), id: \.element.id)` and added `.opacity/.offset/.animation(DS.Motion.lux.delay(Double(idx) * 0.06), value: appeared)` at each row call site. Previously all 5 capability rows appeared simultaneously as the parent VStack faded in.
+- `Views/ShortcutsView.swift`: shortcut groups now stagger in on appearance — same enumerated ForEach pattern with `.animation(DS.Motion.lux.delay(Double(idx) * 0.07), value: appeared)` per group section. Previously all 4 groups appeared simultaneously.
+
+**Files:** `Views/AboutView.swift`, `Views/ShortcutsView.swift`
+
+**Why:** Both views had a well-choreographed header entrance (KeyframeAnimator bounce + outer VStack fade) but the list content appeared all at once, breaking the rhythm. The staggered pattern is already established in CommandPalette, MarketsView, and TodayView.
+
+**Result:** AboutView capabilities and ShortcutsView groups now cascade in with 60ms / 70ms inter-item delays on `DS.Motion.lux`, consistent with the rest of the app's entrance choreography.
 
 ---
 ### 2026-06-13 — Marathon DP: ScratchpadView AI button + SettingsView MLX state transitions

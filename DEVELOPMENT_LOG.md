@@ -2670,6 +2670,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
+### 2026-06-13 — Marathon DQ: AboutView + ShortcutsView staggered entrance animation
+
+**What changed:**
+- `Views/AboutView.swift`: capability rows now stagger in on appearance — changed `ForEach(capabilities)` to `ForEach(Array(capabilities.enumerated()), id: \.element.id)` and added `.opacity/.offset/.animation(DS.Motion.lux.delay(Double(idx) * 0.06), value: appeared)` at each row call site. Previously all 5 capability rows appeared simultaneously as the parent VStack faded in.
+- `Views/ShortcutsView.swift`: shortcut groups now stagger in on appearance — same enumerated ForEach pattern with `.animation(DS.Motion.lux.delay(Double(idx) * 0.07), value: appeared)` per group section. Previously all 4 groups appeared simultaneously.
+
+**Files:** `Views/AboutView.swift`, `Views/ShortcutsView.swift`
+
+**Why:** Both views had a well-choreographed header entrance (KeyframeAnimator bounce + outer VStack fade) but the list content appeared all at once, breaking the rhythm. The staggered pattern is already established in CommandPalette, MarketsView, and TodayView.
+
+**Result:** AboutView capabilities and ShortcutsView groups now cascade in with 60ms / 70ms inter-item delays on `DS.Motion.lux`, consistent with the rest of the app's entrance choreography.
+
+---
 ### 2026-06-13 — Marathon DP: ScratchpadView AI button + SettingsView MLX state transitions
 
 **What changed:**

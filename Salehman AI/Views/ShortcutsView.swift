@@ -104,7 +104,12 @@ struct ShortcutsView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: DS.Space.lg) {
-                        ForEach(groups) { group in groupSection(group) }
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { idx, group in
+                            groupSection(group)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.07), value: appeared)
+                        }
                     }
                 }
             }

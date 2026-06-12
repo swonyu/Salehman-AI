@@ -115,7 +115,12 @@ struct AboutView: View {
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
                     VStack(spacing: 1) {
-                        ForEach(capabilities) { cap in capabilityRow(cap) }
+                        ForEach(Array(capabilities.enumerated()), id: \.element.id) { idx, cap in
+                            capabilityRow(cap)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.06), value: appeared)
+                        }
                     }
                     .background(
                         ZStack {
