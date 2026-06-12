@@ -465,6 +465,12 @@ private struct AgentCard: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(isActive ? .white : Color.white.opacity(0.80))
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(isActive ? 0.45 : 0.18),
+                                                    Color.white.opacity(isActive ? 0.08 : 0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             .scaleEffect(hovering ? 1.06 : 1.0)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -513,8 +519,13 @@ private struct AgentCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(isActive ? DS.Palette.accent.opacity(0.45)
-                                 : Color.white.opacity(hovering ? 0.16 : 0.07),
+                .stroke(isActive
+                    ? LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                              DS.Palette.accent.opacity(0.16)],
+                                     startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [Color.white.opacity(hovering ? 0.16 : 0.07),
+                                              Color.white.opacity(hovering ? 0.16 : 0.07)],
+                                     startPoint: .top, endPoint: .bottom),
                         lineWidth: 1)
         )
         .scaleEffect(hovering ? 1.015 : 1.0)

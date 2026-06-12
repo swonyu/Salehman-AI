@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:33 +03 · Swift files: 150 · Swift LOC: 34130_
+_Generated: 2026-06-13 02:36 +03 · Swift files: 150 · Swift LOC: 34151_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13502,7 +13502,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (544 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (555 lines) =====
 ```swift
 import SwiftUI
 
@@ -13971,6 +13971,12 @@ private struct AgentCard: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(isActive ? .white : Color.white.opacity(0.80))
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(isActive ? 0.45 : 0.18),
+                                                    Color.white.opacity(isActive ? 0.08 : 0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             .scaleEffect(hovering ? 1.06 : 1.0)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -14019,8 +14025,13 @@ private struct AgentCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(isActive ? DS.Palette.accent.opacity(0.45)
-                                 : Color.white.opacity(hovering ? 0.16 : 0.07),
+                .stroke(isActive
+                    ? LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                              DS.Palette.accent.opacity(0.16)],
+                                     startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [Color.white.opacity(hovering ? 0.16 : 0.07),
+                                              Color.white.opacity(hovering ? 0.16 : 0.07)],
+                                     startPoint: .top, endPoint: .bottom),
                         lineWidth: 1)
         )
         .scaleEffect(hovering ? 1.015 : 1.0)
@@ -23126,7 +23137,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (365 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (370 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23409,6 +23420,11 @@ struct MemoryView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             Text(fact).font(.system(size: 14))
                 .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
@@ -23816,7 +23832,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (659 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (664 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24227,6 +24243,11 @@ struct ScratchpadView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
@@ -36698,7 +36719,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4147 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4159 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39801,6 +39822,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 - `Views/CodeView.swift`: File/Diff inspector-pane switcher now uses `DSSegmentPicker`.
 
 **Why:** Native macOS `.segmented` picker renders with a light/grey Apple look that clashes with the OLED dark aesthetic. `DSSegmentPicker` matches the dark glass surface language — white pill on dark frosted background with top-lit gradient border, spring animation.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EV: Icon-well depth + AgentCard active border top-lit gradient
+
+**What changed:**
+- `Views/AgentsView.swift`: `AgentCard` — added top-lit gradient stroke overlay to the 42px icon well (`[white@(active?0.45:0.18), white@(active?0.08:0.04)]`). Upgraded card active border from flat `accent.opacity(0.45)` to top-lit `[accent@0.65, accent@0.16]`. Hover/rest card border stays flat-degenerate gradient (uniform brightness = "whole tile lights up").
+- `Views/MemoryView.swift`: Added 0.75pt top-lit gradient stroke `[white@0.20, white@0.04]` to the 24px accent icon well in fact rows.
+- `Views/ScratchpadView.swift`: Same 0.75pt top-lit gradient stroke added to 24px note icon wells.
+
+**Why:** Small icon wells were the only remaining depth-less surfaces in hoverable list rows. Consistent top-lit gradient strokes across all icon well sizes (24px, 36px, 42px) unifies the material language.
 
 **Result:** Zero Swift compiler errors.
 

@@ -3104,6 +3104,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EV: Icon-well depth + AgentCard active border top-lit gradient
+
+**What changed:**
+- `Views/AgentsView.swift`: `AgentCard` — added top-lit gradient stroke overlay to the 42px icon well (`[white@(active?0.45:0.18), white@(active?0.08:0.04)]`). Upgraded card active border from flat `accent.opacity(0.45)` to top-lit `[accent@0.65, accent@0.16]`. Hover/rest card border stays flat-degenerate gradient (uniform brightness = "whole tile lights up").
+- `Views/MemoryView.swift`: Added 0.75pt top-lit gradient stroke `[white@0.20, white@0.04]` to the 24px accent icon well in fact rows.
+- `Views/ScratchpadView.swift`: Same 0.75pt top-lit gradient stroke added to 24px note icon wells.
+
+**Why:** Small icon wells were the only remaining depth-less surfaces in hoverable list rows. Consistent top-lit gradient strokes across all icon well sizes (24px, 36px, 42px) unifies the material language.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
