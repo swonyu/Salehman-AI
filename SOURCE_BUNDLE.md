@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:11 +03 · Swift files: 150 · Swift LOC: 33664_
+_Generated: 2026-06-12 23:24 +03 · Swift files: 150 · Swift LOC: 33672_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17324,7 +17324,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (191 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (192 lines) =====
 ```swift
 import SwiftUI
 
@@ -17490,6 +17490,7 @@ struct CommandPalette: View {
                             Text("No matching commands")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity).padding(.vertical, 28)
+                                .transition(.opacity)
                         }
                     }
                     .animation(DS.Motion.smooth, value: filtered.count)
@@ -22772,7 +22773,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (352 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (359 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22843,20 +22844,23 @@ struct MemoryView: View {
 
                 if facts.isEmpty {
                     emptyState
+                        .transition(.opacity)
                 } else {
                     if facts.count > 1 { controlsRow }
 
                     let shown = sort.apply(facts, filter: query)
-                    if shown.isEmpty {
-                        VStack(spacing: 6) {
-                            Spacer()
-                            Text("No memories match “\(query)”.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        ScrollView {
+                    Group {
+                        if shown.isEmpty {
+                            VStack(spacing: 6) {
+                                Spacer()
+                                Text(“No memories match “\(query)”.”)
+                                    .font(.callout).foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .transition(.opacity)
+                        } else {
+                            ScrollView {
                             VStack(spacing: 1) {
                                 ForEach(Array(shown.enumerated()), id: \.element) { idx, fact in
                                     row(fact)
@@ -22879,7 +22883,10 @@ struct MemoryView: View {
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
+                        .transition(.opacity)
                     }
+                }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
 
                     Button(role: .destructive) { confirmClear = true } label: {
                         Label("Forget everything", systemImage: "trash")
@@ -22890,6 +22897,7 @@ struct MemoryView: View {
                 }
             }
             .padding(DS.Space.xl)
+            .animation(DS.Motion.smooth, value: facts.isEmpty)
         }
         .frame(width: 480, height: 540)
         .preferredColorScheme(.dark)
@@ -36232,7 +36240,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3562 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3567 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39716,10 +39724,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DC: MemoryView + CommandPalette empty-state transitions (Chat A)
+**What:** Two "no results" moments now animate instead of snapping. (1) `MemoryView` search no-match: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }` — each branch gets `.transition(.opacity)` and the Group carries `.animation(DS.Motion.smooth, value: shown.isEmpty)`. Also added `.transition(.opacity)` to `emptyState` + `.animation(.smooth, value: facts.isEmpty)` on the outer VStack for when all memories are cleared. (2) `CommandPalette` "No matching commands" text: `.transition(.opacity)` so it crossfades in as the filter goes empty — the containing LazyVStack already had the needed `.animation(.smooth, value: filtered.count)`.
+**Files:** `Views/MemoryView.swift`, `Views/CommandPalette.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DB: LiveTranscriptionView search + empty state + partial text transitions (Chat A)
 **What:** Three UI moments in `LiveTranscriptionView` that previously snapped now animate. (1) Search-field clear button (×): `.transition(.opacity)` + `.animation(DS.Motion.magnetic, value: searchText.isEmpty)` on the HStack — button fades in/out as user types rather than snapping. (2) Empty-state placeholder text ("Listening…" / "Press Start"): `.transition(.opacity.combined(with: .offset(y: 4)))` + already-present LazyVStack animation drives it up as transcription begins. (3) In-flight partial text row (live: true): `.transition(.opacity)` + new `.animation(DS.Motion.smooth, value: live.partialThem.isEmpty)` on the LazyVStack so the partial bubble fades in when the first syllable arrives and fades out when finalized.
 **Files:** `Views/LiveTranscriptionView.swift`.
-**Commit:** TBD
+**Commit:** `aeba04d`
 
 ## 2026-06-12 — marathon DA: ScratchpadView inline-edit transitions (Chat A)
 **What:** Clicking the edit pencil or pressing Escape in ScratchpadView's task/note rows previously caused an instant snap between `Text` and `TextField`. Three-part fix: (1) `startEdit` and `cancelEdit` now wrap `editingId` mutations in `withAnimation(DS.Motion.smooth)` so SwiftUI's transition engine fires. (2) Both branches of each `if editingId == id { TextField } else { Text }` if/else now carry `.transition(.opacity)` — the label crossfades into the editable field. (3) The conditional `editButton` (shown only when not editing) also gets `.transition(.opacity)` in both task and note rows so the pencil icon fades out when editing begins rather than snapping away.

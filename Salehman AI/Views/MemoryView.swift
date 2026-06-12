@@ -67,20 +67,23 @@ struct MemoryView: View {
 
                 if facts.isEmpty {
                     emptyState
+                        .transition(.opacity)
                 } else {
                     if facts.count > 1 { controlsRow }
 
                     let shown = sort.apply(facts, filter: query)
-                    if shown.isEmpty {
-                        VStack(spacing: 6) {
-                            Spacer()
-                            Text("No memories match “\(query)”.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        ScrollView {
+                    Group {
+                        if shown.isEmpty {
+                            VStack(spacing: 6) {
+                                Spacer()
+                                Text(“No memories match “\(query)”.”)
+                                    .font(.callout).foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .transition(.opacity)
+                        } else {
+                            ScrollView {
                             VStack(spacing: 1) {
                                 ForEach(Array(shown.enumerated()), id: \.element) { idx, fact in
                                     row(fact)
@@ -103,7 +106,10 @@ struct MemoryView: View {
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
+                        .transition(.opacity)
                     }
+                }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
 
                     Button(role: .destructive) { confirmClear = true } label: {
                         Label("Forget everything", systemImage: "trash")
@@ -114,6 +120,7 @@ struct MemoryView: View {
                 }
             }
             .padding(DS.Space.xl)
+            .animation(DS.Motion.smooth, value: facts.isEmpty)
         }
         .frame(width: 480, height: 540)
         .preferredColorScheme(.dark)

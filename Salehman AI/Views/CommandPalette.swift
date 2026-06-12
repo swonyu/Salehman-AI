@@ -162,6 +162,7 @@ struct CommandPalette: View {
                             Text("No matching commands")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity).padding(.vertical, 28)
+                                .transition(.opacity)
                         }
                     }
                     .animation(DS.Motion.smooth, value: filtered.count)
