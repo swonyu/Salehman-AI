@@ -787,7 +787,10 @@ struct CodeView: View {
                             .font(.system(size: 11.5, weight: .semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                            .overlay(Capsule().stroke(
+                                LinearGradient(colors: [DS.Palette.accent.opacity(0.55),
+                                                        DS.Palette.accent.opacity(0.12)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
@@ -927,7 +930,10 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.38), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                            DS.Palette.accent.opacity(0.15)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             }
             .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
             .padding(.top, 2)

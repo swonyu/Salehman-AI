@@ -714,8 +714,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(
-                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(hoveredSuggestion == s.title ? 0.36 : 0.18),
+                                                    Color.white.opacity(hoveredSuggestion == s.title ? 0.06 : 0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(PressableStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
@@ -1192,7 +1194,10 @@ struct ContentView: View {
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
                 .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .frame(maxWidth: 520, alignment: .leading)
                 .transition(.scale(scale: 0.97, anchor: .bottom)

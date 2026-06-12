@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:10 +03 · Swift files: 150 · Swift LOC: 34043_
+_Generated: 2026-06-13 02:12 +03 · Swift files: 150 · Swift LOC: 34059_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14810,7 +14810,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2635 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2641 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15601,7 +15601,10 @@ struct CodeView: View {
                             .font(.system(size: 11.5, weight: .semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                            .overlay(Capsule().stroke(
+                                LinearGradient(colors: [DS.Palette.accent.opacity(0.55),
+                                                        DS.Palette.accent.opacity(0.12)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
@@ -15741,7 +15744,10 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.38), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                            DS.Palette.accent.opacity(0.15)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             }
             .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
             .padding(.top, 2)
@@ -17648,7 +17654,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2851 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2856 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18366,8 +18372,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(
-                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(hoveredSuggestion == s.title ? 0.36 : 0.18),
+                                                    Color.white.opacity(hoveredSuggestion == s.title ? 0.06 : 0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(PressableStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
@@ -18844,7 +18852,10 @@ struct ContentView: View {
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
                 .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .frame(maxWidth: 520, alignment: .leading)
                 .transition(.scale(scale: 0.97, anchor: .bottom)
@@ -26852,7 +26863,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (269 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (274 lines) =====
 ```swift
 import SwiftUI
 
@@ -26922,7 +26933,9 @@ struct TabSwitcherBar: View {
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
 
@@ -27011,7 +27024,10 @@ struct TabSwitcherBar: View {
                 .background(market.session.isOpen ? DS.Palette.successSoft.opacity(0.12) : Color.white.opacity(0.04),
                             in: Capsule())
                 .overlay(
-                    Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
+                    Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(marketHovering ? 0.28 : 0.14),
+                                                Color.white.opacity(marketHovering ? 0.06 : 0.02)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 )
                 .scaleEffect(marketHovering ? 1.04 : 1.0)
                 .animation(DS.Motion.smooth, value: market.session.isOpen)
@@ -36611,7 +36627,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4062 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4076 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39631,6 +39647,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** Every Capsule and RoundedRectangle border in the app has been top-lit (Eyebrow EM, key badges EI, user bubbles EJ); the brain grid cells and the SuperGrok badge were the two remaining flat strokes. Unifying them completes the "light comes from above" depth language across all interactive controls.
 
 **Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EP: top-lit gradient sweep — TabSwitcherBar, ContentView, CodeView
+
+**What changed:**
+- `TabSwitcherBar.swift`: Tab bar container Capsule stroke `white@0.08` → `[white@0.14, white@0.04]` gradient. Markets status pill `white@hover?0.18:0.08` → `[white@hover?0.28:0.14, white@hover?0.06:0.02]`.
+- `ContentView.swift`: Suggestion pill strokes `white@hover?0.22:0.10` → `[white@hover?0.36:0.18, white@hover?0.06:0.02]`. Slash autocomplete menu border `accent@0.28` → `[accent@0.50, accent@0.12]`.
+- `CodeView.swift`: "Review" sidebar CTA pill `accent@0.30` → `[accent@0.55, accent@0.12]`. "Open Folder" empty-state CTA `accent@0.38` → `[accent@0.65, accent@0.15]`.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Continued the top-lit depth language from EM/EO across the main chrome (always-visible tab bar) and the highest-traffic interactive surfaces (suggestion pills, slash menu, sidebar CTA pills). Tab bar is the single most-seen surface in the app — lighting it consistently is highest ROI.
+
+**Result:** Zero Swift compiler errors. 6 flat strokes upgraded across 3 files.
 
 ---
 ## Standing notes / known issues

@@ -3019,6 +3019,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EP: top-lit gradient sweep — TabSwitcherBar, ContentView, CodeView
+
+**What changed:**
+- `TabSwitcherBar.swift`: Tab bar container Capsule stroke `white@0.08` → `[white@0.14, white@0.04]` gradient. Markets status pill `white@hover?0.18:0.08` → `[white@hover?0.28:0.14, white@hover?0.06:0.02]`.
+- `ContentView.swift`: Suggestion pill strokes `white@hover?0.22:0.10` → `[white@hover?0.36:0.18, white@hover?0.06:0.02]`. Slash autocomplete menu border `accent@0.28` → `[accent@0.50, accent@0.12]`.
+- `CodeView.swift`: "Review" sidebar CTA pill `accent@0.30` → `[accent@0.55, accent@0.12]`. "Open Folder" empty-state CTA `accent@0.38` → `[accent@0.65, accent@0.15]`.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Continued the top-lit depth language from EM/EO across the main chrome (always-visible tab bar) and the highest-traffic interactive surfaces (suggestion pills, slash menu, sidebar CTA pills). Tab bar is the single most-seen surface in the app — lighting it consistently is highest ROI.
+
+**Result:** Zero Swift compiler errors. 6 flat strokes upgraded across 3 files.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

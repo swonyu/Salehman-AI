@@ -66,7 +66,9 @@ struct TabSwitcherBar: View {
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
 
@@ -155,7 +157,10 @@ struct TabSwitcherBar: View {
                 .background(market.session.isOpen ? DS.Palette.successSoft.opacity(0.12) : Color.white.opacity(0.04),
                             in: Capsule())
                 .overlay(
-                    Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
+                    Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(marketHovering ? 0.28 : 0.14),
+                                                Color.white.opacity(marketHovering ? 0.06 : 0.02)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 )
                 .scaleEffect(marketHovering ? 1.04 : 1.0)
                 .animation(DS.Motion.smooth, value: market.session.isOpen)
