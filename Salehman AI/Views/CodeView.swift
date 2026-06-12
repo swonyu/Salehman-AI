@@ -771,14 +771,14 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Rescan project files")
+                        .accessibilityLabel("Rescan project files")
                     Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Hide the file tree")
                     .accessibilityLabel("Hide the file tree")
-                        .help("Rescan project files")
-                        .accessibilityLabel("Rescan project files")
                 }
             }
             .padding(10)
@@ -1123,10 +1123,13 @@ struct CodeView: View {
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Close search")
         }
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 7)

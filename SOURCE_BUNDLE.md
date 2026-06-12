@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:33 +03 · Swift files: 150 · Swift LOC: 32449_
+_Generated: 2026-06-12 09:36 +03 · Swift files: 150 · Swift LOC: 32459_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14521,7 +14521,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2509 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2512 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15296,14 +15296,14 @@ struct CodeView: View {
                     .disabled(isRunning)
                     Button { Task { await ws.reload() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Rescan project files")
+                        .accessibilityLabel("Rescan project files")
                     Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Hide the file tree")
                     .accessibilityLabel("Hide the file tree")
-                        .help("Rescan project files")
-                        .accessibilityLabel("Rescan project files")
                 }
             }
             .padding(10)
@@ -15648,10 +15648,13 @@ struct CodeView: View {
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
+                .accessibilityLabel("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Close search")
         }
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 7)
@@ -20818,7 +20821,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (251 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (258 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20987,7 +20990,7 @@ struct LiveTranscriptionView: View {
     private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool) {
         guard searchText.isEmpty else { return }
         if animated {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)) { proxy.scrollTo("bottom", anchor: .bottom) }
         } else {
             proxy.scrollTo("bottom", anchor: .bottom)   // partials: no animation (was a lag source)
         }
@@ -21033,9 +21036,16 @@ struct LiveTranscriptionView: View {
                 guard !text.isEmpty else { return }
                 onAsk(Self.answerPrompt(transcript: text))
                 dismiss()
-            } label: { Label("Answer the questions", systemImage: "sparkles") }
-                .buttonStyle(.borderedProminent)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Answer the questions", systemImage: "sparkles")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Spacer()
             // Honest footer: only say "On-device" when every active recognizer
@@ -35017,7 +35027,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2950 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2962 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37097,6 +37107,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Marathon series AT–AV had established the Escape-to-clear pattern across MemoryView, LiveTranscriptionView, ScratchpadView, ChatHistoryView, and CodeView. This marathon closes the remaining 3 gaps confirmed by cross-file audit.
 
 **Result:** Build not yet run (owner-side); all changes are pure `.onKeyPress` additions with no logic impact.
+
+---
+
+### 2026-06-12 — Marathon AZ: CodeView accessibility bug fix + convo-search labels
+
+**What:** Fixed a real accessibility bug in `CodeView.swift` where `.help("Rescan project files")` and `.accessibilityLabel("Rescan project files")` were accidentally chained onto the sidebar-toggle button instead of the reload button — because in Swift modifier chains, indentation is irrelevant; only statement boundaries matter. The sidebar button had two `.accessibilityLabel` calls (last one wins), giving it the wrong label "Rescan project files" while the reload button had NO label. Fixed by moving the help/label modifiers to immediately follow the reload button. Also added `accessibilityLabel` to the three conversation-search navigation buttons (prev/next match, close) that were missing labels.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** The sidebar button VoiceOver label was wrong ("Rescan project files" instead of "Hide the file tree"), making it inaccessible. Found during a comprehensive icon-only button audit.
+
+**Result:** Build not yet run (owner-side); the bug fix is structural (moving modifiers to the correct statement) with no visual or behavioral impact beyond VoiceOver.
 
 ---
 ## Standing notes / known issues

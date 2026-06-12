@@ -2079,6 +2079,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); all changes are pure `.onKeyPress` additions with no logic impact.
 
 ---
+
+### 2026-06-12 — Marathon AZ: CodeView accessibility bug fix + convo-search labels
+
+**What:** Fixed a real accessibility bug in `CodeView.swift` where `.help("Rescan project files")` and `.accessibilityLabel("Rescan project files")` were accidentally chained onto the sidebar-toggle button instead of the reload button — because in Swift modifier chains, indentation is irrelevant; only statement boundaries matter. The sidebar button had two `.accessibilityLabel` calls (last one wins), giving it the wrong label "Rescan project files" while the reload button had NO label. Fixed by moving the help/label modifiers to immediately follow the reload button. Also added `accessibilityLabel` to the three conversation-search navigation buttons (prev/next match, close) that were missing labels.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** The sidebar button VoiceOver label was wrong ("Rescan project files" instead of "Hide the file tree"), making it inaccessible. Found during a comprehensive icon-only button audit.
+
+**Result:** Build not yet run (owner-side); the bug fix is structural (moving modifiers to the correct statement) with no visual or behavioral impact beyond VoiceOver.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
