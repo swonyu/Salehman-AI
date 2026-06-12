@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:25 +03 · Swift files: 150 · Swift LOC: 33832_
+_Generated: 2026-06-13 00:34 +03 · Swift files: 150 · Swift LOC: 33847_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14772,7 +14772,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2601 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2616 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16069,7 +16069,7 @@ struct CodeView: View {
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                ForEach(welcomeExamples, id: \.text) { ex in
+                ForEach(Array(welcomeExamples.enumerated()), id: \.offset) { idx, ex in
                     // Island architecture: the icon never sits naked next to the
                     // text — it's seated in its own circular wrapper, flush with
                     // the capsule's leading padding. Press = physical compression.
@@ -16089,11 +16089,12 @@ struct CodeView: View {
                     }
                     .buttonStyle(LuxPressStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
+                    .opacity(welcomeContentAppeared ? 1 : 0)
+                    .offset(y: welcomeContentAppeared ? 0 : 10)
+                    .animation(DS.Motion.lux.delay(Double(idx) * 0.05), value: welcomeContentAppeared)
                 }
             }
             .padding(.top, 6)
-            .opacity(welcomeContentAppeared ? 1 : 0)
-            .offset(y: welcomeContentAppeared ? 0 : 10)
             HStack(spacing: 16) {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
@@ -16124,6 +16125,7 @@ struct CodeView: View {
                     }
                 }
                 .padding(.top, 10)
+                .transition(.opacity.combined(with: .offset(y: 4)))
             }
             // The 14B's home: show when the owner's own model is serving locally.
             if let m = localServingModel {
@@ -16133,6 +16135,7 @@ struct CodeView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .frame(maxWidth: .infinity)
@@ -16146,6 +16149,8 @@ struct CodeView: View {
                            startRadius: 0, endRadius: 280)
                 .allowsHitTesting(false)
         }
+        .animation(DS.Motion.smooth, value: ws.recentProjects.isEmpty)
+        .animation(DS.Motion.smooth, value: localServingModel == nil)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -16527,6 +16532,7 @@ struct CodeView: View {
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
+                        .transition(.opacity)
                 }
                 // Live elapsed readout — long local runs are minutes of silence
                 // otherwise; a ticking clock shows the run is alive.
@@ -16548,6 +16554,7 @@ struct CodeView: View {
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary.opacity(0.85))
                     }
+                    .transition(.opacity)
                 }
                 Spacer()
                 Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
@@ -16557,13 +16564,19 @@ struct CodeView: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Close this panel").accessibilityLabel("Close the activity panel")
             }
+            .animation(DS.Motion.smooth, value: isRunning)
             .padding(.horizontal, 10).frame(height: 34)
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             VSplitView {
                 VStack(spacing: 0) {
                     activitySection.frame(minHeight: 90)
-                    if !ws.changedFiles.isEmpty { changedFilesList }
+                        .animation(DS.Motion.smooth, value: isRunning && !progress.steps.isEmpty)
+                    if !ws.changedFiles.isEmpty {
+                        changedFilesList
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.isEmpty)
                 inspectorPane.frame(minHeight: 150)
             }
         }
@@ -16674,10 +16687,12 @@ struct CodeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DS.Palette.codeSurfaceSide)
+            .transition(.opacity)
         } else {
             activityIdle
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DS.Palette.codeSurfaceSide)
+                .transition(.opacity)
         }
     }
 
@@ -36400,7 +36415,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3802 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3819 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39160,6 +39175,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** ScratchpadView's AI button icon snapped between sparkles and spinner with no transition. SettingsView's MLX engine row showed hard swaps between progress bar, spinner, and "Ready" label as the local model loaded — the `switch` cases lacked transitions so SwiftUI just replaced them instantly.
 
 **Result:** AI button and MLX status row now use smooth DS.Motion.smooth crossfades throughout their state lifecycles.
+
+---
+## 2026-06-13 — Marathon DW: CodeView rightPanel + welcome section transitions
+
+**What changed:** `Salehman AI/Views/CodeView.swift`
+
+- **rightPanel header**: added `.transition(.opacity)` on the step-counter badge and the `TimelineView` elapsed-timer block; added `.animation(DS.Motion.smooth, value: isRunning)` to the header HStack so both conditionals animate in/out as a run starts or stops.
+- **activitySection**: added `.transition(.opacity)` to both branches (ScrollView of steps + activityIdle placeholder) so the idle ↔ active swap crossfades rather than hard-cuts.
+- **changedFilesList**: added `.transition(.opacity.combined(with: .offset(y: 6)))` to the `if !ws.changedFiles.isEmpty` conditional and `.animation(DS.Motion.smooth, value: ws.changedFiles.isEmpty)` to the parent VStack — the file-changes panel now slides in from below when edits accumulate.
+- **welcome chips**: changed `ForEach(welcomeExamples, id: \.text)` to `ForEach(Array(welcomeExamples.enumerated()), id: \.offset)` and moved `opacity`/`offset` from the batch HStack-level to per-chip with `DS.Motion.lux.delay(Double(idx) * 0.05)` — chips now stagger in one by one on welcome appearance, matching the pattern used in AboutView, ShortcutsView, and CommandPalette.
+- **welcome recents strip**: added `.transition(.opacity.combined(with: .offset(y: 4)))` to the recent-projects HStack.
+- **welcome localServingModel badge**: added `.transition(.opacity.combined(with: .offset(y: -4)))` to the local-model HStack.
+- **welcome outer VStack**: added `.animation(DS.Motion.smooth, value: ws.recentProjects.isEmpty)` and `.animation(DS.Motion.smooth, value: localServingModel == nil)` to drive both welcome conditionals.
+
+**Why:** CodeView's rightPanel and welcome section had several orphaned conditionals that appeared/disappeared with hard cuts — no `.transition` and no parent animation context. The `TimelineView` periodic re-render doesn't install a SwiftUI animation transaction, so that site needed an explicit `.animation(value:)` pair.
+
+**Result:** Zero Swift compilation errors (`xcodebuild` grep for `.swift: error:` returns empty). All CodeView motion sites now animated end-to-end.
 
 ---
 ## Standing notes / known issues

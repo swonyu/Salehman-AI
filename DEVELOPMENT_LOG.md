@@ -2759,6 +2759,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** AI button and MLX status row now use smooth DS.Motion.smooth crossfades throughout their state lifecycles.
 
 ---
+## 2026-06-13 — Marathon DW: CodeView rightPanel + welcome section transitions
+
+**What changed:** `Salehman AI/Views/CodeView.swift`
+
+- **rightPanel header**: added `.transition(.opacity)` on the step-counter badge and the `TimelineView` elapsed-timer block; added `.animation(DS.Motion.smooth, value: isRunning)` to the header HStack so both conditionals animate in/out as a run starts or stops.
+- **activitySection**: added `.transition(.opacity)` to both branches (ScrollView of steps + activityIdle placeholder) so the idle ↔ active swap crossfades rather than hard-cuts.
+- **changedFilesList**: added `.transition(.opacity.combined(with: .offset(y: 6)))` to the `if !ws.changedFiles.isEmpty` conditional and `.animation(DS.Motion.smooth, value: ws.changedFiles.isEmpty)` to the parent VStack — the file-changes panel now slides in from below when edits accumulate.
+- **welcome chips**: changed `ForEach(welcomeExamples, id: \.text)` to `ForEach(Array(welcomeExamples.enumerated()), id: \.offset)` and moved `opacity`/`offset` from the batch HStack-level to per-chip with `DS.Motion.lux.delay(Double(idx) * 0.05)` — chips now stagger in one by one on welcome appearance, matching the pattern used in AboutView, ShortcutsView, and CommandPalette.
+- **welcome recents strip**: added `.transition(.opacity.combined(with: .offset(y: 4)))` to the recent-projects HStack.
+- **welcome localServingModel badge**: added `.transition(.opacity.combined(with: .offset(y: -4)))` to the local-model HStack.
+- **welcome outer VStack**: added `.animation(DS.Motion.smooth, value: ws.recentProjects.isEmpty)` and `.animation(DS.Motion.smooth, value: localServingModel == nil)` to drive both welcome conditionals.
+
+**Why:** CodeView's rightPanel and welcome section had several orphaned conditionals that appeared/disappeared with hard cuts — no `.transition` and no parent animation context. The `TimelineView` periodic re-render doesn't install a SwiftUI animation transaction, so that site needed an explicit `.animation(value:)` pair.
+
+**Result:** Zero Swift compilation errors (`xcodebuild` grep for `.swift: error:` returns empty). All CodeView motion sites now animated end-to-end.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

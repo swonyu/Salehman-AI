@@ -1293,7 +1293,7 @@ struct CodeView: View {
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                ForEach(welcomeExamples, id: \.text) { ex in
+                ForEach(Array(welcomeExamples.enumerated()), id: \.offset) { idx, ex in
                     // Island architecture: the icon never sits naked next to the
                     // text — it's seated in its own circular wrapper, flush with
                     // the capsule's leading padding. Press = physical compression.
@@ -1313,11 +1313,12 @@ struct CodeView: View {
                     }
                     .buttonStyle(LuxPressStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
+                    .opacity(welcomeContentAppeared ? 1 : 0)
+                    .offset(y: welcomeContentAppeared ? 0 : 10)
+                    .animation(DS.Motion.lux.delay(Double(idx) * 0.05), value: welcomeContentAppeared)
                 }
             }
             .padding(.top, 6)
-            .opacity(welcomeContentAppeared ? 1 : 0)
-            .offset(y: welcomeContentAppeared ? 0 : 10)
             HStack(spacing: 16) {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
@@ -1348,6 +1349,7 @@ struct CodeView: View {
                     }
                 }
                 .padding(.top, 10)
+                .transition(.opacity.combined(with: .offset(y: 4)))
             }
             // The 14B's home: show when the owner's own model is serving locally.
             if let m = localServingModel {
@@ -1357,6 +1359,7 @@ struct CodeView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .frame(maxWidth: .infinity)
@@ -1370,6 +1373,8 @@ struct CodeView: View {
                            startRadius: 0, endRadius: 280)
                 .allowsHitTesting(false)
         }
+        .animation(DS.Motion.smooth, value: ws.recentProjects.isEmpty)
+        .animation(DS.Motion.smooth, value: localServingModel == nil)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -1751,6 +1756,7 @@ struct CodeView: View {
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
+                        .transition(.opacity)
                 }
                 // Live elapsed readout — long local runs are minutes of silence
                 // otherwise; a ticking clock shows the run is alive.
@@ -1772,6 +1778,7 @@ struct CodeView: View {
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary.opacity(0.85))
                     }
+                    .transition(.opacity)
                 }
                 Spacer()
                 Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
@@ -1781,13 +1788,19 @@ struct CodeView: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Close this panel").accessibilityLabel("Close the activity panel")
             }
+            .animation(DS.Motion.smooth, value: isRunning)
             .padding(.horizontal, 10).frame(height: 34)
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             VSplitView {
                 VStack(spacing: 0) {
                     activitySection.frame(minHeight: 90)
-                    if !ws.changedFiles.isEmpty { changedFilesList }
+                        .animation(DS.Motion.smooth, value: isRunning && !progress.steps.isEmpty)
+                    if !ws.changedFiles.isEmpty {
+                        changedFilesList
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.isEmpty)
                 inspectorPane.frame(minHeight: 150)
             }
         }
@@ -1898,10 +1911,12 @@ struct CodeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DS.Palette.codeSurfaceSide)
+            .transition(.opacity)
         } else {
             activityIdle
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DS.Palette.codeSurfaceSide)
+                .transition(.opacity)
         }
     }
 
