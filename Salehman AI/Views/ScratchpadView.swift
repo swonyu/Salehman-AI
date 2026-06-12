@@ -38,10 +38,8 @@ struct ScratchpadView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 12)
                     .animation(DS.Motion.lux, value: appeared)
-                Picker("Scratchpad section", selection: $pad) {
-                    ForEach(Pad.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
+                DSSegmentPicker(cases: Array(Pad.allCases), selection: $pad) { $0.title }
+                    .frame(maxWidth: 320)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 10)
                 .animation(DS.Motion.lux.delay(0.06), value: appeared)

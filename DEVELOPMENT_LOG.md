@@ -3091,6 +3091,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EU: DSSegmentPicker — dark sliding-pill segment control
+
+**What changed:**
+- `DesignSystem/DesignSystem.swift`: Added `DSSegmentPicker<T: Hashable>` — a generic dark-themed segment control using `matchedGeometryEffect` for a sliding white-pill selection indicator. Top-lit gradient border `[white@0.14, white@0.04]`. Equal-width segments via `.frame(maxWidth: .infinity)`. Spring animation via `DS.Motion.spring`. Replaces all `Picker.pickerStyle(.segmented)` usage app-wide (3 sites).
+- `Views/ScratchpadView.swift`: Notes/Tasks toggle now uses `DSSegmentPicker`.
+- `Views/MarketsView.swift`: 6-section market bar (Watchlist/All/Heatmap/Portfolio/Alerts/Briefing) now uses `DSSegmentPicker`.
+- `Views/CodeView.swift`: File/Diff inspector-pane switcher now uses `DSSegmentPicker`.
+
+**Why:** Native macOS `.segmented` picker renders with a light/grey Apple look that clashes with the OLED dark aesthetic. `DSSegmentPicker` matches the dark glass surface language — white pill on dark frosted background with top-lit gradient border, spring animation.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -2046,11 +2046,8 @@ struct CodeView: View {
     private var inspectorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Picker("", selection: $rightPane) {
-                    ForEach(RightPane.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                DSSegmentPicker(cases: RightPane.allCases, selection: $rightPane) { $0.rawValue }
+                    .frame(width: 150)
 
                 if let sel = ws.selectedFile {
                     Text(relativePath(sel))

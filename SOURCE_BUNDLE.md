@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:23 +03 · Swift files: 150 · Swift LOC: 34095_
+_Generated: 2026-06-13 02:33 +03 · Swift files: 150 · Swift LOC: 34130_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (427 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (471 lines) =====
 ```swift
 import SwiftUI
 
@@ -2559,6 +2559,50 @@ struct CloudKeyHintBanner: View {
         .padding(.vertical, 5)
         .background(DS.Palette.warningSoft.opacity(0.12))
         .foregroundStyle(DS.Palette.warningSoft)
+    }
+}
+
+// MARK: - DSSegmentPicker
+/// Dark-themed sliding-pill segment control. Replaces `.pickerStyle(.segmented)` app-wide.
+/// Selection indicator slides between segments via `matchedGeometryEffect`.
+/// Usage: `DSSegmentPicker(cases: MyEnum.allCases, selection: $binding) { $0.title }`
+struct DSSegmentPicker<T: Hashable>: View {
+    let cases: [T]
+    @Binding var selection: T
+    let label: (T) -> String
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(cases, id: \.self) { item in
+                Button {
+                    withAnimation(DS.Motion.spring) { selection = item }
+                } label: {
+                    Text(label(item))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selection == item ? Color.black : Color.white.opacity(0.62))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            if selection == item {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.92))
+                                    .matchedGeometryEffect(id: "segPill", in: ns)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 }
 
@@ -14810,7 +14854,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2656 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2653 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16860,11 +16904,8 @@ struct CodeView: View {
     private var inspectorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Picker("", selection: $rightPane) {
-                    ForEach(RightPane.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                DSSegmentPicker(cases: RightPane.allCases, selection: $rightPane) { $0.rawValue }
+                    .frame(width: 150)
 
                 if let sel = ws.selectedFile {
                     Text(relativePath(sel))
@@ -22339,7 +22380,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (746 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (742 lines) =====
 ```swift
 import SwiftUI
 
@@ -22469,12 +22510,8 @@ struct MarketsView: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Markets section", selection: $section) {
-            ForEach(MarketSection.allCases) { Text($0.title).tag($0) }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 520)
+        DSSegmentPicker(cases: Array(MarketSection.allCases), selection: $section) { $0.title }
+            .frame(maxWidth: 520)
     }
 
     @ViewBuilder private var content: some View {
@@ -23779,7 +23816,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (661 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (659 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23821,10 +23858,8 @@ struct ScratchpadView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 12)
                     .animation(DS.Motion.lux, value: appeared)
-                Picker("Scratchpad section", selection: $pad) {
-                    ForEach(Pad.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
+                DSSegmentPicker(cases: Array(Pad.allCases), selection: $pad) { $0.title }
+                    .frame(maxWidth: 320)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 10)
                 .animation(DS.Motion.lux.delay(0.06), value: appeared)
@@ -36663,7 +36698,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4134 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4147 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39753,6 +39788,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/CodeView.swift`
 
 **Why:** Final sweep of the remaining non-circular strokes. All 4 targets are interactive or prominent: a CTA pill, the main avatar double-bezel ring, interactive prompt pills, and keyboard shortcut badges. Top-lit gradient now fully consistent across the entire app's stroke vocabulary.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EU: DSSegmentPicker — dark sliding-pill segment control
+
+**What changed:**
+- `DesignSystem/DesignSystem.swift`: Added `DSSegmentPicker<T: Hashable>` — a generic dark-themed segment control using `matchedGeometryEffect` for a sliding white-pill selection indicator. Top-lit gradient border `[white@0.14, white@0.04]`. Equal-width segments via `.frame(maxWidth: .infinity)`. Spring animation via `DS.Motion.spring`. Replaces all `Picker.pickerStyle(.segmented)` usage app-wide (3 sites).
+- `Views/ScratchpadView.swift`: Notes/Tasks toggle now uses `DSSegmentPicker`.
+- `Views/MarketsView.swift`: 6-section market bar (Watchlist/All/Heatmap/Portfolio/Alerts/Briefing) now uses `DSSegmentPicker`.
+- `Views/CodeView.swift`: File/Diff inspector-pane switcher now uses `DSSegmentPicker`.
+
+**Why:** Native macOS `.segmented` picker renders with a light/grey Apple look that clashes with the OLED dark aesthetic. `DSSegmentPicker` matches the dark glass surface language — white pill on dark frosted background with top-lit gradient border, spring animation.
 
 **Result:** Zero Swift compiler errors.
 

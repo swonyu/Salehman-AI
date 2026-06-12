@@ -425,3 +425,47 @@ struct CloudKeyHintBanner: View {
     }
 }
 
+// MARK: - DSSegmentPicker
+/// Dark-themed sliding-pill segment control. Replaces `.pickerStyle(.segmented)` app-wide.
+/// Selection indicator slides between segments via `matchedGeometryEffect`.
+/// Usage: `DSSegmentPicker(cases: MyEnum.allCases, selection: $binding) { $0.title }`
+struct DSSegmentPicker<T: Hashable>: View {
+    let cases: [T]
+    @Binding var selection: T
+    let label: (T) -> String
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(cases, id: \.self) { item in
+                Button {
+                    withAnimation(DS.Motion.spring) { selection = item }
+                } label: {
+                    Text(label(item))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selection == item ? Color.black : Color.white.opacity(0.62))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            if selection == item {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.92))
+                                    .matchedGeometryEffect(id: "segPill", in: ns)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
+    }
+}
+

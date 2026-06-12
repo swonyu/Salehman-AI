@@ -126,12 +126,8 @@ struct MarketsView: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Markets section", selection: $section) {
-            ForEach(MarketSection.allCases) { Text($0.title).tag($0) }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 520)
+        DSSegmentPicker(cases: Array(MarketSection.allCases), selection: $section) { $0.title }
+            .frame(maxWidth: 520)
     }
 
     @ViewBuilder private var content: some View {
