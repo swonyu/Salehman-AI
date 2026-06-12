@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:04 +03 · Swift files: 150 · Swift LOC: 32390_
+_Generated: 2026-06-12 09:06 +03 · Swift files: 150 · Swift LOC: 32390_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14064,7 +14064,7 @@ struct ChatHistoryView: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
-                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) messages")
+                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) message\(item.messageCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: item.date))")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 if !item.preview.isEmpty {
                     Text(item.preview)
@@ -34958,7 +34958,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2778 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2790 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36866,6 +36866,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Three of the seven tabs were missing the opacity spring animation that the others had, causing an inconsistent snap-vs-fade experience when switching tabs.
 
 **Result:** All seven tabs now fade in/out consistently with the same spring timing. SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AO — ChatHistoryView: message count pluralization fix + relative age label
+
+**What changed:**
+- `ChatHistoryView.swift` row subtitle: `message\(item.messageCount == 1 ? "" : "s")` for correct singular/plural; also appended ` · \(ScratchpadList.ageLabel(for: item.date))` so each row shows how old the archive is (e.g. "3h", "yesterday", "Jun 10")
+
+**Files:** `ChatHistoryView.swift`
+
+**Why:** Row was showing "1 messages" for single-message archives. Also, the absolute date alone gave no sense of recency — the relative age label (reusing the same helper as ScratchpadView + KnowledgeView) makes it immediately scannable.
+
+**Result:** Row subtitle now reads e.g. "Jun 10, 2:30 PM · 5 messages · yesterday". SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues

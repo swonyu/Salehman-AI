@@ -135,7 +135,7 @@ struct ChatHistoryView: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
-                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) messages")
+                Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) message\(item.messageCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: item.date))")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 if !item.preview.isEmpty {
                     Text(item.preview)

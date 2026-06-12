@@ -1907,6 +1907,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** All seven tabs now fade in/out consistently with the same spring timing. SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AO — ChatHistoryView: message count pluralization fix + relative age label
+
+**What changed:**
+- `ChatHistoryView.swift` row subtitle: `message\(item.messageCount == 1 ? "" : "s")` for correct singular/plural; also appended ` · \(ScratchpadList.ageLabel(for: item.date))` so each row shows how old the archive is (e.g. "3h", "yesterday", "Jun 10")
+
+**Files:** `ChatHistoryView.swift`
+
+**Why:** Row was showing "1 messages" for single-message archives. Also, the absolute date alone gave no sense of recency — the relative age label (reusing the same helper as ScratchpadView + KnowledgeView) makes it immediately scannable.
+
+**Result:** Row subtitle now reads e.g. "Jun 10, 2:30 PM · 5 messages · yesterday". SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
