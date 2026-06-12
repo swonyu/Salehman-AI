@@ -1375,6 +1375,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** typecheck EXIT 0; AITests request unchanged. Free-GPU flow is now: Settings→Copy → Colab Run-all → paste token → /connect the printed URL.
 
+## 2026-06-12 · FIX: Code-tab UI freeze — main-thread Keychain read during route planning (Chat B, cross-lane)
+
+**Files:** `LLM/BrainRouting.swift` (other session's file — committed/clean; critical user-facing freeze, flagged on board)
+
+**Symptom:** owner: "code tab doesnt work but chat does." Code-tab send stuck on "Working" forever.
+
+**Diagnosis by MEASUREMENT (not guess):** `sample`d the live app (PID 52436) → main thread frozen 2515 samples deep: `AgentPipeline.run` → `BrainRouteConfig.live()` → `CloudProvider.configuredNow()` → `isConfiguredNow.getter` → `KeychainStore.read` → **`SecItemCopyMatching` → `AddItemResults`** (the ACL-authorization path), and `SecurityAgent` (PID 52525) was running = a hidden Keychain auth dialog. Root cause: `configuredNow()` does 10+ SYNCHRONOUS Keychain reads on the main actor; macOS blocks such a read until an auth prompt is answered, and the prompt fires after the app is rebuilt (changed code signature invalidates saved API-key items' "always allow" ACLs). Synchronous-on-main + invisible dialog = total UI freeze. Contributing trigger: I'd written the HF token via the `security` CLI (wrong ACL owner) — deleted it; the architectural flaw remained.
+
+**Fix:** wrapped the four sync probes in `BrainRouteConfig.live()` (`configuredNow` + Unsloth/VLLM/SalehmanEngine-cloud checks, all Sendable-returning) in `Task.detached(.userInitiated)` so they never run on the main thread. The prompt can now surface and be clicked; the UI never freezes. Introduced by the 02:26 R1 routing refactor (`f66209a`) — pre-R1 these checks were also sync but scattered; R1 centralized them into one eager main-actor call.
+
+**Verification:** full live-tree `swiftc -typecheck` EXIT 0; also EXIT 0 with the other session's in-flight LocalLLM/SalehmanEngine pinned to HEAD. **Owed: rebuild+reinstall** (the fix only helps once the binary is rebuilt) + the standing AITests run. Follow-up flagged: for pinned `.salehman`, skip the cloud roster probe entirely until the local floor fails (optimization, not required for the freeze fix).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
