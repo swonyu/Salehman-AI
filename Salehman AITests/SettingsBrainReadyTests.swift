@@ -38,7 +38,7 @@ struct SettingsBrainReadyTests {
             $0.unslothConfigured = true; $0.vllmConfigured = true
             $0.anthropic = true; $0.grok = true; $0.gemini = true
             $0.groq = true; $0.mistral = true; $0.cerebras = true
-            $0.deepSeek = true; $0.openAI = true; $0.copilot = true
+            $0.openAI = true; $0.copilot = true
             $0.openRouter = true; $0.nvidia = true
             $0.customModelNamed = true   // name alone, no ollamaUp
         }
@@ -62,12 +62,11 @@ struct SettingsBrainReadyTests {
     func freeAutoLightsForFreeKeysOrLocalFloorNeverForPaidOnlyKeys() {
         #expect(!BrainReadiness().ready(.freeAuto))
         // Paid-only / non-free signals all ON: anthropic, grok, openAI,
-        // copilot, nvidia, deepSeek (deepSeek belongs to the CODING pools,
-        // not freeAuto) and the endpoint engines. None may light freeAuto —
+        // copilot, nvidia, and the endpoint engines. None may light freeAuto —
         // this mode promises to never spend.
         let paidOnly = Self.flags {
             $0.anthropic = true; $0.grok = true; $0.openAI = true
-            $0.copilot = true; $0.nvidia = true; $0.deepSeek = true
+            $0.copilot = true; $0.nvidia = true
             $0.unslothConfigured = true; $0.vllmConfigured = true
         }
         #expect(!paidOnly.ready(.freeAuto))
@@ -104,18 +103,17 @@ struct SettingsBrainReadyTests {
         // cloudCoding is cloud-ONLY: the local floor must not light it.
         #expect(!Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
             .ready(.cloudCoding))
-        #expect(Self.flags { $0.deepSeek = true }.ready(.cloudCoding))
+        #expect(Self.flags { $0.cerebras = true }.ready(.cloudCoding))
         #expect(!Self.flags { $0.gemini = true }.ready(.cloudCoding))
-        // freeCoding = freeAuto's coding pool + deepSeek + the local floor.
-        #expect(Self.flags { $0.deepSeek = true }.ready(.freeCoding))
+        // freeCoding = freeAuto's coding pool + the local floor.
+        #expect(Self.flags { $0.openRouter = true }.ready(.freeCoding))
         #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
             .ready(.freeCoding))
         #expect(!Self.flags { $0.gemini = true }.ready(.freeCoding))
-        // Ensemble: any keyed chat cloud or the local floor — but deepSeek /
-        // nvidia / endpoint engines were never in its set (preserved rule).
+        // Ensemble: any keyed chat cloud or the local floor — but nvidia /
+        // endpoint engines were never in its set (preserved rule).
         #expect(Self.flags { $0.anthropic = true }.ready(.ensemble))
         #expect(Self.flags { $0.copilot = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.deepSeek = true }.ready(.ensemble))
         #expect(!Self.flags { $0.nvidia = true }.ready(.ensemble))
         #expect(!Self.flags { $0.vllmConfigured = true }.ready(.ensemble))
         // Endpoint engines light exactly their own pin.

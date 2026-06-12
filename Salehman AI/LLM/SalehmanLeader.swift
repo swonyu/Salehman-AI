@@ -17,11 +17,11 @@ import Foundation
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
 /// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
 ///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
-///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), and only then
-///   DeepSeek's paid 671B as a last-resort backstop, then the local floor (MLX,
-///   Ollama). So whenever you're online with any one free key set, Salehman
-///   finalizes on a big model at **$0** — DeepSeek (paid) runs only if every free
-///   tier is unavailable, and it drops to the ~7B local model when offline.
+///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), then the
+///   local floor (MLX, Ollama). So whenever you're online with any one free key
+///   set, Salehman finalizes on a big model at **$0**, and it drops to the ~7B
+///   local model when offline. (The paid DeepSeek backstop was removed
+///   2026-06-12 — owner: "remove deepseek".)
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
@@ -92,8 +92,7 @@ enum SalehmanLeader {
         """
 
         // Leader pass at the configured effort. The generator routes through the
-        // shared cloud-first engine; `userPrompt` (not the meta-prompt) drives the
-        // DeepSeek R1/V3 routing. At `.instant` this is a single generate call.
+        // shared cloud-first engine. At `.instant` this is a single generate call.
         let effort = AppSettings.salehmanEffortCurrent
         let result = await effort.respond(to: leaderPrompt) { prompt in
             await SalehmanEngine.generate(prompt: prompt, userPrompt: userPrompt) ?? ""
@@ -101,8 +100,8 @@ enum SalehmanLeader {
         let final = result.answer
         let f = final.trimmingCharacters(in: .whitespacesAndNewlines)
         if !f.isEmpty, final != LocalLLM.offMessage {
-            // Self-improvement loop: hand Salehman's answer to a DeepSeek
-            // reasoner (R1-class) for analysis, then let Salehman revise per
+            // Self-improvement loop: hand Salehman's answer to a reasoner-class
+            // critic (NVIDIA-hosted, free) for analysis, then let Salehman revise per
             // that feedback — so each answer comes out smarter. Graceful: if
             // the critic is unreachable or satisfied, `refine` returns `final`
             // unchanged. Skipped when the owner turns the loop off.

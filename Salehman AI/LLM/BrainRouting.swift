@@ -8,15 +8,16 @@ import Foundation
 // `generateStreaming` / `chat` cascades, `currentBrain`, `anyBrainReachable`,
 // the freeAuto / freeAuto-tools / freeCoding / cloudCoding / ensemble
 // rosters) — and the drift class was producing real bugs (the Offline-Mode
-// cloud leak fixed alongside this file; the ensemble/DeepSeek mismatch noted
-// below). This file is now the ONLY place routing decisions live. The
+// cloud leak fixed alongside this file). This file is now the ONLY place routing decisions live. The
 // LocalLLM call sites keep their per-provider execution quirks (which client
 // call, which system prompt, stream-then-chat fallback) but consume the plan
 // for every decision. Pure — no syscalls, no network — hermetically pinned by
 // `BrainRoutingDispatchTests`.
 
-/// The ten cloud chat providers the router can pin or roster. Raw values are
+/// The nine cloud chat providers the router can pin or roster. Raw values are
 /// stable display-ish names used by the freeAuto cooldown bookkeeping.
+/// (DeepSeek's direct paid API was removed 2026-06-12 — owner: "remove
+/// deepseek". DeepSeek-V4 models still run free via NVIDIA in SalehmanEngine.)
 nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     case anthropic = "Claude"
     case grok = "Grok"
@@ -24,7 +25,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     case groq = "Groq"
     case mistral = "Mistral"
     case cerebras = "Cerebras"
-    case deepSeek = "DeepSeek"
     case openAI = "OpenAI"
     case copilot = "Copilot"
     case openRouter = "OpenRouter"
@@ -38,19 +38,16 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     /// (Gemini is free but not OpenAI-compat, so it can't run tools).
     static let freeToolCapable: [CloudProvider] = [.groq, .cerebras, .mistral, .openRouter]
 
-    /// FreeCoding RACE order (parallel; DeepSeek opted in by the owner).
-    static let codingRace: [CloudProvider] = [.deepSeek, .openRouter, .groq, .cerebras, .mistral]
+    /// FreeCoding RACE order (parallel).
+    static let codingRace: [CloudProvider] = [.openRouter, .groq, .cerebras, .mistral]
 
     /// Sequential coder-loop order shared by freeCodingReply / cloudCoding —
-    /// quality+speed order (DeepSeek smartest → Cerebras/Groq blazing →
-    /// OpenRouter → Mistral).
-    static let coderLoop: [CloudProvider] = [.deepSeek, .cerebras, .groq, .openRouter, .mistral]
+    /// quality+speed order (Cerebras/Groq blazing → OpenRouter → Mistral).
+    static let coderLoop: [CloudProvider] = [.cerebras, .groq, .openRouter, .mistral]
 
-    /// Ensemble fan-out membership, in output order. ⚠️ Documented drift,
-    /// PRESERVED on purpose: DeepSeek is counted by `anyBrainReachable` but
-    /// was never added to the ensemble roster (so a DeepSeek-only setup reads
-    /// "reachable" yet fans out to nothing). Flagged to the owner — adding
-    /// `.deepSeek` here is the one-line fix if wanted.
+    /// Ensemble fan-out membership, in output order. (The historic
+    /// DeepSeek counted-but-not-rostered drift resolved itself when the
+    /// provider was removed on 2026-06-12.)
     static let ensembleRoster: [CloudProvider] = [.anthropic, .grok, .gemini, .groq,
                                                   .mistral, .cerebras, .openAI,
                                                   .openRouter, .copilot]
@@ -66,7 +63,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return .groq
         case .mistral:    return .mistral
         case .cerebras:   return .cerebras
-        case .deepSeek:   return .deepSeek
         case .openAI:     return .codex
         case .copilot:    return .copilot
         case .openRouter: return .openRouter
@@ -88,14 +84,13 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return .groq
         case .mistral:    return .mistral
         case .cerebras:   return .cerebras
-        case .deepSeek:   return .deepSeek
         case .openAI:     return .codex
         case .copilot:    return .copilot
         case .openRouter: return .openRouter
         }
     }
 
-    /// Live "has a key / is authed" check — THE one place the ten per-client
+    /// Live "has a key / is authed" check — THE one place the nine per-client
     /// key checks live (was copy-pasted in anyBrainReachable, currentBrain,
     /// every roster builder, and the Settings grid).
     var isConfiguredNow: Bool {
@@ -106,14 +101,13 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return GroqClient.shared.hasKey()
         case .mistral:    return MistralClient.shared.hasKey()
         case .cerebras:   return CerebrasClient.shared.hasKey()
-        case .deepSeek:   return DeepSeekClient.shared.hasKey()
         case .openAI:     return OpenAIClient.hasKey()
         case .copilot:    return CopilotClient.isAuthed()
         case .openRouter: return OpenRouterClient.shared.hasKey()
         }
     }
 
-    /// Snapshot of every configured provider (10 sync Keychain/auth checks).
+    /// Snapshot of every configured provider (9 sync Keychain/auth checks).
     static func configuredNow() -> Set<CloudProvider> {
         Set(allCases.filter(\.isConfiguredNow))
     }
@@ -129,7 +123,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return AppSettings.groqModelCurrent
         case .mistral:    return AppSettings.mistralModelCurrent
         case .cerebras:   return AppSettings.cerebrasModelCurrent
-        case .deepSeek:   return AppSettings.deepSeekModelCurrent
         case .openAI:     return AppSettings.openAIModelCurrent
         case .openRouter: return AppSettings.openRouterModelCurrent
         case .anthropic, .copilot: return nil
@@ -140,7 +133,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     /// picks the most coding-leaning entry). Only the OpenAI-compat coders.
     var coderModels: (all: [String], def: String)? {
         switch self {
-        case .deepSeek:   return (DeepSeekClient.allModels, DeepSeekClient.defaultModel)
         case .cerebras:   return (CerebrasClient.allModels, CerebrasClient.defaultModel)
         case .groq:       return (GroqClient.allModels, GroqClient.defaultModel)
         case .openRouter: return (OpenRouterClient.allModels, OpenRouterClient.defaultModel)
@@ -156,7 +148,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return GroqClient.shared
         case .mistral:    return MistralClient.shared
         case .cerebras:   return CerebrasClient.shared
-        case .deepSeek:   return DeepSeekClient.shared
         case .openAI:     return OpenAIClient.shared
         case .openRouter: return OpenRouterClient.shared
         case .anthropic, .gemini, .copilot, .grok: return nil
@@ -241,7 +232,7 @@ nonisolated enum BrainRouting {
 
     /// Exactly one target per preference — the cascades of pin-gates this
     /// replaces were single-dispatch ladders in disguise. Offline Mode is the
-    /// stronger constraint and hard-gates the ten cloud pins here (the fix
+    /// stronger constraint and hard-gates the nine cloud pins here (the fix
     /// for the Offline leak: `currentBrain` always documented this contract,
     /// but the generate/streaming/chat cascades never enforced it, so direct
     /// callers leaked HTTP — and money, via paid pins — while "offline").
@@ -263,7 +254,7 @@ nonisolated enum BrainRouting {
         case .vllm:
             return .vllm
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .deepSeek, .codex, .copilot, .openRouter:
+             .codex, .copilot, .openRouter:
             guard let p = CloudProvider.provider(for: pref) else { return .unavailable }
             return offlineOnly ? .unavailable : .cloud(p)
         }
@@ -283,7 +274,7 @@ nonisolated enum BrainRouting {
         c.offlineOnly ? [] : CloudProvider.freeToolCapable.filter { c.configured.contains($0) }
     }
 
-    /// FreeCoding RACE roster (parallel; includes DeepSeek).
+    /// FreeCoding RACE roster (parallel).
     static func codingRaceRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
         c.offlineOnly ? [] : CloudProvider.codingRace.filter { c.configured.contains($0) }
     }
@@ -308,7 +299,7 @@ nonisolated enum BrainRouting {
         c.ollamaReady || !c.configured.isEmpty
     }
 
-    /// The pure `currentBrain` switch. Offline hard-gates the ten cloud pins
+    /// The pure `currentBrain` switch. Offline hard-gates the nine cloud pins
     /// to `.none`; local pins, engines, and orchestration modes apply their
     /// own rules (verbatim from the old implementation).
     static func reachableBrain(_ c: BrainRouteConfig) -> LocalLLM.Brain {
@@ -341,7 +332,7 @@ nonisolated enum BrainRouting {
             if c.offlineOnly { return .none }
             return CloudProvider.coderLoop.contains(where: { c.configured.contains($0) }) ? .cloudCoding : .none
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .deepSeek, .codex, .copilot, .openRouter:
+             .codex, .copilot, .openRouter:
             guard let p = CloudProvider.provider(for: c.pref) else { return .none }
             return c.configured.contains(p) ? p.brain : .none
         }

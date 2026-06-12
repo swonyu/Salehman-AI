@@ -54,7 +54,6 @@ final class BrainStatus: ObservableObject {
         case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
         case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
         case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
-        case .deepSeek:          return Color(red: 0.29, green: 0.46, blue: 0.96)  // DeepSeek blue
         case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
         case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
         case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
@@ -80,7 +79,6 @@ final class BrainStatus: ObservableObject {
         case .groq:              return "hare.fill"
         case .mistral:           return "wind"
         case .cerebras:          return "cpu.fill"
-        case .deepSeek:          return "magnifyingglass"
         case .codex:             return "terminal.fill"
         case .copilot:           return "person.2.fill"
         case .openRouter:        return "arrow.triangle.branch"

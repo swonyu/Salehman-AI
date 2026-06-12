@@ -68,12 +68,12 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 8) == 8)
         #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 0) == 1)
     }
 }
 

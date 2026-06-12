@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 03:42 +03 · Swift files: 150 · Swift LOC: 30724_
+_Generated: 2026-06-12 04:00 +03 · Swift files: 150 · Swift LOC: 30637_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -491,7 +491,7 @@ enum AgentPipeline {
             return await LocalLLM.generateFreeAuto(contextualMission)
         }
 
-        // FreeCoding: a coding-focused loop over the free coders + DeepSeek. Always
+        // FreeCoding: a coding-focused loop over the free coders. Always
         // tool-capable (coding wants to build/run/test), so it bypasses the
         // multi-agent team too and routes straight to `freeCodingReply`.
         if LocalLLM.isFreeCodingMode {
@@ -1291,7 +1291,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (603 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (595 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1404,9 +1404,8 @@ final class AppSettings: ObservableObject {
     @Published var cerebrasModel: String {
         didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
     }
-    @Published var deepSeekModel: String {
-        didSet { UserDefaults.standard.set(deepSeekModel, forKey: Keys.deepSeekModel) }
-    }
+    // (deepSeekModel removed 2026-06-12 — owner: "remove deepseek". The direct
+    // DeepSeek provider is gone; DeepSeek-V4 models still run via NVIDIA free.)
     @Published var openRouterModel: String {
         didSet { UserDefaults.standard.set(openRouterModel, forKey: Keys.openRouterModel) }
     }
@@ -1468,10 +1467,11 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
 
-    /// Self-improvement loop: after Salehman answers, a DeepSeek reasoner (R1-class)
-    /// critiques the answer and Salehman revises it. Smarter replies, but ~2–3× slower
-    /// and more quota — **default OFF for speed** (owner asked to make it faster);
-    /// turn ON for max-quality single answers.
+    /// Self-improvement loop: after Salehman answers, a reasoner-class critic
+    /// (DeepSeek-V4-pro via NVIDIA's free tier) critiques the answer and Salehman
+    /// revises it. Smarter replies, but ~2–3× slower and more quota — **default
+    /// OFF for speed** (owner asked to make it faster); turn ON for max-quality
+    /// single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
     }
@@ -1480,7 +1480,7 @@ final class AppSettings: ObservableObject {
     /// Core-Intelligence primitives (self-critique rounds + candidate fan-out/judge).
     /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.instant`
     /// (preserves pre-Effort behavior — no surprise extra model calls on upgrade).
-    /// (Independent of `salehmanRefine`, which is the older DeepSeek-critique toggle.)
+    /// (Independent of `salehmanRefine`, which is the older critique-loop toggle.)
     @Published var salehmanEffort: Effort {
         didSet { UserDefaults.standard.set(salehmanEffort.rawValue, forKey: Keys.salehmanEffort) }
     }
@@ -1526,7 +1526,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let groqModel       = "set_groqModel"
         nonisolated static let mistralModel    = "set_mistralModel"
         nonisolated static let cerebrasModel   = "set_cerebrasModel"
-        nonisolated static let deepSeekModel   = "set_deepSeekModel"
+        // ("set_deepSeekModel" key retired 2026-06-12 with the DeepSeek removal)
         nonisolated static let openRouterModel = "set_openRouterModel"
     }
 
@@ -1621,10 +1621,6 @@ final class AppSettings: ObservableObject {
     nonisolated static var cerebrasModelCurrent: String {
         let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
         return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
-    }
-    nonisolated static var deepSeekModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.deepSeekModel) ?? ""
-        return DeepSeekClient.allModels.contains(raw) ? raw : DeepSeekClient.defaultModel
     }
     nonisolated static var openRouterModelCurrent: String {
         let raw = UserDefaults.standard.string(forKey: Keys.openRouterModel) ?? ""
@@ -1741,8 +1737,6 @@ final class AppSettings: ObservableObject {
         mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
         let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
         cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
-        let storedDeepSeek = d.string(forKey: Keys.deepSeekModel) ?? ""
-        deepSeekModel = DeepSeekClient.allModels.contains(storedDeepSeek) ? storedDeepSeek : DeepSeekClient.defaultModel
         let storedOpenRouter = d.string(forKey: Keys.openRouterModel) ?? ""
         openRouterModel = OpenRouterClient.allModels.contains(storedOpenRouter) ? storedOpenRouter : OpenRouterClient.defaultModel
         installCaptureObservers()
@@ -1770,17 +1764,18 @@ final class AppSettings: ObservableObject {
 /// app's primary identity; cloud-first with a free-tier chain and a local floor.
 ///
 /// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
-///   120B tiers → paid backstop → local MLX/Ollama floor. Self-improves via
-///   DeepSeek critique pass. Works with zero local models if any cloud key is set.
+///   120B tiers → local MLX/Ollama floor. Self-improves via a critique pass.
+///   Works with zero local models if any cloud key is set.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
-    case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
+    // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
+    // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) + local floor (MLX, Ollama)
+    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers) + local floor (MLX, Ollama)
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -1823,7 +1818,6 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Groq (Cloud)"
         case .mistral:     return "Mistral (Cloud)"
         case .cerebras:    return "Cerebras (Cloud)"
-        case .deepSeek:    return "DeepSeek (Cloud)"
         case .codex:       return "Codex / OpenAI (Cloud)"
         case .copilot:     return "GitHub Copilot (Cloud)"
         case .openRouter:  return "OpenRouter (Cloud · free models)"
@@ -1837,8 +1831,8 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         switch self {
         case .auto:        return "Local-first · Ollama qwen-coder when reachable"
         case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
-        case .freeCoding:  return "Coding loop · races your free coder models + DeepSeek, runs & tests code in the terminal · local backstop"
-        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (DeepSeek, gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
+        case .freeCoding:  return "Coding loop · races your free coder models, runs & tests code in the terminal · local backstop"
+        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
         case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
@@ -1846,12 +1840,11 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
         case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
         case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
-        case .deepSeek:    return "Cloud · cheap + elite at code/reasoning · runs the terminal · ~zero local RAM · needs API key"
         case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
-        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a DeepSeek critique pass"
+        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a critique pass"
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
@@ -1869,7 +1862,6 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "hare.fill"
         case .mistral:     return "leaf.circle.fill"
         case .cerebras:    return "rays"
-        case .deepSeek:    return "curlybraces"
         case .codex:       return "chevron.left.forwardslash.chevron.right"
         case .copilot:     return "person.2.badge.gearshape.fill"
         case .openRouter:  return "arrow.triangle.branch"
@@ -2913,7 +2905,7 @@ enum ExternalToolsKnowledge {
         GitHub's AI surface: GitHub Models lets you prototype and test major LLMs with
         your normal developer credentials (no separate hosting), plus Copilot. Useful to
         try a model before wiring it in. Salehman AI already supports many OpenAI-compatible
-        and native providers directly (Groq, Cerebras, OpenRouter, DeepSeek, NVIDIA, …).
+        and native providers directly (Groq, Cerebras, OpenRouter, NVIDIA, …).
         """),
         ("claude-autocontinue", "automation", "forward.end.alt", """
         claude-autocontinue — github.com/timothy22000/claude-autocontinue
@@ -3524,7 +3516,7 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainRouting.swift (349 lines) =====
+===== FILE: Salehman AI/LLM/BrainRouting.swift (340 lines) =====
 ```swift
 import Foundation
 
@@ -3536,15 +3528,16 @@ import Foundation
 // `generateStreaming` / `chat` cascades, `currentBrain`, `anyBrainReachable`,
 // the freeAuto / freeAuto-tools / freeCoding / cloudCoding / ensemble
 // rosters) — and the drift class was producing real bugs (the Offline-Mode
-// cloud leak fixed alongside this file; the ensemble/DeepSeek mismatch noted
-// below). This file is now the ONLY place routing decisions live. The
+// cloud leak fixed alongside this file). This file is now the ONLY place routing decisions live. The
 // LocalLLM call sites keep their per-provider execution quirks (which client
 // call, which system prompt, stream-then-chat fallback) but consume the plan
 // for every decision. Pure — no syscalls, no network — hermetically pinned by
 // `BrainRoutingDispatchTests`.
 
-/// The ten cloud chat providers the router can pin or roster. Raw values are
+/// The nine cloud chat providers the router can pin or roster. Raw values are
 /// stable display-ish names used by the freeAuto cooldown bookkeeping.
+/// (DeepSeek's direct paid API was removed 2026-06-12 — owner: "remove
+/// deepseek". DeepSeek-V4 models still run free via NVIDIA in SalehmanEngine.)
 nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     case anthropic = "Claude"
     case grok = "Grok"
@@ -3552,7 +3545,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     case groq = "Groq"
     case mistral = "Mistral"
     case cerebras = "Cerebras"
-    case deepSeek = "DeepSeek"
     case openAI = "OpenAI"
     case copilot = "Copilot"
     case openRouter = "OpenRouter"
@@ -3566,19 +3558,16 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     /// (Gemini is free but not OpenAI-compat, so it can't run tools).
     static let freeToolCapable: [CloudProvider] = [.groq, .cerebras, .mistral, .openRouter]
 
-    /// FreeCoding RACE order (parallel; DeepSeek opted in by the owner).
-    static let codingRace: [CloudProvider] = [.deepSeek, .openRouter, .groq, .cerebras, .mistral]
+    /// FreeCoding RACE order (parallel).
+    static let codingRace: [CloudProvider] = [.openRouter, .groq, .cerebras, .mistral]
 
     /// Sequential coder-loop order shared by freeCodingReply / cloudCoding —
-    /// quality+speed order (DeepSeek smartest → Cerebras/Groq blazing →
-    /// OpenRouter → Mistral).
-    static let coderLoop: [CloudProvider] = [.deepSeek, .cerebras, .groq, .openRouter, .mistral]
+    /// quality+speed order (Cerebras/Groq blazing → OpenRouter → Mistral).
+    static let coderLoop: [CloudProvider] = [.cerebras, .groq, .openRouter, .mistral]
 
-    /// Ensemble fan-out membership, in output order. ⚠️ Documented drift,
-    /// PRESERVED on purpose: DeepSeek is counted by `anyBrainReachable` but
-    /// was never added to the ensemble roster (so a DeepSeek-only setup reads
-    /// "reachable" yet fans out to nothing). Flagged to the owner — adding
-    /// `.deepSeek` here is the one-line fix if wanted.
+    /// Ensemble fan-out membership, in output order. (The historic
+    /// DeepSeek counted-but-not-rostered drift resolved itself when the
+    /// provider was removed on 2026-06-12.)
     static let ensembleRoster: [CloudProvider] = [.anthropic, .grok, .gemini, .groq,
                                                   .mistral, .cerebras, .openAI,
                                                   .openRouter, .copilot]
@@ -3594,7 +3583,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return .groq
         case .mistral:    return .mistral
         case .cerebras:   return .cerebras
-        case .deepSeek:   return .deepSeek
         case .openAI:     return .codex
         case .copilot:    return .copilot
         case .openRouter: return .openRouter
@@ -3616,14 +3604,13 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return .groq
         case .mistral:    return .mistral
         case .cerebras:   return .cerebras
-        case .deepSeek:   return .deepSeek
         case .openAI:     return .codex
         case .copilot:    return .copilot
         case .openRouter: return .openRouter
         }
     }
 
-    /// Live "has a key / is authed" check — THE one place the ten per-client
+    /// Live "has a key / is authed" check — THE one place the nine per-client
     /// key checks live (was copy-pasted in anyBrainReachable, currentBrain,
     /// every roster builder, and the Settings grid).
     var isConfiguredNow: Bool {
@@ -3634,14 +3621,13 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return GroqClient.shared.hasKey()
         case .mistral:    return MistralClient.shared.hasKey()
         case .cerebras:   return CerebrasClient.shared.hasKey()
-        case .deepSeek:   return DeepSeekClient.shared.hasKey()
         case .openAI:     return OpenAIClient.hasKey()
         case .copilot:    return CopilotClient.isAuthed()
         case .openRouter: return OpenRouterClient.shared.hasKey()
         }
     }
 
-    /// Snapshot of every configured provider (10 sync Keychain/auth checks).
+    /// Snapshot of every configured provider (9 sync Keychain/auth checks).
     static func configuredNow() -> Set<CloudProvider> {
         Set(allCases.filter(\.isConfiguredNow))
     }
@@ -3657,7 +3643,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return AppSettings.groqModelCurrent
         case .mistral:    return AppSettings.mistralModelCurrent
         case .cerebras:   return AppSettings.cerebrasModelCurrent
-        case .deepSeek:   return AppSettings.deepSeekModelCurrent
         case .openAI:     return AppSettings.openAIModelCurrent
         case .openRouter: return AppSettings.openRouterModelCurrent
         case .anthropic, .copilot: return nil
@@ -3668,7 +3653,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
     /// picks the most coding-leaning entry). Only the OpenAI-compat coders.
     var coderModels: (all: [String], def: String)? {
         switch self {
-        case .deepSeek:   return (DeepSeekClient.allModels, DeepSeekClient.defaultModel)
         case .cerebras:   return (CerebrasClient.allModels, CerebrasClient.defaultModel)
         case .groq:       return (GroqClient.allModels, GroqClient.defaultModel)
         case .openRouter: return (OpenRouterClient.allModels, OpenRouterClient.defaultModel)
@@ -3684,7 +3668,6 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .groq:       return GroqClient.shared
         case .mistral:    return MistralClient.shared
         case .cerebras:   return CerebrasClient.shared
-        case .deepSeek:   return DeepSeekClient.shared
         case .openAI:     return OpenAIClient.shared
         case .openRouter: return OpenRouterClient.shared
         case .anthropic, .gemini, .copilot, .grok: return nil
@@ -3769,7 +3752,7 @@ nonisolated enum BrainRouting {
 
     /// Exactly one target per preference — the cascades of pin-gates this
     /// replaces were single-dispatch ladders in disguise. Offline Mode is the
-    /// stronger constraint and hard-gates the ten cloud pins here (the fix
+    /// stronger constraint and hard-gates the nine cloud pins here (the fix
     /// for the Offline leak: `currentBrain` always documented this contract,
     /// but the generate/streaming/chat cascades never enforced it, so direct
     /// callers leaked HTTP — and money, via paid pins — while "offline").
@@ -3791,7 +3774,7 @@ nonisolated enum BrainRouting {
         case .vllm:
             return .vllm
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .deepSeek, .codex, .copilot, .openRouter:
+             .codex, .copilot, .openRouter:
             guard let p = CloudProvider.provider(for: pref) else { return .unavailable }
             return offlineOnly ? .unavailable : .cloud(p)
         }
@@ -3811,7 +3794,7 @@ nonisolated enum BrainRouting {
         c.offlineOnly ? [] : CloudProvider.freeToolCapable.filter { c.configured.contains($0) }
     }
 
-    /// FreeCoding RACE roster (parallel; includes DeepSeek).
+    /// FreeCoding RACE roster (parallel).
     static func codingRaceRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
         c.offlineOnly ? [] : CloudProvider.codingRace.filter { c.configured.contains($0) }
     }
@@ -3836,7 +3819,7 @@ nonisolated enum BrainRouting {
         c.ollamaReady || !c.configured.isEmpty
     }
 
-    /// The pure `currentBrain` switch. Offline hard-gates the ten cloud pins
+    /// The pure `currentBrain` switch. Offline hard-gates the nine cloud pins
     /// to `.none`; local pins, engines, and orchestration modes apply their
     /// own rules (verbatim from the old implementation).
     static func reachableBrain(_ c: BrainRouteConfig) -> LocalLLM.Brain {
@@ -3869,7 +3852,7 @@ nonisolated enum BrainRouting {
             if c.offlineOnly { return .none }
             return CloudProvider.coderLoop.contains(where: { c.configured.contains($0) }) ? .cloudCoding : .none
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .deepSeek, .codex, .copilot, .openRouter:
+             .codex, .copilot, .openRouter:
             guard let p = CloudProvider.provider(for: c.pref) else { return .none }
             return c.configured.contains(p) ? p.brain : .none
         }
@@ -3877,7 +3860,7 @@ nonisolated enum BrainRouting {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainStatus.swift (120 lines) =====
+===== FILE: Salehman AI/LLM/BrainStatus.swift (118 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -3935,7 +3918,6 @@ final class BrainStatus: ObservableObject {
         case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
         case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
         case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
-        case .deepSeek:          return Color(red: 0.29, green: 0.46, blue: 0.96)  // DeepSeek blue
         case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
         case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
         case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
@@ -3961,7 +3943,6 @@ final class BrainStatus: ObservableObject {
         case .groq:              return "hare.fill"
         case .mistral:           return "wind"
         case .cerebras:          return "cpu.fill"
-        case .deepSeek:          return "magnifyingglass"
         case .codex:             return "terminal.fill"
         case .copilot:           return "person.2.fill"
         case .openRouter:        return "arrow.triangle.branch"
@@ -4001,7 +3982,7 @@ final class BrainStatus: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/LLM/CloudBrains.swift (177 lines) =====
+===== FILE: Salehman AI/LLM/CloudBrains.swift (159 lines) =====
 ```swift
 import Foundation
 
@@ -4130,28 +4111,10 @@ enum OpenRouterClient {
     )
 }
 
-/// DeepSeek — pay-as-you-go but extremely cheap, and one of the strongest open
-/// models at coding and reasoning. OpenAI-compatible (`/v1/chat/completions`),
-/// so like the others it's just a config of `OpenAICompatibleClient` — which
-/// means it gets terminal tool-calling automatically. `deepseek-chat` (V3) is
-/// the general/coding default; `deepseek-reasoner` (R1) trades latency for
-/// deeper step-by-step reasoning on hard problems.
-enum DeepSeekClient {
-    nonisolated static let defaultModel = "deepseek-chat"
-    nonisolated static let allModels    = [
-        "deepseek-chat",       // V3 — fast, excellent general + coding
-        "deepseek-reasoner",   // R1 — deeper reasoning, slower
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "DeepSeek",
-        baseURL:         "https://api.deepseek.com/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .deepSeekAPIKey,
-        consoleURL:      "https://platform.deepseek.com/api_keys"
-    )
-}
+// (DeepSeek's direct paid API was REMOVED 2026-06-12 — owner: "remove deepseek".
+// Its key had been chat-exposed; rather than rotate, the provider was cut
+// entirely. DeepSeek *models* remain available through NVIDIA NIM below, on the
+// free tier under the NVIDIA key.)
 
 /// NVIDIA NIM (`integrate.api.nvidia.com`) — NVIDIA's OpenAI-compatible inference
 /// endpoint, with a **free tier** (free credits from build.nvidia.com). This is
@@ -4890,7 +4853,7 @@ enum GrokClient {
 }
 ```
 
-===== FILE: Salehman AI/LLM/KeychainStore.swift (136 lines) =====
+===== FILE: Salehman AI/LLM/KeychainStore.swift (138 lines) =====
 ```swift
 import Foundation
 import Security
@@ -4931,7 +4894,9 @@ enum KeychainStore {
         case groqAPIKey     = "groq-api-key"
         case mistralAPIKey  = "mistral-api-key"
         case cerebrasAPIKey = "cerebras-api-key"
-        case deepSeekAPIKey = "deepseek-api-key"
+        // ("deepseek-api-key" removed 2026-06-12 — owner: "remove deepseek".
+        // The provider was cut after its key was chat-exposed; the stored
+        // Keychain item was deleted alongside this change.)
         /// NVIDIA NIM (integrate.api.nvidia.com) — hosts REAL DeepSeek (V4) on a
         /// free tier, OpenAI-compatible. This is the app's "DeepSeek for free"
         /// route since DeepSeek's own API + OpenRouter are paid-only.
@@ -5030,13 +4995,13 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1707 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1697 lines) =====
 ```swift
 import Foundation
 import OSLog
 
 /// Brain routing for Salehman AI. Salehman runs CLOUD-FIRST (free DeepSeek V4 via
-/// NVIDIA → free frontier/120B tiers → DeepSeek paid backstop) with a LOCAL floor
+/// NVIDIA → free frontier/120B tiers) with a LOCAL floor
 /// (Ollama / on-device MLX) for offline use. No Apple Intelligence.
 enum LocalLLM {
     /// Profiling signposter. Capture a trace in **Instruments → Time Profiler +
@@ -5102,12 +5067,12 @@ enum LocalLLM {
         case .freeAuto:
             return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, or start Ollama."
         case .freeCoding:
-            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (DeepSeek / OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
+            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
         case .cloudCoding:
             return AppSettings.isOfflineOnly
                 ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick the local Ollama brain."
-                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for DeepSeek / Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .deepSeek, .codex, .openRouter:
+                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
+        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
             return "Salehman runs on the cloud — add any free key in Settings (NVIDIA for REAL DeepSeek V4 free, or Groq / Cerebras / OpenRouter) and he leads on a big model at $0. To run fully on-device instead, pull your Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
@@ -5132,7 +5097,7 @@ enum LocalLLM {
         case .salehman, .freeAuto, .freeCoding:
             return !SalehmanEngine.hasAnyCloud
         case .cloudCoding:
-            // Cloud Coding uses its OWN curated coder roster (DeepSeek/Cerebras/Groq/
+            // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
             // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
             // accurate check is that roster's reachability. Otherwise the banner would
             // wrongly hide for a user whose only key is Gemini while Cloud Coding still
@@ -5157,12 +5122,11 @@ enum LocalLLM {
         case vllm                                    // local OpenAI-compat server served by vLLM
         case claudeHaiku, grok                       // cloud, pre-existing
         case gemini, groq, mistral, cerebras         // cloud, free-tier
-        case deepSeek                                // cloud, cheap + elite coder (OpenAI-compatible)
         case codex, copilot                          // cloud, OpenAI + GitHub Copilot
         case openRouter                              // cloud aggregator (free models)
         case ensemble                                // all reachable brains in parallel
         case freeAuto                                // free brains raced; first valid wins; local backstop
-        case freeCoding                              // free coders + DeepSeek raced, tool-capable, coding-focused
+        case freeCoding                              // free coders raced, tool-capable, coding-focused
         case cloudCoding                             // CLOUD-ONLY best coders, tool-capable (no local, no lag)
         case none
     }
@@ -5199,7 +5163,7 @@ enum LocalLLM {
     nonisolated static var isFreeAutoMode: Bool { AppSettings.brainPreferenceCurrent == .freeAuto }
 
     /// True when the user picked the "FreeCoding" preference — a coding-focused,
-    /// tool-capable loop over the free coder brains + DeepSeek.
+    /// tool-capable loop over the free coder brains.
     nonisolated static var isFreeCodingMode: Bool { AppSettings.brainPreferenceCurrent == .freeCoding }
 
     /// True when the user picked "Cloud Coding" — a CLOUD-ONLY coding loop over the
@@ -5357,7 +5321,7 @@ enum LocalLLM {
         return await generateFreeAuto(message)
     }
 
-    // MARK: - FreeCoding (the free + DeepSeek coding loop)
+    // MARK: - FreeCoding (the free coding loop)
 
     /// Coding-focused system prompt for FreeCoding mode — a free, tool-capable
     /// pair-programmer persona shared by the race path and the tool loop. The
@@ -5389,7 +5353,6 @@ enum LocalLLM {
 
     /// FreeCoding RACE (no tools) — like `generateFreeAuto` but routes each free
     /// brain to its strongest CODING model + a coding system prompt, and adds
-    /// DeepSeek (elite coder, cheap) to the roster per the owner's choice. First
     /// usable reply wins; local Ollama coder backstop. Used by
     /// direct callers; the chat pipeline uses the tool-capable `freeCodingReply`.
     static func generateFreeCoding(_ prompt: String) async -> String {
@@ -5399,7 +5362,7 @@ enum LocalLLM {
         let now = Date()
 
         typealias Thunk = @Sendable () async -> String?
-        // Membership, order (DeepSeek opted in by the owner), and the
+        // Membership, order, and the
         // Offline-Mode gate come from BrainRouting; each entry races its
         // strongest CODING model via `freeCoderModel`.
         var roster: [(name: String, run: Thunk)] = []
@@ -5440,7 +5403,7 @@ enum LocalLLM {
 
     /// FreeCoding WITH tools — what the chat pipeline runs. Routes through a
     /// tool-capable coder so it can actually write, build, run, and TEST code:
-    /// free cloud coders + DeepSeek (DeepSeek first — the strongest) → local Ollama
+    /// free cloud coders → local Ollama
     /// coder, then a plain `generateFreeCoding` race so
     /// it never dead-ends. Same approval gate + blocked-command floor as always.
     static func freeCodingReply(_ message: String) async -> String {
@@ -5448,7 +5411,7 @@ enum LocalLLM {
         // CLOUD CODERS FIRST — the fast, no-lag path. They run on someone else's
         // GPUs (ZERO local RAM, so they never thrash a MacBook) and are ~10× faster
         // than a multi-GB local model — AND smarter than a local 7B. Order balances
-        // smarts + speed: DeepSeek (the owner's elite pick) → Cerebras / Groq
+        // smarts + speed: Cerebras / Groq
         // (blazing ~2000 tok/s, strong gpt-oss-120b) → OpenRouter → Mistral. Each
         // runs the tool loop so it can build / run / test. Skipped under Offline Mode.
         for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
@@ -5577,13 +5540,12 @@ enum LocalLLM {
         case .groq:              return "Cloud · Groq \(AppSettings.groqModelCurrent)"
         case .mistral:           return "Cloud · Mistral \(AppSettings.mistralModelCurrent)"
         case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
-        case .deepSeek:          return "Cloud · DeepSeek \(AppSettings.deepSeekModelCurrent)"
         case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
         case .copilot:           return "Cloud · GitHub Copilot"
         case .openRouter:        return "Cloud · OpenRouter \(AppSettings.openRouterModelCurrent)"
         case .ensemble:          return "All brains · parallel"
         case .freeAuto:          return "Free · Auto (parallel, never blocked)"
-        case .freeCoding:        return "FreeCoding · free coders + DeepSeek · runs the terminal"
+        case .freeCoding:        return "FreeCoding · free coders · runs the terminal"
         case .cloudCoding:       return "Cloud Coding · best cloud coders · no local, no lag"
         case .none:
             // Name the pinned-but-down brain so the header matches the chat message.
@@ -5660,8 +5622,8 @@ enum LocalLLM {
             roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
         }
         // Cloud membership + the Offline-Mode gate (ensemble runs LOCAL-only
-        // offline) come from BrainRouting.ensembleCloudRoster — including the
-        // documented DeepSeek exclusion. Labels/calls stay per-provider here.
+        // offline) come from BrainRouting.ensembleCloudRoster. Labels/calls
+        // stay per-provider here.
         for p in BrainRouting.ensembleCloudRoster(routeConfigNow()) {
             switch p {
             case .anthropic:
@@ -5681,8 +5643,6 @@ enum LocalLLM {
                 if let client = p.compatClient, let model = p.selectedModel {
                     roster.append(("\(p.rawValue) \(model)", { await client.chat(prompt: prompt, system: sys, model: model) }))
                 }
-            case .deepSeek:
-                break   // never in the ensemble roster (see CloudProvider.ensembleRoster)
             }
         }
 
@@ -6428,7 +6388,7 @@ enum LocalLLM {
             return offMessage
         case .salehman:
             // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
-            // NVIDIA → free frontier/120B tiers → DeepSeek paid backstop → local
+            // NVIDIA → free frontier/120B tiers → local
             // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
@@ -6468,7 +6428,6 @@ enum LocalLLM {
         case .groq:       return await GroqClient.shared.chat(prompt: prompt, model: AppSettings.groqModelCurrent)
         case .mistral:    return await MistralClient.shared.chat(prompt: prompt, model: AppSettings.mistralModelCurrent)
         case .cerebras:   return await CerebrasClient.shared.chat(prompt: prompt, model: AppSettings.cerebrasModelCurrent)
-        case .deepSeek:   return await DeepSeekClient.shared.chat(prompt: prompt, model: AppSettings.deepSeekModelCurrent)
         case .openRouter: return await OpenRouterClient.shared.chat(prompt: prompt, model: AppSettings.openRouterModelCurrent)
         }
     }
@@ -6622,10 +6581,6 @@ enum LocalLLM {
             let m = AppSettings.cerebrasModelCurrent
             if let r = await CerebrasClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
             return await CerebrasClient.shared.chat(prompt: prompt, model: m)
-        case .deepSeek:
-            let m = AppSettings.deepSeekModelCurrent
-            if let r = await DeepSeekClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await DeepSeekClient.shared.chat(prompt: prompt, model: m)
         case .openRouter:
             let m = AppSettings.openRouterModelCurrent
             if let r = await OpenRouterClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
@@ -6681,7 +6636,7 @@ enum LocalLLM {
         }
     }
 
-    /// One pinned cloud brain's conversational execution. The six
+    /// One pinned cloud brain's conversational execution. The five
     /// OpenAI-compatible brains try the tool loop first (terminal / web),
     /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
     /// are plain chat only (no shared tool loop).
@@ -6700,7 +6655,7 @@ enum LocalLLM {
                                            model: AppSettings.geminiModelCurrent)
         case .copilot:
             return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .groq, .mistral, .cerebras, .deepSeek, .openAI, .openRouter:
+        case .groq, .mistral, .cerebras, .openAI, .openRouter:
             guard let client = p.compatClient, let m = p.selectedModel else { return nil }
             if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
             return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
@@ -8007,7 +7962,7 @@ nonisolated struct OpenAICompatibleClient: Sendable {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanEngine.swift (363 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanEngine.swift (346 lines) =====
 ```swift
 import Foundation
 
@@ -8026,9 +7981,11 @@ import Foundation
 ///      DeepSeek's own API + OpenRouter are paid-only;
 ///   3. **free frontier** (Kimi K2.6 ~1T, Nemotron-Ultra-550B) + the **free 120B**
 ///      tier (Cerebras / Groq / Mistral / OpenRouter) — five stacked free quotas;
-///   4. **DeepSeek's paid API** — last-resort backstop (R1/V3 auto-routed);
-///   5. the **local floor** — on-device MLX, then Ollama (truly unlimited, ~7B) so
+///   4. the **local floor** — on-device MLX, then Ollama (truly unlimited, ~7B) so
 ///      Salehman still answers with no internet.
+///
+/// (Rung 4 used to be DeepSeek's paid API as a last-resort backstop — removed
+/// 2026-06-12, owner: "remove deepseek". The chain is now entirely free-tier.)
 ///
 /// Each cloud entry runs only when its key is present, and a provider error
 /// (401 / 404 / 429 rate-limit) rolls to the next brain — so rate limits stay
@@ -8046,7 +8003,7 @@ enum SalehmanEngine {
         VLLM.isConfigured || UnslothStudio.isConfigured
             || NvidiaClient.shared.hasKey()   || OpenRouterClient.shared.hasKey()
             || CerebrasClient.shared.hasKey()  || GroqClient.shared.hasKey()
-            || MistralClient.shared.hasKey()   || DeepSeekClient.shared.hasKey()
+            || MistralClient.shared.hasKey()
             // Standalone cloud brains the owner may have pinned a key for — now
             // honored by `tryStandaloneClouds`, so they count as "cloud reachable"
             // (previously a Gemini/Claude/Grok/OpenAI-only setup read as "no cloud").
@@ -8056,10 +8013,10 @@ enum SalehmanEngine {
 
     // MARK: - Non-streaming
 
-    /// Cloud-first single-shot generation. `userPrompt` (the user's original
-    /// message) drives DeepSeek R1-vs-V3 routing when the chain reaches the paid
-    /// backstop; pass it when known, else it falls back to `prompt`. Returns nil
-    /// only when nothing — cloud or local — is reachable.
+    /// Cloud-first single-shot generation. (`userPrompt` is kept for call-site
+    /// stability; it used to drive the paid DeepSeek backstop's R1/V3 routing,
+    /// removed 2026-06-12.) Returns nil only when nothing — cloud or local — is
+    /// reachable.
     static func generate(prompt: String,
                          userPrompt: String? = nil,
                          maxTokens: Int? = nil) async -> String? {
@@ -8067,8 +8024,7 @@ enum SalehmanEngine {
         // qualify only on loopback URLs (the `generateOnDevice` rule), the
         // cloud chain + standalone keys are skipped entirely, and the
         // MLX/Ollama floor below still answers. (This was the Offline leak:
-        // a pinned .salehman walked the whole cloud chain — including the
-        // PAID DeepSeek backstop — while "offline".)
+        // a pinned .salehman walked the whole cloud chain while "offline".)
         let offline = AppSettings.isOfflineOnly
         if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
@@ -8162,10 +8118,11 @@ enum SalehmanEngine {
         return nil
     }
 
-    // MARK: - Self-improvement loop (Salehman ⇄ DeepSeek R1)
+    // MARK: - Self-improvement loop (Salehman ⇄ reasoner critic)
 
     /// **The "gets smarter every answer" loop.** Salehman's answer is handed to a
-    /// DeepSeek reasoner (R1-class) which analyzes it and returns concrete fixes;
+    /// reasoner-class critic (DeepSeek-V4-pro via NVIDIA free, or a free frontier
+    /// reasoner) which analyzes it and returns concrete fixes;
     /// Salehman then revises, applying the feedback, and returns the polished final.
     ///
     /// Fully graceful: if the critic is unreachable, or says the answer is already
@@ -8220,12 +8177,11 @@ enum SalehmanEngine {
         return current
     }
 
-    /// Runs a DeepSeek reasoner as a critic over Salehman's answer, FREE-FIRST:
-    /// NVIDIA's free `deepseek-v4-pro` → DeepSeek's paid `deepseek-reasoner` (R1) →
-    /// a free frontier reasoner (Nemotron-550B) so the loop still runs at $0 when
-    /// no DeepSeek key is set. Returns the feedback text, or nil if no critic is
-    /// reachable. Uses a REVIEWER system prompt (not the Salehman persona) so the
-    /// critique is adversarial, not self-congratulatory.
+    /// Runs a reasoner-class critic over Salehman's answer, FREE-ONLY:
+    /// NVIDIA's free `deepseek-v4-pro` → a free frontier reasoner (Nemotron-550B).
+    /// Returns the feedback text, or nil if no critic is reachable. Uses a
+    /// REVIEWER system prompt (not the Salehman persona) so the critique is
+    /// adversarial, not self-congratulatory.
     private static func deepSeekCritique(userPrompt: String, answer: String) async -> String? {
         let system = """
         You are DeepSeek, a meticulous, senior reviewer. You will be given a user's \
@@ -8249,8 +8205,7 @@ enum SalehmanEngine {
         // Free-first critic chain. Each entry runs only if its key is present and
         // rolls onward on an error/429 — same discipline as the main chain.
         let critics: [(client: OpenAICompatibleClient, model: String)] = [
-            (NvidiaClient.shared,   "deepseek-ai/deepseek-v4-pro"),   // FREE deep DeepSeek
-            (DeepSeekClient.shared, "deepseek-reasoner"),             // paid R1
+            (NvidiaClient.shared,   "deepseek-ai/deepseek-v4-pro"),   // FREE deep DeepSeek (via NVIDIA)
             (OpenRouterClient.shared, "nvidia/nemotron-3-ultra-550b-a55b:free"), // FREE reasoner fallback
         ]
         for critic in critics {
@@ -8265,9 +8220,10 @@ enum SalehmanEngine {
 
     // MARK: - Chain (single source of truth)
 
-    /// The free-first cloud chain. `routing` (the user's original prompt) only
-    /// affects the paid DeepSeek backstop's R1/V3 choice. Model-string overrides
-    /// pick each provider's strongest free option; nil uses the provider default.
+    /// The free-first cloud chain. Model-string overrides pick each provider's
+    /// strongest free option; nil uses the provider default. (`routing` is kept
+    /// for call-site stability; it used to pick the removed paid DeepSeek
+    /// backstop's R1-vs-V3 model.)
     static func cloudChain(routing userPrompt: String) -> [(client: OpenAICompatibleClient, model: String?)] {
         [
             (NvidiaClient.shared,     "deepseek-ai/deepseek-v4-flash"),    // REAL DeepSeek V4 — FREE via NVIDIA
@@ -8277,7 +8233,6 @@ enum SalehmanEngine {
             (GroqClient.shared,       "openai/gpt-oss-120b"),      // FREE 120B
             (MistralClient.shared,    "mistral-large-latest"),     // FREE tier — another quota bucket
             (OpenRouterClient.shared, "openai/gpt-oss-120b:free"), // FREE 120B safe fallback
-            (DeepSeekClient.shared,   deepSeekModel(for: userPrompt)),  // paid API — last-resort backstop
         ]
     }
 
@@ -8354,27 +8309,10 @@ enum SalehmanEngine {
         return nil
     }
 
-    /// Picks which DeepSeek brain finalizes a given prompt when the paid backstop
-    /// is reached: **R1 (`deepseek-reasoner`)** for hard, multi-step / math / logic
-    /// prompts, the faster **V3 (`deepseek-chat`)** otherwise — both DeepSeek
-    /// brains in one. Best-effort heuristic; when in doubt it stays on fast V3.
-    static func deepSeekModel(for userPrompt: String) -> String {
-        let p = userPrompt.lowercased()
-        let reasoningCues = [
-            "prove", "proof", "derive", "step by step", "step-by-step", "reason",
-            "explain why", "how come", "logic", "puzzle", "riddle", "solve",
-            "calculate", "equation", "integral", "derivative", "probability",
-            "theorem", "optimi", "complexity", "algorithm", "trade-off",
-            "tradeoff", "analy",
-        ]
-        if reasoningCues.contains(where: p.contains) { return "deepseek-reasoner" }
-        if userPrompt.count > 800 { return "deepseek-reasoner" }
-        return "deepseek-chat"
-    }
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanLeader.swift (149 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanLeader.swift (148 lines) =====
 ```swift
 import Foundation
 
@@ -8395,11 +8333,11 @@ import Foundation
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
 /// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
 ///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
-///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), and only then
-///   DeepSeek's paid 671B as a last-resort backstop, then the local floor (MLX,
-///   Ollama). So whenever you're online with any one free key set, Salehman
-///   finalizes on a big model at **$0** — DeepSeek (paid) runs only if every free
-///   tier is unavailable, and it drops to the ~7B local model when offline.
+///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), then the
+///   local floor (MLX, Ollama). So whenever you're online with any one free key
+///   set, Salehman finalizes on a big model at **$0**, and it drops to the ~7B
+///   local model when offline. (The paid DeepSeek backstop was removed
+///   2026-06-12 — owner: "remove deepseek".)
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
@@ -8470,8 +8408,7 @@ enum SalehmanLeader {
         """
 
         // Leader pass at the configured effort. The generator routes through the
-        // shared cloud-first engine; `userPrompt` (not the meta-prompt) drives the
-        // DeepSeek R1/V3 routing. At `.instant` this is a single generate call.
+        // shared cloud-first engine. At `.instant` this is a single generate call.
         let effort = AppSettings.salehmanEffortCurrent
         let result = await effort.respond(to: leaderPrompt) { prompt in
             await SalehmanEngine.generate(prompt: prompt, userPrompt: userPrompt) ?? ""
@@ -8479,8 +8416,8 @@ enum SalehmanLeader {
         let final = result.answer
         let f = final.trimmingCharacters(in: .whitespacesAndNewlines)
         if !f.isEmpty, final != LocalLLM.offMessage {
-            // Self-improvement loop: hand Salehman's answer to a DeepSeek
-            // reasoner (R1-class) for analysis, then let Salehman revise per
+            // Self-improvement loop: hand Salehman's answer to a reasoner-class
+            // critic (NVIDIA-hosted, free) for analysis, then let Salehman revise per
             // that feedback — so each answer comes out smarter. Graceful: if
             // the critic is unreachable or satisfied, `refine` returns `final`
             // unchanged. Skipped when the owner turns the loop off.
@@ -13554,7 +13491,7 @@ struct AboutView: View {
               body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Many brains, one Salehman",
-              body: "MLX, Ollama, DeepSeek, and many free cloud brains. Check several to rotate through them — one per message."),
+              body: "MLX, Ollama, and many free cloud brains. Check several to rotate through them — one per message."),
         .init(icon: "wrench.and.screwdriver.fill",
               title: "Real tools, with approval",
               body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
@@ -22461,7 +22398,7 @@ enum ScratchpadList {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (176 lines) =====
+===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (173 lines) =====
 ```swift
 import Foundation
 
@@ -22499,7 +22436,6 @@ struct BrainReadiness {
     var groq = false
     var mistral = false
     var cerebras = false
-    var deepSeek = false
     var openAI = false
     var copilot = false
     var openRouter = false
@@ -22509,17 +22445,16 @@ struct BrainReadiness {
     var localFloor: Bool { ollamaUp && hasCoder }
 
     /// FREE cloud keys only — the set `.freeAuto` is allowed to race.
-    /// (DeepSeek joins `.freeCoding`/`.cloudCoding`, deliberately not here.)
     var anyFreeCloud: Bool { groq || gemini || cerebras || mistral || openRouter }
 
     /// The cloud coder pool shared by `.freeCoding` and `.cloudCoding`.
-    var anyCloudCoder: Bool { deepSeek || groq || cerebras || mistral || openRouter }
+    var anyCloudCoder: Bool { groq || cerebras || mistral || openRouter }
 
     /// Mirrors `SalehmanEngine.hasAnyCloud` (hosted endpoint or ANY chain
     /// key) over the cached flags — the `.salehman` cloud-first gate.
     var salehmanAnyCloud: Bool {
         vllmConfigured || unslothConfigured
-            || nvidia || openRouter || cerebras || groq || mistral || deepSeek
+            || nvidia || openRouter || cerebras || groq || mistral
             || gemini || grok || openAI || anthropic
     }
 
@@ -22537,19 +22472,18 @@ struct BrainReadiness {
         case .groq:        return groq
         case .mistral:     return mistral
         case .cerebras:    return cerebras
-        case .deepSeek:    return deepSeek
         case .codex:       return openAI
         case .copilot:     return copilot
         case .openRouter:  return openRouter
         // Ensemble is "ready" if ANY brain is reachable — a local one or any
-        // keyed cloud one. (DeepSeek / NVIDIA / endpoint engines were never
-        // counted here — preserved as-is from the original switch.)
+        // keyed cloud one. (NVIDIA / endpoint engines were never counted
+        // here — preserved as-is from the original switch.)
         case .ensemble:
             return localFloor || anthropic || grok || gemini || groq
                 || mistral || cerebras || openAI || copilot || openRouter
         // Free · Auto never spends: the local floor or a FREE key only.
         case .freeAuto:    return localFloor || anyFreeCloud
-        // FreeCoding mirrors Free·Auto's pool plus DeepSeek (opted in).
+        // FreeCoding mirrors Free·Auto's coder pool.
         case .freeCoding:  return localFloor || anyCloudCoder
         // Cloud Coding is cloud-ONLY — no local floor.
         case .cloudCoding: return anyCloudCoder
@@ -22641,7 +22575,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1974 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1958 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -22703,10 +22637,6 @@ struct SettingsView: View {
     @State private var openRouterTesting: Bool = false
     @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
 
-    @State private var deepSeekKeyDraft: String = ""
-    @State private var deepSeekTestStatus: String? = nil
-    @State private var deepSeekTesting: Bool = false
-    @State private var deepSeekKeySaved: Bool = DeepSeekClient.shared.hasKey()
 
     // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
     @State private var nvidiaKeyDraft: String = ""
@@ -22792,7 +22722,7 @@ struct SettingsView: View {
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
-                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
+                               "After Salehman answers, a reasoner-class critic (free, NVIDIA-hosted) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
                                "arrow.triangle.2.circlepath", $settings.salehmanRefine)
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
@@ -22843,7 +22773,7 @@ struct SettingsView: View {
                     }
 
                     // Salehman runs CLOUD-FIRST (free DeepSeek V4 via NVIDIA → free
-                    // frontier/120B tiers → DeepSeek paid backstop); the rows below
+                    // frontier/120B tiers); the rows below
                     // configure its LOCAL floor for offline use.
                     section("Salehman engine", "Salehman runs cloud-first on big models (free DeepSeek V4 via NVIDIA → free frontier tiers). These rows set its LOCAL fallback for offline use: a standalone on-device MLX engine, or your own Ollama model. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
                         // The truly-standalone path. Visible regardless of
@@ -22903,7 +22833,7 @@ struct SettingsView: View {
                     collapsibleGroup(
                         "Free API keys",
                         configured: [geminiKeySaved, groqKeySaved, mistralKeySaved,
-                                     cerebrasKeySaved, openRouterKeySaved, deepSeekKeySaved].filter { $0 }.count,
+                                     cerebrasKeySaved, openRouterKeySaved].filter { $0 }.count,
                         total: 5,
                         isExpanded: $showFreeKeys
                     ) {
@@ -22951,17 +22881,6 @@ struct SettingsView: View {
                             cloudTestRow(provider: OpenRouterClient.shared,
                                          keySaved: $openRouterKeySaved,
                                          testing: $openRouterTesting, status: $openRouterTestStatus)
-                        }
-
-                        section("DeepSeek (Cloud · cheap, elite coder · runs the terminal)", "Pay-as-you-go but pennies; one of the strongest coding/reasoning models. Get a key at platform.deepseek.com/api_keys.") {
-                            cloudKeyRow(provider: DeepSeekClient.shared,
-                                        keySaved: $deepSeekKeySaved, draft: $deepSeekKeyDraft)
-                            cloudModelRow(displayName: "DeepSeek",
-                                          models: DeepSeekClient.allModels,
-                                          selection: $settings.deepSeekModel)
-                            cloudTestRow(provider: DeepSeekClient.shared,
-                                         keySaved: $deepSeekKeySaved,
-                                         testing: $deepSeekTesting, status: $deepSeekTestStatus)
                         }
 
                         section("NVIDIA (Cloud · free tier · REAL DeepSeek V4 for free)", "Hosts the actual deepseek-ai/deepseek-v4 weights at $0 — DeepSeek's own API and OpenRouter are paid-only. Get a free key at build.nvidia.com. Salehman uses this first so it leads on real DeepSeek for free.") {
@@ -23176,7 +23095,6 @@ struct SettingsView: View {
             groq: groqKeySaved,
             mistral: mistralKeySaved,
             cerebras: cerebrasKeySaved,
-            deepSeek: deepSeekKeySaved,
             openAI: openAIKeySaved,
             copilot: copilotAuthed,
             openRouter: openRouterKeySaved,
@@ -25465,7 +25383,7 @@ struct AgentPipelineConcurrencyTests {
     }
 
     @Test func nonOllamaBrainsUseTheBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek,          baseCap: 4) == 4)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 4) == 4)
         #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: 6) == 6)
         #expect(AgentPipeline.effectiveCap(brain: .grok,              baseCap: 8) == 8)
         #expect(AgentPipeline.effectiveCap(brain: .ensemble,          baseCap: 3) == 3)
@@ -25476,7 +25394,7 @@ struct AgentPipelineConcurrencyTests {
         // A degenerate baseCap (0 / negative from a misconfigured
         // MemoryManager) must not produce cap=0 — that would create an empty
         // `stride(by:)` batch list and hang the pipeline silently.
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek,          baseCap: 0)  == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 0)  == 1)
         #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: -3) == 1)
     }
 }
@@ -25513,7 +25431,7 @@ enum BrainPreferenceTestLock {
 }
 ```
 
-===== FILE: Salehman AITests/BrainRoutingDispatchTests.swift (171 lines) =====
+===== FILE: Salehman AITests/BrainRoutingDispatchTests.swift (168 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -25536,7 +25454,7 @@ struct BrainRoutingDispatchTests {
 
     private static let cloudPins: [BrainPreference] = [
         .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-        .deepSeek, .codex, .copilot, .openRouter,
+        .codex, .copilot, .openRouter,
     ]
 
     private static func config(
@@ -25644,7 +25562,7 @@ struct BrainRoutingDispatchTests {
         let roster = BrainRouting.freeAutoRoster(everything)
         #expect(roster == CloudProvider.freeTier)
         #expect(roster.allSatisfy { $0.isFree })
-        for paid in [CloudProvider.anthropic, .grok, .deepSeek, .openAI, .copilot] {
+        for paid in [CloudProvider.anthropic, .grok, .openAI, .copilot] {
             #expect(!roster.contains(paid))
         }
         // The tool-loop variant additionally drops Gemini (free, but no
@@ -25660,24 +25578,21 @@ struct BrainRoutingDispatchTests {
     @Test
     func rosterMembershipMatchesTheDocumentedSets() {
         let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
-        // Ensemble: the nine chat brains — DeepSeek's exclusion is the
-        // PRESERVED historical drift, documented in CloudProvider.ensembleRoster
-        // and flagged to the owner (anyBrainReachable counts it; the fan-out
-        // doesn't). If the owner opts DeepSeek in, update this test and the
-        // roster constant together.
+        // Ensemble: the nine chat brains. (The historical DeepSeek
+        // counted-but-not-rostered drift dissolved with the provider's
+        // removal on 2026-06-12.)
         let ensemble = BrainRouting.ensembleCloudRoster(everything)
         #expect(ensemble == CloudProvider.ensembleRoster)
-        #expect(!ensemble.contains(.deepSeek))
         // The coding pools: race order and sequential-loop order are distinct,
         // deliberately (race = parallel anyway; the loop is quality+speed) —
         // but their MEMBERSHIP is identical.
         #expect(BrainRouting.codingRaceRoster(everything) == CloudProvider.codingRace)
         #expect(BrainRouting.coderLoopRoster(everything) == CloudProvider.coderLoop)
         #expect(Set(CloudProvider.codingRace) == Set(CloudProvider.coderLoop))
-        // anyBrainReachable: local floor or any single key (DeepSeek included).
+        // anyBrainReachable: local floor or any single key.
         #expect(!BrainRouting.anyBrainReachable(Self.config()))
         #expect(BrainRouting.anyBrainReachable(Self.config { $0.ollamaReady = true }))
-        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.deepSeek] }))
+        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.cerebras] }))
         // Salehman: cloud-first; endpoint engines and any chain key light it,
         // nothing at all reads .none.
         let salehmanCloud = Self.config { $0.pref = .salehman; $0.salehmanCloudReady = true }
@@ -30221,7 +30136,7 @@ struct SelfImprovePatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/SettingsBrainReadyTests.swift (197 lines) =====
+===== FILE: Salehman AITests/SettingsBrainReadyTests.swift (195 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30263,7 +30178,7 @@ struct SettingsBrainReadyTests {
             $0.unslothConfigured = true; $0.vllmConfigured = true
             $0.anthropic = true; $0.grok = true; $0.gemini = true
             $0.groq = true; $0.mistral = true; $0.cerebras = true
-            $0.deepSeek = true; $0.openAI = true; $0.copilot = true
+            $0.openAI = true; $0.copilot = true
             $0.openRouter = true; $0.nvidia = true
             $0.customModelNamed = true   // name alone, no ollamaUp
         }
@@ -30287,12 +30202,11 @@ struct SettingsBrainReadyTests {
     func freeAutoLightsForFreeKeysOrLocalFloorNeverForPaidOnlyKeys() {
         #expect(!BrainReadiness().ready(.freeAuto))
         // Paid-only / non-free signals all ON: anthropic, grok, openAI,
-        // copilot, nvidia, deepSeek (deepSeek belongs to the CODING pools,
-        // not freeAuto) and the endpoint engines. None may light freeAuto —
+        // copilot, nvidia, and the endpoint engines. None may light freeAuto —
         // this mode promises to never spend.
         let paidOnly = Self.flags {
             $0.anthropic = true; $0.grok = true; $0.openAI = true
-            $0.copilot = true; $0.nvidia = true; $0.deepSeek = true
+            $0.copilot = true; $0.nvidia = true
             $0.unslothConfigured = true; $0.vllmConfigured = true
         }
         #expect(!paidOnly.ready(.freeAuto))
@@ -30329,18 +30243,17 @@ struct SettingsBrainReadyTests {
         // cloudCoding is cloud-ONLY: the local floor must not light it.
         #expect(!Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
             .ready(.cloudCoding))
-        #expect(Self.flags { $0.deepSeek = true }.ready(.cloudCoding))
+        #expect(Self.flags { $0.cerebras = true }.ready(.cloudCoding))
         #expect(!Self.flags { $0.gemini = true }.ready(.cloudCoding))
-        // freeCoding = freeAuto's coding pool + deepSeek + the local floor.
-        #expect(Self.flags { $0.deepSeek = true }.ready(.freeCoding))
+        // freeCoding = freeAuto's coding pool + the local floor.
+        #expect(Self.flags { $0.openRouter = true }.ready(.freeCoding))
         #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
             .ready(.freeCoding))
         #expect(!Self.flags { $0.gemini = true }.ready(.freeCoding))
-        // Ensemble: any keyed chat cloud or the local floor — but deepSeek /
-        // nvidia / endpoint engines were never in its set (preserved rule).
+        // Ensemble: any keyed chat cloud or the local floor — but nvidia /
+        // endpoint engines were never in its set (preserved rule).
         #expect(Self.flags { $0.anthropic = true }.ready(.ensemble))
         #expect(Self.flags { $0.copilot = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.deepSeek = true }.ready(.ensemble))
         #expect(!Self.flags { $0.nvidia = true }.ready(.ensemble))
         #expect(!Self.flags { $0.vllmConfigured = true }.ready(.ensemble))
         // Endpoint engines light exactly their own pin.
@@ -30876,12 +30789,12 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 8) == 8)
         #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 0) == 1)
     }
 }
 
@@ -32200,7 +32113,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (131 lines) =====
+===== FILE: COORDINATION.md (134 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -32264,6 +32177,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 
 | Session/Tab | Claimed Files (be specific) | Since | Status / Current Work Item | Released? |
 |-------------|-----------------------------|-------|----------------------------|-----------|
+| **Claude Chat B — DEEPSEEK REMOVAL (2026-06-12 ~04:0x)** | `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/SalehmanPersona.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift` (owner-directed REMOVAL of deepSeek entries — exception to append-only), `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift` (1 hit), `Knowledge/ExternalToolsKnowledge.swift` (1 hit), tests: `BrainRoutingDispatchTests`, `SettingsBrainReadyTests`, `AgentPipelineConcurrencyTests`, `ToolLoopTests` | now | **Owner: "remove deepseek."** Removing the DIRECT DeepSeek API provider end-to-end (`.deepSeek` BrainPreference + `CloudProvider.deepSeek` + `DeepSeekClient` + `deepSeekAPIKey` + Settings UI + race rosters + paid-backstop rungs + stored Keychain item). NVIDIA NIM free DeepSeek-V4 tier STAYS (different provider/key — `.salehman`'s $0 ladder). Will leave green: typecheck + canonical xcodebuild test before release. | no |
 | Codex CLI | Build unblock: moved untracked non-app artifacts out of synchronized `Salehman AI/` app source root; docs touched `COORDINATION.md`, `DEVELOPMENT_LOG.md` | 2026-06-08 | Duplicate Xcode build inputs fixed; build + `Salehman AITests` green. | **released** |
 | Claude Chat A | (see ownership split above; claim specifics here when touching) | — | — | — |
 | **Claude Chat B — CHAT MARATHON (2026-06-11 ~22:30)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, NEW `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift` | now | **Owner: 3h refine/polish/test/feature marathon on the Chat tab.** Shipped so far: ✅1 slash commands `38c38a8` ✅2 edit-and-resend `a32c411` ✅3 quote-reply + Esc `5cdc39a` ✅4 slash UI tests `eb5e00d` ✅5 multi-attachments `edfa32e` (merge-at-submit — pipeline untouched) ✅6 prompt-slash + draft persistence `490891f` + gallery quote sample `85ffa4b`. 18 new unit tests in `ChatComposerLogicTests` (thanks for the `import Foundation` catch, whoever built it) + 2 UI flows. PROJECT_CONTEXT chat rows refreshed. Second half: ✅7 PROJECT_CONTEXT sync `fd65594` ✅8 inline Retry on failure rows `4a2621a` ✅9 slash ↑/↓ keyboard nav `5fb2deb` ✅10 right-click context menus `da25c59` ✅11 **CONVERSATION HISTORY** `50fd398` (new chat ARCHIVES to `chats/*.json`, NEW `Views/ChatHistoryView.swift` sheet + header clock + `/history`, restore is symmetric-archive) + `chat_history` QA surface. Now 26 unit tests in `ChatComposerLogicTests` + 8 UI flows. chat_samples drift eyes-verified + baselines adopted (post-adopt cycle: failures `[]`, all within budget). Finale: ✅12 reply-stats tooltip `8b44b44` ✅13 history UI flow + a11y `e2d0e19` ✅14 archive prune(100) `974cfdf` ✅15 welcome history link + honest /clear copy `91f4423` ✅16 **adversarial self-review fixes `82f55ad`** (multi-load race → counter; restore-under-stream → stop first). FINAL TALLY: 16 slices, ~30 unit tests + 9 UI flows, conversation history + slash commands + multi-attachments + edit/quote/retry shipped; all typecheck-green, pictures verified, baselines adopted. ⚠️ STILL OWED by a build-capable session: one `AITests` + `Salehman AIUITests` run (sandbox can't execute tests — written conservative, mirrors existing idioms). False-alarm note: the 21.7% `agents` drift was MY image-preview inverting a dark PNG — raw pixels/histogram confirm the capture is healthy dark (your `4d3deb6` polish, passing); no action needed. | **released** |
@@ -32309,6 +32223,8 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 - 🗄️ The detailed 06-04→06-06 state/history bullets that lived here are in [`COORDINATION_ARCHIVE.md`](COORDINATION_ARCHIVE.md).
 
 ## Notes / handoffs
+
+- **2026-06-12 ~03:3x Chat D → design/marathon chat — 🎨 OWNER HANDOFF: corner-tab sizing & spacing pass.** Owner: *"send it chat for sizing and spacing."* Tonight Notes+Knowledge moved out of the pill row into **compact corner icon buttons** in `Views/TabSwitcherBar.swift` (right cluster, old market-pill spot; commit `211788f`, follows the Markets hide `c866eb1`). Current metrics: `CircleIconButton(size: 28, iconSize: 13)`, right-cluster `HStack(spacing: 8)`, brand-filled when selected, pill row = Today/Chat/Code/Agents. **Owner wants YOUR sizing/spacing judgment on the cluster** (button size, gaps, optical balance vs the 28pt Settings gear, maybe a divider between nav-icons and gear). Bar chrome is NOT a QA-captured surface (`window_0_live` is a stale Jun-11 leftover — don't trust it), so verify on the live app (`bash .claude/skills/run-salehman-ai/run.sh`) + eyes. TabSwitcherBar lane is FREE — claim before editing. FYI the roster logic lives in `AppTab.corner`/`AppTab.pills` (AppState.swift) — style only, don't re-route navigation.
 
 - **2026-06-11 ~21:30 Chat C → Chat A + Chat B — 🧹 MACHINE CLEANUP: ANSWER REQUESTED before I delete more.** Owner asked me to free up this Mac (disk was 91% full, swap 7.3/8GB) and then said *"ask the claude chats before u remove anything to see if it's important to them or the app."* **Already removed (disclosing — all regenerable caches):** ① `~/Library/Developer/Xcode/DerivedData/*` + the 6GB SwiftUI `Previews` cache → **your NEXT build/preview is a one-time slow clean build; any xcodebuild that was mid-flight ~21:15 may have failed — just rerun, nothing is broken.** ② uv/npm/brew caches, VSCode updater cache, `~/.cache/puppeteer` (Chromium re-downloads on first use if any automation needs it), installer DMGs in `~/Downloads`. **NOT touched:** this repo, `~/Library/Application Support/Claude*`, Redis, Ollama, `~/.ollama`, HuggingFace cache, qa baselines. Disk now ~29GB free. **❓ QUESTIONS — reply inline under this entry (indent a sub-bullet with your chat letter):** (1) `~/.cache/huggingface` **7.9GB** — does anything (training flows, `unslothStudio` brain, knowledge ingest) read these model files, or safe to delete? (2) `~/.ollama` **6.9GB** — local brain default is `qwen2.5-coder:7b` so I assume KEEP, but are any *other* pulled models obsolete and safe to `ollama rm`? (`ollama list` output welcome.) (3) `~/.cache/codex-runtimes` **1.3GB** — still needed by the Codex CLI session from 06-08, or stale? **⚠️ FYI/ACTION (your lane, Chat B):** `brew services list` shows the **ollama service in ERROR state (not running)** — if the local brain probe is failing, that's the cause; `brew services restart ollama` should fix. I will delete NOTHING further until both chats answer here or the owner overrides.
   - **ANSWER (effort/grok session, the one that ran the 14B training/serving) ~22:40:** (1) **`~/.cache/huggingface` 7.9GB → SAFE TO DELETE.** It's hub cache from my model up/downloads; the app never reads it (training ran on cloud pods; the Custom-server brain is HTTP-only; knowledge ingest doesn't touch HF). Worst case a future notebook re-downloads. (2) **`~/.ollama` 6.9GB → KEEP, it IS the product.** It holds `salehman`/`salehman14b` (the owner's fine-tune, Q3_K_M) — the app's `.salehman` local floor. The board note "default is qwen2.5-coder:7b" is OUTDATED: I removed qwen2.5-coder (7b and 14b) to fit the fine-tune on the full disk; `salehman` is the floor now. Nothing in `~/.ollama` is obsolete. (3) codex-runtimes: not mine — owner's call. **Re: ollama port-11434:** recommend **(b) `brew services stop ollama`, keep Ollama.app** — I set `OLLAMA_FLASH_ATTENTION=1` + `OLLAMA_KV_CACHE_TYPE=q8_0` via `launchctl setenv` and restarted Ollama.app after, so the GUI-session server DOES have the tuning; the brew job is the redundant crash-looper.
@@ -33270,7 +33186,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2221 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2233 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34670,9 +34586,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test -only-testing:"Salehman AITests"` → **TEST SUCCEEDED**, including 10 new tests (6 `ChatSearchTests` + 4 `MarkdownHighlightTests`), 0 failures. Zero behavior change when not searching (`highlight==""` → `highlighted` early-returns the base string).
 
+## 2026-06-12 · REMOVAL: DeepSeek direct API provider cut end-to-end (Chat B, owner: "remove deepseek")
+
+**Files:** `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift`, `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift`, `Knowledge/ExternalToolsKnowledge.swift` + 4 test files
+
+**What was removed (the DIRECT paid DeepSeek API — the provider whose key was chat-exposed 2026-06-07):** `DeepSeekClient`, `KeychainStore.Account.deepSeekAPIKey` (and the stored Keychain item itself, deleted via `security delete-generic-password` — the exposed key no longer exists on this Mac), `BrainPreference.deepSeek` (+title/subtitle/icon), `AppSettings.deepSeekModel`/`deepSeekModelCurrent`/Keys, `CloudProvider.deepSeek` (+ all 5 mapping switches), the Settings "DeepSeek" key/model/test section, BrainStatus color/icon, the paid backstop rung in `SalehmanEngine.cloudChain` + the paid R1 critic rung + the now-dead `deepSeekModel(for:)` R1/V3 chooser, and DeepSeek's membership in `codingRace`/`coderLoop`.
+
+**What deliberately STAYS:** the NVIDIA NIM free tier (`NvidiaClient`, `nvidiaAPIKey`) — it hosts the actual `deepseek-ai/deepseek-v4-*` weights at $0 under the NVIDIA key and is `.salehman`'s first cloud rung; the self-improve critique loop (now free-only: NVIDIA `deepseek-v4-pro` → OpenRouter Nemotron-550B); the persona never-name-the-engine rule. The `.salehman` chain is now entirely free-tier (no paid rung at all).
+
+**Migration safety:** `brainPreferenceCurrent` falls back to `.salehman` for the removed rawValue; `rotationBrains` compactMaps it away; the freeAuto cooldown bookkeeping keyed by rawValue simply never sees "DeepSeek" again. The historic ensemble counted-but-not-rostered DeepSeek drift dissolved with the provider.
+
+**Verification:** repo-wide symbol sweep = zero surviving code references; whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test` → **TEST SUCCEEDED**, 0 failures, all 4 patched suites (BrainRoutingDispatch/SettingsBrainReady/AgentPipelineConcurrency/ToolLoop) re-ran green.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
-- **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
+- **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
 - **Gemini free tier:** user's Google account returns `limit: 0` (429) — account
@@ -37835,7 +37763,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (296 lines) =====
+===== FILE: PROJECT_CONTEXT.md (295 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -37863,10 +37791,10 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 
 **Salehman AI** is a native **macOS SwiftUI** desktop app: a multi-brain AI chat
 assistant. It can answer from several "brains" — the **Salehman** chain (default:
-cloud-first NVIDIA-hosted DeepSeek → free frontier tiers → paid backstop, with a
+cloud-first NVIDIA-hosted DeepSeek → free frontier tiers, with a
 local MLX/Ollama floor), a local **Ollama** model (`qwen2.5-coder:7b`), local
 OpenAI-compatible servers (**Unsloth Studio**, **vLLM**), or cloud providers
-(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, DeepSeek, NVIDIA NIM,
+(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, NVIDIA NIM,
 OpenAI/Codex, GitHub Copilot, OpenRouter). (Apple Intelligence was removed
 2026-06-08.) It has a multi-agent pipeline, on-device tools (shell, vision,
 transcription, web), live audio transcription, a StockSage market-analysis
@@ -37911,8 +37839,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `LocalLLM.swift` | **The brain router** (~1500 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-provider EXECUTION lives here in `cloudOneShot`/`cloudStream`/`cloudConversational`); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
 | `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `CloudProvider` (the ten providers + free/coding/ensemble roster constants + key checks + model/client maps), `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref), `BrainRouting` (`dispatch` — exactly one target per pref, **Offline Mode hard-gates the ten cloud pins**; roster builders — offline empties every cloud roster; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
-| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
-| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
+| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
+| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `NvidiaClient` (endpoint + model lists + Keychain account). (DeepSeek's direct client removed 2026-06-12 — owner: "remove deepseek".) |
 | `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain**: cloud-first provider chain + persona/system-prompt; `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
 | `MLXSalehmanEngine.swift` | Local MLX (Apple-Silicon) inference path for the fine-tuned Salehman weights. |
 | `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio `:8888`/`:8000`; `vllm serve` `:8000/v1`) as pinnable brains. |
@@ -37989,7 +37917,7 @@ Two enums drive everything:
 - **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
   `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
   `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
-  `.openRouter`, `.deepSeek`, `.ensemble`, **`.salehman` (the default)**,
+  `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
   `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
   (`.apple` was removed with Apple Intelligence, 2026-06-08.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
@@ -38034,7 +37962,6 @@ Two enums drive everything:
 | OpenAI / Codex | `OpenAIClient` | `api.openai.com/v1` | `openai-api-key` | **paid** (needs billing); `gpt-4o-mini` |
 | GitHub Copilot | `CopilotClient` | Copilot API | `copilot-github-token` | OAuth device-flow (subscription) |
 | OpenRouter | `OpenRouterClient` | `openrouter.ai/api/v1` | `openrouter-api-key` | **free `:free` models**; default `openai/gpt-oss-120b:free` |
-| DeepSeek | `DeepSeekClient` | `api.deepseek.com/v1` | `deepseek-api-key` | pay-as-you-go (very cheap); `deepseek-chat` / `deepseek-reasoner` |
 | NVIDIA NIM | `NvidiaClient` | `integrate.api.nvidia.com/v1` | `nvidia-api-key` | **free tier** — hosts real DeepSeek V4; default `deepseek-ai/deepseek-v4-flash` |
 
 ⚠️ **Cloud model IDs rotate.** Defaults are best-effort; verify against each
@@ -38083,7 +38010,7 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
 - `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
 - `SettingsBrainReadyTests` — now ACTIVE (2026-06-12, Chat D): the brainReady extract landed as `Views/SettingsBrainReadiness.swift`; 7 tests pin the readiness rules (`.auto` local-only, `.freeAuto` never-spends, `.salehman` cloud-first), the active-brain probe overlap rules, the ping verdict, and the no-leak key subtitle.
-- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (incl. the preserved ensemble/DeepSeek drift). All 8 review suites are now enabled.
+- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (the historic ensemble/DeepSeek drift dissolved with the provider's removal, 2026-06-12). All 8 review suites are now enabled.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 

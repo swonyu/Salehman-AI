@@ -25,10 +25,10 @@
 
 **Salehman AI** is a native **macOS SwiftUI** desktop app: a multi-brain AI chat
 assistant. It can answer from several "brains" — the **Salehman** chain (default:
-cloud-first NVIDIA-hosted DeepSeek → free frontier tiers → paid backstop, with a
+cloud-first NVIDIA-hosted DeepSeek → free frontier tiers, with a
 local MLX/Ollama floor), a local **Ollama** model (`qwen2.5-coder:7b`), local
 OpenAI-compatible servers (**Unsloth Studio**, **vLLM**), or cloud providers
-(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, DeepSeek, NVIDIA NIM,
+(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, NVIDIA NIM,
 OpenAI/Codex, GitHub Copilot, OpenRouter). (Apple Intelligence was removed
 2026-06-08.) It has a multi-agent pipeline, on-device tools (shell, vision,
 transcription, web), live audio transcription, a StockSage market-analysis
@@ -73,8 +73,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `LocalLLM.swift` | **The brain router** (~1500 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-provider EXECUTION lives here in `cloudOneShot`/`cloudStream`/`cloudConversational`); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
 | `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `CloudProvider` (the ten providers + free/coding/ensemble roster constants + key checks + model/client maps), `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref), `BrainRouting` (`dispatch` — exactly one target per pref, **Offline Mode hard-gates the ten cloud pins**; roster builders — offline empties every cloud roster; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. |
 | `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
-| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/DeepSeek/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
-| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `DeepSeekClient`, `NvidiaClient` (endpoint + model lists + Keychain account). |
+| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
+| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `NvidiaClient` (endpoint + model lists + Keychain account). (DeepSeek's direct client removed 2026-06-12 — owner: "remove deepseek".) |
 | `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain**: cloud-first provider chain + persona/system-prompt; `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
 | `MLXSalehmanEngine.swift` | Local MLX (Apple-Silicon) inference path for the fine-tuned Salehman weights. |
 | `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio `:8888`/`:8000`; `vllm serve` `:8000/v1`) as pinnable brains. |
@@ -151,7 +151,7 @@ Two enums drive everything:
 - **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
   `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
   `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
-  `.openRouter`, `.deepSeek`, `.ensemble`, **`.salehman` (the default)**,
+  `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
   `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
   (`.apple` was removed with Apple Intelligence, 2026-06-08.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
@@ -196,7 +196,6 @@ Two enums drive everything:
 | OpenAI / Codex | `OpenAIClient` | `api.openai.com/v1` | `openai-api-key` | **paid** (needs billing); `gpt-4o-mini` |
 | GitHub Copilot | `CopilotClient` | Copilot API | `copilot-github-token` | OAuth device-flow (subscription) |
 | OpenRouter | `OpenRouterClient` | `openrouter.ai/api/v1` | `openrouter-api-key` | **free `:free` models**; default `openai/gpt-oss-120b:free` |
-| DeepSeek | `DeepSeekClient` | `api.deepseek.com/v1` | `deepseek-api-key` | pay-as-you-go (very cheap); `deepseek-chat` / `deepseek-reasoner` |
 | NVIDIA NIM | `NvidiaClient` | `integrate.api.nvidia.com/v1` | `nvidia-api-key` | **free tier** — hosts real DeepSeek V4; default `deepseek-ai/deepseek-v4-flash` |
 
 ⚠️ **Cloud model IDs rotate.** Defaults are best-effort; verify against each
@@ -245,7 +244,7 @@ guards), `OllamaPriorityResolverTests`, `OllamaRAMBenchmarkTests`,
 - `LiveTranscriberSegmentTests` (enabled; public surface + notes on internal recycle fix already in source).
 - `PersistenceRoundTripTests` — now ACTIVE (the R4 seams landed: `MemoryStore(baseDirectory:)`, `ScratchpadStore(testingBaseDirectory:)`, `StockSagePortfolio(userDefaults:)`).
 - `SettingsBrainReadyTests` — now ACTIVE (2026-06-12, Chat D): the brainReady extract landed as `Views/SettingsBrainReadiness.swift`; 7 tests pin the readiness rules (`.auto` local-only, `.freeAuto` never-spends, `.salehman` cloud-first), the active-brain probe overlap rules, the ping verdict, and the no-leak key subtitle.
-- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (incl. the preserved ensemble/DeepSeek drift). All 8 review suites are now enabled.
+- `BrainRoutingDispatchTests` — now ACTIVE (2026-06-12, Chat D): the routing plan extracted to `LLM/BrainRouting.swift`; 5 tests pin single-dispatch/no-fallthrough, the `.auto`-never-cloud invariant, the Offline-Mode hard-gate + empty rosters (the Offline-leak fix), the freeAuto free-only roster, and documented roster membership (the historic ensemble/DeepSeek drift dissolved with the provider's removal, 2026-06-12). All 8 review suites are now enabled.
 
 Tests run **in parallel** — never have two tests mutate the same global (`UserDefaults.standard`) key, or they race (see the `brainPreference` lesson in the log). Use `@Suite(.serialized)` + explicit restore/clear for any shared FS/UD/singleton stores.
 

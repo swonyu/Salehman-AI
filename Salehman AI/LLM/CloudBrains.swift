@@ -125,28 +125,10 @@ enum OpenRouterClient {
     )
 }
 
-/// DeepSeek — pay-as-you-go but extremely cheap, and one of the strongest open
-/// models at coding and reasoning. OpenAI-compatible (`/v1/chat/completions`),
-/// so like the others it's just a config of `OpenAICompatibleClient` — which
-/// means it gets terminal tool-calling automatically. `deepseek-chat` (V3) is
-/// the general/coding default; `deepseek-reasoner` (R1) trades latency for
-/// deeper step-by-step reasoning on hard problems.
-enum DeepSeekClient {
-    nonisolated static let defaultModel = "deepseek-chat"
-    nonisolated static let allModels    = [
-        "deepseek-chat",       // V3 — fast, excellent general + coding
-        "deepseek-reasoner",   // R1 — deeper reasoning, slower
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "DeepSeek",
-        baseURL:         "https://api.deepseek.com/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .deepSeekAPIKey,
-        consoleURL:      "https://platform.deepseek.com/api_keys"
-    )
-}
+// (DeepSeek's direct paid API was REMOVED 2026-06-12 — owner: "remove deepseek".
+// Its key had been chat-exposed; rather than rotate, the provider was cut
+// entirely. DeepSeek *models* remain available through NVIDIA NIM below, on the
+// free tier under the NVIDIA key.)
 
 /// NVIDIA NIM (`integrate.api.nvidia.com`) — NVIDIA's OpenAI-compatible inference
 /// endpoint, with a **free tier** (free credits from build.nvidia.com). This is

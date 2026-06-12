@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 /// Brain routing for Salehman AI. Salehman runs CLOUD-FIRST (free DeepSeek V4 via
-/// NVIDIA → free frontier/120B tiers → DeepSeek paid backstop) with a LOCAL floor
+/// NVIDIA → free frontier/120B tiers) with a LOCAL floor
 /// (Ollama / on-device MLX) for offline use. No Apple Intelligence.
 enum LocalLLM {
     /// Profiling signposter. Capture a trace in **Instruments → Time Profiler +
@@ -68,12 +68,12 @@ enum LocalLLM {
         case .freeAuto:
             return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, or start Ollama."
         case .freeCoding:
-            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (DeepSeek / OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
+            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
         case .cloudCoding:
             return AppSettings.isOfflineOnly
                 ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick the local Ollama brain."
-                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for DeepSeek / Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .deepSeek, .codex, .openRouter:
+                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
+        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
             return "Salehman runs on the cloud — add any free key in Settings (NVIDIA for REAL DeepSeek V4 free, or Groq / Cerebras / OpenRouter) and he leads on a big model at $0. To run fully on-device instead, pull your Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
@@ -98,7 +98,7 @@ enum LocalLLM {
         case .salehman, .freeAuto, .freeCoding:
             return !SalehmanEngine.hasAnyCloud
         case .cloudCoding:
-            // Cloud Coding uses its OWN curated coder roster (DeepSeek/Cerebras/Groq/
+            // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
             // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
             // accurate check is that roster's reachability. Otherwise the banner would
             // wrongly hide for a user whose only key is Gemini while Cloud Coding still
@@ -123,12 +123,11 @@ enum LocalLLM {
         case vllm                                    // local OpenAI-compat server served by vLLM
         case claudeHaiku, grok                       // cloud, pre-existing
         case gemini, groq, mistral, cerebras         // cloud, free-tier
-        case deepSeek                                // cloud, cheap + elite coder (OpenAI-compatible)
         case codex, copilot                          // cloud, OpenAI + GitHub Copilot
         case openRouter                              // cloud aggregator (free models)
         case ensemble                                // all reachable brains in parallel
         case freeAuto                                // free brains raced; first valid wins; local backstop
-        case freeCoding                              // free coders + DeepSeek raced, tool-capable, coding-focused
+        case freeCoding                              // free coders raced, tool-capable, coding-focused
         case cloudCoding                             // CLOUD-ONLY best coders, tool-capable (no local, no lag)
         case none
     }
@@ -165,7 +164,7 @@ enum LocalLLM {
     nonisolated static var isFreeAutoMode: Bool { AppSettings.brainPreferenceCurrent == .freeAuto }
 
     /// True when the user picked the "FreeCoding" preference — a coding-focused,
-    /// tool-capable loop over the free coder brains + DeepSeek.
+    /// tool-capable loop over the free coder brains.
     nonisolated static var isFreeCodingMode: Bool { AppSettings.brainPreferenceCurrent == .freeCoding }
 
     /// True when the user picked "Cloud Coding" — a CLOUD-ONLY coding loop over the
@@ -323,7 +322,7 @@ enum LocalLLM {
         return await generateFreeAuto(message)
     }
 
-    // MARK: - FreeCoding (the free + DeepSeek coding loop)
+    // MARK: - FreeCoding (the free coding loop)
 
     /// Coding-focused system prompt for FreeCoding mode — a free, tool-capable
     /// pair-programmer persona shared by the race path and the tool loop. The
@@ -355,7 +354,6 @@ enum LocalLLM {
 
     /// FreeCoding RACE (no tools) — like `generateFreeAuto` but routes each free
     /// brain to its strongest CODING model + a coding system prompt, and adds
-    /// DeepSeek (elite coder, cheap) to the roster per the owner's choice. First
     /// usable reply wins; local Ollama coder backstop. Used by
     /// direct callers; the chat pipeline uses the tool-capable `freeCodingReply`.
     static func generateFreeCoding(_ prompt: String) async -> String {
@@ -365,7 +363,7 @@ enum LocalLLM {
         let now = Date()
 
         typealias Thunk = @Sendable () async -> String?
-        // Membership, order (DeepSeek opted in by the owner), and the
+        // Membership, order, and the
         // Offline-Mode gate come from BrainRouting; each entry races its
         // strongest CODING model via `freeCoderModel`.
         var roster: [(name: String, run: Thunk)] = []
@@ -406,7 +404,7 @@ enum LocalLLM {
 
     /// FreeCoding WITH tools — what the chat pipeline runs. Routes through a
     /// tool-capable coder so it can actually write, build, run, and TEST code:
-    /// free cloud coders + DeepSeek (DeepSeek first — the strongest) → local Ollama
+    /// free cloud coders → local Ollama
     /// coder, then a plain `generateFreeCoding` race so
     /// it never dead-ends. Same approval gate + blocked-command floor as always.
     static func freeCodingReply(_ message: String) async -> String {
@@ -414,7 +412,7 @@ enum LocalLLM {
         // CLOUD CODERS FIRST — the fast, no-lag path. They run on someone else's
         // GPUs (ZERO local RAM, so they never thrash a MacBook) and are ~10× faster
         // than a multi-GB local model — AND smarter than a local 7B. Order balances
-        // smarts + speed: DeepSeek (the owner's elite pick) → Cerebras / Groq
+        // smarts + speed: Cerebras / Groq
         // (blazing ~2000 tok/s, strong gpt-oss-120b) → OpenRouter → Mistral. Each
         // runs the tool loop so it can build / run / test. Skipped under Offline Mode.
         for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
@@ -543,13 +541,12 @@ enum LocalLLM {
         case .groq:              return "Cloud · Groq \(AppSettings.groqModelCurrent)"
         case .mistral:           return "Cloud · Mistral \(AppSettings.mistralModelCurrent)"
         case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
-        case .deepSeek:          return "Cloud · DeepSeek \(AppSettings.deepSeekModelCurrent)"
         case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
         case .copilot:           return "Cloud · GitHub Copilot"
         case .openRouter:        return "Cloud · OpenRouter \(AppSettings.openRouterModelCurrent)"
         case .ensemble:          return "All brains · parallel"
         case .freeAuto:          return "Free · Auto (parallel, never blocked)"
-        case .freeCoding:        return "FreeCoding · free coders + DeepSeek · runs the terminal"
+        case .freeCoding:        return "FreeCoding · free coders · runs the terminal"
         case .cloudCoding:       return "Cloud Coding · best cloud coders · no local, no lag"
         case .none:
             // Name the pinned-but-down brain so the header matches the chat message.
@@ -626,8 +623,8 @@ enum LocalLLM {
             roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
         }
         // Cloud membership + the Offline-Mode gate (ensemble runs LOCAL-only
-        // offline) come from BrainRouting.ensembleCloudRoster — including the
-        // documented DeepSeek exclusion. Labels/calls stay per-provider here.
+        // offline) come from BrainRouting.ensembleCloudRoster. Labels/calls
+        // stay per-provider here.
         for p in BrainRouting.ensembleCloudRoster(routeConfigNow()) {
             switch p {
             case .anthropic:
@@ -647,8 +644,6 @@ enum LocalLLM {
                 if let client = p.compatClient, let model = p.selectedModel {
                     roster.append(("\(p.rawValue) \(model)", { await client.chat(prompt: prompt, system: sys, model: model) }))
                 }
-            case .deepSeek:
-                break   // never in the ensemble roster (see CloudProvider.ensembleRoster)
             }
         }
 
@@ -1394,7 +1389,7 @@ enum LocalLLM {
             return offMessage
         case .salehman:
             // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
-            // NVIDIA → free frontier/120B tiers → DeepSeek paid backstop → local
+            // NVIDIA → free frontier/120B tiers → local
             // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
@@ -1434,7 +1429,6 @@ enum LocalLLM {
         case .groq:       return await GroqClient.shared.chat(prompt: prompt, model: AppSettings.groqModelCurrent)
         case .mistral:    return await MistralClient.shared.chat(prompt: prompt, model: AppSettings.mistralModelCurrent)
         case .cerebras:   return await CerebrasClient.shared.chat(prompt: prompt, model: AppSettings.cerebrasModelCurrent)
-        case .deepSeek:   return await DeepSeekClient.shared.chat(prompt: prompt, model: AppSettings.deepSeekModelCurrent)
         case .openRouter: return await OpenRouterClient.shared.chat(prompt: prompt, model: AppSettings.openRouterModelCurrent)
         }
     }
@@ -1588,10 +1582,6 @@ enum LocalLLM {
             let m = AppSettings.cerebrasModelCurrent
             if let r = await CerebrasClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
             return await CerebrasClient.shared.chat(prompt: prompt, model: m)
-        case .deepSeek:
-            let m = AppSettings.deepSeekModelCurrent
-            if let r = await DeepSeekClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await DeepSeekClient.shared.chat(prompt: prompt, model: m)
         case .openRouter:
             let m = AppSettings.openRouterModelCurrent
             if let r = await OpenRouterClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
@@ -1647,7 +1637,7 @@ enum LocalLLM {
         }
     }
 
-    /// One pinned cloud brain's conversational execution. The six
+    /// One pinned cloud brain's conversational execution. The five
     /// OpenAI-compatible brains try the tool loop first (terminal / web),
     /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
     /// are plain chat only (no shared tool loop).
@@ -1666,7 +1656,7 @@ enum LocalLLM {
                                            model: AppSettings.geminiModelCurrent)
         case .copilot:
             return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .groq, .mistral, .cerebras, .deepSeek, .openAI, .openRouter:
+        case .groq, .mistral, .cerebras, .openAI, .openRouter:
             guard let client = p.compatClient, let m = p.selectedModel else { return nil }
             if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
             return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)

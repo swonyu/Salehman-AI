@@ -19,7 +19,7 @@ struct BrainRoutingDispatchTests {
 
     private static let cloudPins: [BrainPreference] = [
         .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-        .deepSeek, .codex, .copilot, .openRouter,
+        .codex, .copilot, .openRouter,
     ]
 
     private static func config(
@@ -127,7 +127,7 @@ struct BrainRoutingDispatchTests {
         let roster = BrainRouting.freeAutoRoster(everything)
         #expect(roster == CloudProvider.freeTier)
         #expect(roster.allSatisfy { $0.isFree })
-        for paid in [CloudProvider.anthropic, .grok, .deepSeek, .openAI, .copilot] {
+        for paid in [CloudProvider.anthropic, .grok, .openAI, .copilot] {
             #expect(!roster.contains(paid))
         }
         // The tool-loop variant additionally drops Gemini (free, but no
@@ -143,24 +143,21 @@ struct BrainRoutingDispatchTests {
     @Test
     func rosterMembershipMatchesTheDocumentedSets() {
         let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
-        // Ensemble: the nine chat brains — DeepSeek's exclusion is the
-        // PRESERVED historical drift, documented in CloudProvider.ensembleRoster
-        // and flagged to the owner (anyBrainReachable counts it; the fan-out
-        // doesn't). If the owner opts DeepSeek in, update this test and the
-        // roster constant together.
+        // Ensemble: the nine chat brains. (The historical DeepSeek
+        // counted-but-not-rostered drift dissolved with the provider's
+        // removal on 2026-06-12.)
         let ensemble = BrainRouting.ensembleCloudRoster(everything)
         #expect(ensemble == CloudProvider.ensembleRoster)
-        #expect(!ensemble.contains(.deepSeek))
         // The coding pools: race order and sequential-loop order are distinct,
         // deliberately (race = parallel anyway; the loop is quality+speed) —
         // but their MEMBERSHIP is identical.
         #expect(BrainRouting.codingRaceRoster(everything) == CloudProvider.codingRace)
         #expect(BrainRouting.coderLoopRoster(everything) == CloudProvider.coderLoop)
         #expect(Set(CloudProvider.codingRace) == Set(CloudProvider.coderLoop))
-        // anyBrainReachable: local floor or any single key (DeepSeek included).
+        // anyBrainReachable: local floor or any single key.
         #expect(!BrainRouting.anyBrainReachable(Self.config()))
         #expect(BrainRouting.anyBrainReachable(Self.config { $0.ollamaReady = true }))
-        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.deepSeek] }))
+        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.cerebras] }))
         // Salehman: cloud-first; endpoint engines and any chain key light it,
         // nothing at all reads .none.
         let salehmanCloud = Self.config { $0.pref = .salehman; $0.salehmanCloudReady = true }

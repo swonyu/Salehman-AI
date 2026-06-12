@@ -26,7 +26,7 @@ struct AboutView: View {
               body: "Runs cloud-first on free big models (DeepSeek V4 + frontier tiers) with a local MLX/Ollama fallback. Turn on Offline Mode to keep everything on this Mac."),
         .init(icon: "brain.head.profile",
               title: "Many brains, one Salehman",
-              body: "MLX, Ollama, DeepSeek, and many free cloud brains. Check several to rotate through them — one per message."),
+              body: "MLX, Ollama, and many free cloud brains. Check several to rotate through them — one per message."),
         .init(icon: "wrench.and.screwdriver.fill",
               title: "Real tools, with approval",
               body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),

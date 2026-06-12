@@ -58,10 +58,6 @@ struct SettingsView: View {
     @State private var openRouterTesting: Bool = false
     @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
 
-    @State private var deepSeekKeyDraft: String = ""
-    @State private var deepSeekTestStatus: String? = nil
-    @State private var deepSeekTesting: Bool = false
-    @State private var deepSeekKeySaved: Bool = DeepSeekClient.shared.hasKey()
 
     // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
     @State private var nvidiaKeyDraft: String = ""
@@ -147,7 +143,7 @@ struct SettingsView: View {
                                "Every brain's answer gets a final pass through Salehman, so Salehman always owns the last word. On by default. When Salehman is already the picked brain there's no re-pass — but Effort above Instant still self-critiques its draft. Off = no extra passes for any brain. If Salehman isn't reachable, the draft answer stands.",
                                "crown.fill", $settings.salehmanLeader)
                         toggle("Self-improve loop",
-                               "After Salehman answers, a DeepSeek reasoner (R1) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
+                               "After Salehman answers, a reasoner-class critic (free, NVIDIA-hosted) analyzes the reply and Salehman revises it — smarter answers, but ~2–3× slower & more quota. OFF by default for speed; turn on for max quality.",
                                "arrow.triangle.2.circlepath", $settings.salehmanRefine)
                         toggle("Auto-continue",
                                "When a reply looks unfinished (hit the tool-call limit, an open code block, or 'shall I continue?'), automatically keep going without you typing 'continue' — up to a few times per message. On by default; press Stop to halt.",
@@ -198,7 +194,7 @@ struct SettingsView: View {
                     }
 
                     // Salehman runs CLOUD-FIRST (free DeepSeek V4 via NVIDIA → free
-                    // frontier/120B tiers → DeepSeek paid backstop); the rows below
+                    // frontier/120B tiers); the rows below
                     // configure its LOCAL floor for offline use.
                     section("Salehman engine", "Salehman runs cloud-first on big models (free DeepSeek V4 via NVIDIA → free frontier tiers). These rows set its LOCAL fallback for offline use: a standalone on-device MLX engine, or your own Ollama model. Pick \u{201C}Salehman\u{201D} in the Brain grid above to activate it.") {
                         // The truly-standalone path. Visible regardless of
@@ -258,7 +254,7 @@ struct SettingsView: View {
                     collapsibleGroup(
                         "Free API keys",
                         configured: [geminiKeySaved, groqKeySaved, mistralKeySaved,
-                                     cerebrasKeySaved, openRouterKeySaved, deepSeekKeySaved].filter { $0 }.count,
+                                     cerebrasKeySaved, openRouterKeySaved].filter { $0 }.count,
                         total: 5,
                         isExpanded: $showFreeKeys
                     ) {
@@ -306,17 +302,6 @@ struct SettingsView: View {
                             cloudTestRow(provider: OpenRouterClient.shared,
                                          keySaved: $openRouterKeySaved,
                                          testing: $openRouterTesting, status: $openRouterTestStatus)
-                        }
-
-                        section("DeepSeek (Cloud · cheap, elite coder · runs the terminal)", "Pay-as-you-go but pennies; one of the strongest coding/reasoning models. Get a key at platform.deepseek.com/api_keys.") {
-                            cloudKeyRow(provider: DeepSeekClient.shared,
-                                        keySaved: $deepSeekKeySaved, draft: $deepSeekKeyDraft)
-                            cloudModelRow(displayName: "DeepSeek",
-                                          models: DeepSeekClient.allModels,
-                                          selection: $settings.deepSeekModel)
-                            cloudTestRow(provider: DeepSeekClient.shared,
-                                         keySaved: $deepSeekKeySaved,
-                                         testing: $deepSeekTesting, status: $deepSeekTestStatus)
                         }
 
                         section("NVIDIA (Cloud · free tier · REAL DeepSeek V4 for free)", "Hosts the actual deepseek-ai/deepseek-v4 weights at $0 — DeepSeek's own API and OpenRouter are paid-only. Get a free key at build.nvidia.com. Salehman uses this first so it leads on real DeepSeek for free.") {
@@ -531,7 +516,6 @@ struct SettingsView: View {
             groq: groqKeySaved,
             mistral: mistralKeySaved,
             cerebras: cerebrasKeySaved,
-            deepSeek: deepSeekKeySaved,
             openAI: openAIKeySaved,
             copilot: copilotAuthed,
             openRouter: openRouterKeySaved,

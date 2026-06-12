@@ -397,7 +397,7 @@ enum AgentPipeline {
             return await LocalLLM.generateFreeAuto(contextualMission)
         }
 
-        // FreeCoding: a coding-focused loop over the free coders + DeepSeek. Always
+        // FreeCoding: a coding-focused loop over the free coders. Always
         // tool-capable (coding wants to build/run/test), so it bypasses the
         // multi-agent team too and routes straight to `freeCodingReply`.
         if LocalLLM.isFreeCodingMode {

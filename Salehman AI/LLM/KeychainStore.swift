@@ -37,7 +37,9 @@ enum KeychainStore {
         case groqAPIKey     = "groq-api-key"
         case mistralAPIKey  = "mistral-api-key"
         case cerebrasAPIKey = "cerebras-api-key"
-        case deepSeekAPIKey = "deepseek-api-key"
+        // ("deepseek-api-key" removed 2026-06-12 — owner: "remove deepseek".
+        // The provider was cut after its key was chat-exposed; the stored
+        // Keychain item was deleted alongside this change.)
         /// NVIDIA NIM (integrate.api.nvidia.com) — hosts REAL DeepSeek (V4) on a
         /// free tier, OpenAI-compatible. This is the app's "DeepSeek for free"
         /// route since DeepSeek's own API + OpenRouter are paid-only.

@@ -15,9 +15,11 @@ import Foundation
 ///      DeepSeek's own API + OpenRouter are paid-only;
 ///   3. **free frontier** (Kimi K2.6 ~1T, Nemotron-Ultra-550B) + the **free 120B**
 ///      tier (Cerebras / Groq / Mistral / OpenRouter) — five stacked free quotas;
-///   4. **DeepSeek's paid API** — last-resort backstop (R1/V3 auto-routed);
-///   5. the **local floor** — on-device MLX, then Ollama (truly unlimited, ~7B) so
+///   4. the **local floor** — on-device MLX, then Ollama (truly unlimited, ~7B) so
 ///      Salehman still answers with no internet.
+///
+/// (Rung 4 used to be DeepSeek's paid API as a last-resort backstop — removed
+/// 2026-06-12, owner: "remove deepseek". The chain is now entirely free-tier.)
 ///
 /// Each cloud entry runs only when its key is present, and a provider error
 /// (401 / 404 / 429 rate-limit) rolls to the next brain — so rate limits stay
@@ -35,7 +37,7 @@ enum SalehmanEngine {
         VLLM.isConfigured || UnslothStudio.isConfigured
             || NvidiaClient.shared.hasKey()   || OpenRouterClient.shared.hasKey()
             || CerebrasClient.shared.hasKey()  || GroqClient.shared.hasKey()
-            || MistralClient.shared.hasKey()   || DeepSeekClient.shared.hasKey()
+            || MistralClient.shared.hasKey()
             // Standalone cloud brains the owner may have pinned a key for — now
             // honored by `tryStandaloneClouds`, so they count as "cloud reachable"
             // (previously a Gemini/Claude/Grok/OpenAI-only setup read as "no cloud").
@@ -45,10 +47,10 @@ enum SalehmanEngine {
 
     // MARK: - Non-streaming
 
-    /// Cloud-first single-shot generation. `userPrompt` (the user's original
-    /// message) drives DeepSeek R1-vs-V3 routing when the chain reaches the paid
-    /// backstop; pass it when known, else it falls back to `prompt`. Returns nil
-    /// only when nothing — cloud or local — is reachable.
+    /// Cloud-first single-shot generation. (`userPrompt` is kept for call-site
+    /// stability; it used to drive the paid DeepSeek backstop's R1/V3 routing,
+    /// removed 2026-06-12.) Returns nil only when nothing — cloud or local — is
+    /// reachable.
     static func generate(prompt: String,
                          userPrompt: String? = nil,
                          maxTokens: Int? = nil) async -> String? {
@@ -56,8 +58,7 @@ enum SalehmanEngine {
         // qualify only on loopback URLs (the `generateOnDevice` rule), the
         // cloud chain + standalone keys are skipped entirely, and the
         // MLX/Ollama floor below still answers. (This was the Offline leak:
-        // a pinned .salehman walked the whole cloud chain — including the
-        // PAID DeepSeek backstop — while "offline".)
+        // a pinned .salehman walked the whole cloud chain while "offline".)
         let offline = AppSettings.isOfflineOnly
         if (offline ? VLLM.isLocalLoopback : VLLM.isConfigured),
            let r = await VLLM.chat(prompt: prompt, system: SalehmanPersona.activeSystemPrompt) { return r }
@@ -151,10 +152,11 @@ enum SalehmanEngine {
         return nil
     }
 
-    // MARK: - Self-improvement loop (Salehman ⇄ DeepSeek R1)
+    // MARK: - Self-improvement loop (Salehman ⇄ reasoner critic)
 
     /// **The "gets smarter every answer" loop.** Salehman's answer is handed to a
-    /// DeepSeek reasoner (R1-class) which analyzes it and returns concrete fixes;
+    /// reasoner-class critic (DeepSeek-V4-pro via NVIDIA free, or a free frontier
+    /// reasoner) which analyzes it and returns concrete fixes;
     /// Salehman then revises, applying the feedback, and returns the polished final.
     ///
     /// Fully graceful: if the critic is unreachable, or says the answer is already
@@ -209,12 +211,11 @@ enum SalehmanEngine {
         return current
     }
 
-    /// Runs a DeepSeek reasoner as a critic over Salehman's answer, FREE-FIRST:
-    /// NVIDIA's free `deepseek-v4-pro` → DeepSeek's paid `deepseek-reasoner` (R1) →
-    /// a free frontier reasoner (Nemotron-550B) so the loop still runs at $0 when
-    /// no DeepSeek key is set. Returns the feedback text, or nil if no critic is
-    /// reachable. Uses a REVIEWER system prompt (not the Salehman persona) so the
-    /// critique is adversarial, not self-congratulatory.
+    /// Runs a reasoner-class critic over Salehman's answer, FREE-ONLY:
+    /// NVIDIA's free `deepseek-v4-pro` → a free frontier reasoner (Nemotron-550B).
+    /// Returns the feedback text, or nil if no critic is reachable. Uses a
+    /// REVIEWER system prompt (not the Salehman persona) so the critique is
+    /// adversarial, not self-congratulatory.
     private static func deepSeekCritique(userPrompt: String, answer: String) async -> String? {
         let system = """
         You are DeepSeek, a meticulous, senior reviewer. You will be given a user's \
@@ -238,8 +239,7 @@ enum SalehmanEngine {
         // Free-first critic chain. Each entry runs only if its key is present and
         // rolls onward on an error/429 — same discipline as the main chain.
         let critics: [(client: OpenAICompatibleClient, model: String)] = [
-            (NvidiaClient.shared,   "deepseek-ai/deepseek-v4-pro"),   // FREE deep DeepSeek
-            (DeepSeekClient.shared, "deepseek-reasoner"),             // paid R1
+            (NvidiaClient.shared,   "deepseek-ai/deepseek-v4-pro"),   // FREE deep DeepSeek (via NVIDIA)
             (OpenRouterClient.shared, "nvidia/nemotron-3-ultra-550b-a55b:free"), // FREE reasoner fallback
         ]
         for critic in critics {
@@ -254,9 +254,10 @@ enum SalehmanEngine {
 
     // MARK: - Chain (single source of truth)
 
-    /// The free-first cloud chain. `routing` (the user's original prompt) only
-    /// affects the paid DeepSeek backstop's R1/V3 choice. Model-string overrides
-    /// pick each provider's strongest free option; nil uses the provider default.
+    /// The free-first cloud chain. Model-string overrides pick each provider's
+    /// strongest free option; nil uses the provider default. (`routing` is kept
+    /// for call-site stability; it used to pick the removed paid DeepSeek
+    /// backstop's R1-vs-V3 model.)
     static func cloudChain(routing userPrompt: String) -> [(client: OpenAICompatibleClient, model: String?)] {
         [
             (NvidiaClient.shared,     "deepseek-ai/deepseek-v4-flash"),    // REAL DeepSeek V4 — FREE via NVIDIA
@@ -266,7 +267,6 @@ enum SalehmanEngine {
             (GroqClient.shared,       "openai/gpt-oss-120b"),      // FREE 120B
             (MistralClient.shared,    "mistral-large-latest"),     // FREE tier — another quota bucket
             (OpenRouterClient.shared, "openai/gpt-oss-120b:free"), // FREE 120B safe fallback
-            (DeepSeekClient.shared,   deepSeekModel(for: userPrompt)),  // paid API — last-resort backstop
         ]
     }
 
@@ -343,21 +343,4 @@ enum SalehmanEngine {
         return nil
     }
 
-    /// Picks which DeepSeek brain finalizes a given prompt when the paid backstop
-    /// is reached: **R1 (`deepseek-reasoner`)** for hard, multi-step / math / logic
-    /// prompts, the faster **V3 (`deepseek-chat`)** otherwise — both DeepSeek
-    /// brains in one. Best-effort heuristic; when in doubt it stays on fast V3.
-    static func deepSeekModel(for userPrompt: String) -> String {
-        let p = userPrompt.lowercased()
-        let reasoningCues = [
-            "prove", "proof", "derive", "step by step", "step-by-step", "reason",
-            "explain why", "how come", "logic", "puzzle", "riddle", "solve",
-            "calculate", "equation", "integral", "derivative", "probability",
-            "theorem", "optimi", "complexity", "algorithm", "trade-off",
-            "tradeoff", "analy",
-        ]
-        if reasoningCues.contains(where: p.contains) { return "deepseek-reasoner" }
-        if userPrompt.count > 800 { return "deepseek-reasoner" }
-        return "deepseek-chat"
-    }
 }

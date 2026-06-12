@@ -109,9 +109,8 @@ final class AppSettings: ObservableObject {
     @Published var cerebrasModel: String {
         didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
     }
-    @Published var deepSeekModel: String {
-        didSet { UserDefaults.standard.set(deepSeekModel, forKey: Keys.deepSeekModel) }
-    }
+    // (deepSeekModel removed 2026-06-12 — owner: "remove deepseek". The direct
+    // DeepSeek provider is gone; DeepSeek-V4 models still run via NVIDIA free.)
     @Published var openRouterModel: String {
         didSet { UserDefaults.standard.set(openRouterModel, forKey: Keys.openRouterModel) }
     }
@@ -173,10 +172,11 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
 
-    /// Self-improvement loop: after Salehman answers, a DeepSeek reasoner (R1-class)
-    /// critiques the answer and Salehman revises it. Smarter replies, but ~2–3× slower
-    /// and more quota — **default OFF for speed** (owner asked to make it faster);
-    /// turn ON for max-quality single answers.
+    /// Self-improvement loop: after Salehman answers, a reasoner-class critic
+    /// (DeepSeek-V4-pro via NVIDIA's free tier) critiques the answer and Salehman
+    /// revises it. Smarter replies, but ~2–3× slower and more quota — **default
+    /// OFF for speed** (owner asked to make it faster); turn ON for max-quality
+    /// single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
     }
@@ -185,7 +185,7 @@ final class AppSettings: ObservableObject {
     /// Core-Intelligence primitives (self-critique rounds + candidate fan-out/judge).
     /// `.instant` = single pass; `.ultra` = several drafts, judged. Default `.instant`
     /// (preserves pre-Effort behavior — no surprise extra model calls on upgrade).
-    /// (Independent of `salehmanRefine`, which is the older DeepSeek-critique toggle.)
+    /// (Independent of `salehmanRefine`, which is the older critique-loop toggle.)
     @Published var salehmanEffort: Effort {
         didSet { UserDefaults.standard.set(salehmanEffort.rawValue, forKey: Keys.salehmanEffort) }
     }
@@ -231,7 +231,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let groqModel       = "set_groqModel"
         nonisolated static let mistralModel    = "set_mistralModel"
         nonisolated static let cerebrasModel   = "set_cerebrasModel"
-        nonisolated static let deepSeekModel   = "set_deepSeekModel"
+        // ("set_deepSeekModel" key retired 2026-06-12 with the DeepSeek removal)
         nonisolated static let openRouterModel = "set_openRouterModel"
     }
 
@@ -326,10 +326,6 @@ final class AppSettings: ObservableObject {
     nonisolated static var cerebrasModelCurrent: String {
         let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
         return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
-    }
-    nonisolated static var deepSeekModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.deepSeekModel) ?? ""
-        return DeepSeekClient.allModels.contains(raw) ? raw : DeepSeekClient.defaultModel
     }
     nonisolated static var openRouterModelCurrent: String {
         let raw = UserDefaults.standard.string(forKey: Keys.openRouterModel) ?? ""
@@ -446,8 +442,6 @@ final class AppSettings: ObservableObject {
         mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
         let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
         cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
-        let storedDeepSeek = d.string(forKey: Keys.deepSeekModel) ?? ""
-        deepSeekModel = DeepSeekClient.allModels.contains(storedDeepSeek) ? storedDeepSeek : DeepSeekClient.defaultModel
         let storedOpenRouter = d.string(forKey: Keys.openRouterModel) ?? ""
         openRouterModel = OpenRouterClient.allModels.contains(storedOpenRouter) ? storedOpenRouter : OpenRouterClient.defaultModel
         installCaptureObservers()
@@ -475,17 +469,18 @@ final class AppSettings: ObservableObject {
 /// app's primary identity; cloud-first with a free-tier chain and a local floor.
 ///
 /// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
-///   120B tiers → paid backstop → local MLX/Ollama floor. Self-improves via
-///   DeepSeek critique pass. Works with zero local models if any cloud key is set.
+///   120B tiers → local MLX/Ollama floor. Self-improves via a critique pass.
+///   Works with zero local models if any cloud key is set.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
     case openRouter // aggregator with free `:free` models
-    case deepSeek   // cloud · cheap pay-as-you-go, very strong at coding/reasoning · OpenAI-compatible (gets tools)
+    // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
+    // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers → paid backstop) + local floor (MLX, Ollama)
+    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers) + local floor (MLX, Ollama)
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -528,7 +523,6 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Groq (Cloud)"
         case .mistral:     return "Mistral (Cloud)"
         case .cerebras:    return "Cerebras (Cloud)"
-        case .deepSeek:    return "DeepSeek (Cloud)"
         case .codex:       return "Codex / OpenAI (Cloud)"
         case .copilot:     return "GitHub Copilot (Cloud)"
         case .openRouter:  return "OpenRouter (Cloud · free models)"
@@ -542,8 +536,8 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         switch self {
         case .auto:        return "Local-first · Ollama qwen-coder when reachable"
         case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
-        case .freeCoding:  return "Coding loop · races your free coder models + DeepSeek, runs & tests code in the terminal · local backstop"
-        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (DeepSeek, gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
+        case .freeCoding:  return "Coding loop · races your free coder models, runs & tests code in the terminal · local backstop"
+        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
         case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
         case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
@@ -551,12 +545,11 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
         case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
         case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
-        case .deepSeek:    return "Cloud · cheap + elite at code/reasoning · runs the terminal · ~zero local RAM · needs API key"
         case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
-        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a DeepSeek critique pass"
+        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a critique pass"
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }
@@ -574,7 +567,6 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .groq:        return "hare.fill"
         case .mistral:     return "leaf.circle.fill"
         case .cerebras:    return "rays"
-        case .deepSeek:    return "curlybraces"
         case .codex:       return "chevron.left.forwardslash.chevron.right"
         case .copilot:     return "person.2.badge.gearshape.fill"
         case .openRouter:  return "arrow.triangle.branch"

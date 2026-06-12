@@ -23,7 +23,7 @@ struct AgentPipelineConcurrencyTests {
     }
 
     @Test func nonOllamaBrainsUseTheBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek,          baseCap: 4) == 4)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 4) == 4)
         #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: 6) == 6)
         #expect(AgentPipeline.effectiveCap(brain: .grok,              baseCap: 8) == 8)
         #expect(AgentPipeline.effectiveCap(brain: .ensemble,          baseCap: 3) == 3)
@@ -34,7 +34,7 @@ struct AgentPipelineConcurrencyTests {
         // A degenerate baseCap (0 / negative from a misconfigured
         // MemoryManager) must not produce cap=0 — that would create an empty
         // `stride(by:)` batch list and hang the pipeline silently.
-        #expect(AgentPipeline.effectiveCap(brain: .deepSeek,          baseCap: 0)  == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 0)  == 1)
         #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: -3) == 1)
     }
 }

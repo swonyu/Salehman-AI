@@ -1397,9 +1397,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test -only-testing:"Salehman AITests"` → **TEST SUCCEEDED**, including 10 new tests (6 `ChatSearchTests` + 4 `MarkdownHighlightTests`), 0 failures. Zero behavior change when not searching (`highlight==""` → `highlighted` early-returns the base string).
 
+## 2026-06-12 · REMOVAL: DeepSeek direct API provider cut end-to-end (Chat B, owner: "remove deepseek")
+
+**Files:** `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift`, `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift`, `Knowledge/ExternalToolsKnowledge.swift` + 4 test files
+
+**What was removed (the DIRECT paid DeepSeek API — the provider whose key was chat-exposed 2026-06-07):** `DeepSeekClient`, `KeychainStore.Account.deepSeekAPIKey` (and the stored Keychain item itself, deleted via `security delete-generic-password` — the exposed key no longer exists on this Mac), `BrainPreference.deepSeek` (+title/subtitle/icon), `AppSettings.deepSeekModel`/`deepSeekModelCurrent`/Keys, `CloudProvider.deepSeek` (+ all 5 mapping switches), the Settings "DeepSeek" key/model/test section, BrainStatus color/icon, the paid backstop rung in `SalehmanEngine.cloudChain` + the paid R1 critic rung + the now-dead `deepSeekModel(for:)` R1/V3 chooser, and DeepSeek's membership in `codingRace`/`coderLoop`.
+
+**What deliberately STAYS:** the NVIDIA NIM free tier (`NvidiaClient`, `nvidiaAPIKey`) — it hosts the actual `deepseek-ai/deepseek-v4-*` weights at $0 under the NVIDIA key and is `.salehman`'s first cloud rung; the self-improve critique loop (now free-only: NVIDIA `deepseek-v4-pro` → OpenRouter Nemotron-550B); the persona never-name-the-engine rule. The `.salehman` chain is now entirely free-tier (no paid rung at all).
+
+**Migration safety:** `brainPreferenceCurrent` falls back to `.salehman` for the removed rawValue; `rotationBrains` compactMaps it away; the freeAuto cooldown bookkeeping keyed by rawValue simply never sees "DeepSeek" again. The historic ensemble counted-but-not-rostered DeepSeek drift dissolved with the provider.
+
+**Verification:** repo-wide symbol sweep = zero surviving code references; whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test` → **TEST SUCCEEDED**, 0 failures, all 4 patched suites (BrainRoutingDispatch/SettingsBrainReady/AgentPipelineConcurrency/ToolLoop) re-ran green.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
-- **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
+- **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
   ~19 GB if the heavy model isn't needed.
 - **Gemini free tier:** user's Google account returns `limit: 0` (429) — account
