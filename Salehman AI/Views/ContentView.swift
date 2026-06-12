@@ -458,7 +458,8 @@ struct ContentView: View {
                                                   onSaveToNotes: { text in
                                                       ScratchpadStore.shared.addNote(text)
                                                       withAnimation(DS.Motion.fade) { noteSavedPulse = true }
-                                                  })
+                                                  },
+                                                  onRate: { vm.rate($0, up: $1) })
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -1597,6 +1598,9 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
     /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
     var pinned: Bool? = nil
+    /// User rating: `true` = thumbs-up, `false` = thumbs-down, `nil` = none.
+    /// Same optional-Codable trick as `pinned` — old history decodes unchanged.
+    var rating: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -1969,6 +1973,9 @@ struct MessageBubble: View, Equatable {
     var onTogglePin: ((ChatMessage) -> Void)? = nil
     /// Save this message's text as a note in ScratchpadStore. nil hides it.
     var onSaveToNotes: ((String) -> Void)? = nil
+    /// Rate this assistant reply: `true` = thumbs-up, `false` = thumbs-down.
+    /// Excluded from `==` (closure); `message.rating` is in `==` via ChatMessage.
+    var onRate: ((ChatMessage, Bool) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -2064,6 +2071,16 @@ struct MessageBubble: View, Equatable {
                 if onSaveToNotes != nil {
                     Button { onSaveToNotes?(displayedText) } label: {
                         Label("Save as Note", systemImage: "note.text.badge.plus")
+                    }
+                }
+                if onRate != nil {
+                    Button { onRate?(message, true) } label: {
+                        Label(message.rating == true ? "Remove Good Rating" : "Mark as Good Response",
+                              systemImage: message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    }
+                    Button { onRate?(message, false) } label: {
+                        Label(message.rating == false ? "Remove Poor Rating" : "Mark as Poor Response",
+                              systemImage: message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                     }
                 }
                 Divider()
@@ -2243,6 +2260,16 @@ struct MessageBubble: View, Equatable {
                     actionButton(message.pinned == true ? "pin.slash" : "pin",
                                  message.pinned == true ? "Unpin" : "Pin to top") {
                         onTogglePin?(message)
+                    }
+                }
+                if onRate != nil {
+                    actionButton(message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup",
+                                 "Good response", active: message.rating == true) {
+                        onRate?(message, true)
+                    }
+                    actionButton(message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+                                 "Poor response", active: message.rating == false) {
+                        onRate?(message, false)
                     }
                 }
             }

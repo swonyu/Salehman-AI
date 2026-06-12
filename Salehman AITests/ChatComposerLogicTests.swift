@@ -459,6 +459,73 @@ struct ChatRecallTests {
     }
 }
 
+// MARK: - Chat rating feature — togglingRating contract
+//
+// `true` = thumbs-up, `false` = thumbs-down, `nil` = unrated.
+// Second-click on the same value un-rates (→ nil); clicking the opposite
+// switches directly. Both semantics matter for UX correctness.
+
+struct ChatRatingTests {
+
+    private func msg(_ text: String, rating: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)
+        m.rating = rating
+        return m
+    }
+
+    @Test func nilToThumbsUp() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == true)
+    }
+
+    @Test func nilToThumbsDown() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == false)
+    }
+
+    @Test func thumbsUpAgainUnrates() {
+        let m = msg("reply", rating: true)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func thumbsDownAgainUnrates() {
+        let m = msg("reply", rating: false)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func thumbsUpToThumbsDownSwitches() {
+        let m = msg("reply", rating: true)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == false)
+    }
+
+    @Test func thumbsDownToThumbsUpSwitches() {
+        let m = msg("reply", rating: false)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == true)
+    }
+
+    @Test func unknownIdIsNoOp() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: UUID(), up: true)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func onlyTargetedMessageChanges() {
+        let a = msg("alpha", rating: nil)
+        let b = msg("beta",  rating: true)
+        let c = msg("gamma", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [a, b, c], id: b.id, up: false)
+        #expect(result[0].rating == nil)    // a: unchanged
+        #expect(result[1].rating == false)  // b: switched
+        #expect(result[2].rating == nil)    // c: unchanged
+    }
+}
+
 // MARK: - Chat pin feature — togglingPin + pinPreview contracts
 //
 // Both helpers are `nonisolated static`, so tests are hermetic. `togglingPin`

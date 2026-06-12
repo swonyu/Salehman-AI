@@ -1510,6 +1510,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon U: message rating (thumbs-up / thumbs-down on AI replies)
+
+**What changed:**
+- `ContentView.swift` `ChatMessage`: added `var rating: Bool? = nil` — same opt-in `Bool?` Codable pattern as `pinned`. `true` = thumbs-up, `false` = thumbs-down, `nil` = unrated. Old history decodes unchanged.
+- `ChatViewModel.swift`: added `nonisolated static func togglingRating(in:id:up:)` (same-value → nil; opposite → switch) and `func rate(_:up:)`.
+- `ContentView.swift` `MessageBubble`: `var onRate: ((ChatMessage, Bool) -> Void)? = nil` (excluded from `==`). Wired 👍/👎 `actionButton`s in assistant hover pill (after Pin), and two context-menu items with toggle-aware labels. Wired at transcript call site.
+- `ChatComposerLogicTests.swift`: added `ChatRatingTests` (8 tests) covering all state transitions.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~71. Rating persists with conversation via existing save path.
+
+---
 ## 2026-06-12 — Marathon T: unit tests for pin feature (togglingPin + pinPreview)
 
 **What changed:**

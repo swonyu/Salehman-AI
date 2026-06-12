@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:47 +03 · Swift files: 150 · Swift LOC: 31195_
+_Generated: 2026-06-12 06:54 +03 · Swift files: 150 · Swift LOC: 31302_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14044,7 +14044,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (198 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (215 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -14093,6 +14093,23 @@ final class ChatViewModel: ObservableObject {
     /// the save path already rides on `messages` changes.
     func togglePin(_ message: ChatMessage) {
         messages = Self.togglingPin(in: messages, id: message.id)
+    }
+
+    /// Rate an assistant reply thumbs-up (`up = true`) or thumbs-down (`up =
+    /// false`). Clicking the same rating a second time un-rates (→ nil).
+    /// Clicking the opposite rating switches. Only assistant messages are
+    /// rated; the guard in the UI enforces this, but the pure helper is agnostic.
+    nonisolated static func togglingRating(in messages: [ChatMessage],
+                                           id: UUID, up: Bool) -> [ChatMessage] {
+        var out = messages
+        if let i = out.firstIndex(where: { $0.id == id }) {
+            out[i].rating = (out[i].rating == up) ? nil : up
+        }
+        return out
+    }
+
+    func rate(_ message: ChatMessage, up: Bool) {
+        messages = Self.togglingRating(in: messages, id: message.id, up: up)
     }
 
     /// Re-answer: drop this assistant reply (and anything after it) and re-run the
@@ -17006,7 +17023,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2676 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2703 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17468,7 +17485,8 @@ struct ContentView: View {
                                                   onSaveToNotes: { text in
                                                       ScratchpadStore.shared.addNote(text)
                                                       withAnimation(DS.Motion.fade) { noteSavedPulse = true }
-                                                  })
+                                                  },
+                                                  onRate: { vm.rate($0, up: $1) })
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -18607,6 +18625,9 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// synthesized Codable REQUIRES non-optional keys even when defaulted, so
     /// only `Bool?` lets pre-pin history decode unchanged. `true` or absent.
     var pinned: Bool? = nil
+    /// User rating: `true` = thumbs-up, `false` = thumbs-down, `nil` = none.
+    /// Same optional-Codable trick as `pinned` — old history decodes unchanged.
+    var rating: Bool? = nil
 }
 
 /// Saves/loads the conversation so it survives quitting the app.
@@ -18979,6 +19000,9 @@ struct MessageBubble: View, Equatable {
     var onTogglePin: ((ChatMessage) -> Void)? = nil
     /// Save this message's text as a note in ScratchpadStore. nil hides it.
     var onSaveToNotes: ((String) -> Void)? = nil
+    /// Rate this assistant reply: `true` = thumbs-up, `false` = thumbs-down.
+    /// Excluded from `==` (closure); `message.rating` is in `==` via ChatMessage.
+    var onRate: ((ChatMessage, Bool) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -19074,6 +19098,16 @@ struct MessageBubble: View, Equatable {
                 if onSaveToNotes != nil {
                     Button { onSaveToNotes?(displayedText) } label: {
                         Label("Save as Note", systemImage: "note.text.badge.plus")
+                    }
+                }
+                if onRate != nil {
+                    Button { onRate?(message, true) } label: {
+                        Label(message.rating == true ? "Remove Good Rating" : "Mark as Good Response",
+                              systemImage: message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    }
+                    Button { onRate?(message, false) } label: {
+                        Label(message.rating == false ? "Remove Poor Rating" : "Mark as Poor Response",
+                              systemImage: message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                     }
                 }
                 Divider()
@@ -19253,6 +19287,16 @@ struct MessageBubble: View, Equatable {
                     actionButton(message.pinned == true ? "pin.slash" : "pin",
                                  message.pinned == true ? "Unpin" : "Pin to top") {
                         onTogglePin?(message)
+                    }
+                }
+                if onRate != nil {
+                    actionButton(message.rating == true ? "hand.thumbsup.fill" : "hand.thumbsup",
+                                 "Good response", active: message.rating == true) {
+                        onRate?(message, true)
+                    }
+                    actionButton(message.rating == false ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+                                 "Poor response", active: message.rating == false) {
+                        onRate?(message, false)
                     }
                 }
             }
@@ -22563,7 +22607,7 @@ enum ScratchpadList {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (173 lines) =====
+===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (169 lines) =====
 ```swift
 import Foundation
 
@@ -22615,13 +22659,9 @@ struct BrainReadiness {
     /// The cloud coder pool shared by `.freeCoding` and `.cloudCoding`.
     var anyCloudCoder: Bool { groq || cerebras || mistral || openRouter }
 
-    /// Mirrors `SalehmanEngine.hasAnyCloud` (hosted endpoint or ANY chain
-    /// key) over the cached flags — the `.salehman` cloud-first gate.
-    var salehmanAnyCloud: Bool {
-        vllmConfigured || unslothConfigured
-            || nvidia || openRouter || cerebras || groq || mistral
-            || gemini || grok || openAI || anthropic
-    }
+    /// Mirrors `SalehmanEngine.hasAnyCloud` — local endpoint engines only.
+    /// Salehman is pure local-first; cloud API keys are NOT checked.
+    var salehmanAnyCloud: Bool { vllmConfigured || unslothConfigured }
 
     /// Whether `pref` is reachable right now. Exact behavior copy of the old
     /// `SettingsView.brainReady` switch — if reachability rules change,
@@ -22652,9 +22692,9 @@ struct BrainReadiness {
         case .freeCoding:  return localFloor || anyCloudCoder
         // Cloud Coding is cloud-ONLY — no local floor.
         case .cloudCoding: return anyCloudCoder
-        // Salehman is CLOUD-FIRST: any cloud engine, or the user's own Ollama
-        // model plausibly present (the exact pulled-model check stays async
-        // at runtime via `OllamaClient.hasCustomModel`).
+        // Salehman is LOCAL-FIRST: vLLM or Unsloth endpoint configured, or
+        // the user's own Ollama model (named + server up). Cloud API keys do
+        // NOT light this — Salehman never contacts third-party clouds.
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured
@@ -22879,7 +22919,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
 
-                    section("Intelligence", "How Salehman thinks — cloud-first, with a local floor.") {
+                    section("Intelligence", "How Salehman thinks — local-first: vLLM → Unsloth Studio → MLX → Ollama.") {
                         toggle("Offline mode (local only)",
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
@@ -25786,7 +25826,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (588 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (655 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26246,6 +26286,73 @@ struct ChatRecallTests {
 
     @Test func emptyHistoryReturnsNil() {
         #expect(ContentView.recalledMessage(idx: 0, from: []) == nil)
+    }
+}
+
+// MARK: - Chat rating feature — togglingRating contract
+//
+// `true` = thumbs-up, `false` = thumbs-down, `nil` = unrated.
+// Second-click on the same value un-rates (→ nil); clicking the opposite
+// switches directly. Both semantics matter for UX correctness.
+
+struct ChatRatingTests {
+
+    private func msg(_ text: String, rating: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)
+        m.rating = rating
+        return m
+    }
+
+    @Test func nilToThumbsUp() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == true)
+    }
+
+    @Test func nilToThumbsDown() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == false)
+    }
+
+    @Test func thumbsUpAgainUnrates() {
+        let m = msg("reply", rating: true)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func thumbsDownAgainUnrates() {
+        let m = msg("reply", rating: false)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func thumbsUpToThumbsDownSwitches() {
+        let m = msg("reply", rating: true)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: false)
+        #expect(result.first?.rating == false)
+    }
+
+    @Test func thumbsDownToThumbsUpSwitches() {
+        let m = msg("reply", rating: false)
+        let result = ChatViewModel.togglingRating(in: [m], id: m.id, up: true)
+        #expect(result.first?.rating == true)
+    }
+
+    @Test func unknownIdIsNoOp() {
+        let m = msg("reply", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [m], id: UUID(), up: true)
+        #expect(result.first?.rating == nil)
+    }
+
+    @Test func onlyTargetedMessageChanges() {
+        let a = msg("alpha", rating: nil)
+        let b = msg("beta",  rating: true)
+        let c = msg("gamma", rating: nil)
+        let result = ChatViewModel.togglingRating(in: [a, b, c], id: b.id, up: false)
+        #expect(result[0].rating == nil)    // a: unchanged
+        #expect(result[1].rating == false)  // b: switched
+        #expect(result[2].rating == nil)    // c: unchanged
     }
 }
 
@@ -30778,22 +30885,22 @@ struct SettingsBrainReadyTests {
     }
 
     @Test
-    func salehmanIsCloudFirstAndItsLocalFloorNeedsANamedModel() {
-        // The original stub's case: Ollama up but customModelName blank and
-        // no cloud anywhere → NOT ready (nothing would actually answer).
+    func salehmanIsLocalFirstAndItsFloorNeedsANamedModel() {
+        // Ollama up but customModelName blank and no local endpoint → NOT ready.
         #expect(!Self.flags { $0.ollamaUp = true }.ready(.salehman))
         // Name + server → the local floor stands.
         #expect(Self.flags { $0.ollamaUp = true; $0.customModelNamed = true }
             .ready(.salehman))
         // A name with the server DOWN is not a floor.
         #expect(!Self.flags { $0.customModelNamed = true }.ready(.salehman))
-        // Cloud-first: ANY single cloud signal lights it with zero local —
-        // including endpoint engines and every chain key.
-        #expect(Self.flags { $0.gemini = true }.ready(.salehman))
-        #expect(Self.flags { $0.nvidia = true }.ready(.salehman))
+        // Local-first: cloud API keys alone do NOT light Salehman —
+        // it never contacts third-party clouds.
+        #expect(!Self.flags { $0.gemini = true }.ready(.salehman))
+        #expect(!Self.flags { $0.nvidia = true }.ready(.salehman))
+        #expect(!Self.flags { $0.anthropic = true }.ready(.salehman))
+        // Endpoint engines DO light it (the local resolution order).
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.salehman))
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.salehman))
-        #expect(Self.flags { $0.anthropic = true }.ready(.salehman))
     }
 
     @Test
@@ -33746,7 +33853,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2391 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2430 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35259,6 +35366,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon U: message rating (thumbs-up / thumbs-down on AI replies)
+
+**What changed:**
+- `ContentView.swift` `ChatMessage`: added `var rating: Bool? = nil` — same opt-in `Bool?` Codable pattern as `pinned`. `true` = thumbs-up, `false` = thumbs-down, `nil` = unrated. Old history decodes unchanged.
+- `ChatViewModel.swift`: added `nonisolated static func togglingRating(in:id:up:)` (same-value → nil; opposite → switch) and `func rate(_:up:)`.
+- `ContentView.swift` `MessageBubble`: `var onRate: ((ChatMessage, Bool) -> Void)? = nil` (excluded from `==`). Wired 👍/👎 `actionButton`s in assistant hover pill (after Pin), and two context-menu items with toggle-aware labels. Wired at transcript call site.
+- `ChatComposerLogicTests.swift`: added `ChatRatingTests` (8 tests) covering all state transitions.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~71. Rating persists with conversation via existing save path.
+
+---
 ## 2026-06-12 — Marathon T: unit tests for pin feature (togglingPin + pinPreview)
 
 **What changed:**
@@ -35267,6 +35387,32 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Salehman AITests/ChatComposerLogicTests.swift`
 
 **Result:** Build-capable session to run. Total unit tests ~63. No production code changes.
+
+---
+**2026-06-12 — MemoryView hover rows + TodayView subtitle copy fix (Chat C)**
+
+**What changed:**
+- `Views/MemoryView.swift`: memory fact rows now have hover state — sparkle icon brightens, text brightens, copy icon goes accent-tinted, trash goes danger-tinted, soft accent background wash. Same `@State private var hoveredFact: String?` pattern as KnowledgeView's `hoveredDocID`.
+- `Views/TodayView.swift`: updated greeting subtitle "many brains, real tools, your own model" → "your model, your data, always on this Mac." — honest copy after cloud removal.
+
+**Why:** Marathon polish pass — MemoryView rows were the last major list surface without hover feedback; subtitle copy drifted post-cloud-removal.
+
+**Files:** `Views/MemoryView.swift`, `Views/TodayView.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
+**2026-06-12 — SettingsView "cloud-first" copy fix + UI-test stability (Chat C)**
+
+**What changed:**
+- `Views/SettingsView.swift` line 138: Intelligence section description "cloud-first, with a local floor" → "local-first: vLLM → Unsloth Studio → MLX → Ollama".
+- `Salehman AIUITests/ChatTabUITests.swift`: `tearDownWithError` override terminates the app after every test (prevents races on the next `app.launch()`); composer-field existence timeout bumped 10 → 30s (flaky on slower CI machines).
+
+**Why:** Copy drifted after cloud removal; UI test teardown omission was causing inter-test interference.
+
+**Files:** `Views/SettingsView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
 
 ---
 ## Standing notes / known issues

@@ -47,6 +47,23 @@ final class ChatViewModel: ObservableObject {
         messages = Self.togglingPin(in: messages, id: message.id)
     }
 
+    /// Rate an assistant reply thumbs-up (`up = true`) or thumbs-down (`up =
+    /// false`). Clicking the same rating a second time un-rates (→ nil).
+    /// Clicking the opposite rating switches. Only assistant messages are
+    /// rated; the guard in the UI enforces this, but the pure helper is agnostic.
+    nonisolated static func togglingRating(in messages: [ChatMessage],
+                                           id: UUID, up: Bool) -> [ChatMessage] {
+        var out = messages
+        if let i = out.firstIndex(where: { $0.id == id }) {
+            out[i].rating = (out[i].rating == up) ? nil : up
+        }
+        return out
+    }
+
+    func rate(_ message: ChatMessage, up: Bool) {
+        messages = Self.togglingRating(in: messages, id: message.id, up: up)
+    }
+
     /// Re-answer: drop this assistant reply (and anything after it) and re-run the
     /// user message that preceded it, without duplicating the user bubble.
     func regenerate(_ message: ChatMessage) {
