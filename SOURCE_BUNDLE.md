@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:03 +03 · Swift files: 150 · Swift LOC: 31604_
+_Generated: 2026-06-12 07:09 +03 · Swift files: 150 · Swift LOC: 31638_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17207,22 +17207,22 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
-        .alert(“Connect to your cloud GPU”, isPresented: $showConnect) {
-            TextField(“https://….trycloudflare.com”, text: $connectURL)
-            Button(“Cancel”, role: .cancel) { }
-            Button(“Connect”) {
+        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
+            TextField("https://….trycloudflare.com", text: $connectURL)
+            Button("Cancel", role: .cancel) { }
+            Button("Connect") {
                 if let url = Self.normalizedServerURL(connectURL) {
                     settings.vllmEndpoint = url
-                    settings.vllmModel = “salehman”
+                    settings.vllmModel = "salehman"
                     settings.brainPreference = .vllm
-                    noticeText = “Connected — vLLM → \(url), model “salehman”. Replies now come from the cloud GPU; pin Salehman in Settings → Brain to go back to local.”
+                    noticeText = "Connected — vLLM → \(url), model \"salehman\". Replies now come from the cloud GPU; pin Salehman in Settings → Brain to go back to local."
                 } else {
-                    noticeText = “That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints.”
+                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
                 }
                 showNotice = true
             }
         } message: {
-            Text(“Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).”)
+            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
         }
         .alert("Cloud GPU", isPresented: $showNotice) {
             Button("OK", role: .cancel) { }
@@ -22296,8 +22296,9 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (391 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (425 lines) =====
 ```swift
+import AppKit
 import SwiftUI
 
 /// The Notes/Tasks tab — a manual UI over `ScratchpadStore` (which the chat tools
@@ -22465,6 +22466,11 @@ struct ScratchpadView: View {
         for t in store.tasks where t.done { store.deleteTask(t.id) }
     }
 
+    private func copyText(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     private func taskRow(_ t: TaskItem) -> some View {
         let hovered = hoveredTaskID == t.id
         return HStack(spacing: 12) {
@@ -22503,6 +22509,22 @@ struct ScratchpadView: View {
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
+        .contextMenu {
+            Button { copyText(t.title) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button { store.toggleTask(t.id) } label: {
+                Label(t.done ? "Mark Not Done" : "Mark Done",
+                      systemImage: t.done ? "circle" : "checkmark.circle")
+            }
+            if editingId != t.id {
+                Button { startEdit(id: t.id, text: t.title) } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { store.deleteTask(t.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var notesList: some View {
@@ -22559,6 +22581,18 @@ struct ScratchpadView: View {
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
+        .contextMenu {
+            Button { copyText(n.text) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if editingId != n.id {
+                Button { startEdit(id: n.id, text: n.text) } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { store.deleteNote(n.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func startEdit(id: UUID, text: String) {

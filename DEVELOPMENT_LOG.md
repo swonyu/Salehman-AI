@@ -1594,6 +1594,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
 
 ---
+## 2026-06-12 — Marathon polish: local-first brain gate + ContentView curly-quote fix
+
+**What:** Three-file commit (cac6cbe) cleaning up bugs found during the marathon polish pass.
+
+1. `SettingsBrainReadiness.salehmanAnyCloud` was incorrectly returning `true` when only third-party cloud API keys (Gemini, NVIDIA, Anthropic, etc.) were configured. Salehman is local-first and never contacts cloud services, so the gate now only checks `vllmConfigured || unslothConfigured`. `SettingsBrainReadyTests` updated accordingly (gemini/nvidia/anthropic cases flipped to NOT ready).
+
+2. `ContentView.swift` had macOS autocorrect replace straight ASCII double-quotes with Unicode curly quotes (U+201C/U+201D) across 8 string literals in the cloud-GPU connect alert block (lines 176-191), causing ~20 compile errors. Fixed by global U+201C→`"` / U+201D→`"` substitution; the one embedded typographic quote in the model name was fixed to use `\"salehman\"`.
+
+**Files:** `Salehman AI/Views/SettingsBrainReadiness.swift`, `Salehman AITests/SettingsBrainReadyTests.swift`, `Salehman AI/Views/ContentView.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
