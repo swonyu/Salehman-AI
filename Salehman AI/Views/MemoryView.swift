@@ -48,6 +48,7 @@ struct MemoryView: View {
     @State private var confirmClear = false
     @State private var query = ""
     @State private var sort: MemorySort = .newest
+    @State private var hoveredFact: String?
 
     var body: some View {
         ZStack {
@@ -204,25 +205,40 @@ struct MemoryView: View {
     }
 
     private func row(_ fact: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "sparkle").foregroundStyle(DS.Palette.accent).frame(width: 18)
-            Text(fact).font(.system(size: 14)).foregroundStyle(.white)
+        let hovered = hoveredFact == fact
+        return HStack(spacing: 12) {
+            Image(systemName: "sparkle")
+                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.7))
+                .frame(width: 18)
+            Text(fact).font(.system(size: 14))
+                .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             Button { copy(fact) } label: {
-                Image(systemName: "doc.on.doc").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
             }
             .buttonStyle(.plain)
             .help("Copy")
             .accessibilityLabel("Copy memory")
             Button { MemoryStore.shared.delete(fact); reload() } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : .secondary)
             }
             .buttonStyle(.plain)
             .help("Forget this")
             .accessibilityLabel("Forget this memory")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
+        .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.press) {
+                hoveredFact = over ? fact : (hoveredFact == fact ? nil : hoveredFact)
+            }
+        }
     }
 
     private func copy(_ s: String) {

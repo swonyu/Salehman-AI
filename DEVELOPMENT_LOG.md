@@ -1520,6 +1520,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Build-capable session to run. Total unit tests ~63. No production code changes.
 
 ---
+**2026-06-12 — MemoryView hover rows + TodayView subtitle copy fix (Chat C)**
+
+**What changed:**
+- `Views/MemoryView.swift`: memory fact rows now have hover state — sparkle icon brightens, text brightens, copy icon goes accent-tinted, trash goes danger-tinted, soft accent background wash. Same `@State private var hoveredFact: String?` pattern as KnowledgeView's `hoveredDocID`.
+- `Views/TodayView.swift`: updated greeting subtitle "many brains, real tools, your own model" → "your model, your data, always on this Mac." — honest copy after cloud removal.
+
+**Why:** Marathon polish pass — MemoryView rows were the last major list surface without hover feedback; subtitle copy drifted post-cloud-removal.
+
+**Files:** `Views/MemoryView.swift`, `Views/TodayView.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
