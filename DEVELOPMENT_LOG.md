@@ -1960,6 +1960,26 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
 
 ---
+### 2026-06-12 — Marathon AR — SettingsView: DS palette color sweep (replace raw .green/.red/.orange with soft tokens)
+
+**What changed:** Swept `SettingsView.swift` for every hardcoded `.green`, `.red`, `.orange` status-color usage that bypassed the DS design token layer. Seven spots updated:
+- `modeRow` selected checkmark: `.green` → `DS.Palette.successSoft`
+- `unslothStudioTestRow` error text: `Color.red.opacity(0.85)` → `DS.Palette.warningSoft`
+- `vllmTestRow` error text: `Color.red.opacity(0.85)` → `DS.Palette.warningSoft`
+- `workingBadge` (active-brain check): both icon and text colors unified to `successSoft`/`warningSoft`
+- `claudeKeyRow` test result line: `.green`/`.orange` → `successSoft`/`warningSoft`
+- `statusRow` (Ollama/vision/coder): `.green`/`.red` icons → `successSoft`/`warningSoft`
+- `salehmanModelStatusRow` installed/missing icons: `DS.Palette.success`/`.warning` → soft variants
+- `anthropicSubtitleColor`: `.orange` → `DS.Palette.warningSoft`
+Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard).
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Why:** The `testStatusColor` helper (cloud test rows) already used desaturated soft tokens with the comment "full-saturation `.green`/`.orange` reads as alarming on the dark canvas" — but four other areas in the same file still used raw system colors, creating an inconsistency. One sweep makes the whole file coherent with the DS palette contract.
+
+**Result:** Build not yet run (owner-side); all changes are pure color-token swaps with no logic impact.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

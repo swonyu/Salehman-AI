@@ -401,7 +401,7 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if settings.responseMode == mode {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
@@ -785,7 +785,7 @@ struct SettingsView: View {
             if let status = unslothStudioTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -850,7 +850,7 @@ struct SettingsView: View {
             if let status = vllmTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1052,7 +1052,7 @@ struct SettingsView: View {
                 // Small indicator so the user knows what will be on the clipboard.
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
-                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.success : .secondary)
+                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -1177,11 +1177,11 @@ struct SettingsView: View {
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
             case .installed(let name):
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
-                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                Image(systemName: “checkmark.circle.fill”).foregroundStyle(DS.Palette.successSoft)
+                Text(“”\(name)” is installed — Salehman's offline floor is ready.”)
                     .font(.caption2).foregroundStyle(.secondary)
             case .missing(let name):
-                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Image(systemName: “exclamationmark.circle.fill”).foregroundStyle(DS.Palette.warningSoft)
                 Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button {
@@ -1426,9 +1426,9 @@ struct SettingsView: View {
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                    .foregroundStyle(working ? .green : .red)
+                    .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
                 Text(working ? "Working" : "Not working")
-                    .font(.caption2).foregroundStyle(working ? .green : .orange)
+                    .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
@@ -1742,7 +1742,7 @@ struct SettingsView: View {
                          ? "Connected — Anthropic accepted the saved key."
                          : status)
                         .font(.caption2)
-                        .foregroundStyle(status.isEmpty ? .green : .orange)
+                        .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -1773,7 +1773,7 @@ struct SettingsView: View {
     /// otherwise. Drives attention to the "saved the wrong key" failure mode.
     private var anthropicSubtitleColor: Color {
         AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
-            ? .orange : .secondary
+            ? DS.Palette.warningSoft : .secondary
     }
 
     /// Hit Anthropic with a one-token prompt and surface the actual error.
@@ -1876,7 +1876,7 @@ struct SettingsView: View {
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(ok ? .green : .red).frame(width: 22)
+                .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft).frame(width: 22)
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)

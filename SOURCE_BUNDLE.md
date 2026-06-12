@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:12 +03 · Swift files: 150 · Swift LOC: 32438_
+_Generated: 2026-06-12 09:16 +03 · Swift files: 150 · Swift LOC: 32438_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23836,7 +23836,7 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if settings.responseMode == mode {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
@@ -24220,7 +24220,7 @@ struct SettingsView: View {
             if let status = unslothStudioTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -24285,7 +24285,7 @@ struct SettingsView: View {
             if let status = vllmTestStatus {
                 Text(status.isEmpty ? "Connected ✓" : status)
                     .font(.caption)
-                    .foregroundStyle(status.isEmpty ? DS.Palette.success : Color.red.opacity(0.85))
+                    .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -24487,7 +24487,7 @@ struct SettingsView: View {
                 // Small indicator so the user knows what will be on the clipboard.
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
-                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.success : .secondary)
+                        .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -24612,11 +24612,11 @@ struct SettingsView: View {
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
             case .installed(let name):
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.success)
-                Text("“\(name)” is installed — Salehman's offline floor is ready.")
+                Image(systemName: “checkmark.circle.fill”).foregroundStyle(DS.Palette.successSoft)
+                Text(“”\(name)” is installed — Salehman's offline floor is ready.”)
                     .font(.caption2).foregroundStyle(.secondary)
             case .missing(let name):
-                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warning)
+                Image(systemName: “exclamationmark.circle.fill”).foregroundStyle(DS.Palette.warningSoft)
                 Text("Ollama is running but has no “\(name)” model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button {
@@ -24861,9 +24861,9 @@ struct SettingsView: View {
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                    .foregroundStyle(working ? .green : .red)
+                    .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
                 Text(working ? "Working" : "Not working")
-                    .font(.caption2).foregroundStyle(working ? .green : .orange)
+                    .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
@@ -25177,7 +25177,7 @@ struct SettingsView: View {
                          ? "Connected — Anthropic accepted the saved key."
                          : status)
                         .font(.caption2)
-                        .foregroundStyle(status.isEmpty ? .green : .orange)
+                        .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -25208,7 +25208,7 @@ struct SettingsView: View {
     /// otherwise. Drives attention to the "saved the wrong key" failure mode.
     private var anthropicSubtitleColor: Color {
         AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
-            ? .orange : .secondary
+            ? DS.Palette.warningSoft : .secondary
     }
 
     /// Hit Anthropic with a one-token prompt and surface the actual error.
@@ -25311,7 +25311,7 @@ struct SettingsView: View {
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(ok ? .green : .red).frame(width: 22)
+                .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft).frame(width: 22)
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)
@@ -35006,7 +35006,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2831 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2851 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36967,6 +36967,26 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
 
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
+### 2026-06-12 — Marathon AR — SettingsView: DS palette color sweep (replace raw .green/.red/.orange with soft tokens)
+
+**What changed:** Swept `SettingsView.swift` for every hardcoded `.green`, `.red`, `.orange` status-color usage that bypassed the DS design token layer. Seven spots updated:
+- `modeRow` selected checkmark: `.green` → `DS.Palette.successSoft`
+- `unslothStudioTestRow` error text: `Color.red.opacity(0.85)` → `DS.Palette.warningSoft`
+- `vllmTestRow` error text: `Color.red.opacity(0.85)` → `DS.Palette.warningSoft`
+- `workingBadge` (active-brain check): both icon and text colors unified to `successSoft`/`warningSoft`
+- `claudeKeyRow` test result line: `.green`/`.orange` → `successSoft`/`warningSoft`
+- `statusRow` (Ollama/vision/coder): `.green`/`.red` icons → `successSoft`/`warningSoft`
+- `salehmanModelStatusRow` installed/missing icons: `DS.Palette.success`/`.warning` → soft variants
+- `anthropicSubtitleColor`: `.orange` → `DS.Palette.warningSoft`
+Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard).
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Why:** The `testStatusColor` helper (cloud test rows) already used desaturated soft tokens with the comment "full-saturation `.green`/`.orange` reads as alarming on the dark canvas" — but four other areas in the same file still used raw system colors, creating an inconsistency. One sweep makes the whole file coherent with the DS palette contract.
+
+**Result:** Build not yet run (owner-side); all changes are pure color-token swaps with no logic impact.
 
 ---
 ## Standing notes / known issues
