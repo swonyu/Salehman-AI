@@ -82,11 +82,8 @@ struct OnboardingView: View {
                 }
                 .padding(.bottom, 26)
 
-                // Editorial eyebrow — gives each page a sense of place + rhythm.
-                Text(pages[page].eyebrow)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .tracking(2.5)
-                    .foregroundStyle(DS.Palette.accent)
+                // Eyebrow badge — DS component for cross-view consistency.
+                Eyebrow(text: pages[page].eyebrow)
                     .padding(.bottom, 10)
                     .id("eyebrow\(page)")
                     .transition(.opacity)
@@ -133,14 +130,26 @@ struct OnboardingView: View {
                         if isLast { onDone() }
                         else { withAnimation(DS.Motion.smooth) { page += 1 } }
                     } label: {
-                        Text(isLast ? "Get Started" : "Next")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 26).padding(.vertical, 11)
-                            .background(DS.Gradient.brand, in: Capsule())
-                            .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
-                            .scaleEffect(ctaHover ? 1.035 : 1)
-                            .brightness(ctaHover ? 0.06 : 0)
+                        // Button-in-button: trailing chevron in its own circle.
+                        HStack(spacing: 8) {
+                            Text(isLast ? "Get Started" : "Next")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(ctaHover ? 0.20 : 0.12))
+                                    .frame(width: 26, height: 26)
+                                Image(systemName: isLast ? "checkmark" : "chevron.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .offset(x: ctaHover && !isLast ? 1 : 0)
+                            }
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .background(DS.Gradient.brand, in: Capsule())
+                        .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
+                        .scaleEffect(ctaHover ? 1.035 : 1)
+                        .brightness(ctaHover ? 0.06 : 0)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)

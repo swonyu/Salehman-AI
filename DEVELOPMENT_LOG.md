@@ -2284,6 +2284,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
 
 ---
+
+### 2026-06-12 — Marathon BO: OnboardingView premium elevation pass
+
+**What changed:** `Salehman AI/Views/OnboardingView.swift`
+- Eyebrow: inline `Text` with custom tracking → `Eyebrow(text:)` DS component (consistent with BH–BN)
+- CTA button (Next/Get Started): plain text capsule → button-in-button — trailing chevron.right (or checkmark on last page) nested in a `Circle().fill(white.opacity(0.12→0.20 on hover))` inside the brand gradient capsule; chevron offset +1 on hover for kinetic tension
+
+**Why:** OnboardingView already had the 88×88 brand tile, dual ambient orbs, and entrance animation from an earlier pass. The remaining two gaps were the non-DS eyebrow and the flat CTA that lacked the DS spec's "button-in-button" trailing icon pattern.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

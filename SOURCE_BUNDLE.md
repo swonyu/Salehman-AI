@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:41 +03 · Swift files: 150 · Swift LOC: 33044_
+_Generated: 2026-06-12 20:42 +03 · Swift files: 150 · Swift LOC: 33053_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22703,7 +22703,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (166 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (175 lines) =====
 ```swift
 import SwiftUI
 
@@ -22789,11 +22789,8 @@ struct OnboardingView: View {
                 }
                 .padding(.bottom, 26)
 
-                // Editorial eyebrow — gives each page a sense of place + rhythm.
-                Text(pages[page].eyebrow)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .tracking(2.5)
-                    .foregroundStyle(DS.Palette.accent)
+                // Eyebrow badge — DS component for cross-view consistency.
+                Eyebrow(text: pages[page].eyebrow)
                     .padding(.bottom, 10)
                     .id("eyebrow\(page)")
                     .transition(.opacity)
@@ -22840,14 +22837,26 @@ struct OnboardingView: View {
                         if isLast { onDone() }
                         else { withAnimation(DS.Motion.smooth) { page += 1 } }
                     } label: {
-                        Text(isLast ? "Get Started" : "Next")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 26).padding(.vertical, 11)
-                            .background(DS.Gradient.brand, in: Capsule())
-                            .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
-                            .scaleEffect(ctaHover ? 1.035 : 1)
-                            .brightness(ctaHover ? 0.06 : 0)
+                        // Button-in-button: trailing chevron in its own circle.
+                        HStack(spacing: 8) {
+                            Text(isLast ? "Get Started" : "Next")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(ctaHover ? 0.20 : 0.12))
+                                    .frame(width: 26, height: 26)
+                                Image(systemName: isLast ? "checkmark" : "chevron.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .offset(x: ctaHover && !isLast ? 1 : 0)
+                            }
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .background(DS.Gradient.brand, in: Capsule())
+                        .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
+                        .scaleEffect(ctaHover ? 1.035 : 1)
+                        .brightness(ctaHover ? 0.06 : 0)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
@@ -35612,7 +35621,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3155 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3167 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37895,6 +37904,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - Added `@State private var appeared` + header entrance animation (`DS.Motion.smooth` on `.onAppear`)
 
 **Why:** SettingsView had no brand tile in the header (unique omission) and all rows used bare SF Symbols without wells — breaking the depth ladder established across BG–BM. The `section()` and `toggle()` helpers are multipliers: editing them upgrades dozens of rows simultaneously.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
+
+---
+
+### 2026-06-12 — Marathon BO: OnboardingView premium elevation pass
+
+**What changed:** `Salehman AI/Views/OnboardingView.swift`
+- Eyebrow: inline `Text` with custom tracking → `Eyebrow(text:)` DS component (consistent with BH–BN)
+- CTA button (Next/Get Started): plain text capsule → button-in-button — trailing chevron.right (or checkmark on last page) nested in a `Circle().fill(white.opacity(0.12→0.20 on hover))` inside the brand gradient capsule; chevron offset +1 on hover for kinetic tension
+
+**Why:** OnboardingView already had the 88×88 brand tile, dual ambient orbs, and entrance animation from an earlier pass. The remaining two gaps were the non-DS eyebrow and the flat CTA that lacked the DS spec's "button-in-button" trailing icon pattern.
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
 
