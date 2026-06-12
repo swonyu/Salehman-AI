@@ -2282,6 +2282,15 @@ replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverab
 rollback, not deleted). App launched. Owner-authorized explicitly after the
 permission classifier blocked the first attempt.
 
+## 2026-06-12 — marathon P: pin in hover pills + /pin command + Copy as Plain Text (Chat A)
+**What (owner: "continue"):**
+- Pin/unpin button added to both message hover pills (user row and assistant row). Previously, pin was only accessible via right-click; now it's a first-class pill action alongside Copy/Edit.
+- `/pin` slash command: types `/pin` in the composer to pin (or toggle) the most recent AI reply — no hover required.
+- "Copy as Plain Text" in the assistant context menu: strips `**bold**`, `## headers`, `` `code` ``, `[links](url)`, list markers, blockquotes, fenced code blocks. `MessageBubble.plainText()` is `nonisolated static` (pure, tested).
+- Tests: `MessageBubblePlainTextTests` ×9 (plain prose passthrough, headers, bold, italic, inline code, links, fenced code blocks, blockquotes, list markers).
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`.
+**Commit:** `e6dd911`
+
 ## 2026-06-12 — marathon O: search no-results state, unpin from strip, inline note/task edit (Chat A)
 **What (owner: "continue"):**
 - Search no-results empty state: when in-chat search returns zero matches a centred card echoes the query and offers a "Clear search" link — replaces the silently blank scroll area.
