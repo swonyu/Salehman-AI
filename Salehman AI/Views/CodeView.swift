@@ -2429,14 +2429,19 @@ struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
+/// PhaseAnimator cycles 0.35↔1.0 opacity continuously — no @State needed.
 struct PulsingDot: View {
-    @State private var on = false
     var body: some View {
-        Circle().fill(DS.Palette.accent)
-            .frame(width: 7, height: 7)
-            .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
-            .accessibilityHidden(true)
+        PhaseAnimator([0.35, 1.0]) { opacity in
+            Circle().fill(DS.Palette.accent)
+                .frame(width: 7, height: 7)
+                .opacity(opacity)
+        } animation: { opacity in
+            opacity > 0.5
+                ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
+                : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+        }
+        .accessibilityHidden(true)
     }
 }
 

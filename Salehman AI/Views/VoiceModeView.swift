@@ -5,7 +5,6 @@ import SwiftUI
 struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
-    @State private var pulse = false
     @State private var savedConfirmation = false
 
     private var phaseColor: Color {
@@ -100,7 +99,7 @@ struct VoiceModeView: View {
             .padding(DS.Space.xl)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start(); pulse = true }
+        .onAppear { session.start() }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }
@@ -108,9 +107,20 @@ struct VoiceModeView: View {
     private var orb: some View {
         ZStack {
             Circle().fill(phaseColor.opacity(0.18)).frame(width: 170, height: 170).blur(radius: 20)
-            Circle().fill(phaseColor.opacity(0.28)).frame(width: 124, height: 124)
-                .scaleEffect(animate && pulse ? 1.10 : 1.0)
-                .animation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.95).repeatForever(autoreverses: true), value: pulse)
+
+            // Inner orb — PhaseAnimator pulses at phase-aware speed:
+            // listening is snappier (0.70s), speaking is more measured (1.10s).
+            PhaseAnimator([false, true]) { pulsing in
+                Circle()
+                    .fill(phaseColor.opacity(0.28))
+                    .frame(width: 124, height: 124)
+                    .scaleEffect(animate ? (pulsing ? 1.10 : 1.0) : 1.0)
+            } animation: { pulsing in
+                guard animate else { return .smooth }
+                let dur: Double = session.phase == .listening ? 0.70 : 1.10
+                return .timingCurve(0.45, 0.0, 0.55, 1.0, duration: pulsing ? dur : dur * 1.15)
+            }
+
             Image(systemName: session.phase == .speaking ? "speaker.wave.2.fill" : "mic.fill")
                 .font(.system(size: 42, weight: .bold)).foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))

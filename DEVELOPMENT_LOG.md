@@ -2348,6 +2348,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Both changes compile cleanly (SourceKit false positives are pre-existing cross-file module references, not code errors).
 
 ---
+### [2026-06-12] Marathon BT — PhaseAnimator replaces repeatForever in PulsingDot + VoiceModeView orb
+
+**Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/VoiceModeView.swift`
+
+**Changes:**
+- `PulsingDot` (CodeView): removed `@State private var on` + `onAppear { withAnimation(.repeatForever) }` boilerplate; replaced with `PhaseAnimator([0.35, 1.0])` looping with asymmetric timing (0.75s bright, 0.90s dim). Pure declarative — no imperative start call.
+- VoiceModeView inner orb: removed `@State private var pulse` + `onAppear { pulse = true }`; replaced with `PhaseAnimator([false, true])` looping with phase-aware timing — listening uses 0.70s (snappy heartbeat), speaking uses 1.10s (measured output pulse). `animate` guard keeps the orb still during `.idle` / `.thinking` phases.
+
+**Why:** Both used the pre-PhaseAnimator pattern: a `@State` Bool flipped in `onAppear`, driven by `.repeatForever`. With `PhaseAnimator` (macOS 14+), the looping is declarative, state-free, and supports distinct animations per phase — improving both code clarity and the listening vs. speaking visual distinction.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:24 +03 · Swift files: 150 · Swift LOC: 33150_
+_Generated: 2026-06-12 21:27 +03 · Swift files: 150 · Swift LOC: 33165_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14685,7 +14685,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2537 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2542 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17118,14 +17118,19 @@ struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
+/// PhaseAnimator cycles 0.35↔1.0 opacity continuously — no @State needed.
 struct PulsingDot: View {
-    @State private var on = false
     var body: some View {
-        Circle().fill(DS.Palette.accent)
-            .frame(width: 7, height: 7)
-            .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
-            .accessibilityHidden(true)
+        PhaseAnimator([0.35, 1.0]) { opacity in
+            Circle().fill(DS.Palette.accent)
+                .frame(width: 7, height: 7)
+                .opacity(opacity)
+        } animation: { opacity in
+            opacity > 0.5
+                ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
+                : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -26609,7 +26614,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (173 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (183 lines) =====
 ```swift
 import SwiftUI
 
@@ -26618,7 +26623,6 @@ import SwiftUI
 struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
-    @State private var pulse = false
     @State private var savedConfirmation = false
 
     private var phaseColor: Color {
@@ -26713,7 +26717,7 @@ struct VoiceModeView: View {
             .padding(DS.Space.xl)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start(); pulse = true }
+        .onAppear { session.start() }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }
@@ -26721,9 +26725,20 @@ struct VoiceModeView: View {
     private var orb: some View {
         ZStack {
             Circle().fill(phaseColor.opacity(0.18)).frame(width: 170, height: 170).blur(radius: 20)
-            Circle().fill(phaseColor.opacity(0.28)).frame(width: 124, height: 124)
-                .scaleEffect(animate && pulse ? 1.10 : 1.0)
-                .animation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.95).repeatForever(autoreverses: true), value: pulse)
+
+            // Inner orb — PhaseAnimator pulses at phase-aware speed:
+            // listening is snappier (0.70s), speaking is more measured (1.10s).
+            PhaseAnimator([false, true]) { pulsing in
+                Circle()
+                    .fill(phaseColor.opacity(0.28))
+                    .frame(width: 124, height: 124)
+                    .scaleEffect(animate ? (pulsing ? 1.10 : 1.0) : 1.0)
+            } animation: { pulsing in
+                guard animate else { return .smooth }
+                let dur: Double = session.phase == .listening ? 0.70 : 1.10
+                return .timingCurve(0.45, 0.0, 0.55, 1.0, duration: pulsing ? dur : dur * 1.15)
+            }
+
             Image(systemName: session.phase == .speaking ? "speaker.wave.2.fill" : "mic.fill")
                 .font(.system(size: 42, weight: .bold)).foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))
@@ -35718,7 +35733,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3219 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3232 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38067,6 +38082,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Deep research (SwiftUI 6 APIs) confirmed `PhaseAnimator` is the idiomatic macOS 14+ API for discrete animation phase cycling — no `@State` pulse variable or `repeatForever` needed. The orb was the first "static" surface left in TodayView after the marathon-polished brand tile. The LIVE dot was a flat indicator; pulsing glow makes active recording status instantly legible.
 
 **Result:** Both changes compile cleanly (SourceKit false positives are pre-existing cross-file module references, not code errors).
+
+---
+### [2026-06-12] Marathon BT — PhaseAnimator replaces repeatForever in PulsingDot + VoiceModeView orb
+
+**Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/VoiceModeView.swift`
+
+**Changes:**
+- `PulsingDot` (CodeView): removed `@State private var on` + `onAppear { withAnimation(.repeatForever) }` boilerplate; replaced with `PhaseAnimator([0.35, 1.0])` looping with asymmetric timing (0.75s bright, 0.90s dim). Pure declarative — no imperative start call.
+- VoiceModeView inner orb: removed `@State private var pulse` + `onAppear { pulse = true }`; replaced with `PhaseAnimator([false, true])` looping with phase-aware timing — listening uses 0.70s (snappy heartbeat), speaking uses 1.10s (measured output pulse). `animate` guard keeps the orb still during `.idle` / `.thinking` phases.
+
+**Why:** Both used the pre-PhaseAnimator pattern: a `@State` Bool flipped in `onAppear`, driven by `.repeatForever`. With `PhaseAnimator` (macOS 14+), the looping is declarative, state-free, and supports distinct animations per phase — improving both code clarity and the listening vs. speaking visual distinction.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
 ## Standing notes / known issues
