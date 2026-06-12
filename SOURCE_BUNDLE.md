@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:54 +03 · Swift files: 150 · Swift LOC: 34231_
+_Generated: 2026-06-13 02:57 +03 · Swift files: 150 · Swift LOC: 34242_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27666,7 +27666,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (197 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (208 lines) =====
 ```swift
 import SwiftUI
 
@@ -27676,6 +27676,7 @@ struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
+    @State private var appeared = false
 
     private var phaseColor: Color {
         switch session.phase {
@@ -27728,9 +27729,18 @@ struct VoiceModeView: View {
                                     .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
                                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                             )
-                        Image(systemName: "waveform")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                            Image(systemName: "waveform")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Talk to Salehman")
@@ -27769,6 +27779,7 @@ struct VoiceModeView: View {
                     .font(.system(size: 18)).foregroundStyle(.white)
                     .multilineTextAlignment(.center).lineLimit(3)
                     .frame(maxWidth: 420, minHeight: 54)
+                    .animation(DS.Motion.smooth, value: session.liveCaption.isEmpty)
 
                 Spacer()
 
@@ -27778,7 +27789,7 @@ struct VoiceModeView: View {
             .padding(DS.Space.xl)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start() }
+        .onAppear { session.start(); appeared = true }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }
@@ -36799,7 +36810,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4245 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4259 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39999,6 +40010,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/ChatHistoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
 
 **Why:** Completing the app-wide icon-well depth audit. Every interactive tile and status indicator across the full view tree now carries the standard top-lit gradient stroke.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+---
+
+## 2026-06-13 — Marathon EFD: VoiceModeView animation enhancements
+
+**What changed:** Three animation improvements to VoiceModeView: (1) Added `@State private var appeared = false` + wired it in `onAppear`; (2) Wrapped brand tile icon "waveform" in `KeyframeAnimator` (compress 0.60 → overshoot 1.18 → settle 1.0) — matches all other header brand tiles in the app; (3) Added `.animation(DS.Motion.smooth, value: session.liveCaption.isEmpty)` to the live caption text — animates only the empty ↔ non-empty transition (not every rapid character update), giving a clean layout-shift animation at turn boundaries. Confirmed AgentsView/KnowledgeView/ScratchpadView all already have `KeyframeAnimator` — view-wide coverage complete.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`
+
+**Why:** VoiceModeView was the only utility sheet without the brand-tile spring-bounce on open. The caption animation guards against rapid per-character jank by animating only on the empty/non-empty boundary rather than every update.
 
 **Result:** Build exit 0, 0 real Swift errors.
 

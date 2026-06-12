@@ -6,6 +6,7 @@ struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
+    @State private var appeared = false
 
     private var phaseColor: Color {
         switch session.phase {
@@ -58,9 +59,18 @@ struct VoiceModeView: View {
                                     .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
                                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                             )
-                        Image(systemName: "waveform")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                            Image(systemName: "waveform")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Talk to Salehman")
@@ -99,6 +109,7 @@ struct VoiceModeView: View {
                     .font(.system(size: 18)).foregroundStyle(.white)
                     .multilineTextAlignment(.center).lineLimit(3)
                     .frame(maxWidth: 420, minHeight: 54)
+                    .animation(DS.Motion.smooth, value: session.liveCaption.isEmpty)
 
                 Spacer()
 
@@ -108,7 +119,7 @@ struct VoiceModeView: View {
             .padding(DS.Space.xl)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start() }
+        .onAppear { session.start(); appeared = true }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }

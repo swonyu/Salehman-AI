@@ -3202,6 +3202,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+---
+
+## 2026-06-13 — Marathon EFD: VoiceModeView animation enhancements
+
+**What changed:** Three animation improvements to VoiceModeView: (1) Added `@State private var appeared = false` + wired it in `onAppear`; (2) Wrapped brand tile icon "waveform" in `KeyframeAnimator` (compress 0.60 → overshoot 1.18 → settle 1.0) — matches all other header brand tiles in the app; (3) Added `.animation(DS.Motion.smooth, value: session.liveCaption.isEmpty)` to the live caption text — animates only the empty ↔ non-empty transition (not every rapid character update), giving a clean layout-shift animation at turn boundaries. Confirmed AgentsView/KnowledgeView/ScratchpadView all already have `KeyframeAnimator` — view-wide coverage complete.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`
+
+**Why:** VoiceModeView was the only utility sheet without the brand-tile spring-bounce on open. The caption animation guards against rapid per-character jank by animating only on the empty/non-empty boundary rather than every update.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
