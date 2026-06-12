@@ -331,11 +331,13 @@ struct KnowledgeView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.magnetic, value: docFilter.isEmpty)
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {

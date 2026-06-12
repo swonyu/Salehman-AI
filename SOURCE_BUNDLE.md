@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:46 +03 · Swift files: 150 · Swift LOC: 33752_
+_Generated: 2026-06-12 23:47 +03 · Swift files: 150 · Swift LOC: 33754_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20675,7 +20675,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (668 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (670 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21010,11 +21010,13 @@ struct KnowledgeView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.magnetic, value: docFilter.isEmpty)
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
@@ -36320,7 +36322,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3644 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3657 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38922,6 +38924,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Last two search clear buttons across the codebase that lacked transitions — found on final audit.
 
 **Result:** All 6 search-field clear buttons in the app now fade in/out (Chat, Scratchpad, MemoryView, KnowledgeView, LiveTranscription, ChatHistory).
+
+---
+
+### 2026-06-12 — Marathon DK: KnowledgeView doc-filter clear button transition (missed in DJ)
+
+**What changed:**
+- `Views/KnowledgeView.swift`: `docFilterRow` clear button gets `.transition(.opacity)` + parent HStack `.animation(DS.Motion.magnetic, value: docFilter.isEmpty)`.
+
+**Files:** `Views/KnowledgeView.swift`
+
+**Why:** Missed in DJ's search bar sweep — bringing all 7 search clear buttons in the app to parity.
+
+**Result:** Every search/filter clear button in the app now fades in and out.
 
 ---
 ## Standing notes / known issues
