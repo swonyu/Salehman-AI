@@ -1721,6 +1721,23 @@ enum ChatStore {
             .sorted { $0.date > $1.date }
     }
 
+    /// Count of archived conversations whose last-modified date is today.
+    /// Uses filesystem metadata only (no JSON decode) — safe to call off-main.
+    nonisolated static func archivedTodayCount() -> Int {
+        let cal = Calendar.current
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: archiveDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles)) ?? []
+        return urls.filter { url in
+            guard url.pathExtension == "json",
+                  let vals = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+                  let mod = vals.contentModificationDate
+            else { return false }
+            return cal.isDateInToday(mod)
+        }.count
+    }
+
     nonisolated static func loadArchive(_ url: URL) -> [ChatMessage] {
         guard let data = try? Data(contentsOf: url),
               let msgs = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return [] }

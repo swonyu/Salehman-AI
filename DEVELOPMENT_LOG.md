@@ -1747,6 +1747,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AF: chat stat tile + notes count fix on Today view
+
+**What changed:**
+- `ContentView.swift (ChatStore)` → added `nonisolated static func archivedTodayCount() -> Int` — scans archive directory with `contentModificationDateKey` (no JSON decode) and counts files modified today.
+- `TodayView.swift` → added `@State private var todayChats = 0`; `refresh()` now also calls `ChatStore.archivedTodayCount()` alongside the knowledge count.
+- Added a "Chat" stat tile (conversations today) as the first card in the `statCards` grid, navigating to the Chat tab on tap.
+- Fixed "Notes" stat tile value from `notes.count` → `notes.count + tasks.count` (total workspace items); label unchanged.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/TodayView.swift`
+
+**Why:** Today dashboard lacked a chat activity signal; the Notes tile showed a confusingly low value when tasks were the primary usage mode.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

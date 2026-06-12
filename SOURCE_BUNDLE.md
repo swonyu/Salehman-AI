@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:39 +03 · Swift files: 150 · Swift LOC: 32020_
+_Generated: 2026-06-12 08:42 +03 · Swift files: 150 · Swift LOC: 32082_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14478,7 +14478,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2448 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2484 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -14919,11 +14919,19 @@ struct ActivityStepRow: View {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            step.status == .running ? DS.Palette.accent.opacity(0.07) : Color.white.opacity(0.03),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .leading) {
+            if step.status == .running {
+                DS.Palette.accent.frame(width: 2.5)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
         // Machined top bevel — each step card reads as a physical tile.
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(LinearGradient(colors: [.white.opacity(0.09), .white.opacity(0.01)],
+                .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
     }
@@ -14975,7 +14983,7 @@ struct ChangedFileRow: View {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
-                            Text("+\(stat.added)").foregroundStyle(Color(red: 0.27, green: 0.72, blue: 1.0).opacity(0.85))
+                            Text("+\(stat.added)").foregroundStyle(Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.85))
                         }
                         if stat.removed > 0 {
                             Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
@@ -15332,6 +15340,7 @@ struct CodeView: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
@@ -15346,11 +15355,11 @@ struct CodeView: View {
             Button(action: ws.openFolder) {
                 Text("Open Folder")
                     .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 13).padding(.vertical, 6)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.38), lineWidth: 1))
             }
-            .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+            .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
             .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -15430,6 +15439,7 @@ struct CodeView: View {
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
                             .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .background(Color.white.opacity(0.05), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                             .help(contextPct >= 100
                                   ? "The local model's context window is full — oldest turns are being trimmed. /clear starts fresh."
@@ -15441,6 +15451,7 @@ struct CodeView: View {
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
                         }
                         .padding(.horizontal, 7).padding(.vertical, 2.5)
+                        .background(Color.white.opacity(0.05), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .foregroundStyle(.secondary.opacity(0.8))
                         .help("Speed of the last local reply")
@@ -15680,16 +15691,23 @@ struct CodeView: View {
                 .padding(.horizontal, 10).padding(.vertical, 3.5)
                 .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
-                .frame(width: 60, height: 60)
-                .background(DS.Palette.accent.opacity(0.12), in: Circle())
-                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+                .frame(width: 68, height: 68)
+                .background(
+                    RadialGradient(colors: [DS.Palette.accent.opacity(0.24), DS.Palette.accent.opacity(0.07)],
+                                   center: .center, startRadius: 0, endRadius: 34),
+                    in: Circle())
+                .overlay(Circle().stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.10)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.38), radius: 28, y: 4)
+                .shadow(color: DS.Palette.accent.opacity(0.18), radius: 6, y: 1)
             Text("What are we building, Saleh?")
-                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("Open a project, then ask me to build, fix, or explain. I run commands and edit files — you approve each one — and the diffs show up here.")
-                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.52))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)
@@ -15700,15 +15718,16 @@ struct CodeView: View {
                     // the capsule's leading padding. Press = physical compression.
                     Button { input = ex.text } label: {
                         HStack(spacing: 7) {
-                            Image(systemName: ex.icon).font(.system(size: 9.5))
+                            Image(systemName: ex.icon).font(.system(size: 10))
                                 .foregroundStyle(DS.Palette.accent)
-                                .frame(width: 19, height: 19)
-                                .background(DS.Palette.accent.opacity(0.13), in: Circle())
-                            Text(ex.text).font(.system(size: 11.5, weight: .medium))
+                                .frame(width: 22, height: 22)
+                                .background(DS.Palette.accent.opacity(0.14), in: Circle())
+                                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.24), lineWidth: 1))
+                            Text(ex.text).font(.system(size: 12, weight: .medium))
                         }
-                        .padding(.leading, 5).padding(.trailing, 13).padding(.vertical, 5)
-                        .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .padding(.leading, 5).padding(.trailing, 14).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
                         .contentShape(Capsule())
                     }
                     .buttonStyle(LuxPressStyle())
@@ -15765,12 +15784,14 @@ struct CodeView: View {
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
     @ViewBuilder
     private func shortcutHint(_ key: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text(key)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.82))
         }
     }
 
@@ -15778,11 +15799,11 @@ struct CodeView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Progress header — "Working · done/total" (the Background-tasks feel).
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
-                Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                PulsingDot().scaleEffect(0.75)
+                Text("Working").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                 Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
@@ -15797,7 +15818,13 @@ struct CodeView: View {
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(step.status == .running ? DS.Palette.accent.opacity(0.14) : Color.white.opacity(0.05), in: Capsule())
+                        .background(step.status == .running ? DS.Palette.accent.opacity(0.12) : Color.white.opacity(0.05), in: Capsule())
+                        .overlay(
+                            Capsule().stroke(
+                                step.status == .running ? DS.Palette.accent.opacity(0.42) : Color.clear,
+                                lineWidth: 1
+                            )
+                        )
                     }
                 }
                 .padding(.horizontal, 12).padding(.bottom, 8)
@@ -16120,10 +16147,10 @@ struct CodeView: View {
     private var rightPanel: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "bolt.horizontal.circle").font(.system(size: 12))
-                    .foregroundStyle(DS.Palette.accent)
-                Text("ACTIVITY").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(.secondary)
+                Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 11))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.90))
+                Text("ACTIVITY").font(.system(size: 9.5, weight: .semibold)).tracking(1.6)
+                    .foregroundStyle(.secondary.opacity(0.85))
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -16275,29 +16302,38 @@ struct CodeView: View {
     }
 
     @ViewBuilder private var activityIdle: some View {
-        VStack(spacing: 8) {
-            Image(systemName: isRunning ? "ellipsis.circle" : "checkmark.circle")
-                .font(.system(size: 22, weight: .light)).foregroundStyle(.secondary.opacity(0.5))
-            Text(isRunning ? "Working…" : "No activity yet")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+        VStack(spacing: 10) {
+            Image(systemName: isRunning ? "sparkles" : "bolt.horizontal.circle")
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(.secondary.opacity(0.42))
+                .frame(width: 48, height: 48)
+                .background(Color.white.opacity(0.04), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            Text(isRunning ? "Working…" : "Ready")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.82))
             if !isRunning {
-                Text("Run a task and the steps appear here.")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                Text("Send a message and\nagent steps appear here.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary.opacity(0.50))
                     .multilineTextAlignment(.center)
+                    .lineSpacing(1.5)
                 // Last local run's engine + measured speed — the "is my model
                 // fast right now" answer lives where the run activity lives.
                 if let stats = OllamaClient.lastStats {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill").font(.system(size: 8))
-                        Text("\(stats.model) · \(String(format: "%.0f tok/s", stats.tps))")
+                    HStack(spacing: 5) {
+                        Circle().fill(Color.green.opacity(0.65)).frame(width: 5, height: 5)
+                        Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
+                            .font(.system(size: 9.5, weight: .medium))
                     }
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.75))
-                    .padding(.top, 2)
+                    .foregroundStyle(.secondary.opacity(0.62))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.white.opacity(0.04), in: Capsule())
+                    .padding(.top, 4)
                 }
             }
         }
-        .padding(16)
+        .padding(20)
     }
 
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
@@ -16574,12 +16610,12 @@ struct CodeView: View {
 
     private func symbol(_ k: DiffLine.Kind) -> String { k == .add ? "+" : (k == .remove ? "−" : "") }
     private func color(_ k: DiffLine.Kind) -> Color {
-        k == .add ? Color(red: 0.27, green: 0.72, blue: 1.0) : (k == .remove ? .red : .secondary)
+        k == .add ? Color(red: 0.35, green: 0.82, blue: 0.48) : (k == .remove ? Color(red: 1.0, green: 0.40, blue: 0.40) : .secondary)
     }
     private func bg(_ k: DiffLine.Kind) -> Color {
         switch k {
-        case .add:    return Color(red: 0.27, green: 0.72, blue: 1.0).opacity(0.12)
-        case .remove: return Color.red.opacity(0.12)
+        case .add:    return Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.10)
+        case .remove: return Color(red: 1.0, green: 0.40, blue: 0.40).opacity(0.11)
         case .same:   return .clear
         }
     }
@@ -17061,7 +17097,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2752 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2769 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18784,6 +18820,23 @@ enum ChatStore {
                                     preview: archivePreview(for: msgs))
             }
             .sorted { $0.date > $1.date }
+    }
+
+    /// Count of archived conversations whose last-modified date is today.
+    /// Uses filesystem metadata only (no JSON decode) — safe to call off-main.
+    nonisolated static func archivedTodayCount() -> Int {
+        let cal = Calendar.current
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: archiveDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles)) ?? []
+        return urls.filter { url in
+            guard url.pathExtension == "json",
+                  let vals = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+                  let mod = vals.contentModificationDate
+            else { return false }
+            return cal.isDateInToday(mod)
+        }.count
     }
 
     nonisolated static func loadArchive(_ url: URL) -> [ChatMessage] {
@@ -25382,7 +25435,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (188 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (197 lines) =====
 ```swift
 import SwiftUI
 
@@ -25399,6 +25452,9 @@ struct TodayView: View {
     /// KnowledgeStore isn't an ObservableObject, so its count is cached and
     /// refreshed whenever this tab becomes active (cheap, no timer).
     @State private var knowledgeCount = 0
+    /// Count of chat archives modified today — refreshed off-main alongside
+    /// knowledge count so the Today dashboard shows live usage.
+    @State private var todayChats = 0
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -25434,7 +25490,8 @@ struct TodayView: View {
     private func refresh() {
         Task.detached(priority: .utility) {
             let n = KnowledgeStore.shared.allDocuments().count
-            await MainActor.run { knowledgeCount = n }
+            let c = ChatStore.archivedTodayCount()
+            await MainActor.run { knowledgeCount = n; todayChats = c }
         }
     }
 
@@ -25479,8 +25536,13 @@ struct TodayView: View {
 
     private var statCards: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: DS.Space.md)], spacing: DS.Space.md) {
+            StatTile(icon: "bubble.left.and.bubble.right.fill", title: "Chat",
+                     value: "\(todayChats)",
+                     detail: todayChats == 1 ? "conversation today" : "conversations today") {
+                app.selectedTab = .chat
+            }
             StatTile(icon: "checklist", title: "Notes",
-                     value: "\(scratchpad.notes.count)",
+                     value: "\(scratchpad.notes.count + scratchpad.tasks.count)",
                      detail: openTasks == 0 ? "no open tasks" : "\(openTasks) open task\(openTasks == 1 ? "" : "s")") {
                 app.selectedTab = .scratchpad
             }
@@ -34577,7 +34639,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2618 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2633 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36323,6 +36385,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Salehman AI/App/AppState.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AI/Views/RootView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
 
 **Why:** Users on other tabs had no signal that a reply arrived. The dot mirrors iOS notification badges at minimal visual cost.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AF: chat stat tile + notes count fix on Today view
+
+**What changed:**
+- `ContentView.swift (ChatStore)` → added `nonisolated static func archivedTodayCount() -> Int` — scans archive directory with `contentModificationDateKey` (no JSON decode) and counts files modified today.
+- `TodayView.swift` → added `@State private var todayChats = 0`; `refresh()` now also calls `ChatStore.archivedTodayCount()` alongside the knowledge count.
+- Added a "Chat" stat tile (conversations today) as the first card in the `statCards` grid, navigating to the Chat tab on tap.
+- Fixed "Notes" stat tile value from `notes.count` → `notes.count + tasks.count` (total workspace items); label unchanged.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/TodayView.swift`
+
+**Why:** Today dashboard lacked a chat activity signal; the Notes tile showed a confusingly low value when tasks were the primary usage mode.
 
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 

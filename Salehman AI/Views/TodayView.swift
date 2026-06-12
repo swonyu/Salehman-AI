@@ -13,6 +13,9 @@ struct TodayView: View {
     /// KnowledgeStore isn't an ObservableObject, so its count is cached and
     /// refreshed whenever this tab becomes active (cheap, no timer).
     @State private var knowledgeCount = 0
+    /// Count of chat archives modified today — refreshed off-main alongside
+    /// knowledge count so the Today dashboard shows live usage.
+    @State private var todayChats = 0
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -48,7 +51,8 @@ struct TodayView: View {
     private func refresh() {
         Task.detached(priority: .utility) {
             let n = KnowledgeStore.shared.allDocuments().count
-            await MainActor.run { knowledgeCount = n }
+            let c = ChatStore.archivedTodayCount()
+            await MainActor.run { knowledgeCount = n; todayChats = c }
         }
     }
 
@@ -93,8 +97,13 @@ struct TodayView: View {
 
     private var statCards: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: DS.Space.md)], spacing: DS.Space.md) {
+            StatTile(icon: "bubble.left.and.bubble.right.fill", title: "Chat",
+                     value: "\(todayChats)",
+                     detail: todayChats == 1 ? "conversation today" : "conversations today") {
+                app.selectedTab = .chat
+            }
             StatTile(icon: "checklist", title: "Notes",
-                     value: "\(scratchpad.notes.count)",
+                     value: "\(scratchpad.notes.count + scratchpad.tasks.count)",
                      detail: openTasks == 0 ? "no open tasks" : "\(openTasks) open task\(openTasks == 1 ? "" : "s")") {
                 app.selectedTab = .scratchpad
             }
