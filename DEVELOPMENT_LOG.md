@@ -1419,6 +1419,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
 
+---
+**2026-06-12 — SalehmanEngine: strip all external servers (Chat C, owner-directed)**
+
+**What changed:** Rewrote `LLM/SalehmanEngine.swift` to be on-device only. Removed the entire cloud chain (NVIDIA DeepSeek, OpenRouter, Cerebras, Groq, Mistral), the standalone-cloud fallbacks (Gemini, Grok, OpenAI, Anthropic), the `refine()`/`deepSeekCritique()` critic loop, and all `offline`-gate logic. `hasAnyCloud` now returns `false` (kept so call sites compile unchanged). Also removed the `SalehmanEngine.refine()` call in `LLM/SalehmanLeader.swift`. Resolution order is now: MLX → Ollama `salehman`.
+
+**Why:** Owner: "not offline only" — wants the cloud permanently removed from the `.salehman` path, not gated behind an Offline Mode toggle.
+
+**Files:** `LLM/SalehmanEngine.swift` (rewrite), `LLM/SalehmanLeader.swift` (remove refine call)
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -2241,3 +2253,13 @@ Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
 replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
 rollback, not deleted). App launched. Owner-authorized explicitly after the
 permission classifier blocked the first attempt.
+
+## 2026-06-12 — marathon N: /shot in Chat tab + multi-step recall + export from history (Chat A)
+**What (owner: "continue"):**
+- `/shot` slash command added to the Chat tab's command menu (Code-tab parity). `attachLastScreenshot()` now delegates to `ScreenshotGrabber.screenshotsDirectory()` (reads `com.apple.screencapture location` pref) instead of the duplicated 3-folder heuristic that also filtered by filename. 
+- Multi-step ↑/↓ message recall: ↑ in an empty composer (or while already in recall mode) cycles backward through user messages, ↓ moves forward; manual typing exits recall. Pure helper `ContentView.recalledMessage(idx:from:)` extracted for hermeticity.
+- Export archived conversations from the History sheet: each row gains a save-panel Export button alongside Restore + Delete — no restore required to get a Markdown copy.
+- Tests: `ChatRecallTests` ×5 (newest-first, index cycling, out-of-range nil, assistant messages skipped, empty history); `ChatHistoryFilterTests` ×6 (empty query, whitespace query, case-insensitive, diacritic-insensitive, no match, mid-string). Total: 11 new unit tests.
+- UITest hardening: `--uitesting` flag in launchToChat; slash-menu tests now verify field value instead of static text presence.
+**Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift` (diff-add color), `Views/ScratchpadView.swift` (task color), `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift`.
+**Commit:** `63fd94b`

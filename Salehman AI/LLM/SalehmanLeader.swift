@@ -100,14 +100,6 @@ enum SalehmanLeader {
         let final = result.answer
         let f = final.trimmingCharacters(in: .whitespacesAndNewlines)
         if !f.isEmpty, final != LocalLLM.offMessage {
-            // Self-improvement loop: hand Salehman's answer to a reasoner-class
-            // critic (NVIDIA-hosted, free) for analysis, then let Salehman revise per
-            // that feedback — so each answer comes out smarter. Graceful: if
-            // the critic is unreachable or satisfied, `refine` returns `final`
-            // unchanged. Skipped when the owner turns the loop off.
-            if AppSettings.salehmanRefineEnabled {
-                return await SalehmanEngine.refine(userPrompt: userPrompt, answer: final)
-            }
             return final
         }
         // Salehman unreachable → the original draft still stands.
