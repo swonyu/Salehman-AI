@@ -1620,6 +1620,8 @@ struct ScrollToLatestButton: View {
                     .font(.system(size: 11, weight: .bold))
                 Text(unreadCount > 0 ? "\(unreadCount) new" : "Latest")
                     .font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: unreadCount)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)

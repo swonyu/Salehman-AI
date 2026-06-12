@@ -1007,6 +1007,8 @@ struct CodeView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: tps)
                         }
                         .padding(.horizontal, 7).padding(.vertical, 2.5)
                         .background(Color.white.opacity(0.05), in: Capsule())
@@ -1743,6 +1745,7 @@ struct CodeView: View {
                                 let secs = max(1, ctx.date.timeIntervalSince(t0))
                                 Text(String(format: "≈%.0f tok/s",
                                             Double(progress.streamingAnswer.count) / 4 / secs))
+                                    .contentTransition(.numericText())
                             }
                         }
                         .font(.system(size: 10, weight: .medium, design: .monospaced))

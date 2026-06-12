@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:59 +03 · Swift files: 150 · Swift LOC: 33632_
+_Generated: 2026-06-12 23:01 +03 · Swift files: 150 · Swift LOC: 33637_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14750,7 +14750,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2567 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2570 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15761,6 +15761,8 @@ struct CodeView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: tps)
                         }
                         .padding(.horizontal, 7).padding(.vertical, 2.5)
                         .background(Color.white.opacity(0.05), in: Capsule())
@@ -16497,6 +16499,7 @@ struct CodeView: View {
                                 let secs = max(1, ctx.date.timeIntervalSince(t0))
                                 Text(String(format: "≈%.0f tok/s",
                                             Double(progress.streamingAnswer.count) / 4 / secs))
+                                    .contentTransition(.numericText())
                             }
                         }
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -17516,7 +17519,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2820 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2822 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19140,6 +19143,8 @@ struct ScrollToLatestButton: View {
                     .font(.system(size: 11, weight: .bold))
                 Text(unreadCount > 0 ? "\(unreadCount) new" : "Latest")
                     .font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: unreadCount)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -36200,7 +36205,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3542 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3547 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39684,10 +39689,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CY: numericText on unread count + tok/s displays (Chat A)
+**What:** Three live numeric `Text` views now use `.contentTransition(.numericText())` so digits morph instead of snapping when values update. (1) `ContentView` "scroll to latest" button label — `"\(unreadCount) new"` rolls to the updated count as messages arrive while scrolled up; `.animation(DS.Motion.smooth, value: unreadCount)` drives the transition. (2) `CodeView` completed-reply tok/s badge — the local-model speed number in the header blends when set. (3) `CodeView` streaming tok/s in the live right-panel — continuously updating toks/sec in the TimelineView gets numeric morphing.
+**Files:** `Views/ContentView.swift`, `Views/CodeView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CX: animated hover on ChatHistoryView rows + CodeView file rows (Chat A)
 **What:** Two `onHover` handlers that were doing bare state mutation (no `withAnimation`) so the hover highlight snapped: (1) `ChatHistoryView` conversation row background — wrapped assignment in `withAnimation(DS.Motion.magnetic)` so the row tint fades in/out on mouse enter/leave. (2) `CodeView` file panel `fileRow` — same fix; the `hoveredFile` set now fades rather than snapping.
 **Files:** `Views/ChatHistoryView.swift`, `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `8ac5eab`
 
 ## 2026-06-12 — marathon CW: spinner↔icon/text crossfades on all test/check buttons (Chat A)
 **What:** Seven "loading state" button label swaps now crossfade instead of snapping. Pattern: the conditional `ProgressView`↔`Image`/`Text` block wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: theFlag)`. Files + buttons: `MarketsView` "Check now" (checkingAlerts — icon + contentTransition on label text), `SettingsView` "Test connection" for Unsloth Studio + vLLM (spinner slides in alongside the label text), "Test" button for Grok / generic cloud-key helper (`keyRow`) / Gemini / Anthropic (spinner crossfades with the "Test" text). Every test-button in the app now fades smoothly when a connection check starts or ends.

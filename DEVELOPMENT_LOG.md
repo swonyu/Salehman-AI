@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CY: numericText on unread count + tok/s displays (Chat A)
+**What:** Three live numeric `Text` views now use `.contentTransition(.numericText())` so digits morph instead of snapping when values update. (1) `ContentView` "scroll to latest" button label — `"\(unreadCount) new"` rolls to the updated count as messages arrive while scrolled up; `.animation(DS.Motion.smooth, value: unreadCount)` drives the transition. (2) `CodeView` completed-reply tok/s badge — the local-model speed number in the header blends when set. (3) `CodeView` streaming tok/s in the live right-panel — continuously updating toks/sec in the TimelineView gets numeric morphing.
+**Files:** `Views/ContentView.swift`, `Views/CodeView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CX: animated hover on ChatHistoryView rows + CodeView file rows (Chat A)
 **What:** Two `onHover` handlers that were doing bare state mutation (no `withAnimation`) so the hover highlight snapped: (1) `ChatHistoryView` conversation row background — wrapped assignment in `withAnimation(DS.Motion.magnetic)` so the row tint fades in/out on mouse enter/leave. (2) `CodeView` file panel `fileRow` — same fix; the `hoveredFile` set now fades rather than snapping.
 **Files:** `Views/ChatHistoryView.swift`, `Views/CodeView.swift`.
-**Commit:** `(next)`
+**Commit:** `8ac5eab`
 
 ## 2026-06-12 — marathon CW: spinner↔icon/text crossfades on all test/check buttons (Chat A)
 **What:** Seven "loading state" button label swaps now crossfade instead of snapping. Pattern: the conditional `ProgressView`↔`Image`/`Text` block wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: theFlag)`. Files + buttons: `MarketsView` "Check now" (checkingAlerts — icon + contentTransition on label text), `SettingsView` "Test connection" for Unsloth Studio + vLLM (spinner slides in alongside the label text), "Test" button for Grok / generic cloud-key helper (`keyRow`) / Gemini / Anthropic (spinner crossfades with the "Test" text). Every test-button in the app now fades smoothly when a connection check starts or ends.
