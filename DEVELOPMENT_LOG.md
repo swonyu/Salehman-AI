@@ -2515,6 +2515,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All copy-feedback icon transitions across the app are now animated.
 
 ---
+
+## 2026-06-12 · Marathon CG — symbolEffect(.replace) on ContentView + CodeView icon button helpers
+
+**What:** Added `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: icon)` to the `Image` inside `ContentView.actionButton(...)` and `CodeView.action(...)` helper functions. Since both helpers accept `icon: String` and the callers already pass conditionals (e.g., `copied ? "checkmark" : "doc.on.doc"`, `pinned ? "pin.slash" : "pin"`, `speakingID == id ? "speaker.wave.2.fill" : "speaker.wave.2"`), the centralised modifier fires whenever those icon strings change — every state-change in those button clusters now animates.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Adding the transition at the helper level covers all callers without per-call boilerplate. Icons in the chat message action row (copy, pin, read-aloud) and the code message action row (copy, read-aloud, regenerate) all benefit.
+
+**Result:** Every icon-state change in the chat and code message action rows now animates with a crisp SF Symbol crossfade.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

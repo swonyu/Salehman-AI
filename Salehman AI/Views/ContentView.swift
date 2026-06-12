@@ -2377,6 +2377,8 @@ struct MessageBubble: View, Equatable {
                 .foregroundStyle(active ? Theme.accent : .secondary)
                 .frame(width: 22, height: 22)        // comfortable hit target
                 .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(.plain)
         .help(help)

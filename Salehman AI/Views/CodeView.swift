@@ -2421,6 +2421,8 @@ struct CodeMessageRow: View {
             Image(systemName: icon).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(active ? DS.Palette.accent : Color.white.opacity(0.55))
                 .frame(width: 22, height: 22).contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(LuxPressStyle())
         .help(help)

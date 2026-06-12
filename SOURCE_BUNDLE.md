@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:57 +03 · Swift files: 150 · Swift LOC: 33450_
+_Generated: 2026-06-12 21:58 +03 · Swift files: 150 · Swift LOC: 33454_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14734,7 +14734,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2542 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2544 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17159,6 +17159,8 @@ struct CodeMessageRow: View {
             Image(systemName: icon).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(active ? DS.Palette.accent : Color.white.opacity(0.55))
                 .frame(width: 22, height: 22).contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(LuxPressStyle())
         .help(help)
@@ -17473,7 +17475,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2790 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2792 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19854,6 +19856,8 @@ struct MessageBubble: View, Equatable {
                 .foregroundStyle(active ? Theme.accent : .secondary)
                 .frame(width: 22, height: 22)        // comfortable hit target
                 .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(.plain)
         .help(help)
@@ -36018,7 +36022,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3386 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3398 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38534,6 +38538,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The `contentTransition(.symbolEffect(.replace))` API gives a smooth, semantic animation to icon swaps that the system understands as "the same icon with a different state." Applied here, the checkmark feel confident and premium — the kind of micro-interaction detail that separates $150k agency builds from templates.
 
 **Result:** All copy-feedback icon transitions across the app are now animated.
+
+---
+
+## 2026-06-12 · Marathon CG — symbolEffect(.replace) on ContentView + CodeView icon button helpers
+
+**What:** Added `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: icon)` to the `Image` inside `ContentView.actionButton(...)` and `CodeView.action(...)` helper functions. Since both helpers accept `icon: String` and the callers already pass conditionals (e.g., `copied ? "checkmark" : "doc.on.doc"`, `pinned ? "pin.slash" : "pin"`, `speakingID == id ? "speaker.wave.2.fill" : "speaker.wave.2"`), the centralised modifier fires whenever those icon strings change — every state-change in those button clusters now animates.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Adding the transition at the helper level covers all callers without per-call boilerplate. Icons in the chat message action row (copy, pin, read-aloud) and the code message action row (copy, read-aloud, regenerate) all benefit.
+
+**Result:** Every icon-state change in the chat and code message action rows now animates with a crisp SF Symbol crossfade.
 
 ---
 ## Standing notes / known issues
