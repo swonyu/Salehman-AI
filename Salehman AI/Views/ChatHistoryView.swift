@@ -234,6 +234,10 @@ struct ChatHistoryView: View {
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(hoveredRow == item.id ? Color.white.opacity(0.04) : .clear)
         .contentShape(Rectangle())
-        .onHover { hoveredRow = $0 ? item.id : (hoveredRow == item.id ? nil : hoveredRow) }
+        .onHover { over in
+            withAnimation(DS.Motion.magnetic) {
+                hoveredRow = over ? item.id : (hoveredRow == item.id ? nil : hoveredRow)
+            }
+        }
     }
 }

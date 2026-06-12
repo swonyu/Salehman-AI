@@ -951,7 +951,11 @@ struct CodeView: View {
                     .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
-            .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
+            .onHover { inside in
+                withAnimation(DS.Motion.magnetic) {
+                    hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile)
+                }
+            }
         }
         .buttonStyle(.plain)
         .contextMenu { fileActionsMenu(url) }
