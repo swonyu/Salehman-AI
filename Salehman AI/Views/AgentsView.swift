@@ -153,6 +153,8 @@ struct AgentsView: View {
                     HStack(spacing: 8) {
                         Image(systemName: isRunningAutonomous ? "stop.fill" : "play.fill")
                             .font(.system(size: 11, weight: .bold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
                         Text(isRunningAutonomous
                              ? "Stop  ·  iteration \(iterationCount)"
                              : "Start Autonomous Run")

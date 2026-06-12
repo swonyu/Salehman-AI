@@ -112,6 +112,8 @@ struct FileTreeRow: View {
                 row {
                     Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary).frame(width: 9)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: isOpen)
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
                     Text(node.name)
@@ -148,6 +150,7 @@ struct FileTreeRow: View {
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
                     in: RoundedRectangle(cornerRadius: 6)
                 )
+                .animation(DS.Motion.smooth, value: isSel)
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }

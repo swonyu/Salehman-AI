@@ -154,6 +154,8 @@ struct OnboardingView: View {
                                 Image(systemName: isLast ? "checkmark" : "chevron.right")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.white)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .animation(DS.Motion.smooth, value: isLast)
                                     .offset(x: ctaHover && !isLast ? 1 : 0)
                             }
                         }

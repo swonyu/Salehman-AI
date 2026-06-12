@@ -111,6 +111,8 @@ struct ScratchpadView: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
                         .scaleEffect(scale)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: pad)
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
@@ -297,6 +299,8 @@ struct ScratchpadView: View {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
                     .foregroundStyle(t.done ? DS.Palette.successSoft : (hovered ? .white.opacity(0.5) : .secondary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: t.done)
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {

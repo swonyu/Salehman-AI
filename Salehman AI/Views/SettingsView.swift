@@ -763,6 +763,8 @@ struct SettingsView: View {
             Image(systemName: inRotation ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(inRotation ? DS.Palette.accent : Color.white.opacity(0.35))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: inRotation)
                 .padding(8)
                 .contentShape(Rectangle())
         }
@@ -1108,6 +1110,8 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
                         .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -1488,6 +1492,8 @@ struct SettingsView: View {
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: working)
                 Text(working ? "Working" : "Not working")
                     .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
             } else {
@@ -1972,6 +1978,8 @@ struct SettingsView: View {
                 Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: ok)
             }
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()

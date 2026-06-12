@@ -1537,6 +1537,8 @@ struct CodeView: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(isRunning ? Color.white
                                 : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunning)
                             .frame(width: 27, height: 27)
                             .background(
                                 isRunning ? AnyShapeStyle(DS.Palette.accent.opacity(0.85))
@@ -1867,6 +1869,8 @@ struct CodeView: View {
             Image(systemName: isRunning ? "sparkles" : "bolt.horizontal.circle")
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.42))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: isRunning)
                 .frame(width: 48, height: 48)
                 .background(Color.white.opacity(0.04), in: Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))

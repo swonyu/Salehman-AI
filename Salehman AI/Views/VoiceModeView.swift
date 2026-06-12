@@ -68,6 +68,8 @@ struct VoiceModeView: View {
                         Image(systemName: savedConfirmation ? "checkmark.circle.fill" : "square.and.arrow.down")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(savedConfirmation ? DS.Palette.successSoft : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: savedConfirmation)
                             .frame(width: 28, height: 28)
                             .background(Color.white.opacity(0.07), in: Circle())
                             .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.75))

@@ -102,6 +102,8 @@ struct LiveTranscriptionView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: live.isRunning ? "stop.fill" : "record.circle")
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: live.isRunning)
                     Text(live.isRunning ? "Stop" : "Start listening")
                 }
                 .font(.system(size: 14, weight: .semibold))

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:59 +03 · Swift files: 150 · Swift LOC: 33456_
+_Generated: 2026-06-12 22:10 +03 · Swift files: 150 · Swift LOC: 33485_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (523 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (525 lines) =====
 ```swift
 import SwiftUI
 
@@ -13589,6 +13589,8 @@ struct AgentsView: View {
                     HStack(spacing: 8) {
                         Image(systemName: isRunningAutonomous ? "stop.fill" : "play.fill")
                             .font(.system(size: 11, weight: .bold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
                         Text(isRunningAutonomous
                              ? "Stop  ·  iteration \(iterationCount)"
                              : "Start Autonomous Run")
@@ -14736,7 +14738,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2544 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2548 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16277,6 +16279,8 @@ struct CodeView: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(isRunning ? Color.white
                                 : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunning)
                             .frame(width: 27, height: 27)
                             .background(
                                 isRunning ? AnyShapeStyle(DS.Palette.accent.opacity(0.85))
@@ -16607,6 +16611,8 @@ struct CodeView: View {
             Image(systemName: isRunning ? "sparkles" : "bolt.horizontal.circle")
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.42))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: isRunning)
                 .frame(width: 48, height: 48)
                 .background(Color.white.opacity(0.04), in: Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
@@ -17477,7 +17483,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2792 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2794 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18307,6 +18313,8 @@ struct ContentView: View {
             Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: speechIn.isListening)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }
@@ -20396,7 +20404,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (167 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (170 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20512,6 +20520,8 @@ struct FileTreeRow: View {
                 row {
                     Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary).frame(width: 9)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: isOpen)
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
                     Text(node.name)
@@ -20548,6 +20558,7 @@ struct FileTreeRow: View {
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
                     in: RoundedRectangle(cornerRadius: 6)
                 )
+                .animation(DS.Motion.smooth, value: isSel)
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
@@ -21218,7 +21229,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (313 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (315 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21324,6 +21335,8 @@ struct LiveTranscriptionView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: live.isRunning ? "stop.fill" : "record.circle")
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: live.isRunning)
                     Text(live.isRunning ? "Stop" : "Start listening")
                 }
                 .font(.system(size: 14, weight: .semibold))
@@ -22984,7 +22997,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (187 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (189 lines) =====
 ```swift
 import SwiftUI
 
@@ -23142,6 +23155,8 @@ struct OnboardingView: View {
                                 Image(systemName: isLast ? "checkmark" : "chevron.right")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.white)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .animation(DS.Motion.smooth, value: isLast)
                                     .offset(x: ctaHover && !isLast ? 1 : 0)
                             }
                         }
@@ -23301,7 +23316,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (623 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (627 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23416,6 +23431,8 @@ struct ScratchpadView: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
                         .scaleEffect(scale)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: pad)
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
@@ -23602,6 +23619,8 @@ struct ScratchpadView: View {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
                     .foregroundStyle(t.done ? DS.Palette.successSoft : (hovered ? .white.opacity(0.5) : .secondary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: t.done)
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -24101,7 +24120,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1983 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1991 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -24868,6 +24887,8 @@ struct SettingsView: View {
             Image(systemName: inRotation ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(inRotation ? DS.Palette.accent : Color.white.opacity(0.35))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: inRotation)
                 .padding(8)
                 .contentShape(Rectangle())
         }
@@ -25213,6 +25234,8 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
                         .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -25593,6 +25616,8 @@ struct SettingsView: View {
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: working)
                 Text(working ? "Working" : "Not working")
                     .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
             } else {
@@ -26077,6 +26102,8 @@ struct SettingsView: View {
                 Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: ok)
             }
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
@@ -26905,7 +26932,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (183 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (185 lines) =====
 ```swift
 import SwiftUI
 
@@ -26977,6 +27004,8 @@ struct VoiceModeView: View {
                         Image(systemName: savedConfirmation ? "checkmark.circle.fill" : "square.and.arrow.down")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(savedConfirmation ? DS.Palette.successSoft : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: savedConfirmation)
                             .frame(width: 28, height: 28)
                             .background(Color.white.opacity(0.07), in: Circle())
                             .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.75))
@@ -36024,7 +36053,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3410 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3472 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39435,6 +39464,68 @@ permission classifier blocked the first attempt.
 - UITest hardening: `--uitesting` flag in launchToChat; slash-menu tests now verify field value instead of static text presence.
 **Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift` (diff-add color), `Views/ScratchpadView.swift` (task color), `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift`.
 **Commit:** `63fd94b`
+
+## 2026-06-12 — marathon BZ: ScratchpadView staggered entrance + KeyframeAnimator brand tile (Chat A)
+**What:** Added `@State private var appeared = false` + `onAppear { appeared = true }`. Four-block cascade (header/picker/addRow/list) at 0/60/100/140ms via `DS.Motion.lux.delay(N)`. Brand tile icon wrapped in `KeyframeAnimator(trigger: appeared)` — compress(0.60, 0.07s) → overshoot(1.18 snappy, 0.28s) → settle(1.0 bouncy, 0.22s). Copy-all button got `.contentTransition(.symbolEffect(.replace))`.
+**Files:** `Views/ScratchpadView.swift`.
+**Commit:** `56a931c`
+
+## 2026-06-12 — marathon CA: TabSwitcherBar live market dot + ChatHistoryView polish (Chat A)
+**What:** Market status dot: replaced static green circle with conditional `PhaseAnimator([false, true])` — glow shadow pulses easeIn(1.5s)/easeOut(2.2s) while session is open; plain grey when closed. ChatHistoryView: brand tile icon gets `KeyframeAnimator(trigger: revealed)` pop-in; empty state restructured to `ZStack { PhaseAnimator([0.10, 0.18, 0.10]) accent glow circle + accent Image }`.
+**Files:** `Views/TabSwitcherBar.swift`, `Views/ChatHistoryView.swift`.
+**Commit:** `b4fadf9`
+
+## 2026-06-12 — marathon CB: MarketsView + CopilotSignInView entrance animations (Chat A)
+**What:** MarketsView: `appeared` + 4-block stagger at 0/50/80/120ms. CopilotSignInView: ambient `PhaseAnimator([0.08, 0.14, 0.08])` glow behind `KeyframeAnimator` icon; whole VStack fades up on `appeared`.
+**Files:** `Views/MarketsView.swift`, `Views/CopilotSignInView.swift`.
+**Commit:** `fbb018e`
+
+## 2026-06-12 — marathon CC: MarketsView header brand tile upgrade (Chat A)
+**What:** Markets header upgraded from plain VStack to brand-tile HStack: gradient 36×36 tile, inner bezel highlight, `KeyframeAnimator` pop-in on `chart.line.uptrend.xyaxis` icon, Eyebrow subtitle, one-line disclaimer.
+**Files:** `Views/MarketsView.swift`.
+**Commit:** `1953a17`
+
+## 2026-06-12 — marathon CD: numericText contentTransition on stat tiles + portfolio (Chat A)
+**What:** `TodayView.StatTile` — both `value` and `detail` Text get `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)`. MarketsView portfolio value and P&L Text get the same treatment.
+**Files:** `Views/TodayView.swift`, `Views/MarketsView.swift`.
+**Commit:** `119388d`
+
+## 2026-06-12 — marathon CE: numericText on all live market data fields (Chat A)
+**What:** Heatmap `%+.1f%%` text, signal card price `%.2f`, signal card change `%+.2f%%` — all got `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` so digits roll in when values update.
+**Files:** `Views/MarketsView.swift`.
+**Commit:** `a04c52e`
+
+## 2026-06-12 — marathon CF: symbolEffect(.replace) on all copy-button swaps (Chat A)
+**What:** Applied `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value:)` to every doc.on.doc↔checkmark flip: `ScratchpadView` copy-all, `MarkdownText` code block copy, `KnowledgeView` answer copy, `LiveTranscriptionView` footer copy.
+**Files:** `Views/ScratchpadView.swift`, `Views/MarkdownText.swift`, `Views/KnowledgeView.swift`, `Views/LiveTranscriptionView.swift`.
+**Commit:** `84fef8b`
+
+## 2026-06-12 — marathon CG: symbolEffect(.replace) in actionButton/action helpers (Chat A)
+**What:** `ContentView.actionButton(_:_:active:_:)` and `CodeView.action(_:_:active:_:)` — Image inside each button label gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: icon)`. Covers all toolbar icon state changes in chat and code tabs.
+**Files:** `Views/ContentView.swift`, `Views/CodeView.swift`.
+**Commit:** `82b478a`
+
+## 2026-06-12 — marathon CH: symbolEffect(.replace) centralized in CircleIconButton DS component (Chat A)
+**What:** `CircleIconButton.body` — Image gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: systemName)` after `.scaleEffect`. Centrally covers VoiceModeView mic/stop button, ContentView waveform button, all corner tab icons — one change, universal benefit.
+**Files:** `DesignSystem/DesignSystem.swift`.
+**Commit:** `a5e563d`
+
+## 2026-06-12 — marathon CI: FileTree folder-chevron + selection animation (Chat A)
+**What:** `FileTreeRow` folder chevron (`chevron.right`↔`chevron.down`) gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: isOpen)`. File row selection background gets `.animation(DS.Motion.smooth, value: isSel)` so the highlight ripples in on click.
+**Files:** `Views/FileTree.swift`.
+
+## 2026-06-12 — marathon CJ: symbolEffect(.replace) sweep — all remaining conditional icon swaps (Chat A)
+**What:** 13 edits across 8 files — every conditional `Image(systemName: condition ? A : B)` that was missing animated transitions now has `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value:)`:
+- `ScratchpadView`: task checkbox `circle`↔`checkmark.circle.fill` + pad icon `checklist`↔`note.text` inside KeyframeAnimator
+- `LiveTranscriptionView`: `record.circle`↔`stop.fill` start/stop button
+- `AgentsView`: `play.fill`↔`stop.fill` autonomous mode button
+- `CodeView`: `arrow.up`↔`stop.fill` send/stop + `bolt.horizontal.circle`↔`sparkles` idle state icon
+- `OnboardingView`: `chevron.right`↔`checkmark` CTA button on last step
+- `VoiceModeView`: `square.and.arrow.down`↔`checkmark.circle.fill` save confirmation
+- `ContentView`: `mic`↔`mic.fill` dictation button
+- `SettingsView` (×4): model rotation checkbox, Unsloth key saved indicator, connection test result, brain readiness icons
+**Files:** `Views/ScratchpadView.swift`, `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`, `Views/CodeView.swift`, `Views/OnboardingView.swift`, `Views/VoiceModeView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`.
+**Result:** Build: xcodebuild blocked by xcrun sandbox restriction (no new code errors — all edits are standard SwiftUI modifiers already used throughout the codebase; SourceKit shows only pre-existing cross-module false positives).
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

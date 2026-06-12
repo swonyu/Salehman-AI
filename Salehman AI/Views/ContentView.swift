@@ -826,6 +826,8 @@ struct ContentView: View {
             Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: speechIn.isListening)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }

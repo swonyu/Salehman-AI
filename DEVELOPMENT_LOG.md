@@ -3408,3 +3408,65 @@ permission classifier blocked the first attempt.
 - UITest hardening: `--uitesting` flag in launchToChat; slash-menu tests now verify field value instead of static text presence.
 **Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `Views/CodeView.swift` (diff-add color), `Views/ScratchpadView.swift` (task color), `Salehman AITests/ChatComposerLogicTests.swift`, `Salehman AIUITests/ChatTabUITests.swift`.
 **Commit:** `63fd94b`
+
+## 2026-06-12 — marathon BZ: ScratchpadView staggered entrance + KeyframeAnimator brand tile (Chat A)
+**What:** Added `@State private var appeared = false` + `onAppear { appeared = true }`. Four-block cascade (header/picker/addRow/list) at 0/60/100/140ms via `DS.Motion.lux.delay(N)`. Brand tile icon wrapped in `KeyframeAnimator(trigger: appeared)` — compress(0.60, 0.07s) → overshoot(1.18 snappy, 0.28s) → settle(1.0 bouncy, 0.22s). Copy-all button got `.contentTransition(.symbolEffect(.replace))`.
+**Files:** `Views/ScratchpadView.swift`.
+**Commit:** `56a931c`
+
+## 2026-06-12 — marathon CA: TabSwitcherBar live market dot + ChatHistoryView polish (Chat A)
+**What:** Market status dot: replaced static green circle with conditional `PhaseAnimator([false, true])` — glow shadow pulses easeIn(1.5s)/easeOut(2.2s) while session is open; plain grey when closed. ChatHistoryView: brand tile icon gets `KeyframeAnimator(trigger: revealed)` pop-in; empty state restructured to `ZStack { PhaseAnimator([0.10, 0.18, 0.10]) accent glow circle + accent Image }`.
+**Files:** `Views/TabSwitcherBar.swift`, `Views/ChatHistoryView.swift`.
+**Commit:** `b4fadf9`
+
+## 2026-06-12 — marathon CB: MarketsView + CopilotSignInView entrance animations (Chat A)
+**What:** MarketsView: `appeared` + 4-block stagger at 0/50/80/120ms. CopilotSignInView: ambient `PhaseAnimator([0.08, 0.14, 0.08])` glow behind `KeyframeAnimator` icon; whole VStack fades up on `appeared`.
+**Files:** `Views/MarketsView.swift`, `Views/CopilotSignInView.swift`.
+**Commit:** `fbb018e`
+
+## 2026-06-12 — marathon CC: MarketsView header brand tile upgrade (Chat A)
+**What:** Markets header upgraded from plain VStack to brand-tile HStack: gradient 36×36 tile, inner bezel highlight, `KeyframeAnimator` pop-in on `chart.line.uptrend.xyaxis` icon, Eyebrow subtitle, one-line disclaimer.
+**Files:** `Views/MarketsView.swift`.
+**Commit:** `1953a17`
+
+## 2026-06-12 — marathon CD: numericText contentTransition on stat tiles + portfolio (Chat A)
+**What:** `TodayView.StatTile` — both `value` and `detail` Text get `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)`. MarketsView portfolio value and P&L Text get the same treatment.
+**Files:** `Views/TodayView.swift`, `Views/MarketsView.swift`.
+**Commit:** `119388d`
+
+## 2026-06-12 — marathon CE: numericText on all live market data fields (Chat A)
+**What:** Heatmap `%+.1f%%` text, signal card price `%.2f`, signal card change `%+.2f%%` — all got `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` so digits roll in when values update.
+**Files:** `Views/MarketsView.swift`.
+**Commit:** `a04c52e`
+
+## 2026-06-12 — marathon CF: symbolEffect(.replace) on all copy-button swaps (Chat A)
+**What:** Applied `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value:)` to every doc.on.doc↔checkmark flip: `ScratchpadView` copy-all, `MarkdownText` code block copy, `KnowledgeView` answer copy, `LiveTranscriptionView` footer copy.
+**Files:** `Views/ScratchpadView.swift`, `Views/MarkdownText.swift`, `Views/KnowledgeView.swift`, `Views/LiveTranscriptionView.swift`.
+**Commit:** `84fef8b`
+
+## 2026-06-12 — marathon CG: symbolEffect(.replace) in actionButton/action helpers (Chat A)
+**What:** `ContentView.actionButton(_:_:active:_:)` and `CodeView.action(_:_:active:_:)` — Image inside each button label gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: icon)`. Covers all toolbar icon state changes in chat and code tabs.
+**Files:** `Views/ContentView.swift`, `Views/CodeView.swift`.
+**Commit:** `82b478a`
+
+## 2026-06-12 — marathon CH: symbolEffect(.replace) centralized in CircleIconButton DS component (Chat A)
+**What:** `CircleIconButton.body` — Image gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: systemName)` after `.scaleEffect`. Centrally covers VoiceModeView mic/stop button, ContentView waveform button, all corner tab icons — one change, universal benefit.
+**Files:** `DesignSystem/DesignSystem.swift`.
+**Commit:** `a5e563d`
+
+## 2026-06-12 — marathon CI: FileTree folder-chevron + selection animation (Chat A)
+**What:** `FileTreeRow` folder chevron (`chevron.right`↔`chevron.down`) gets `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: isOpen)`. File row selection background gets `.animation(DS.Motion.smooth, value: isSel)` so the highlight ripples in on click.
+**Files:** `Views/FileTree.swift`.
+
+## 2026-06-12 — marathon CJ: symbolEffect(.replace) sweep — all remaining conditional icon swaps (Chat A)
+**What:** 13 edits across 8 files — every conditional `Image(systemName: condition ? A : B)` that was missing animated transitions now has `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value:)`:
+- `ScratchpadView`: task checkbox `circle`↔`checkmark.circle.fill` + pad icon `checklist`↔`note.text` inside KeyframeAnimator
+- `LiveTranscriptionView`: `record.circle`↔`stop.fill` start/stop button
+- `AgentsView`: `play.fill`↔`stop.fill` autonomous mode button
+- `CodeView`: `arrow.up`↔`stop.fill` send/stop + `bolt.horizontal.circle`↔`sparkles` idle state icon
+- `OnboardingView`: `chevron.right`↔`checkmark` CTA button on last step
+- `VoiceModeView`: `square.and.arrow.down`↔`checkmark.circle.fill` save confirmation
+- `ContentView`: `mic`↔`mic.fill` dictation button
+- `SettingsView` (×4): model rotation checkbox, Unsloth key saved indicator, connection test result, brain readiness icons
+**Files:** `Views/ScratchpadView.swift`, `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`, `Views/CodeView.swift`, `Views/OnboardingView.swift`, `Views/VoiceModeView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`.
+**Result:** Build: xcodebuild blocked by xcrun sandbox restriction (no new code errors — all edits are standard SwiftUI modifiers already used throughout the codebase; SourceKit shows only pre-existing cross-module false positives).
