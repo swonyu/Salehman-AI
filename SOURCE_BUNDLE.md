@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:50 +03 · Swift files: 150 · Swift LOC: 33394_
+_Generated: 2026-06-12 21:52 +03 · Swift files: 150 · Swift LOC: 33424_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21979,7 +21979,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (591 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (621 lines) =====
 ```swift
 import SwiftUI
 
@@ -22051,11 +22051,41 @@ struct MarketsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Markets")
-                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-            Text("Rule-based momentum signals · educational, not financial advice")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Markets")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Signals & Portfolio")
+                }
+                Text("Rule-based momentum signals · educational, not financial advice")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
         }
     }
 
@@ -35962,7 +35992,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3338 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3350 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38430,6 +38460,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** These were the last two non-sheet, non-component views without entrance animations. MarketsView uses block-level cascade (not per-row) because content sections are complex/stateful. CopilotSignInView gets the same ZStack PhaseAnimator+KeyframeAnimator treatment as other utility sheets.
 
 **Result:** Every primary tab and utility sheet in the app now has a polished entrance animation.
+
+---
+
+## 2026-06-12 · Marathon CC — MarketsView brand tile header
+
+**What:** Upgraded the MarketsView header from a plain two-line text block to the standard brand-tile pattern: 36×36 `DS.Gradient.brand` tile with `KeyframeAnimator(trigger: appeared)` on the `chart.line.uptrend.xyaxis` icon + `Eyebrow(text: "Signals & Portfolio")` tag. This matches the visual treatment of every other main tab header (TodayView, AgentsView, KnowledgeView, ScratchpadView, SettingsView).
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Why:** MarketsView was the only main tab with a plain-text-only header, making it visually inconsistent with the rest of the app. The brand tile acts as a visual anchor and signals that this is a first-class tab, not a stub.
+
+**Result:** All main tab views now have the consistent brand-tile header pattern. Marathon design pass is functionally complete.
 
 ---
 ## Standing notes / known issues

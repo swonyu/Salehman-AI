@@ -2467,6 +2467,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Every primary tab and utility sheet in the app now has a polished entrance animation.
 
 ---
+
+## 2026-06-12 · Marathon CC — MarketsView brand tile header
+
+**What:** Upgraded the MarketsView header from a plain two-line text block to the standard brand-tile pattern: 36×36 `DS.Gradient.brand` tile with `KeyframeAnimator(trigger: appeared)` on the `chart.line.uptrend.xyaxis` icon + `Eyebrow(text: "Signals & Portfolio")` tag. This matches the visual treatment of every other main tab header (TodayView, AgentsView, KnowledgeView, ScratchpadView, SettingsView).
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Why:** MarketsView was the only main tab with a plain-text-only header, making it visually inconsistent with the rest of the app. The brand tile acts as a visual anchor and signals that this is a first-class tab, not a stub.
+
+**Result:** All main tab views now have the consistent brand-tile header pattern. Marathon design pass is functionally complete.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
