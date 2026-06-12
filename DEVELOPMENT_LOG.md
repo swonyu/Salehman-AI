@@ -1762,6 +1762,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AG: creation-age label on hover in task/note rows
+
+**What changed:**
+- `ScratchpadView.swift (ScratchpadList)` → added `static func ageLabel(for date: Date, now: Date = Date()) -> String` — returns "just now", "Xm", "Xh", "yesterday", or "Jun 5"-style abbreviated date. `now` is injectable for tests.
+- `taskRow`: added `if hovered && editingId != t.id { Text(ScratchpadList.ageLabel(for: t.createdAt)) }` between the spacer and edit button — fades in with `.transition(.opacity)`.
+- `noteRow`: same pattern using `n.createdAt`.
+- `ChatComposerLogicTests.swift` → added `ScratchpadAgeLabelTests` (5 tests): under 60s, 5m, 2h, yesterday, older date.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Why:** Both `TaskItem` and `Note` have `createdAt: Date` but it was never surfaced in the UI. The hover-only placement keeps rows compact by default.
+
+**Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -803,3 +803,63 @@ struct ScratchpadPendingCountTests {
         #expect(store.pendingTaskCount == 0)
     }
 }
+
+// MARK: - ScratchpadList.ageLabel — relative creation-age display contract
+//
+// The label surfaces on hover in task and note rows. The contract is
+// human-readable, short, and monotone (never changes meaning for a fixed
+// `now`). Tests inject `now` explicitly so the function is hermetic.
+
+struct ScratchpadAgeLabelTests {
+
+    private func date(secondsAgo s: TimeInterval) -> Date {
+        Date(timeIntervalSinceNow: -s)
+    }
+
+    @Test func justNowUnder60s() {
+        let d = date(secondsAgo: 30)
+        #expect(ScratchpadList.ageLabel(for: d, now: Date()) == "just now")
+    }
+
+    @Test func minutesLabel() {
+        let now = Date()
+        let d = now.addingTimeInterval(-300)   // 5 minutes ago
+        #expect(ScratchpadList.ageLabel(for: d, now: now) == "5m")
+    }
+
+    @Test func hoursLabel() {
+        let now = Date()
+        let d = now.addingTimeInterval(-7200)   // 2 hours ago
+        #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+    }
+
+    @Test func yesterdayLabel() {
+        // Build a date that is yesterday at noon by going back just over 24h
+        // from noon today, guaranteed to land in yesterday regardless of
+        // when the test runs.
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let yesterday = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: Date()))!
+            .addingTimeInterval(12 * 3600)
+        let now = Date()
+        // Only verify the label when the date is still "yesterday" from the
+        // test runner's perspective (avoids midnight-boundary flakiness).
+        if cal.isDateInYesterday(yesterday) {
+            #expect(ScratchpadList.ageLabel(for: yesterday, now: now) == "yesterday")
+        }
+    }
+
+    @Test func olderDateShowsMonthDay() {
+        let now = Date()
+        // 10 days ago — will NOT be "yesterday" or "just now"
+        let tenDaysAgo = now.addingTimeInterval(-10 * 86400)
+        let label = ScratchpadList.ageLabel(for: tenDaysAgo, now: now)
+        // Should not be any of the short labels
+        #expect(!label.hasPrefix("just"))
+        #expect(!label.hasSuffix("m"))
+        #expect(!label.hasSuffix("h"))
+        #expect(label != "yesterday")
+        // Should be a non-empty date string
+        #expect(!label.isEmpty)
+    }
+}

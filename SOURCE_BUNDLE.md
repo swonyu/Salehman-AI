@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:42 +03 · Swift files: 150 · Swift LOC: 32082_
+_Generated: 2026-06-12 08:47 +03 · Swift files: 150 · Swift LOC: 32184_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14478,7 +14478,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2484 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2502 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15035,6 +15035,7 @@ struct CodeView: View {
     /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
     /// onAppear, so the capture would otherwise photograph an invisible welcome).
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     // Find-in-conversation (⌥⌘F; ⌘F stays find-in-FILE). Jump-based search over
     // the message history with a subtle wash on the current match.
     @State private var convoSearching = false
@@ -15393,9 +15394,13 @@ struct CodeView: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(isSel ? Color.white.opacity(0.08)
-                        : (hoveredFile == url ? Color.white.opacity(0.04) : .clear),
+            .background(isSel ? Color.white.opacity(0.10)
+                        : (hoveredFile == url ? Color.white.opacity(0.05) : .clear),
                         in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
+            )
             .contentShape(Rectangle())
             .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
         }
@@ -15494,6 +15499,7 @@ struct CodeView: View {
                                 .onAppear {
                                     guard !welcomeAppeared else { return }
                                     withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
+                                    withAnimation(Self.lux.delay(0.22)) { welcomeContentAppeared = true }
                                 }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
@@ -15683,7 +15689,7 @@ struct CodeView: View {
     ]
 
     private var welcome: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             // Eyebrow tag (design-language): microscopic tracked caps above the hero.
             Text("PAIR PROGRAMMER")
                 .font(.system(size: 9, weight: .semibold)).tracking(2.2)
@@ -15735,6 +15741,8 @@ struct CodeView: View {
                 }
             }
             .padding(.top, 6)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 10)
             HStack(spacing: 16) {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
@@ -15742,6 +15750,8 @@ struct CodeView: View {
                 shortcutHint("/", "Commands")
             }
             .padding(.top, 10)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
 
             // Recent projects — one click back into anything you worked on lately
             // (the tree may be collapsed, so the welcome carries its own way in).
@@ -15779,6 +15789,12 @@ struct CodeView: View {
         // over a large void (QA renders). containerRelativeFrame sizes the
         // empty state to the visible area, like the main chat's welcome.
         .containerRelativeFrame(.vertical, alignment: .center)
+        .background {
+            RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
+                           center: .init(x: 0.5, y: 0.32),
+                           startRadius: 0, endRadius: 280)
+                .allowsHitTesting(false)
+        }
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -16447,15 +16463,17 @@ struct CodeView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 23, weight: .light))
-                        .foregroundStyle(.secondary.opacity(0.55))
-                        .frame(width: 52, height: 52)
-                        .background(Color.white.opacity(0.03), in: Circle())
-                        .overlay(Circle().stroke(LinearGradient(
-                            colors: [.white.opacity(0.10), .white.opacity(0.01)],
-                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(.secondary.opacity(0.48))
+                        .frame(width: 54, height: 54)
+                        .background(Color.white.opacity(0.04), in: Circle())
+                        .overlay(Circle().stroke(
+                            LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                     Text("Select a file to view it,\nor run a task to see diffs.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary.opacity(0.65))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -22462,7 +22480,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (503 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (527 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22712,6 +22730,12 @@ struct ScratchpadView: View {
                     .strikethrough(t.done)
             }
             Spacer(minLength: 8)
+            if hovered && editingId != t.id {
+                Text(ScratchpadList.ageLabel(for: t.createdAt))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
+            }
             if editingId != t.id {
                 editButton { startEdit(id: t.id, text: t.title) }
             }
@@ -22784,6 +22808,12 @@ struct ScratchpadView: View {
                     .textSelection(.enabled)
             }
             Spacer(minLength: 8)
+            if hovered && editingId != n.id {
+                Text(ScratchpadList.ageLabel(for: n.createdAt))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
+            }
             if editingId != n.id {
                 editButton { startEdit(id: n.id, text: n.text) }
             }
@@ -22965,6 +22995,18 @@ enum ScratchpadList {
     static func markdownList(notes: [Note]) -> String {
         guard !notes.isEmpty else { return "" }
         return notes.map { "- \($0.text)" }.joined(separator: "\n")
+    }
+
+    /// Human-readable relative age for a creation date. `now` is injectable for
+    /// tests; defaults to `Date()` at call time. Examples: "just now", "5m", "2h",
+    /// "yesterday", "Jun 5".
+    static func ageLabel(for date: Date, now: Date = Date()) -> String {
+        let interval = now.timeIntervalSince(date)
+        if interval < 60 { return "just now" }
+        if interval < 3600 { return "\(Int(interval / 60))m" }
+        if interval < 86400 { return "\(Int(interval / 3600))h" }
+        if Calendar.current.isDateInYesterday(date) { return "yesterday" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }
 ```
@@ -26228,7 +26270,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (805 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (865 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -27033,6 +27075,66 @@ struct ScratchpadPendingCountTests {
         #expect(store.pendingTaskCount == 1)
         store.toggleTask(store.tasks[1].id)
         #expect(store.pendingTaskCount == 0)
+    }
+}
+
+// MARK: - ScratchpadList.ageLabel — relative creation-age display contract
+//
+// The label surfaces on hover in task and note rows. The contract is
+// human-readable, short, and monotone (never changes meaning for a fixed
+// `now`). Tests inject `now` explicitly so the function is hermetic.
+
+struct ScratchpadAgeLabelTests {
+
+    private func date(secondsAgo s: TimeInterval) -> Date {
+        Date(timeIntervalSinceNow: -s)
+    }
+
+    @Test func justNowUnder60s() {
+        let d = date(secondsAgo: 30)
+        #expect(ScratchpadList.ageLabel(for: d, now: Date()) == "just now")
+    }
+
+    @Test func minutesLabel() {
+        let now = Date()
+        let d = now.addingTimeInterval(-300)   // 5 minutes ago
+        #expect(ScratchpadList.ageLabel(for: d, now: now) == "5m")
+    }
+
+    @Test func hoursLabel() {
+        let now = Date()
+        let d = now.addingTimeInterval(-7200)   // 2 hours ago
+        #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+    }
+
+    @Test func yesterdayLabel() {
+        // Build a date that is yesterday at noon by going back just over 24h
+        // from noon today, guaranteed to land in yesterday regardless of
+        // when the test runs.
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let yesterday = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: Date()))!
+            .addingTimeInterval(12 * 3600)
+        let now = Date()
+        // Only verify the label when the date is still "yesterday" from the
+        // test runner's perspective (avoids midnight-boundary flakiness).
+        if cal.isDateInYesterday(yesterday) {
+            #expect(ScratchpadList.ageLabel(for: yesterday, now: now) == "yesterday")
+        }
+    }
+
+    @Test func olderDateShowsMonthDay() {
+        let now = Date()
+        // 10 days ago — will NOT be "yesterday" or "just now"
+        let tenDaysAgo = now.addingTimeInterval(-10 * 86400)
+        let label = ScratchpadList.ageLabel(for: tenDaysAgo, now: now)
+        // Should not be any of the short labels
+        #expect(!label.hasPrefix("just"))
+        #expect(!label.hasSuffix("m"))
+        #expect(!label.hasSuffix("h"))
+        #expect(label != "yesterday")
+        // Should be a non-empty date string
+        #expect(!label.isEmpty)
     }
 }
 ```
@@ -34639,7 +34741,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2633 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2648 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36402,6 +36504,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Today dashboard lacked a chat activity signal; the Notes tile showed a confusingly low value when tasks were the primary usage mode.
 
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AG: creation-age label on hover in task/note rows
+
+**What changed:**
+- `ScratchpadView.swift (ScratchpadList)` → added `static func ageLabel(for date: Date, now: Date = Date()) -> String` — returns "just now", "Xm", "Xh", "yesterday", or "Jun 5"-style abbreviated date. `now` is injectable for tests.
+- `taskRow`: added `if hovered && editingId != t.id { Text(ScratchpadList.ageLabel(for: t.createdAt)) }` between the spacer and edit button — fades in with `.transition(.opacity)`.
+- `noteRow`: same pattern using `n.createdAt`.
+- `ChatComposerLogicTests.swift` → added `ScratchpadAgeLabelTests` (5 tests): under 60s, 5m, 2h, yesterday, older date.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Why:** Both `TaskItem` and `Note` have `createdAt: Date` but it was never surfaced in the UI. The hover-only placement keeps rows compact by default.
+
+**Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
 ## Standing notes / known issues

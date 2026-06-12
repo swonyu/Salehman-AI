@@ -246,6 +246,12 @@ struct ScratchpadView: View {
                     .strikethrough(t.done)
             }
             Spacer(minLength: 8)
+            if hovered && editingId != t.id {
+                Text(ScratchpadList.ageLabel(for: t.createdAt))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
+            }
             if editingId != t.id {
                 editButton { startEdit(id: t.id, text: t.title) }
             }
@@ -318,6 +324,12 @@ struct ScratchpadView: View {
                     .textSelection(.enabled)
             }
             Spacer(minLength: 8)
+            if hovered && editingId != n.id {
+                Text(ScratchpadList.ageLabel(for: n.createdAt))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
+            }
             if editingId != n.id {
                 editButton { startEdit(id: n.id, text: n.text) }
             }
@@ -499,5 +511,17 @@ enum ScratchpadList {
     static func markdownList(notes: [Note]) -> String {
         guard !notes.isEmpty else { return "" }
         return notes.map { "- \($0.text)" }.joined(separator: "\n")
+    }
+
+    /// Human-readable relative age for a creation date. `now` is injectable for
+    /// tests; defaults to `Date()` at call time. Examples: "just now", "5m", "2h",
+    /// "yesterday", "Jun 5".
+    static func ageLabel(for date: Date, now: Date = Date()) -> String {
+        let interval = now.timeIntervalSince(date)
+        if interval < 60 { return "just now" }
+        if interval < 3600 { return "\(Int(interval / 60))m" }
+        if interval < 86400 { return "\(Int(interval / 3600))h" }
+        if Calendar.current.isDateInYesterday(date) { return "yesterday" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }
