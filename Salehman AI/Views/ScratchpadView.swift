@@ -51,7 +51,11 @@ struct ScratchpadView: View {
                     .animation(DS.Motion.lux.delay(0.10), value: appeared)
                 Group {
                     if store.tasks.count + store.notes.count > 5 { searchRow }
-                    if pad == .tasks { tasksList } else { notesList }
+                    if pad == .tasks {
+                        tasksList.transition(.opacity)
+                    } else {
+                        notesList.transition(.opacity)
+                    }
                     if !aiResult.isEmpty {
                         aiResultCard
                             .transition(.opacity.combined(with: .offset(y: 8)))
@@ -61,6 +65,7 @@ struct ScratchpadView: View {
                 .offset(y: appeared ? 0 : 6)
                 .animation(DS.Motion.lux.delay(0.14), value: appeared)
                 .animation(DS.Motion.smooth, value: aiResult.isEmpty)
+                .animation(DS.Motion.smooth, value: pad)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -229,6 +234,7 @@ struct ScratchpadView: View {
         return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
+                    .transition(.opacity)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     if search.isEmpty {
@@ -258,8 +264,10 @@ struct ScratchpadView: View {
                         else { listCard { ForEach(filtered) { taskRow($0) } } }
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.tasks.isEmpty)
     }
 
     private func completedDisclosure(_ done: [TaskItem]) -> some View {
@@ -372,18 +380,21 @@ struct ScratchpadView: View {
         Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
+                    .transition(.opacity)
             } else if search.isEmpty {
                 // No filter: stored order + drag-to-reorder.
                 reorderList {
                     ForEach(store.notes) { noteRow($0) }
                         .onMove { store.moveNote(from: $0, to: $1) }
                 }
+                .transition(.opacity)
             } else {
                 let filtered = ScratchpadList.notes(store.notes, filter: search)
                 if filtered.isEmpty { noMatch }
                 else { listCard { ForEach(filtered) { noteRow($0) } } }
             }
         }
+        .animation(DS.Motion.smooth, value: store.notes.isEmpty)
     }
 
     private func noteRow(_ n: Note) -> some View {

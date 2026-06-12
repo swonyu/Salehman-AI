@@ -127,6 +127,7 @@ struct OnboardingView: View {
                             .frame(width: i == page ? 22 : 7, height: 7)
                     }
                 }
+                .animation(DS.Motion.smooth, value: page)
                 .padding(.bottom, 26)
 
                 HStack {
@@ -134,6 +135,7 @@ struct OnboardingView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .opacity(page > 0 ? 1 : 0)
+                        .animation(DS.Motion.smooth, value: page > 0)
                         .disabled(page == 0)
 
                     Spacer()

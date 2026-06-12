@@ -455,8 +455,10 @@ struct SettingsView: View {
                 Spacer()
                 if sel {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
             }
+            .animation(DS.Motion.snappy, value: sel)
             .padding(.horizontal, 14).padding(.vertical, 11)
             .contentShape(Rectangle())
         }
@@ -1266,16 +1268,22 @@ struct SettingsView: View {
             switch localModelProbe {
             case .checking:
                 ProgressView().controlSize(.small)
+                    .transition(.opacity)
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .installed(let name):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                    .transition(.opacity)
                 Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .missing(let name):
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                    .transition(.opacity)
                 Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Button {
                     let pb = NSPasteboard.general
                     pb.clearContents()
@@ -1284,10 +1292,13 @@ struct SettingsView: View {
                     .buttonStyle(.bordered).controlSize(.small)
                     .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
+                    .transition(.opacity)
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Ollama isn't running — can't check for your local model.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
             Spacer()
             Button {
@@ -1296,6 +1307,7 @@ struct SettingsView: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Re-check").accessibilityLabel("Re-check local model status")
         }
+        .animation(DS.Motion.smooth, value: localModelProbe)
         .padding(.horizontal, 14).padding(.bottom, 11)
         .task { await probeLocalModel() }
         .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }

@@ -2863,6 +2863,28 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors (sandbox blocks DerivedData writes; real compile errors verified absent by grepping build output for `.swift:[line]:[col]: error:` — empty).
 
 ---
+## 2026-06-13 — Marathon EC: OnboardingView dots, ScratchpadView pad-switch, SettingsView mode checkmark
+
+**What changed:**
+- `OnboardingView.swift` — 2 edits:
+  - Progress dot capsules HStack: added `.animation(DS.Motion.smooth, value: page)` — the pill expansion (7→22 pt width) now animates on every page advance instead of snapping
+  - Back button: added `.animation(DS.Motion.smooth, value: page > 0)` so the opacity fade-in on page 1 is smooth
+- `ScratchpadView.swift` — 5 edits:
+  - Body Group: added `.animation(DS.Motion.smooth, value: pad)` so the Tasks↔Notes tab switch animates
+  - Body `if pad == .tasks` / `else` branches: chained `.transition(.opacity)` to `tasksList` and `notesList` call sites
+  - `tasksList` Group: added `.transition(.opacity)` to empty-state branch + `.transition(.opacity)` to content VStack + `.animation(DS.Motion.smooth, value: store.tasks.isEmpty)` driver on Group
+  - `notesList` Group: added `.transition(.opacity)` to empty-state and reorderList branches + `.animation(DS.Motion.smooth, value: store.notes.isEmpty)` driver on Group
+- `SettingsView.swift` — 2 edits:
+  - `modeRow` label HStack: added `.animation(DS.Motion.snappy, value: sel)` and `.transition(.opacity.combined(with: .scale(scale: 0.6)))` on the mode-selected checkmark
+  - `salehmanModelStatusRow` outer HStack: added `.animation(DS.Motion.smooth, value: localModelProbe)` + `.transition(.opacity)` on each case's icon/text elements so Checking→Installed/Missing/OllamaDown transitions animate
+
+**Files:** `Salehman AI/Views/OnboardingView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/SettingsView.swift`
+
+**Why:** These were the last perceptible snap-in transitions in views covered by the marathon scope. The progress dot pill expansion was the most visible — users tap Next multiple times during onboarding and the abrupt width jump was jarring. The Tasks↔Notes switch is a high-frequency action. The mode-row checkmark pops in with every settings change.
+
+**Result:** Zero Swift compilation errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

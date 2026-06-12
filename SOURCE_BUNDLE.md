@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:53 +03 · Swift files: 150 · Swift LOC: 33903_
+_Generated: 2026-06-13 00:58 +03 · Swift files: 150 · Swift LOC: 33928_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23311,7 +23311,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (189 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (191 lines) =====
 ```swift
 import SwiftUI
 
@@ -23442,6 +23442,7 @@ struct OnboardingView: View {
                             .frame(width: i == page ? 22 : 7, height: 7)
                     }
                 }
+                .animation(DS.Motion.smooth, value: page)
                 .padding(.bottom, 26)
 
                 HStack {
@@ -23449,6 +23450,7 @@ struct OnboardingView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .opacity(page > 0 ? 1 : 0)
+                        .animation(DS.Motion.smooth, value: page > 0)
                         .disabled(page == 0)
 
                     Spacer()
@@ -23630,7 +23632,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (646 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (657 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23685,7 +23687,11 @@ struct ScratchpadView: View {
                     .animation(DS.Motion.lux.delay(0.10), value: appeared)
                 Group {
                     if store.tasks.count + store.notes.count > 5 { searchRow }
-                    if pad == .tasks { tasksList } else { notesList }
+                    if pad == .tasks {
+                        tasksList.transition(.opacity)
+                    } else {
+                        notesList.transition(.opacity)
+                    }
                     if !aiResult.isEmpty {
                         aiResultCard
                             .transition(.opacity.combined(with: .offset(y: 8)))
@@ -23695,6 +23701,7 @@ struct ScratchpadView: View {
                 .offset(y: appeared ? 0 : 6)
                 .animation(DS.Motion.lux.delay(0.14), value: appeared)
                 .animation(DS.Motion.smooth, value: aiResult.isEmpty)
+                .animation(DS.Motion.smooth, value: pad)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -23863,6 +23870,7 @@ struct ScratchpadView: View {
         return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
+                    .transition(.opacity)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     if search.isEmpty {
@@ -23892,8 +23900,10 @@ struct ScratchpadView: View {
                         else { listCard { ForEach(filtered) { taskRow($0) } } }
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.tasks.isEmpty)
     }
 
     private func completedDisclosure(_ done: [TaskItem]) -> some View {
@@ -24006,18 +24016,21 @@ struct ScratchpadView: View {
         Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
+                    .transition(.opacity)
             } else if search.isEmpty {
                 // No filter: stored order + drag-to-reorder.
                 reorderList {
                     ForEach(store.notes) { noteRow($0) }
                         .onMove { store.moveNote(from: $0, to: $1) }
                 }
+                .transition(.opacity)
             } else {
                 let filtered = ScratchpadList.notes(store.notes, filter: search)
                 if filtered.isEmpty { noMatch }
                 else { listCard { ForEach(filtered) { noteRow($0) } } }
             }
         }
+        .animation(DS.Motion.smooth, value: store.notes.isEmpty)
     }
 
     private func noteRow(_ n: Note) -> some View {
@@ -24453,7 +24466,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2067 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2079 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -24912,8 +24925,10 @@ struct SettingsView: View {
                 Spacer()
                 if sel {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
             }
+            .animation(DS.Motion.snappy, value: sel)
             .padding(.horizontal, 14).padding(.vertical, 11)
             .contentShape(Rectangle())
         }
@@ -25723,16 +25738,22 @@ struct SettingsView: View {
             switch localModelProbe {
             case .checking:
                 ProgressView().controlSize(.small)
+                    .transition(.opacity)
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .installed(let name):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                    .transition(.opacity)
                 Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .missing(let name):
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                    .transition(.opacity)
                 Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Button {
                     let pb = NSPasteboard.general
                     pb.clearContents()
@@ -25741,10 +25762,13 @@ struct SettingsView: View {
                     .buttonStyle(.bordered).controlSize(.small)
                     .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
+                    .transition(.opacity)
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Ollama isn't running — can't check for your local model.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
             Spacer()
             Button {
@@ -25753,6 +25777,7 @@ struct SettingsView: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Re-check").accessibilityLabel("Re-check local model status")
         }
+        .animation(DS.Motion.smooth, value: localModelProbe)
         .padding(.horizontal, 14).padding(.bottom, 11)
         .task { await probeLocalModel() }
         .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
@@ -36471,7 +36496,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3906 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3928 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39335,6 +39360,28 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The last remaining animation gaps in the marathon sweep. `agentsGrid` branches were orphaned — the parent VStack had no `.animation` driver, and neither branch had `.transition`, so toggling between "no match" text and the full grid was an abrupt swap. Run history rows had hover effects but popped in hard — the rows VStack lacked a `runHistory.count` driver despite the count badge already having one.
 
 **Result:** Zero Swift compilation errors (sandbox blocks DerivedData writes; real compile errors verified absent by grepping build output for `.swift:[line]:[col]: error:` — empty).
+
+---
+## 2026-06-13 — Marathon EC: OnboardingView dots, ScratchpadView pad-switch, SettingsView mode checkmark
+
+**What changed:**
+- `OnboardingView.swift` — 2 edits:
+  - Progress dot capsules HStack: added `.animation(DS.Motion.smooth, value: page)` — the pill expansion (7→22 pt width) now animates on every page advance instead of snapping
+  - Back button: added `.animation(DS.Motion.smooth, value: page > 0)` so the opacity fade-in on page 1 is smooth
+- `ScratchpadView.swift` — 5 edits:
+  - Body Group: added `.animation(DS.Motion.smooth, value: pad)` so the Tasks↔Notes tab switch animates
+  - Body `if pad == .tasks` / `else` branches: chained `.transition(.opacity)` to `tasksList` and `notesList` call sites
+  - `tasksList` Group: added `.transition(.opacity)` to empty-state branch + `.transition(.opacity)` to content VStack + `.animation(DS.Motion.smooth, value: store.tasks.isEmpty)` driver on Group
+  - `notesList` Group: added `.transition(.opacity)` to empty-state and reorderList branches + `.animation(DS.Motion.smooth, value: store.notes.isEmpty)` driver on Group
+- `SettingsView.swift` — 2 edits:
+  - `modeRow` label HStack: added `.animation(DS.Motion.snappy, value: sel)` and `.transition(.opacity.combined(with: .scale(scale: 0.6)))` on the mode-selected checkmark
+  - `salehmanModelStatusRow` outer HStack: added `.animation(DS.Motion.smooth, value: localModelProbe)` + `.transition(.opacity)` on each case's icon/text elements so Checking→Installed/Missing/OllamaDown transitions animate
+
+**Files:** `Salehman AI/Views/OnboardingView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/SettingsView.swift`
+
+**Why:** These were the last perceptible snap-in transitions in views covered by the marathon scope. The progress dot pill expansion was the most visible — users tap Next multiple times during onboarding and the abrupt width jump was jarring. The Tasks↔Notes switch is a high-frequency action. The mode-row checkmark pops in with every settings change.
+
+**Result:** Zero Swift compilation errors.
 
 ---
 ## Standing notes / known issues
