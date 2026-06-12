@@ -313,9 +313,11 @@ struct ContentView: View {
                         SuperGrokBadge(text: "SUPER GROK") {
                             app.showSettingsRequested = true
                         }
+                        .transition(.opacity)
                     }
                 }
             }
+            .animation(DS.Motion.snappy, value: brainStatus.brain == .grok)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
                 ? "Salehman AI, Unrestricted Mode"
@@ -394,8 +396,10 @@ struct ContentView: View {
             if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: settings.unrestrictedTools)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         // Flat opaque bar (design language — no translucent material).
@@ -600,8 +604,10 @@ struct ContentView: View {
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: servingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
         }
@@ -844,6 +850,7 @@ struct ContentView: View {
                 .help(count.warn ? "Very long message — consider splitting it or attaching a file"
                                  : "Draft length")
                 .accessibilityIdentifier("chat.composer.count")
+                .transition(.opacity)
         }
     }
 
@@ -1317,6 +1324,7 @@ struct ContentView: View {
                     micButton
                     sendOrStopButton
                 }
+                .animation(DS.Motion.lux, value: Self.composerCount(mission) != nil)
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:59 +03 · Swift files: 150 · Swift LOC: 33929_
+_Generated: 2026-06-13 01:08 +03 · Swift files: 150 · Swift LOC: 33939_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14784,7 +14784,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2616 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2618 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15413,6 +15413,7 @@ struct CodeView: View {
             if LocalLLM.lacksCloudKey && !dismissedCloudHint {
                 CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
                                    onDismiss: { dismissedCloudHint = true })
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             HSplitView {
                 if !treeCollapsed {
@@ -15453,6 +15454,7 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
+        .animation(DS.Motion.smooth, value: dismissedCloudHint)
         // Restore the last session's conversation once (off-main decode; tiny file).
         .onAppear {
             guard !historyLoaded else { return }
@@ -17603,7 +17605,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2837 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2845 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17920,9 +17922,11 @@ struct ContentView: View {
                         SuperGrokBadge(text: "SUPER GROK") {
                             app.showSettingsRequested = true
                         }
+                        .transition(.opacity)
                     }
                 }
             }
+            .animation(DS.Motion.snappy, value: brainStatus.brain == .grok)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
                 ? "Salehman AI, Unrestricted Mode"
@@ -18001,8 +18005,10 @@ struct ContentView: View {
             if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: settings.unrestrictedTools)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         // Flat opaque bar (design language — no translucent material).
@@ -18207,8 +18213,10 @@ struct ContentView: View {
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: servingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
         }
@@ -18451,6 +18459,7 @@ struct ContentView: View {
                 .help(count.warn ? "Very long message — consider splitting it or attaching a file"
                                  : "Draft length")
                 .accessibilityIdentifier("chat.composer.count")
+                .transition(.opacity)
         }
     }
 
@@ -18924,6 +18933,7 @@ struct ContentView: View {
                     micButton
                     sendOrStopButton
                 }
+                .animation(DS.Motion.lux, value: Self.composerCount(mission) != nil)
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -36497,7 +36507,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3940 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3956 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39393,6 +39403,22 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/TabSwitcherBar.swift`
 
 **Why:** The market open/close is a once-per-day event but is clearly visible in the top bar. Without the animation driver, the pill's background and text color change was instant even though the dot transition (PhaseAnimator → plain Circle) already had continuous animation. The `.animation(smooth, value: isOpen)` makes the background + foreground changes animate in sync with the dot.
+
+**Result:** Zero Swift compilation errors.
+
+---
+## 2026-06-13 — Marathon EE: ContentView + CodeView animation gaps
+
+**What changed:**
+- `ContentView.swift` — `servingModel` badge: added `.transition(.opacity)` to `Text("· \(m)")` inside the brain picker's `if let m = servingModel` block + `.animation(DS.Motion.smooth, value: servingModel)` on the label HStack. Badge now fades in/out when the active brain switches between a cloud and a local model.
+- `ContentView.swift` — `composerCountBadge`: added `.transition(.opacity)` to the word-count Text inside the `@ViewBuilder` + `.animation(DS.Motion.lux, value: Self.composerCount(mission) != nil)` on the controls HStack. Count badge fades in when the draft exceeds the 120-word floor.
+- `ContentView.swift` — header `ConfirmationChip`: added `.transition(.opacity)` + `.animation(DS.Motion.snappy, value: settings.unrestrictedTools)` on the header HStack so the confirmation chip fades out cleanly when Unrestricted Mode is enabled.
+- `ContentView.swift` — `SuperGrokBadge`: added `.transition(.opacity)` + `.animation(DS.Motion.snappy, value: brainStatus.brain == .grok)` on the status inner HStack so the badge fades in/out when switching to/from the Grok brain.
+- `CodeView.swift` — `CloudKeyHintBanner`: added `.transition(.move(edge: .top).combined(with: .opacity))` + `.animation(DS.Motion.smooth, value: dismissedCloudHint)` on the body VStack. Banner slides up and fades out when dismissed instead of popping away.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Systematic animation gap sweep — every `if/else` branch that inserts/removes a view needs a `.transition` declaration AND a parent `.animation(value:)` driver. Without both, SwiftUI falls back to no animation. These were the remaining gaps in the Chat and Code tabs that made state changes feel abrupt.
 
 **Result:** Zero Swift compilation errors.
 

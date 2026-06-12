@@ -625,6 +625,7 @@ struct CodeView: View {
             if LocalLLM.lacksCloudKey && !dismissedCloudHint {
                 CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
                                    onDismiss: { dismissedCloudHint = true })
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             HSplitView {
                 if !treeCollapsed {
@@ -665,6 +666,7 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
+        .animation(DS.Motion.smooth, value: dismissedCloudHint)
         // Restore the last session's conversation once (off-main decode; tiny file).
         .onAppear {
             guard !historyLoaded else { return }

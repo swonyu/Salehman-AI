@@ -2897,6 +2897,22 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors.
 
 ---
+## 2026-06-13 — Marathon EE: ContentView + CodeView animation gaps
+
+**What changed:**
+- `ContentView.swift` — `servingModel` badge: added `.transition(.opacity)` to `Text("· \(m)")` inside the brain picker's `if let m = servingModel` block + `.animation(DS.Motion.smooth, value: servingModel)` on the label HStack. Badge now fades in/out when the active brain switches between a cloud and a local model.
+- `ContentView.swift` — `composerCountBadge`: added `.transition(.opacity)` to the word-count Text inside the `@ViewBuilder` + `.animation(DS.Motion.lux, value: Self.composerCount(mission) != nil)` on the controls HStack. Count badge fades in when the draft exceeds the 120-word floor.
+- `ContentView.swift` — header `ConfirmationChip`: added `.transition(.opacity)` + `.animation(DS.Motion.snappy, value: settings.unrestrictedTools)` on the header HStack so the confirmation chip fades out cleanly when Unrestricted Mode is enabled.
+- `ContentView.swift` — `SuperGrokBadge`: added `.transition(.opacity)` + `.animation(DS.Motion.snappy, value: brainStatus.brain == .grok)` on the status inner HStack so the badge fades in/out when switching to/from the Grok brain.
+- `CodeView.swift` — `CloudKeyHintBanner`: added `.transition(.move(edge: .top).combined(with: .opacity))` + `.animation(DS.Motion.smooth, value: dismissedCloudHint)` on the body VStack. Banner slides up and fades out when dismissed instead of popping away.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Systematic animation gap sweep — every `if/else` branch that inserts/removes a view needs a `.transition` declaration AND a parent `.animation(value:)` driver. Without both, SwiftUI falls back to no animation. These were the remaining gaps in the Chat and Code tabs that made state changes feel abrupt.
+
+**Result:** Zero Swift compilation errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
