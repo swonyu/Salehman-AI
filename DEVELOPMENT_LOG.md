@@ -1691,6 +1691,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source change only; build/test deferred to owner (sandbox restriction). SOURCE_BUNDLE.md regenerated.
 
 ---
+
+## 2026-06-12 — Remove vLLM/cloud references from "no model" messages
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`
+
+**What changed:** Stripped all vLLM, NVIDIA, Groq, Cerebras, and OpenRouter guidance from three message sites: `offMessage` (stored sentinel), `unavailableMessage(.salehman)` (chat bubble copy), and `currentBrainLabel()` brain-status tooltip. Ollama auto-starts on launch, so the only actionable fix when Salehman is unreachable is pulling the model. All three sites now point exclusively to `ollama pull salehman` (or `ollama pull <customModelName>` where dynamic). Collapsed the MLX/Ollama-separate-branch in `currentBrainLabel` into a single message.
+
+**Why:** Owner clarified: "no vllm no nothing just salehman and ollama serve is auto on launch." Previous messages were confusing users with suggestions for cloud keys and explicit `ollama serve` steps that are no longer relevant.
+
+**Result:** `** TEST SUCCEEDED **` (41a61a5). SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:29 +03 · Swift files: 150 · Swift LOC: 31893_
+_Generated: 2026-06-12 08:32 +03 · Swift files: 150 · Swift LOC: 31908_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5000,7 +5000,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1698 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1694 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5080,7 +5080,7 @@ enum LocalLLM {
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "No model is reachable right now. For Salehman: run `ollama serve` and pull the model with `ollama pull \(AppSettings.customModelNameCurrent)`. For a cloud GPU, switch to the vLLM brain in Settings → Brain and paste your RunPod (or local) endpoint URL."
+            return "Salehman model isn't responding. Make sure it's pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -5560,13 +5560,9 @@ enum LocalLLM {
             case .ollama:  return "Ollama selected · not running"
             case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
-                // Local-first: MLX (on-device) → Ollama. No third-party cloud.
-                // For a cloud GPU, the user switches to the vLLM brain instead.
-                if MLXSalehmanEngine.isPackageLinked {
-                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\", or load the MLX engine"
-                } else {
-                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\" (or switch to vLLM for RunPod)"
-                }
+                // Local-only: MLX (on-device) → Ollama. Ollama auto-starts on launch;
+                // the only fix when this fires is pulling the model.
+                return "Salehman: pull the model — `ollama pull \(AppSettings.customModelNameCurrent)`"
             case .unslothStudio:
                 // Different failure mode from the cloud brains — no key, just a
                 // local URL the user has to set + a server that has to be running.
@@ -9786,7 +9782,7 @@ final class PromptLibrary: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (128 lines) =====
+===== FILE: Salehman AI/Persistence/ScratchpadStore.swift (131 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -9819,6 +9815,9 @@ final class ScratchpadStore: ObservableObject {
 
     @Published private(set) var notes: [Note] = []
     @Published private(set) var tasks: [TaskItem] = []
+
+    /// Count of open (not-done) tasks — drives the badge on the Notes tab icon.
+    var pendingTaskCount: Int { tasks.filter { !$0.done }.count }
 
     private let store: JSONFileStore<Snapshot>
 
@@ -25090,7 +25089,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (219 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (235 lines) =====
 ```swift
 import SwiftUI
 
@@ -25103,6 +25102,7 @@ struct TabSwitcherBar: View {
     /// `AppState` bridge keeps the sheet's `@State` owned by ContentView while
     /// any sibling view (like this tab bar) can trigger it without a new Binding.
     @ObservedObject private var app = AppState.shared
+    @ObservedObject private var scratchpad = ScratchpadStore.shared
 
     /// Pointer hover state for the market status pill — drives a subtle scale +
     /// brightening that signals "this thing has a tooltip / is interactive" to a
@@ -25181,6 +25181,7 @@ struct TabSwitcherBar: View {
                 let cornerTabs = AppTab.corner.filter { !AppTab.hidden.contains($0) }
                 HStack(spacing: 6) {
                     ForEach(cornerTabs) { tab in
+                        let pending = tab == .scratchpad ? scratchpad.pendingTaskCount : 0
                         CircleIconButton(systemName: tab.icon,
                                          size: 28, iconSize: 13,
                                          tint: Color.white.opacity(0.70),
@@ -25188,6 +25189,20 @@ struct TabSwitcherBar: View {
                                          help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
                                          accessibilityLabel: tab.title) {
                             withAnimation(DS.Motion.snappy) { selection = tab }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if pending > 0 {
+                                Text(pending > 9 ? "9+" : "\(pending)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, pending > 9 ? 3.5 : 0)
+                                    .frame(minWidth: 14, minHeight: 14)
+                                    .background(DS.Palette.accent, in: Capsule())
+                                    .offset(x: 4, y: -4)
+                                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                                    .animation(DS.Motion.spring, value: pending)
+                                    .accessibilityLabel("\(pending) pending task\(pending == 1 ? "" : "s")")
+                            }
                         }
                     }
                 }
