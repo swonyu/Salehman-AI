@@ -832,6 +832,7 @@ struct CodeView: View {
                 emptyTreeHint
             } else {
                 fileFilterField
+                Group {
                 if !fileFilter.isEmpty {
                     // Filtering → flat matched list (faster to scan than a tree).
                     let shown = filteredFiles
@@ -840,6 +841,7 @@ struct CodeView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
+                            .transition(.opacity)
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 1) {
@@ -866,7 +868,10 @@ struct CodeView: View {
                         }
                         .padding(.vertical, 6)
                     }
+                    .transition(.opacity)
                 }
+                }
+                .animation(DS.Motion.smooth, value: fileFilter.isEmpty)
             }
         }
         .background(.ultraThinMaterial)
@@ -886,12 +891,14 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Clear file filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
+        .animation(DS.Motion.magnetic, value: fileFilter.isEmpty)
     }
 
     private var emptyTreeHint: some View {

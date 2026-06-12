@@ -2614,6 +2614,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Every search/filter clear button in the app now fades in and out.
 
 ---
+
+### 2026-06-12 — Marathon DL: CodeView file-filter clear button + tree↔flat-list transition
+
+**What changed:**
+- `Views/CodeView.swift`:
+  - `fileFilterField`: xmark clear button gets `.transition(.opacity)` + HStack gets `.animation(DS.Motion.magnetic, value: fileFilter.isEmpty)`.
+  - File tree / flat filtered-list alternation: wrapped `if !fileFilter.isEmpty { flatList } else if let root { tree }` in a `Group { }.animation(DS.Motion.smooth, value: fileFilter.isEmpty)`. The "no match" empty state and the tree ScrollView each get `.transition(.opacity)`.
+
+**Files:** `Views/CodeView.swift`
+
+**Why:** Typing a filter caused the tree to snap to a flat list with no animation. The xmark button popped in/out. Both are high-frequency interactions in the code file browser.
+
+**Result:** Filtering/clearing in the CodeView file tree now crossfades between tree and filtered list.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

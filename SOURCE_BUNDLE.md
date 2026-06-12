@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:47 +03 · Swift files: 150 · Swift LOC: 33754_
+_Generated: 2026-06-12 23:49 +03 · Swift files: 150 · Swift LOC: 33761_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14764,7 +14764,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2582 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2589 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15600,6 +15600,7 @@ struct CodeView: View {
                 emptyTreeHint
             } else {
                 fileFilterField
+                Group {
                 if !fileFilter.isEmpty {
                     // Filtering → flat matched list (faster to scan than a tree).
                     let shown = filteredFiles
@@ -15608,6 +15609,7 @@ struct CodeView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
+                            .transition(.opacity)
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 1) {
@@ -15634,7 +15636,10 @@ struct CodeView: View {
                         }
                         .padding(.vertical, 6)
                     }
+                    .transition(.opacity)
                 }
+                }
+                .animation(DS.Motion.smooth, value: fileFilter.isEmpty)
             }
         }
         .background(.ultraThinMaterial)
@@ -15654,12 +15659,14 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Clear file filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
+        .animation(DS.Motion.magnetic, value: fileFilter.isEmpty)
     }
 
     private var emptyTreeHint: some View {
@@ -36322,7 +36329,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3657 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3672 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38937,6 +38944,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Missed in DJ's search bar sweep — bringing all 7 search clear buttons in the app to parity.
 
 **Result:** Every search/filter clear button in the app now fades in and out.
+
+---
+
+### 2026-06-12 — Marathon DL: CodeView file-filter clear button + tree↔flat-list transition
+
+**What changed:**
+- `Views/CodeView.swift`:
+  - `fileFilterField`: xmark clear button gets `.transition(.opacity)` + HStack gets `.animation(DS.Motion.magnetic, value: fileFilter.isEmpty)`.
+  - File tree / flat filtered-list alternation: wrapped `if !fileFilter.isEmpty { flatList } else if let root { tree }` in a `Group { }.animation(DS.Motion.smooth, value: fileFilter.isEmpty)`. The "no match" empty state and the tree ScrollView each get `.transition(.opacity)`.
+
+**Files:** `Views/CodeView.swift`
+
+**Why:** Typing a filter caused the tree to snap to a flat list with no animation. The xmark button popped in/out. Both are high-frequency interactions in the code file browser.
+
+**Result:** Filtering/clearing in the CodeView file tree now crossfades between tree and filtered list.
 
 ---
 ## Standing notes / known issues
