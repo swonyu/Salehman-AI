@@ -1717,6 +1717,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AD: collapse completed tasks into disclosure group in Notes
+
+**What changed:**
+- `ScratchpadView.swift` → added `@State private var showCompleted = false`.
+- `tasksList` refactored: when all tasks are open, drag-to-reorder stays (full-array indices stay safe). When there are completed tasks, open tasks render in a static `listCard` (safe from index collision), and done tasks fold into a `DisclosureGroup("X completed", isExpanded: $showCompleted)` — collapsed by default, with a "Clear all" button in the label row.
+- Extracted `completedDisclosure(_:)` helper to keep `tasksList` readable.
+- Removed the old top-bar "Clear X completed" button (absorbed into the disclosure label).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** Completed tasks were mixing with open ones, making the task list noisy. Folding them reduces visual clutter while keeping them accessible and bulk-clearable.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

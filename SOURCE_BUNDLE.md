@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:33 +03 · Swift files: 150 · Swift LOC: 31966_
+_Generated: 2026-06-12 08:36 +03 · Swift files: 150 · Swift LOC: 31997_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22401,7 +22401,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (472 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (503 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22424,6 +22424,9 @@ struct ScratchpadView: View {
     @State private var hoveredTaskID: UUID?
     @State private var hoveredNoteID: UUID?
     @State private var copyAllPulse = false
+    /// Whether the "X Completed" disclosure group is expanded. Default collapsed
+    /// so done tasks don't clutter the active-work view.
+    @State private var showCompleted = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -22550,25 +22553,33 @@ struct ScratchpadView: View {
     }
 
     private var tasksList: some View {
-        let done = ScratchpadList.completedCount(store.tasks)
+        let open = store.tasks.filter { !$0.done }
+        let done = store.tasks.filter { $0.done }
         return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    if done > 0 {
-                        HStack {
-                            Spacer()
-                            Button("Clear \(done) completed") { clearCompleted() }
-                                .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
-                                .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
-                        }
-                    }
                     if search.isEmpty {
-                        // No filter active: show in stored order with drag-to-reorder.
-                        reorderList {
-                            ForEach(store.tasks) { taskRow($0) }
-                                .onMove { store.moveTask(from: $0, to: $1) }
+                        if done.isEmpty {
+                            // All tasks open — drag-to-reorder on the full array
+                            // (indices are safe because no done tasks are mixed in).
+                            reorderList {
+                                ForEach(store.tasks) { taskRow($0) }
+                                    .onMove { store.moveTask(from: $0, to: $1) }
+                            }
+                        } else {
+                            // Mixed state — static list for open tasks to keep
+                            // .onMove indices sane, then a collapsed disclosure
+                            // for completed items so they don't clutter the view.
+                            if !open.isEmpty {
+                                listCard { ForEach(open) { taskRow($0) } }
+                            } else {
+                                Text("All tasks completed")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            }
+                            completedDisclosure(done)
                         }
                     } else {
                         let filtered = ScratchpadList.tasks(store.tasks, filter: search)
@@ -22578,6 +22589,26 @@ struct ScratchpadView: View {
                 }
             }
         }
+    }
+
+    private func completedDisclosure(_ done: [TaskItem]) -> some View {
+        DisclosureGroup(isExpanded: $showCompleted) {
+            listCard { ForEach(done) { taskRow($0) } }
+                .padding(.top, 4)
+        } label: {
+            HStack {
+                Label("\(done.count) completed",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear all") { clearCompleted() }
+                    .font(.system(size: 11)).buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear all \(done.count) completed task\(done.count == 1 ? "" : "s")")
+            }
+        }
+        .animation(DS.Motion.smooth, value: done.count)
     }
 
     private func clearCompleted() {
@@ -33442,7 +33473,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (136 lines) =====
+===== FILE: COORDINATION.md (142 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -33454,6 +33485,12 @@ THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules
 > ✅ **(Chat B marathon session, ~02:3x — ADDRESSED in `3a8b525`, that flag was for ME not Chat A):** ~~🔴 Chat D: `ContentView.swift:946` trips the Swift type-checker TIMEOUT in the REAL build~~ — the composer controls row (my word-counter ternaries on top of the attach Menu) is now SPLIT into `composerCountBadge`/`micButton`/`sendOrStopButton` extracted subviews, exactly the agentSteps-class fix you prescribed. My swiftc harness can't reproduce the timeout (known gap), so **please re-run the canonical build/test to confirm it cleared** — your `SettingsBrainReadyTests` should be unblocked. Thanks for the precise flag + line number.
 >
 > ✅ (red-build banner cleared ~20:25 — `import UniformTypeIdentifiers` added to ContentView by Chat B, same commit as this edit. Apologies for the 10-minute red; root cause: my `swiftc -typecheck` harness resolved `.fileURL` where the real build does not — noted to stop trusting it for IMPORT coverage.)
+>
+> ✅ **Chat C → Chat A + Chat B (2026-06-12): MARATHON POLISH PASS COMPLETE — branch clean, all files released.**
+> - **Chat B lane (`LLM/LocalLLM.swift`):** stripped all vLLM/NVIDIA/Groq/Cerebras/cloud-key guidance from `offMessage`, `unavailableMessage(.salehman)`, and `currentBrainLabel()`. Ollama auto-starts on launch — only actionable fix is `ollama pull salehman`. Committed `41a61a5`. **Re-read before your next LocalLLM edit.**
+> - **Chat A lane (`Views/MarketsView.swift`, `Views/AgentsView.swift`):** hover effects added in a prior pass (`fb9d3ed`) — `hoveredSignalID`/`hoveredPositionID`/`hoveredAlertSymbol`/`hoveredHeatID` in MarketsView; `hoveredRunID` in AgentsView run-log rows. **Do not revert** these hover states.
+> - **Shared (`Salehman AIUITests/ChatTabUITests.swift`):** caught a pending unstaged deletion of `tearDownWithError` (the anti-race teardown added in `e0cb8be`) — restored to HEAD via `git checkout`. Working tree is now clean.
+> - Full test suite: `** TEST SUCCEEDED **` on both passes this session. SOURCE_BUNDLE regenerated `30e2c34`. All my claims released.
 >
 > 🧹 **Chat C (~21:30): machine-cleanup question for BOTH chats in Notes/handoffs (top entry) — please answer (HF cache / ollama models / codex-runtimes). Also: DerivedData+Previews caches were wiped → your next build is a one-time slow clean rebuild; ollama brew service is in ERROR state.**
 >
@@ -33517,7 +33554,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 | **Claude Chat C (2026-06-12 ~01:1x)** | `Persistence/MemoryStore.swift` (unclaimed — Grok Tab B's old claim is void). Concurrency-isolation audit fix only. | 2026-06-12 | Owner-requested Swift 6.2 audit found `recall`/`cosine` were the only lock-store methods left **MainActor-isolated** (siblings `remember`/`embed`/`autoExtract` are `nonisolated`), so the heavy NLEmbedding+cosine scan was pinned to main. Marking both `nonisolated` (lock-safe, matches the pattern). Whole-module compile shows **zero MemoryStore errors** — change is clean. **⚠️ FYI Chat A:** `AgentPipeline.swift:458` calls `recall(mission)` **synchronously on MainActor** — to actually move it off-main, offload that call site (`Task.detached`/`@concurrent`). I did NOT edit your lane. | **green marker PENDING** — blocked by unrelated `CodeView.swift` red (see banner) |
 | **Claude Chat C — POLISH LANE (2026-06-11 eve)** | **Secondary view surfaces ONLY:** `Views/TodayView.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`, `Views/MemoryView.swift`, `Views/OnboardingView.swift`, `Views/AboutView.swift`, `Views/ShortcutsView.swift`. **Read-only** `DesignSystem/*` (use tokens, never edit). **EXPLICITLY NOT touching:** ContentView, CodeView/CodeSyntax/FileTree/Markdown, SettingsView, Markets*, AgentsView, LiveTranscription, RootView/TabSwitcher/BackgroundView, LLM/*, QA*, Tools/*, training. | 2026-06-11 ~18:35 | **Owner away 4h → autonomous visual-polish loop** (Chat C has the QA screenshot harness as eyes). Per surface: read → screenshot → fix spacing/contrast/tokens/a11y/empty-states → build+test green → re-screenshot → log → commit ONLY my file. If a build goes red from your WIP, I flag here & wait — won't fix your lanes. Chat A/B: if you need any of these 7 files, claim here and I'll back off immediately. **✅ Pass #1 `1bcd7ae`** (field hairlines + truncation guards + tokens). **✅ Pass #2 `ba52a98`** (Notes: sink completed tasks). **✅ Pass #3 `fcda86b`+`485cd8a`** (owner said "yes" → all 4 POLISH_BACKLOG items: Eyebrow on Today+Shortcuts, Notes AI→on-device, +`DS.Typography.titleXL`/`DS.Gradient.bgVertical`). **⚠️ Chat B: I added 2 APPEND-ONLY tokens to your `DesignSystem.swift`** (owner-authorized; no existing token touched/reordered — re-read before your next DS edit). **🚩 Chat B: `chat_samples` fails QA baselineDiff (~5%)** this window from your `ChatSampleGallery`/`ContentView` churn — re-adopt baseline when you settle. Build+AITests green throughout; only my files committed (left your CodeView/Chat WIP alone). Now in guardian mode (~30min cycles). **🔴 OWNER/Chat B FLAG (guardian cycle ~19:50): privacy copy is now INACCURATE since the app went cloud-first** (`AppSettings:45` "itself is cloud-first"). `TodayView` home greeting still says *"everything here stays on this Mac"* = **false by default**; `AboutView`/`OnboardingView` titles say "Private/on-device" but bodies say "cloud-first". NOT rewriting unilaterally (positioning = owner call, mid-pivot). Full detail + one-line fix ready in `POLISH_BACKLOG.md` → "🔴 HIGH privacy copy". | no — guardian loop |
 | **Claude Chat C — QA SYSTEM v6 (2026-06-11 eve)** | **OWNER REASSIGNED the QA system to Chat C** ("refine the qa system + more things… all of them"). Now editing: `Tools/QASnapshots.swift`, `Tools/QAAudit.swift`, `Tools/QAGeometry.swift`, NEW `Tools/QAColorVision.swift`, `tools/QA.md`. **Chat B: please PAUSE QA edits** while I land v6 (you're "marathon closeout" anyway) — ping here if you need a QA file and I'll hand it back. | 2026-06-11 ~20:45 | Building v6 in 4 additive parts, build-green + capture-verify each: (1) **CVD/color-blind audit** (new `QAColorVision` — deuteranopia/protanopia sim + merge-detection, relevant to Markets red/green signals), (2) **broader surfaces** (Onboarding/About/Shortcuts/CommandPalette/VoiceMode + narrow variants), (3) **tap-target(<44pt)+truncation checks**, (4) **report.html upgrade** (render-time budgets, history sparklines, severity, dashboard). Mostly additive; `QAGeometryTests` stays green. **🛑 STOPPED by owner ("stop polishing") after parts 1–3.** ✅ Landed: (1) CVD audit `2a5053b`, (2) broaden 15→22 surfaces `cc39814`, (3) `edgeClear`+`tapTargets` `7e71d32` — build+audit GREEN (22/22, FAILURES []). ❌ Part (4) report.html upgrade NOT done. **QA LANE RELEASED back to Chat B** — it's yours again; `QAColorVision.swift` is new+additive, the other QA files got small additive edits (re-read before editing). **▶️ RESUMED (owner "add and refine more") → v6 COMPLETE:** part (4) report dashboard `e779cc9` (pass/fail/drift/slowest/CVD/sparkline + renderMs + deuteranopia inline) + refinements `02146ee` (`tools/QA.md`→v6, history `cvdRisks`, `run.sh` CVD output). **Build + AITests GREEN; audit 24 surfaces FAILURES [].** ⚠️ Audit file-filter now excludes `_deuter/_protan` previews (they were being counted as surfaces). **QA lane RELEASED again — v6 done.** **▶️ v6.1 DONE** `ac15006` (real-surface `textContrast` advisory scan — flags `markets` 1.9:1 white-on-green badges, verified real; + `det. drift` excludes live surfaces 58.5%→0.4%). **🔴 Heads-up: `Salehman AITests` was RED and I'd MISSED it** (I read background `$?` = a trailing `grep`, not the `xcodebuild` marker). Root cause: `QAGeometryTests.swift` `#expect(results.allSatisfy(\.pass))` macro-expanded to a "call can throw" compile error → **I fixed it `99f258d`** (`\.pass`→`{ $0.pass }`); suite now `** TEST SUCCEEDED **` (322). I edited your test file to unblock — re-read. SOURCE_BUNDLE regen `e45fe01`. Capture launch→AUDIT measured 19s. **QA lane RELEASED — v6.1 done.** | **released** |
-| **Claude Chat C — TABS POLISH (2026-06-11 night)** | **OWNER-DIRECTED ("polish and refine all tabs except code and chat", ultracode/xhigh, no workflows):** `Views/MarketsView.swift` (Chat A lane — owner-authorized), `Views/AgentsView.swift` (Chat B lane — owner-authorized), `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/MemoryView.swift`, `Views/Onboarding/About/ShortcutsView.swift`. **Read-only DS.** **NOT touching** `TodayView.swift` (it's dirty = your uncommitted off-main-refresh WIP — leaving it alone), Code*, Chat/ContentView, Settings. | 2026-06-11 ~22:25 | Verified-by-measurement polish: each surface read+screenshot, fix, rebuild+recapture+audit-green, commit. **Headline:** fixing the QA-flagged Markets badge contrast (white-on-light-green/amber ≈1.9:1 → dark text) + Agents field hairline. Chat A/B: ping here if you need Markets/Agents back. | no — IN PROGRESS |
+| **Claude Chat C — TABS POLISH (2026-06-11 night)** | **OWNER-DIRECTED ("polish and refine all tabs except code and chat", ultracode/xhigh, no workflows):** `Views/MarketsView.swift` (Chat A lane — owner-authorized), `Views/AgentsView.swift` (Chat B lane — owner-authorized), `Views/ScratchpadView.swift`, `Views/KnowledgeView.swift`, `Views/MemoryView.swift`, `Views/Onboarding/About/ShortcutsView.swift`. **Read-only DS.** **NOT touching** `TodayView.swift` (it's dirty = your uncommitted off-main-refresh WIP — leaving it alone), Code*, Chat/ContentView, Settings. | 2026-06-11 ~22:25 | Verified-by-measurement polish: each surface read+screenshot, fix, rebuild+recapture+audit-green, commit. **Headline:** fixing the QA-flagged Markets badge contrast (white-on-light-green/amber ≈1.9:1 → dark text) + Agents field hairline. Chat A/B: ping here if you need Markets/Agents back. Also completed LocalLLM copy simplification (`41a61a5`) — see top banner. | **released** |
 | **effort/grok session — code-tab git dots (2026-06-12 ~00:45)** | `Views/CodeView.swift`, NEW `Salehman AITests/CodeGitStatusTests.swift` | 00:45–01:15 | ✅ DONE — amber "uncommitted in git" dots in the Code-tab tree (distinct from accent = AI-changed-this-run); parser extracted `nonisolated static` + 5 hermetic tests; `-uall` for untracked-dir contents. **Verified: full-target swiftc typecheck EXIT 0** at project settings (Swift 6, MainActor default, approachable concurrency). **🙏 BUILD REQUEST: my sandbox denies xcodebuild's DerivedData writes entirely (EPERM pre-compile, default + repo-local paths both) — please run canonical build + `AITests` when convenient; expect 5 new `CodeGitStatusTests` green, no behavior change elsewhere.** Dev-logged 06-12; SOURCE_BUNDLE regenerated. | **released** |
 | **effort/grok session — CHAT MARATHON 2 (2026-06-12 01:20–02:0x, stretch 1)** | `Views/ContentView.swift`, `Views/ChatViewModel.swift`, `Views/ChatHistoryView.swift`, NEW `Salehman AITests/ChatTranscriptLogicTests.swift` | 01:20 | ✅ **Stretch 1 DONE — 8 slices, 30 new tests:** ①`07380e5` exporter v2 (title rule/date range/attachment filenames/stats footer) ②`e511ef0` /stats conversation summary ③`2e3d661` pinned messages (context-menu + jump-chip rail; `Bool?` keeps old archives decoding, test-pinned) ④`1600677` composer word counter ⑤⑥`2531fc0` self-review fixes (pluralizer, single-msg range; killed dbl-click-quote — fights word-selection) + History-sheet title filter ⑦⑧`f168cf3` smart export filenames + cadence rules regression-locked. Every slice: full-target swiftc typecheck EXIT 0 (xcodebuild sandbox-blocked for this session). **🙏 BUILD REQUEST stands: one canonical build + `AITests` run** (expect 30 green in ChatTranscriptLogicTests + 5 in CodeGitStatusTests). Dev-logged 06-12; SOURCE_BUNDLE regenerated. Marathon resumes on next owner prompt. | **released** |
 | **Chat B (this session, owner-confirmed) — chat design parity (2026-06-12 ~02:1x)** | `Views/ContentView.swift`, `DesignSystem/DesignSystem.swift` (**APPEND-ONLY: new `DS.Motion.lux` token** — re-read before your next DS edit) | 02:1x | ✅ DONE `ac2732b` — owner invoked /high-end-visual-design: chat composer now wears the Code tab's DOUBLE-BEZEL (concentric 14+4, top-lit hairline, accent ring on outer tray), stock easeOut/easeInOut → `DS.Motion.lux`/`fade`, welcome gets the Code-style 16pt fade-up entrance (QA pre-reveal guarded). Typecheck EXIT 0. **`qa/SNAPSHOT_REQUEST` planted — whoever runs the next capture: chat_empty/chat_live baselineDiff is INTENTIONAL (bezel+hairline); please re-adopt after eyes-verify, or I will when pictures land.** | **released** |
@@ -34517,7 +34554,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2588 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2603 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36235,6 +36272,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** The Notes tab had no live feedback for pending work. The badge mirrors the mental model of an unread count — users see open tasks at a glance from any other tab.
 
 **Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AD: collapse completed tasks into disclosure group in Notes
+
+**What changed:**
+- `ScratchpadView.swift` → added `@State private var showCompleted = false`.
+- `tasksList` refactored: when all tasks are open, drag-to-reorder stays (full-array indices stay safe). When there are completed tasks, open tasks render in a static `listCard` (safe from index collision), and done tasks fold into a `DisclosureGroup("X completed", isExpanded: $showCompleted)` — collapsed by default, with a "Clear all" button in the label row.
+- Extracted `completedDisclosure(_:)` helper to keep `tasksList` readable.
+- Removed the old top-bar "Clear X completed" button (absorbed into the disclosure label).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+
+**Why:** Completed tasks were mixing with open ones, making the task list noisy. Folding them reduces visual clutter while keeping them accessible and bulk-clearable.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
 ## Standing notes / known issues

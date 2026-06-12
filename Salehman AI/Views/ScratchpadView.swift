@@ -19,6 +19,9 @@ struct ScratchpadView: View {
     @State private var hoveredTaskID: UUID?
     @State private var hoveredNoteID: UUID?
     @State private var copyAllPulse = false
+    /// Whether the "X Completed" disclosure group is expanded. Default collapsed
+    /// so done tasks don't clutter the active-work view.
+    @State private var showCompleted = false
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -145,25 +148,33 @@ struct ScratchpadView: View {
     }
 
     private var tasksList: some View {
-        let done = ScratchpadList.completedCount(store.tasks)
+        let open = store.tasks.filter { !$0.done }
+        let done = store.tasks.filter { $0.done }
         return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    if done > 0 {
-                        HStack {
-                            Spacer()
-                            Button("Clear \(done) completed") { clearCompleted() }
-                                .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
-                                .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
-                        }
-                    }
                     if search.isEmpty {
-                        // No filter active: show in stored order with drag-to-reorder.
-                        reorderList {
-                            ForEach(store.tasks) { taskRow($0) }
-                                .onMove { store.moveTask(from: $0, to: $1) }
+                        if done.isEmpty {
+                            // All tasks open — drag-to-reorder on the full array
+                            // (indices are safe because no done tasks are mixed in).
+                            reorderList {
+                                ForEach(store.tasks) { taskRow($0) }
+                                    .onMove { store.moveTask(from: $0, to: $1) }
+                            }
+                        } else {
+                            // Mixed state — static list for open tasks to keep
+                            // .onMove indices sane, then a collapsed disclosure
+                            // for completed items so they don't clutter the view.
+                            if !open.isEmpty {
+                                listCard { ForEach(open) { taskRow($0) } }
+                            } else {
+                                Text("All tasks completed")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            }
+                            completedDisclosure(done)
                         }
                     } else {
                         let filtered = ScratchpadList.tasks(store.tasks, filter: search)
@@ -173,6 +184,26 @@ struct ScratchpadView: View {
                 }
             }
         }
+    }
+
+    private func completedDisclosure(_ done: [TaskItem]) -> some View {
+        DisclosureGroup(isExpanded: $showCompleted) {
+            listCard { ForEach(done) { taskRow($0) } }
+                .padding(.top, 4)
+        } label: {
+            HStack {
+                Label("\(done.count) completed",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear all") { clearCompleted() }
+                    .font(.system(size: 11)).buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear all \(done.count) completed task\(done.count == 1 ? "" : "s")")
+            }
+        }
+        .animation(DS.Motion.smooth, value: done.count)
     }
 
     private func clearCompleted() {
