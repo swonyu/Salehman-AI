@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:39 +03 · Swift files: 150 · Swift LOC: 32462_
+_Generated: 2026-06-12 09:40 +03 · Swift files: 150 · Swift LOC: 32462_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -35030,7 +35030,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2974 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2985 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37134,6 +37134,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** All three `@State` vars had the same pattern: reset to default on every app launch, forcing the user to re-choose their preference. `@AppStorage` on `RawRepresentable` String enums is zero-boilerplate persistence.
 
 **Result:** Build not yet run (owner-side); all changes are additive property-wrapper replacements with no logic impact.
+
+---
+### 2026-06-12 — Marathon BA: Fix build-breaking banned patterns + Unicode smart quotes in SettingsView
+
+**What:** Three fixes that the linter-modified files introduced: (1) `LiveTranscriptionView` — replaced remaining banned `.easeOut(duration:0.15)` scroll animation with `.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)`; replaced banned `.borderedProminent` on the "Answer the questions" footer button with `LuxPressStyle()` + accent Capsule pill (consistent with all other CTA buttons in the app); (2) `SettingsView` — Unicode curly quotes (`"“"`, `"”"`) were auto-inserted into Swift string literals (breaking the `systemName:` strings and `Text()` content), causing build failures. Used `perl -i` byte-level replacement to flush all smart quotes, then escaped inner quote pairs with `\"...\"`; resolved the resulting unescaped-quote parse error on line 1358.
+
+**Files:** `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/SettingsView.swift`
+
+**Why:** `easeOut` and `borderedProminent` are explicitly banned in the design system. The smart quotes in SettingsView were a linter/editor autocorrect artifact that broke the build entirely.
+
+**Result:** `** BUILD SUCCEEDED **`. Zero banned patterns remain in any Views file.
 
 ---
 ## Standing notes / known issues
