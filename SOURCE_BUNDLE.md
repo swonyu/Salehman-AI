@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:26 +03 · Swift files: 150 · Swift LOC: 32446_
+_Generated: 2026-06-12 09:27 +03 · Swift files: 150 · Swift LOC: 32446_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2516,7 +2516,7 @@ struct CloudKeyHintBanner: View {
             Button("Add key", action: onAddKey)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .tint(.orange)
+                .tint(DS.Palette.warningSoft)
                 .font(.caption)
                 .accessibilityLabel("Add a cloud key in Settings")
             Button(action: onDismiss) {
@@ -2527,8 +2527,8 @@ struct CloudKeyHintBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 5)
-        .background(Color.orange.opacity(0.12))
-        .foregroundStyle(Color.orange)
+        .background(DS.Palette.warningSoft.opacity(0.12))
+        .foregroundStyle(DS.Palette.warningSoft)
     }
 }
 
@@ -35014,7 +35014,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2927 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2938 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36990,6 +36990,17 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Completing the Escape-to-clear/dismiss sweep started in marathon AP and continued through AT–AU. After AV, every filter, search, and entry TextField in the app handles Escape consistently.
 
 **Result:** Build not yet run; all changes are 1-modifier additions.
+
+---
+### 2026-06-12 — Marathon AX — DesignSystem: CloudKeyHintBanner orange → warningSoft
+
+**What changed:** `CloudKeyHintBanner` in `DesignSystem.swift` was using raw `Color.orange` for its amber warning styling. Updated to `DS.Palette.warningSoft` (.tint, .background, .foregroundStyle) — consistent with every other warning surface in the app.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** After all the Views sweeps, the design component file itself still had `Color.orange` hardcoded. The token `warningSoft` is defined in the same file — using it here makes the definition and the usage consistent.
+
+**Result:** Build not yet run; pure 3-line color-token swap.
 
 ---
 ### 2026-06-12 — Marathon AW — CodeView: DS palette token sweep for git diff + file-status indicators

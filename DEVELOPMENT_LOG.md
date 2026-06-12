@@ -1975,6 +1975,17 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Build not yet run; all changes are 1-modifier additions.
 
 ---
+### 2026-06-12 — Marathon AX — DesignSystem: CloudKeyHintBanner orange → warningSoft
+
+**What changed:** `CloudKeyHintBanner` in `DesignSystem.swift` was using raw `Color.orange` for its amber warning styling. Updated to `DS.Palette.warningSoft` (.tint, .background, .foregroundStyle) — consistent with every other warning surface in the app.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** After all the Views sweeps, the design component file itself still had `Color.orange` hardcoded. The token `warningSoft` is defined in the same file — using it here makes the definition and the usage consistent.
+
+**Result:** Build not yet run; pure 3-line color-token swap.
+
+---
 ### 2026-06-12 — Marathon AW — CodeView: DS palette token sweep for git diff + file-status indicators
 
 **What changed:** Five remaining raw color usages in `CodeView.swift` updated to DS tokens:
