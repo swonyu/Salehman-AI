@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:54 +03 · Swift files: 150 · Swift LOC: 31302_
+_Generated: 2026-06-12 06:55 +03 · Swift files: 150 · Swift LOC: 31391_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26362,7 +26362,7 @@ struct ChatRatingTests {
 // is the mutation kernel — the VM just wraps it. `pinPreview` is the chip
 // label; truncation + newline stripping are the fragile bits.
 
-struct ChatPinTests {
+struct ChatPinOperationTests {
 
     private func msg(_ text: String, pinned: Bool? = nil) -> ChatMessage {
         var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)
@@ -30153,7 +30153,7 @@ struct RestoreSnapshotTests {
 }
 ```
 
-===== FILE: Salehman AITests/Salehman_AITests.swift (146 lines) =====
+===== FILE: Salehman AITests/Salehman_AITests.swift (235 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30299,6 +30299,95 @@ struct ChatMessageCodecTests {
         #expect(decoded.count == original.count)
         #expect(decoded.last?.text == "hello")
         #expect(decoded.last?.imagePath == "/tmp/x.png")
+    }
+
+    /// `rating: Bool?` uses Optional Codable: absent key → nil.
+    /// This test pins forward-compat: JSON written BEFORE marathon U (no
+    /// "rating" key) must decode without error and give `nil`.
+    @Test func oldJsonWithoutRatingDecodesWithNil() throws {
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000001","text":"hi","isUser":true,
+         "timestamp":0,"imagePath":null}
+        """
+        let msg = try JSONDecoder().decode(ChatMessage.self, from: Data(json.utf8))
+        #expect(msg.rating == nil)
+    }
+
+    @Test func ratingRoundTrips() throws {
+        var m = ChatMessage(id: UUID(), text: "reply", isUser: false, timestamp: Date())
+        m.rating = true
+        let data = try JSONEncoder().encode(m)
+        let back = try JSONDecoder().decode(ChatMessage.self, from: data)
+        #expect(back.rating == true)
+    }
+
+    @Test func ratingNilRoundTrips() throws {
+        var m = ChatMessage(id: UUID(), text: "reply", isUser: false, timestamp: Date())
+        m.rating = nil
+        let data = try JSONEncoder().encode(m)
+        let back = try JSONDecoder().decode(ChatMessage.self, from: data)
+        #expect(back.rating == nil)
+    }
+}
+
+// MARK: - MarkdownText.blocks — table detection and block splitting
+
+struct MarkdownTextBlockTests {
+
+    @Test func plainLinesReturnSingleLinesBlock() {
+        let body = "line one\nline two\nline three"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .lines(let text) = blocks[0] {
+            #expect(text.contains("line one"))
+        } else { Issue.record("Expected .lines") }
+    }
+
+    @Test func tableDetectedWhenSeparatorFollowsHeader() {
+        let body = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .table(let header, let rows) = blocks[0] {
+            #expect(header == ["A", "B"])
+            #expect(rows.count == 2)
+            #expect(rows[0] == ["1", "2"])
+        } else { Issue.record("Expected .table") }
+    }
+
+    @Test func pipeRowWithoutSeparatorBecomesLines() {
+        // A | row not followed by |---| should be plain lines.
+        let body = "| A | B |\n| 1 | 2 |"
+        let blocks = MarkdownText.blocks(for: body)
+        // No separator → not a table
+        if case .table = blocks.first {
+            Issue.record("Should NOT be a table")
+        }
+    }
+
+    @Test func tableFollowedByProseYieldsTwoBlocks() {
+        let body = "| X |\n|---|\n| v |\n\nSome prose after."
+        let blocks = MarkdownText.blocks(for: body)
+        // Table + lines
+        #expect(blocks.count == 2)
+        if case .table = blocks[0] { /* ok */ } else { Issue.record("First block should be table") }
+        if case .lines = blocks[1] { /* ok */ } else { Issue.record("Second block should be lines") }
+    }
+
+    @Test func separatorWithAlignmentColonsIsRecognised() {
+        let body = "| Name | Score |\n|:------|------:|\n| Alice | 99 |"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 1)
+        if case .table(let header, _) = blocks[0] {
+            #expect(header.contains("Name"))
+        } else { Issue.record("Expected .table") }
+    }
+
+    @Test func emptyBodyYieldsNoTables() {
+        // blocks() splits on newline, so empty body gives 1 .lines block — no tables.
+        let empty = MarkdownText.blocks(for: "")
+        for b in empty { if case .table = b { Issue.record("Empty body must not yield a table") } }
+        let blank = MarkdownText.blocks(for: "   ")
+        for b in blank { if case .table = b { Issue.record("Blank body must not yield a table") } }
     }
 }
 ```
@@ -33853,7 +33942,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2430 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2440 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35364,6 +35453,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Agents/AgentPipeline.swift`
 
 **Result:** `** BUILD SUCCEEDED **`
+
+---
+## 2026-06-12 — Marathon V: ChatMessage.rating Codable forward-compat + MarkdownText table parser tests
+
+**What changed:**
+- `Salehman_AITests.swift`: added 3 tests to `ChatMessageCodecTests` — `oldJsonWithoutRatingDecodesWithNil` (pins forward-compat: old JSON without `rating` key decodes as `nil`), `ratingRoundTrips` (true round-trips), `ratingNilRoundTrips` (nil round-trips). Added `MarkdownTextBlockTests` (6 tests): plain-lines block, table detected when separator follows header, pipe row without separator becomes lines, table+prose yields two blocks, alignment colons in separator recognised, empty/blank body yields no tables.
+
+**Files:** `Salehman AITests/Salehman_AITests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~80. No production code changes.
 
 ---
 ## 2026-06-12 — Marathon U: message rating (thumbs-up / thumbs-down on AI replies)

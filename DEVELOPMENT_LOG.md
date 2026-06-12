@@ -1510,6 +1510,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon V: ChatMessage.rating Codable forward-compat + MarkdownText table parser tests
+
+**What changed:**
+- `Salehman_AITests.swift`: added 3 tests to `ChatMessageCodecTests` — `oldJsonWithoutRatingDecodesWithNil` (pins forward-compat: old JSON without `rating` key decodes as `nil`), `ratingRoundTrips` (true round-trips), `ratingNilRoundTrips` (nil round-trips). Added `MarkdownTextBlockTests` (6 tests): plain-lines block, table detected when separator follows header, pipe row without separator becomes lines, table+prose yields two blocks, alignment colons in separator recognised, empty/blank body yields no tables.
+
+**Files:** `Salehman AITests/Salehman_AITests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~80. No production code changes.
+
+---
 ## 2026-06-12 — Marathon U: message rating (thumbs-up / thumbs-down on AI replies)
 
 **What changed:**
