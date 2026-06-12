@@ -2830,6 +2830,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors.
 
 ---
+## 2026-06-13 — Marathon EA: VoiceModeView turn transitions + BottomShortcutBar tab-switch animation
+
+**What changed:** `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/BottomShortcutBar.swift`
+
+**VoiceModeView:**
+- `scrollback` ForEach: added `.transition(.opacity.combined(with: .offset(y: 6)))` to each turn HStack and `.animation(DS.Motion.smooth, value: session.turns.count)` to the parent VStack — conversation turns now fade-slide in from below as they appear in the rolling 3-turn window.
+
+**BottomShortcutBar:**
+- Added `.animation(DS.Motion.smooth, value: app.selectedTab)` to the hints HStack — when switching tabs the hint set (chat/code/default) now crossfades via the per-button `.transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))` that was already declared but had no animation context for tab changes (only `aiIsRunning` was wired).
+
+**Why:** VoiceModeView's scrollback panel had no transition on individual turns — new turns popped in hard as the conversation progressed. BottomShortcutBar's per-button `.transition` declaration was orphaned on tab switches because only `app.aiIsRunning` was wired as an animation driver; the tab-context hints change had no context.
+
+**Result:** Zero Swift compilation errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

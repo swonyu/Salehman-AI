@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:45 +03 · Swift files: 150 · Swift LOC: 33893_
+_Generated: 2026-06-13 00:47 +03 · Swift files: 150 · Swift LOC: 33896_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14014,7 +14014,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (96 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (97 lines) =====
 ```swift
 import SwiftUI
 
@@ -14105,6 +14105,7 @@ struct BottomShortcutBar: View {
             Spacer(minLength: 0)
         }
         .animation(DS.Motion.smooth, value: app.aiIsRunning)
+        .animation(DS.Motion.smooth, value: app.selectedTab)
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
@@ -27338,7 +27339,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (187 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (189 lines) =====
 ```swift
 import SwiftUI
 
@@ -27494,8 +27495,10 @@ struct VoiceModeView: View {
                         .lineLimit(2)
                     Spacer(minLength: 0)
                 }
+                .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
+        .animation(DS.Motion.smooth, value: session.turns.count)
         .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 80)
@@ -36461,7 +36464,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3873 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3888 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39290,6 +39293,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - Outer VStack: added `.animation(DS.Motion.smooth, value: loaded)` and `.animation(DS.Motion.smooth, value: archives.isEmpty)` as drivers — the loading spinner → content and empty-state → populated-list transitions now crossfade rather than hard-cutting.
 
 **Why:** The FileTree's changed-file dot popped in instantly, inconsistent with the spring-badge pattern on all other notification indicators. The ChatHistoryView sheet opened with a hard-cut from spinner to content every time it was presented.
+
+**Result:** Zero Swift compilation errors.
+
+---
+## 2026-06-13 — Marathon EA: VoiceModeView turn transitions + BottomShortcutBar tab-switch animation
+
+**What changed:** `Salehman AI/Views/VoiceModeView.swift`, `Salehman AI/Views/BottomShortcutBar.swift`
+
+**VoiceModeView:**
+- `scrollback` ForEach: added `.transition(.opacity.combined(with: .offset(y: 6)))` to each turn HStack and `.animation(DS.Motion.smooth, value: session.turns.count)` to the parent VStack — conversation turns now fade-slide in from below as they appear in the rolling 3-turn window.
+
+**BottomShortcutBar:**
+- Added `.animation(DS.Motion.smooth, value: app.selectedTab)` to the hints HStack — when switching tabs the hint set (chat/code/default) now crossfades via the per-button `.transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))` that was already declared but had no animation context for tab changes (only `aiIsRunning` was wired).
+
+**Why:** VoiceModeView's scrollback panel had no transition on individual turns — new turns popped in hard as the conversation progressed. BottomShortcutBar's per-button `.transition` declaration was orphaned on tab switches because only `app.aiIsRunning` was wired as an animation driver; the tab-context hints change had no context.
 
 **Result:** Zero Swift compilation errors.
 

@@ -152,8 +152,10 @@ struct VoiceModeView: View {
                         .lineLimit(2)
                     Spacer(minLength: 0)
                 }
+                .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
+        .animation(DS.Motion.smooth, value: session.turns.count)
         .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 80)

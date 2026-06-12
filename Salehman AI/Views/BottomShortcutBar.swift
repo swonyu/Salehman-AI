@@ -87,6 +87,7 @@ struct BottomShortcutBar: View {
             Spacer(minLength: 0)
         }
         .animation(DS.Motion.smooth, value: app.aiIsRunning)
+        .animation(DS.Motion.smooth, value: app.selectedTab)
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
