@@ -2283,8 +2283,15 @@ struct MessageBubble: View, Equatable {
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09),
+            .background(Color.white.opacity(0.11),
                         in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Machined top-lit edge — matches the Code tab's user bubble and
+            // the composer core so user turns read as physical tiles.
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
             // Comfortable wrap measure — long pastes shouldn't span the
             // full 780 column just because they're the user's.
             .frame(maxWidth: 480, alignment: .trailing)

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:10 +03 · Swift files: 150 · Swift LOC: 33943_
+_Generated: 2026-06-13 01:39 +03 · Swift files: 150 · Swift LOC: 33950_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17605,7 +17605,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2845 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2852 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19892,8 +19892,15 @@ struct MessageBubble: View, Equatable {
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09),
+            .background(Color.white.opacity(0.11),
                         in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Machined top-lit edge — matches the Code tab's user bubble and
+            // the composer core so user turns read as physical tiles.
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
             // Comfortable wrap measure — long pastes shouldn't span the
             // full 780 column just because they're the user's.
             .frame(maxWidth: 480, alignment: .trailing)
@@ -36511,7 +36518,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3968 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3981 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39437,6 +39444,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The `ForEach` children were inside an `if isOpen {}` block with no parent `.animation(value:)` context and no `.transition` on the rows — a classic "orphaned ForEach" gap. Without the VStack wrapper carrying the animation context, SwiftUI had no way to animate the insertion/removal of child rows.
 
 **Result:** Zero Swift compilation errors.
+
+---
+
+## 2026-06-13 — Marathon EG — Chat tab userRow machined tile
+
+**What changed:** `ContentView.swift` — `userRow` computed property.
+- Background opacity raised from `0.09` → `0.11` (matches the Code tab's user bubble weight).
+- Added `LinearGradient` stroke overlay (`white@0.14` top → `white@0.02` bottom, 1pt line) matching the machined top-lit edge treatment already present on the Code tab user bubble and the composer core. All three user-input surfaces now read as the same physical tile family.
+- Added `.frame(maxWidth: 480, alignment: .trailing)` to cap long pastes at a comfortable reading measure.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Result:** Zero Swift compilation errors. Chat + Code tab user bubbles visually consistent.
 
 ---
 ## Standing notes / known issues
