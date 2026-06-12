@@ -741,6 +741,7 @@ struct ContentView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
             // Quiet door back into archived conversations — the welcome is
             // exactly where "wait, where did my chat go?" happens. Hidden in
@@ -758,8 +759,11 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .padding(.top, 2)
                 .help("Browse and restore archived conversations")
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: localModelReady)
+        .animation(DS.Motion.smooth, value: archiveCount > 0)
         .background {
             RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
                            center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)

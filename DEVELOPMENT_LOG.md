@@ -2670,6 +2670,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
+### 2026-06-13 — Marathon DS: ContentView welcome section fade-in transitions
+
+**What changed:**
+- `Views/ContentView.swift` — welcome section: added `.transition(.opacity.combined(with: .offset(y: -4)))` on the model-ready status dot HStack (`if settings.offlineOnly || localModelReady`) and `.transition(.opacity)` on the archive count button (`if archiveCount > 0`). Added `.animation(DS.Motion.smooth, value: localModelReady)` and `.animation(DS.Motion.smooth, value: archiveCount > 0)` on the parent VStack so both conditionals animate in smoothly when their state changes after the `.task` probe completes.
+
+**Files:** `Views/ContentView.swift`
+
+**Why:** Both the "Your 14B · local · ready" dot and the "N earlier conversations" archive button are populated asynchronously (via `.task`) after the view appears. They previously just appeared without any transition — a jarring pop after the welcome screen had already faded in elegantly.
+
+**Result:** Both async-loaded status elements now fade in softly after their data is ready.
+
+---
 ### 2026-06-13 — Marathon DR: SettingsView brain grid + workingBadge transition polish
 
 **What changed:**

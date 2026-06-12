@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:17 +03 · Swift files: 150 · Swift LOC: 33815_
+_Generated: 2026-06-13 00:19 +03 · Swift files: 150 · Swift LOC: 33819_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17568,7 +17568,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2833 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2837 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18313,6 +18313,7 @@ struct ContentView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
             // Quiet door back into archived conversations — the welcome is
             // exactly where "wait, where did my chat go?" happens. Hidden in
@@ -18330,8 +18331,11 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .padding(.top, 2)
                 .help("Browse and restore archived conversations")
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: localModelReady)
+        .animation(DS.Motion.smooth, value: archiveCount > 0)
         .background {
             RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
                            center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)
@@ -36383,7 +36387,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3752 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3764 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39054,6 +39058,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DS: ContentView welcome section fade-in transitions
+
+**What changed:**
+- `Views/ContentView.swift` — welcome section: added `.transition(.opacity.combined(with: .offset(y: -4)))` on the model-ready status dot HStack (`if settings.offlineOnly || localModelReady`) and `.transition(.opacity)` on the archive count button (`if archiveCount > 0`). Added `.animation(DS.Motion.smooth, value: localModelReady)` and `.animation(DS.Motion.smooth, value: archiveCount > 0)` on the parent VStack so both conditionals animate in smoothly when their state changes after the `.task` probe completes.
+
+**Files:** `Views/ContentView.swift`
+
+**Why:** Both the "Your 14B · local · ready" dot and the "N earlier conversations" archive button are populated asynchronously (via `.task`) after the view appears. They previously just appeared without any transition — a jarring pop after the welcome screen had already faded in elegantly.
+
+**Result:** Both async-loaded status elements now fade in softly after their data is ready.
 
 ---
 ### 2026-06-13 — Marathon DR: SettingsView brain grid + workingBadge transition polish
