@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:36 +03 · Swift files: 150 · Swift LOC: 33714_
+_Generated: 2026-06-12 23:41 +03 · Swift files: 150 · Swift LOC: 33740_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24315,7 +24315,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2025 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2051 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -24513,6 +24513,7 @@ struct SettingsView: View {
                                 Spacer()
                             }
                             .padding(.horizontal, 14).padding(.bottom, 10)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
                         }
                     }
 
@@ -25282,9 +25283,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear vLLM API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: vllmKeySaved)
     }
 
     /// Optional Unsloth API key field. The app's `.unslothStudio` chat brain
@@ -25330,15 +25333,18 @@ struct SettingsView: View {
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Copies the token for pasting into the Colab notebook")
                 .accessibilityLabel("Copy Hugging Face token")
+                .transition(.opacity)
                 Button("Clear") {
                     _ = KeychainStore.delete(.hfToken)
                     hfTokenSaved = false
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Hugging Face token")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: hfTokenSaved)
     }
 
     @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
@@ -25375,9 +25381,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Unsloth API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
     }
 
     /// Per Unsloth's "Run Local LLMs with Claude Code" guide
@@ -25494,6 +25502,8 @@ struct SettingsView: View {
                     Text("\(configured)/\(total) set")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary.opacity(0.7))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: configured)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Color.white.opacity(0.06), in: Capsule())
                 }
@@ -25550,9 +25560,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: grokKeySaved)
     }
 
     /// 14B-readiness status row under the custom-model-name field: is a model
@@ -25725,6 +25737,7 @@ struct SettingsView: View {
                     }
                     .font(.caption.weight(.semibold)).buttonStyle(.bordered)
                     .controlSize(.small).tint(.red)
+                    .transition(.opacity)
                 } else {
                     Button { showCopilotSignIn = true } label: {
                         Text("Sign in with GitHub")
@@ -25735,8 +25748,10 @@ struct SettingsView: View {
                             .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                     }
                     .buttonStyle(LuxPressStyle())
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: copilotAuthed)
             if copilotAuthed {
                 HStack(spacing: 8) {
                     workingBadge(testing: copilotTesting, working: copilotWorking)
@@ -25745,9 +25760,11 @@ struct SettingsView: View {
                         .font(.caption2.weight(.semibold)).buttonStyle(.bordered)
                         .controlSize(.mini).disabled(copilotTesting)
                 }
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: copilotAuthed)
     }
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
@@ -25902,9 +25919,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: keySaved.wrappedValue)
     }
 
     @ViewBuilder
@@ -26025,9 +26044,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: geminiKeySaved)
     }
 
     private var geminiModelRow: some View {
@@ -26140,6 +26161,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(anthropicTesting)
+                    .transition(.opacity)
 
                     Button("Clear") {
                         _ = KeychainStore.delete(.anthropicAPIKey)
@@ -26148,6 +26170,7 @@ struct SettingsView: View {
                         Task { await BrainStatus.shared.refresh() }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                    .transition(.opacity)
                 }
             }
 
@@ -26166,9 +26189,12 @@ struct SettingsView: View {
                     Spacer()
                 }
                 .padding(.top, 4)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: anthropicKeySaved)
+        .animation(DS.Motion.smooth, value: anthropicTestStatus == nil)
     }
 
     /// Single Keychain read shared by the subtitle text + color, so a body
@@ -36282,7 +36308,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3598 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3615 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38838,6 +38864,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Counts that change during normal use (run completions, file saves, search jumps, memory adds/deletes) snapped without animation. `.contentTransition(.numericText())` morphs digit glyphs in place; combined with `.animation(value:)` scoped to the count variable, these now feel live and physical.
 
 **Result:** All live-count Text views across the app now morph digits instead of flicking.
+
+---
+
+### 2026-06-12 — Marathon DH: SettingsView transitions — key-saved buttons, rotation banner, collapsible count badge, Copilot auth swap
+
+**What changed:**
+- `Views/SettingsView.swift`: Added `.transition(.opacity)` + `.animation(DS.Motion.smooth, value: keySaved)` to 7 provider key rows (vLLM, HF token, Unsloth, Grok, Gemini, Anthropic, and the shared `cloudKeyRow` helper covering OpenAI/OpenRouter/Mistral/Cerebras/Groq).
+- Rotation banner: added `.transition(.opacity.combined(with: .offset(y: -4)))` — the banner already had `withAnimation(DS.Motion.snappy)` at the mutation site.
+- `collapsibleGroup` helper: added `.contentTransition(.numericText()) / .animation(DS.Motion.smooth, value: configured)` to the "N/M set" badge — propagates automatically to all 3 collapsible provider groups.
+- Copilot auth swap: "Sign in" ↔ "Sign out" buttons each get `.transition(.opacity)` + `.animation(DS.Motion.smooth, value: copilotAuthed)` on the HStack; the conditional test row gets `.transition(.opacity.combined(with: .offset(y: -4)))` + outer VStack `.animation(value: copilotAuthed)`.
+- Anthropic test result: the connection-check status line gets `.transition(.opacity.combined(with: .offset(y: -4)))` + parent `.animation(DS.Motion.smooth, value: anthropicTestStatus == nil)`.
+
+**Files:** `Views/SettingsView.swift`
+
+**Why:** Key-saved state buttons (Clear, Copy, Test) and the auth-swap snap in/out with no visual feedback. The rotation and Copilot test-row panels had the same problem. The collapsible "N/M set" badge flickered when a key was added/removed.
+
+**Result:** Every conditional UI element in SettingsView now fades/slides in and out smoothly.
 
 ---
 ## Standing notes / known issues

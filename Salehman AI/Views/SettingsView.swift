@@ -194,6 +194,7 @@ struct SettingsView: View {
                                 Spacer()
                             }
                             .padding(.horizontal, 14).padding(.bottom, 10)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
                         }
                     }
 
@@ -963,9 +964,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear vLLM API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: vllmKeySaved)
     }
 
     /// Optional Unsloth API key field. The app's `.unslothStudio` chat brain
@@ -1011,15 +1014,18 @@ struct SettingsView: View {
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Copies the token for pasting into the Colab notebook")
                 .accessibilityLabel("Copy Hugging Face token")
+                .transition(.opacity)
                 Button("Clear") {
                     _ = KeychainStore.delete(.hfToken)
                     hfTokenSaved = false
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Hugging Face token")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: hfTokenSaved)
     }
 
     @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
@@ -1056,9 +1062,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Unsloth API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
     }
 
     /// Per Unsloth's "Run Local LLMs with Claude Code" guide
@@ -1175,6 +1183,8 @@ struct SettingsView: View {
                     Text("\(configured)/\(total) set")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary.opacity(0.7))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: configured)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Color.white.opacity(0.06), in: Capsule())
                 }
@@ -1231,9 +1241,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: grokKeySaved)
     }
 
     /// 14B-readiness status row under the custom-model-name field: is a model
@@ -1406,6 +1418,7 @@ struct SettingsView: View {
                     }
                     .font(.caption.weight(.semibold)).buttonStyle(.bordered)
                     .controlSize(.small).tint(.red)
+                    .transition(.opacity)
                 } else {
                     Button { showCopilotSignIn = true } label: {
                         Text("Sign in with GitHub")
@@ -1416,8 +1429,10 @@ struct SettingsView: View {
                             .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                     }
                     .buttonStyle(LuxPressStyle())
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: copilotAuthed)
             if copilotAuthed {
                 HStack(spacing: 8) {
                     workingBadge(testing: copilotTesting, working: copilotWorking)
@@ -1426,9 +1441,11 @@ struct SettingsView: View {
                         .font(.caption2.weight(.semibold)).buttonStyle(.bordered)
                         .controlSize(.mini).disabled(copilotTesting)
                 }
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: copilotAuthed)
     }
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
@@ -1583,9 +1600,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: keySaved.wrappedValue)
     }
 
     @ViewBuilder
@@ -1706,9 +1725,11 @@ struct SettingsView: View {
                     Task { await BrainStatus.shared.refresh() }
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: geminiKeySaved)
     }
 
     private var geminiModelRow: some View {
@@ -1821,6 +1842,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(anthropicTesting)
+                    .transition(.opacity)
 
                     Button("Clear") {
                         _ = KeychainStore.delete(.anthropicAPIKey)
@@ -1829,6 +1851,7 @@ struct SettingsView: View {
                         Task { await BrainStatus.shared.refresh() }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                    .transition(.opacity)
                 }
             }
 
@@ -1847,9 +1870,12 @@ struct SettingsView: View {
                     Spacer()
                 }
                 .padding(.top, 4)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: anthropicKeySaved)
+        .animation(DS.Motion.smooth, value: anthropicTestStatus == nil)
     }
 
     /// Single Keychain read shared by the subtitle text + color, so a body

@@ -2555,6 +2555,23 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All live-count Text views across the app now morph digits instead of flicking.
 
 ---
+
+### 2026-06-12 — Marathon DH: SettingsView transitions — key-saved buttons, rotation banner, collapsible count badge, Copilot auth swap
+
+**What changed:**
+- `Views/SettingsView.swift`: Added `.transition(.opacity)` + `.animation(DS.Motion.smooth, value: keySaved)` to 7 provider key rows (vLLM, HF token, Unsloth, Grok, Gemini, Anthropic, and the shared `cloudKeyRow` helper covering OpenAI/OpenRouter/Mistral/Cerebras/Groq).
+- Rotation banner: added `.transition(.opacity.combined(with: .offset(y: -4)))` — the banner already had `withAnimation(DS.Motion.snappy)` at the mutation site.
+- `collapsibleGroup` helper: added `.contentTransition(.numericText()) / .animation(DS.Motion.smooth, value: configured)` to the "N/M set" badge — propagates automatically to all 3 collapsible provider groups.
+- Copilot auth swap: "Sign in" ↔ "Sign out" buttons each get `.transition(.opacity)` + `.animation(DS.Motion.smooth, value: copilotAuthed)` on the HStack; the conditional test row gets `.transition(.opacity.combined(with: .offset(y: -4)))` + outer VStack `.animation(value: copilotAuthed)`.
+- Anthropic test result: the connection-check status line gets `.transition(.opacity.combined(with: .offset(y: -4)))` + parent `.animation(DS.Motion.smooth, value: anthropicTestStatus == nil)`.
+
+**Files:** `Views/SettingsView.swift`
+
+**Why:** Key-saved state buttons (Clear, Copy, Test) and the auth-swap snap in/out with no visual feedback. The rotation and Copilot test-row panels had the same problem. The collapsible "N/M set" badge flickered when a key was added/removed.
+
+**Result:** Every conditional UI element in SettingsView now fades/slides in and out smoothly.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
