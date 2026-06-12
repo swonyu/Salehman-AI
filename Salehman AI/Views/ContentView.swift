@@ -416,6 +416,8 @@ struct ContentView: View {
                         if (vm.messages.isEmpty && !vm.isRunning) || qaForceEmptyState {
                             emptyState
                                 .padding(.horizontal, 24)
+                        } else if searching && filteredMessages.isEmpty {
+                            searchNoResultsState
                         } else {
                             // Reading rhythm: 10pt within a same-sender burst,
                             // +14 leading a new burst (= 24 between speakers) —
@@ -737,6 +739,29 @@ struct ContentView: View {
         }
     }
 
+    /// Shown in place of the transcript when a search query produces zero matches.
+    /// Lets the user clear without hunting for the Done button or the ×.
+    private var searchNoResultsState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.6))
+            Text("No messages match \"\(searchQuery.trimmingCharacters(in: .whitespaces))\"")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+            Button("Clear search") {
+                withAnimation(DS.Motion.snappy) { searchQuery = "" }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(DS.Palette.accent)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .containerRelativeFrame(.vertical, alignment: .center)
+    }
+
     /// A small keyboard-shortcut chip (key + label) — mirrors the Code tab's
     /// welcome footer so the two landing surfaces speak the same language.
     private func welcomeShortcutHint(_ key: String, _ label: String) -> some View {
@@ -861,18 +886,30 @@ struct ContentView: View {
                     .foregroundStyle(DS.Palette.accent)
                     .accessibilityHidden(true)
                 ForEach(pinnedMessages) { m in
-                    Button {
-                        withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
-                    } label: {
-                        Text(Self.pinPreview(m.text))
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                            .padding(.horizontal, 9).padding(.vertical, 4)
-                            .background(Color.white.opacity(0.06), in: Capsule())
+                    HStack(spacing: 0) {
+                        Button {
+                            withAnimation(DS.Motion.smooth) { proxy.scrollTo(m.id, anchor: .center) }
+                        } label: {
+                            Text(Self.pinPreview(m.text))
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .padding(.leading, 9).padding(.trailing, 5).padding(.vertical, 4)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .help(m.text)
+                        .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                        // Unpin directly from the strip — no need to scroll to the message first.
+                        Button { vm.togglePin(m) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.trailing, 7).padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Unpin this message")
+                        .accessibilityLabel("Unpin: \(Self.pinPreview(m.text))")
                     }
-                    .buttonStyle(PressableStyle())
-                    .help(m.text)
-                    .accessibilityLabel("Jump to pinned message: \(Self.pinPreview(m.text))")
+                    .background(Color.white.opacity(0.06), in: Capsule())
                 }
             }
             .padding(.horizontal, 18).padding(.vertical, 6)

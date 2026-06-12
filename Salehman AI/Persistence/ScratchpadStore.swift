@@ -74,6 +74,18 @@ final class ScratchpadStore: ObservableObject {
         return true
     }
 
+    func updateNote(_ id: UUID, text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let i = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[i].text = t; save()
+    }
+
+    func updateTask(_ id: UUID, title: String) {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[i].title = t; save()
+    }
+
     func deleteNote(_ id: UUID) { notes.removeAll { $0.id == id }; save() }
     func deleteTask(_ id: UUID) { tasks.removeAll { $0.id == id }; save() }
     func clear() { notes.removeAll(); tasks.removeAll(); save() }

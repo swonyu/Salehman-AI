@@ -11,6 +11,10 @@ struct ScratchpadView: View {
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
+    /// Inline edit: which note/task is being renamed and its live draft text.
+    /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
+    @State private var editingId: UUID? = nil
+    @State private var editingText = ""
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -141,8 +145,19 @@ struct ScratchpadView: View {
                     .font(.system(size: 16)).foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : .secondary)
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
-            Text(t.title).font(.system(size: 14)).foregroundStyle(t.done ? Color.secondary : Color.white).strikethrough(t.done)
+            if editingId == t.id {
+                TextField("", text: $editingText)
+                    .textFieldStyle(.plain).font(.system(size: 14))
+                    .onSubmit { commitEdit(isNote: false, id: t.id) }
+                    .onKeyPress(.escape) { cancelEdit(); return .handled }
+            } else {
+                Text(t.title)
+                    .font(.system(size: 14)).foregroundStyle(t.done ? Color.secondary : Color.white).strikethrough(t.done)
+            }
             Spacer(minLength: 8)
+            if editingId != t.id {
+                editButton { startEdit(id: t.id, text: t.title) }
+            }
             deleteButton { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
@@ -164,11 +179,40 @@ struct ScratchpadView: View {
     private func noteRow(_ n: Note) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "note.text").font(.system(size: 13)).foregroundStyle(DS.Palette.accent).frame(width: 18)
-            Text(n.text).font(.system(size: 14)).foregroundStyle(.white).textSelection(.enabled)
+            if editingId == n.id {
+                TextField("", text: $editingText)
+                    .textFieldStyle(.plain).font(.system(size: 14))
+                    .onSubmit { commitEdit(isNote: true, id: n.id) }
+                    .onKeyPress(.escape) { cancelEdit(); return .handled }
+            } else {
+                Text(n.text).font(.system(size: 14)).foregroundStyle(.white).textSelection(.enabled)
+            }
             Spacer(minLength: 8)
+            if editingId != n.id {
+                editButton { startEdit(id: n.id, text: n.text) }
+            }
             deleteButton { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+    }
+
+    private func startEdit(id: UUID, text: String) {
+        editingId = id; editingText = text
+    }
+
+    private func commitEdit(isNote: Bool, id: UUID) {
+        if isNote { store.updateNote(id, text: editingText) }
+        else { store.updateTask(id, title: editingText) }
+        cancelEdit()
+    }
+
+    private func cancelEdit() { editingId = nil; editingText = "" }
+
+    private func editButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
     }
 
     private func deleteButton(_ action: @escaping () -> Void) -> some View {
