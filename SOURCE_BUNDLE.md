@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:39 +03 · Swift files: 150 · Swift LOC: 33950_
+_Generated: 2026-06-13 01:44 +03 · Swift files: 150 · Swift LOC: 33995_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22260,7 +22260,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (699 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (744 lines) =====
 ```swift
 import SwiftUI
 
@@ -22445,7 +22445,14 @@ struct MarketsView: View {
             .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
@@ -22462,7 +22469,14 @@ struct MarketsView: View {
                     }
                 }
                 .animation(DS.Motion.smooth, value: alertSignals.count)
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(Color.white.opacity(0.035))
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .transition(.opacity)
@@ -22541,7 +22555,14 @@ struct MarketsView: View {
                     }
                 }
                 .animation(DS.Motion.smooth, value: portfolio.positions.count)
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(Color.white.opacity(0.035))
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .transition(.opacity)
@@ -22574,7 +22595,14 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(0.035))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -22786,9 +22814,19 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(hovered ? 0.055 : 0.035))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
+        .scaleEffect(hovered ? 1.008 : 1.0)
+        .shadow(color: DS.Palette.accent.opacity(hovered ? 0.10 : 0), radius: 10, y: 3)
+        .animation(DS.Motion.smooth, value: hovered)
         .contentShape(Rectangle())
         .onHover { over in
             withAnimation(DS.Motion.smooth) {
@@ -22858,7 +22896,14 @@ struct MarketsView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(0.035))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -36518,7 +36563,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3981 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3991 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39457,6 +39502,16 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/ContentView.swift`
 
 **Result:** Zero Swift compilation errors. Chat + Code tab user bubbles visually consistent.
+
+---
+
+## 2026-06-13 — Marathon EH — MarketsView machined bezel upgrade
+
+**What changed:** `MarketsView.swift` — 6 card containers upgraded from flat `DS.Palette.codeSurfaceSide` fill to the full machined bezel pattern (`fill(white@0.035)` + `strokeBorder(DS.Bezel.coreInnerHighlight, 0.5pt)` inner highlight + `surfaceStroke` outer overlay). Cards affected: alertsSection control card, alert signal list container, portfolio positions list container, portfolioSummary header, briefingSection text card. `signalCard` also gains hover scale (`×1.008`) + accent glow shadow matching other interactive cards in the app (AgentCard, ActionTile, etc.).
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Result:** Zero Swift compilation errors. Markets tab cards visually consistent with the rest of the app.
 
 ---
 ## Standing notes / known issues

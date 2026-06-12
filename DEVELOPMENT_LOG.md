@@ -2938,6 +2938,16 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors. Chat + Code tab user bubbles visually consistent.
 
 ---
+
+## 2026-06-13 — Marathon EH — MarketsView machined bezel upgrade
+
+**What changed:** `MarketsView.swift` — 6 card containers upgraded from flat `DS.Palette.codeSurfaceSide` fill to the full machined bezel pattern (`fill(white@0.035)` + `strokeBorder(DS.Bezel.coreInnerHighlight, 0.5pt)` inner highlight + `surfaceStroke` outer overlay). Cards affected: alertsSection control card, alert signal list container, portfolio positions list container, portfolioSummary header, briefingSection text card. `signalCard` also gains hover scale (`×1.008`) + accent glow shadow matching other interactive cards in the app (AgentCard, ActionTile, etc.).
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Result:** Zero Swift compilation errors. Markets tab cards visually consistent with the rest of the app.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
