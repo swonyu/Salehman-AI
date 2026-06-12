@@ -471,7 +471,16 @@ struct ContentView: View {
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
-                                if vm.isRunning { RunningProgressView() }
+                                // Wrapping VStack isolates the animation scope so
+                                // the transition only runs on this indicator —
+                                // not on the entire LazyVStack message list.
+                                VStack(spacing: 0) {
+                                    if vm.isRunning {
+                                        RunningProgressView()
+                                            .transition(.opacity.combined(with: .offset(y: 8)))
+                                    }
+                                }
+                                .animation(DS.Motion.smooth, value: vm.isRunning)
                                 // Bottom sentinel: 1pt invisible view that
                                 // flips `atBottom`. Reliable visibility-based
                                 // "at bottom?" without a parallel scroll

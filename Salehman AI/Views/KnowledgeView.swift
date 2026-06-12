@@ -158,6 +158,7 @@ struct KnowledgeView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if !answer.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
                 Text(answer).font(.callout).foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if !sources.isEmpty {
@@ -206,6 +207,8 @@ struct KnowledgeView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
+                }
+                .transition(.opacity.combined(with: .offset(y: 6)))
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)

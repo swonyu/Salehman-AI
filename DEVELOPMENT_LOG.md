@@ -3480,3 +3480,8 @@ permission classifier blocked the first attempt.
 **What:** `AgentRow` (ContentView.swift): `.animation(DS.Motion.smooth, value: step.status)` on the HStack — animates the `0.55 → 1.0` opacity transition when a step activates (pending→running). `AgentRunView` counter: `"\(doneCount)/\(steps.count)"` Text gets `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value: doneCount)` — digits roll as each step completes.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
+
+## 2026-06-12 — marathon CM: isolated entry/exit animations (Chat A)
+**What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.
+**Files:** `Views/ContentView.swift`, `Views/KnowledgeView.swift`.
+**Commit:** `(next)`

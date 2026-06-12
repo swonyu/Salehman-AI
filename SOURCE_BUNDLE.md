@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:15 +03 · Swift files: 150 · Swift LOC: 33508_
+_Generated: 2026-06-12 22:25 +03 · Swift files: 150 · Swift LOC: 33520_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17485,7 +17485,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2797 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2806 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17960,7 +17960,16 @@ struct ContentView: View {
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
-                                if vm.isRunning { RunningProgressView() }
+                                // Wrapping VStack isolates the animation scope so
+                                // the transition only runs on this indicator —
+                                // not on the entire LazyVStack message list.
+                                VStack(spacing: 0) {
+                                    if vm.isRunning {
+                                        RunningProgressView()
+                                            .transition(.opacity.combined(with: .offset(y: 8)))
+                                    }
+                                }
+                                .animation(DS.Motion.smooth, value: vm.isRunning)
                                 // Bottom sentinel: 1pt invisible view that
                                 // flips `atBottom`. Reliable visibility-based
                                 // "at bottom?" without a parallel scroll
@@ -20583,7 +20592,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (647 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (650 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20745,6 +20754,7 @@ struct KnowledgeView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if !answer.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
                 Text(answer).font(.callout).foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if !sources.isEmpty {
@@ -20793,6 +20803,8 @@ struct KnowledgeView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
+                }
+                .transition(.opacity.combined(with: .offset(y: 6)))
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -36076,7 +36088,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3477 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3487 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39554,6 +39566,16 @@ permission classifier blocked the first attempt.
 **What:** `ActivityStepRow` (CodeView.swift): left accent bar now slides in from leading edge with `.transition(.move(edge: .leading).combined(with: .opacity))` when status → running; container gets `.animation(DS.Motion.smooth, value: step.status)` so the background highlight ripples in/out on each step state change. `MarketsView.emptyState`: upgraded from plain Text to PhaseAnimator([0.10, 0.18, 0.10]) ambient glow + chart icon, matching the empty-state treatment in ChatHistoryView, KnowledgeView, and TodayView.
 **Files:** `Views/CodeView.swift`, `Views/MarketsView.swift`.
 **Commit:** `c63d421`
+
+## 2026-06-12 — marathon CL: AgentRow + AgentRunView micro-animations (Chat A)
+**What:** `AgentRow` (ContentView.swift): `.animation(DS.Motion.smooth, value: step.status)` on the HStack — animates the `0.55 → 1.0` opacity transition when a step activates (pending→running). `AgentRunView` counter: `"\(doneCount)/\(steps.count)"` Text gets `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value: doneCount)` — digits roll as each step completes.
+**Files:** `Views/ContentView.swift`.
+**Commit:** `2a52aee`
+
+## 2026-06-12 — marathon CM: isolated entry/exit animations (Chat A)
+**What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.
+**Files:** `Views/ContentView.swift`, `Views/KnowledgeView.swift`.
+**Commit:** `(next)`
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
