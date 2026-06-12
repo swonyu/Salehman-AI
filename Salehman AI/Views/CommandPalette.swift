@@ -11,6 +11,7 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var hoveredID: UUID?
     @State private var selectedIndex: Int = 0
+    @State private var appeared = false
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -112,11 +113,16 @@ struct CommandPalette: View {
                             let isSelected = idx == selectedIndex
                             Button { run(cmd) } label: {
                                 HStack(spacing: 12) {
+                                    // Icon well — RoundedRectangle matches the
+                                    // app-wide DS icon well pattern (ActionTile etc).
                                     Image(systemName: cmd.icon)
-                                        .font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(DS.Palette.accent)
                                         .frame(width: 26, height: 26)
-                                        .background(DS.Palette.accent.opacity(0.10), in: Circle())
-                                        .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                        .background(DS.Palette.accent.opacity(0.10),
+                                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {
@@ -140,6 +146,12 @@ struct CommandPalette: View {
                             }
                             .buttonStyle(.plain)
                             .id(idx)
+                            // Staggered entrance — rows 0-8 cascade 35ms apart;
+                            // subsequent rows share row 8's delay.
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
+                                       value: appeared)
                             .onHover { over in
                                 hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
                                 if over { selectedIndex = idx }
@@ -162,7 +174,7 @@ struct CommandPalette: View {
         }
         .frame(width: 560)
         .background(DS.Palette.bgTop)
-        .onAppear { searchFocused = true }
+        .onAppear { searchFocused = true; appeared = true }
         // Reset selection to top whenever the result list changes.
         .onChange(of: query) { _, _ in selectedIndex = 0 }
     }

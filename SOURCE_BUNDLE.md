@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:32 +03 · Swift files: 150 · Swift LOC: 33216_
+_Generated: 2026-06-12 21:35 +03 · Swift files: 150 · Swift LOC: 33228_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17249,7 +17249,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (177 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (189 lines) =====
 ```swift
 import SwiftUI
 
@@ -17264,6 +17264,7 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var hoveredID: UUID?
     @State private var selectedIndex: Int = 0
+    @State private var appeared = false
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -17365,11 +17366,16 @@ struct CommandPalette: View {
                             let isSelected = idx == selectedIndex
                             Button { run(cmd) } label: {
                                 HStack(spacing: 12) {
+                                    // Icon well — RoundedRectangle matches the
+                                    // app-wide DS icon well pattern (ActionTile etc).
                                     Image(systemName: cmd.icon)
-                                        .font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(DS.Palette.accent)
                                         .frame(width: 26, height: 26)
-                                        .background(DS.Palette.accent.opacity(0.10), in: Circle())
-                                        .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                        .background(DS.Palette.accent.opacity(0.10),
+                                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {
@@ -17393,6 +17399,12 @@ struct CommandPalette: View {
                             }
                             .buttonStyle(.plain)
                             .id(idx)
+                            // Staggered entrance — rows 0-8 cascade 35ms apart;
+                            // subsequent rows share row 8's delay.
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
+                                       value: appeared)
                             .onHover { over in
                                 hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
                                 if over { selectedIndex = idx }
@@ -17415,7 +17427,7 @@ struct CommandPalette: View {
         }
         .frame(width: 560)
         .background(DS.Palette.bgTop)
-        .onAppear { searchFocused = true }
+        .onAppear { searchFocused = true; appeared = true }
         // Reset selection to top whenever the result list changes.
         .onChange(of: query) { _, _ in selectedIndex = 0 }
     }
@@ -35784,7 +35796,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3260 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3274 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38172,6 +38184,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - AboutView brand tile icon: `KeyframeAnimator(initialValue: 1.0, trigger: appeared)` — on sheet-open `appeared` flip: compress 0.60 → overshoot 1.20 → settle 1.0 using same spring keyframe chain.
 
 **Why:** First use of `KeyframeAnimator` from the deep-research SwiftUI 6 API sweep. The physics-accurate bounce (linear compress → snappy spring → bouncy settle) reads as real weight rather than CSS ease-in-out. OnboardingView's page transitions no longer feel like plain opacity swaps.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
+### [2026-06-12] Marathon BW — CommandPalette staggered entrance + icon well consistency
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`
+
+**Changes:**
+- Added `@State private var appeared = false`; flipped in `.onAppear` alongside `searchFocused = true`.
+- Command rows: staggered entrance via `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 8).animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035), value: appeared)` — rows 0-8 cascade at 35ms intervals, remaining rows share row 8's delay. `.animation(value:)` self-triggers on `appeared` flip, so filter-result changes (typing) do NOT re-stagger.
+- Icon wells: `Circle()` → `RoundedRectangle(cornerRadius: 6, style: .continuous)` — matches the DS icon well pattern used in ActionTile, AgentCard, toggle rows in Settings, and doc rows in Knowledge.
+
+**Why:** CommandPalette was the only high-frequency surface with instant-pop rows and Circle icon backgrounds. The stagger gives the palette a "curated reveal" on open while typing still gives immediate results. The icon well change aligns it with the unified DS icon well language established across all other views.
 
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 

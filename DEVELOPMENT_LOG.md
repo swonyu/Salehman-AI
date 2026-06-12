@@ -2389,6 +2389,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
+### [2026-06-12] Marathon BW — CommandPalette staggered entrance + icon well consistency
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`
+
+**Changes:**
+- Added `@State private var appeared = false`; flipped in `.onAppear` alongside `searchFocused = true`.
+- Command rows: staggered entrance via `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 8).animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035), value: appeared)` — rows 0-8 cascade at 35ms intervals, remaining rows share row 8's delay. `.animation(value:)` self-triggers on `appeared` flip, so filter-result changes (typing) do NOT re-stagger.
+- Icon wells: `Circle()` → `RoundedRectangle(cornerRadius: 6, style: .continuous)` — matches the DS icon well pattern used in ActionTile, AgentCard, toggle rows in Settings, and doc rows in Knowledge.
+
+**Why:** CommandPalette was the only high-frequency surface with instant-pop rows and Circle icon backgrounds. The stagger gives the palette a "curated reveal" on open while typing still gives immediate results. The icon well change aligns it with the unified DS icon well language established across all other views.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
