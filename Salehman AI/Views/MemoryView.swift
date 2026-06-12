@@ -169,6 +169,7 @@ struct MemoryView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
+                .onKeyPress(.escape) { query = ""; return .handled }
                 .accessibilityLabel("Search memories")
             if !query.isEmpty {
                 Button { query = "" } label: {
@@ -258,6 +259,7 @@ struct MemoryView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .onSubmit { addFact() }
+                .onKeyPress(.escape) { newFact = ""; return .handled }
                 .accessibilityLabel("New memory text")
             if !newFact.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button("Add", action: addFact)

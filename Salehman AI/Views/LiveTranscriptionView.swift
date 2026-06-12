@@ -123,6 +123,7 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }

@@ -1960,6 +1960,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
 
 ---
+### 2026-06-12 — Marathon AT — Escape-to-clear on MemoryView + LiveTranscriptionView search fields
+
+**What changed:**
+- `MemoryView.swift` search field: added `.onKeyPress(.escape) { query = ""; return .handled }` — Escape clears the search filter.
+- `MemoryView.swift` add-fact field: added `.onKeyPress(.escape) { newFact = ""; return .handled }` — Escape discards a partially-typed memory entry.
+- `LiveTranscriptionView.swift` transcript search: added `.onKeyPress(.escape) { searchText = ""; return .handled }` — Escape clears the transcript filter.
+
+**Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Why:** Marathon AP established the Escape-to-clear pattern on AgentsView and KnowledgeView filter fields. Three other TextFields with the same "search/filter or entry" role were missing it: MemoryView's search and add-fact fields, and LiveTranscriptionView's transcript search. Consistent Escape behavior is a macOS UX baseline.
+
+**Result:** Build not yet run; minimal 1-modifier additions.
+
+---
 ### 2026-06-12 — Marathon AS — Cross-view DS palette sweep (remaining DS.Palette.success → successSoft)
 
 **What changed:** Swept all remaining `DS.Palette.success` (full-saturation `Color.green` alias) usages outside the intentional financial heatmap:

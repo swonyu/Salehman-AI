@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:19 +03 · Swift files: 150 · Swift LOC: 32438_
+_Generated: 2026-06-12 09:21 +03 · Swift files: 150 · Swift LOC: 32441_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20812,7 +20812,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (250 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (251 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20939,6 +20939,7 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
@@ -22096,7 +22097,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (295 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (297 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22269,6 +22270,7 @@ struct MemoryView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
+                .onKeyPress(.escape) { query = ""; return .handled }
                 .accessibilityLabel("Search memories")
             if !query.isEmpty {
                 Button { query = "" } label: {
@@ -22358,6 +22360,7 @@ struct MemoryView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .onSubmit { addFact() }
+                .onKeyPress(.escape) { newFact = ""; return .handled }
                 .accessibilityLabel("New memory text")
             if !newFact.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button("Add", action: addFact)
@@ -35006,7 +35009,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2867 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2881 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36967,6 +36970,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Autonomous continuation of owner's "all views" /high-end-visual-design pass. Sweep eliminates all remaining `.borderedProminent`/`.easeOut`/`.easeInOut` banned patterns from the Views directory (grep confirms zero remaining after this commit).
 
 **Result:** `** BUILD SUCCEEDED **`. All Views now clean of banned animation/button patterns.
+
+---
+### 2026-06-12 — Marathon AT — Escape-to-clear on MemoryView + LiveTranscriptionView search fields
+
+**What changed:**
+- `MemoryView.swift` search field: added `.onKeyPress(.escape) { query = ""; return .handled }` — Escape clears the search filter.
+- `MemoryView.swift` add-fact field: added `.onKeyPress(.escape) { newFact = ""; return .handled }` — Escape discards a partially-typed memory entry.
+- `LiveTranscriptionView.swift` transcript search: added `.onKeyPress(.escape) { searchText = ""; return .handled }` — Escape clears the transcript filter.
+
+**Files:** `Salehman AI/Views/MemoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Why:** Marathon AP established the Escape-to-clear pattern on AgentsView and KnowledgeView filter fields. Three other TextFields with the same "search/filter or entry" role were missing it: MemoryView's search and add-fact fields, and LiveTranscriptionView's transcript search. Consistent Escape behavior is a macOS UX baseline.
+
+**Result:** Build not yet run; minimal 1-modifier additions.
 
 ---
 ### 2026-06-12 — Marathon AS — Cross-view DS palette sweep (remaining DS.Palette.success → successSoft)
