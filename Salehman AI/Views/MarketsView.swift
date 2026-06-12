@@ -181,8 +181,12 @@ struct MarketsView: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
             } else {
                 VStack(spacing: 1) {
-                    ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
+                    ForEach(alertSignals, id: \.symbol) {
+                        signalAlertRow($0)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: alertSignals.count)
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
@@ -253,8 +257,12 @@ struct MarketsView: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 VStack(spacing: 1) {
-                    ForEach(portfolio.positions) { positionRow($0) }
+                    ForEach(portfolio.positions) {
+                        positionRow($0)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: portfolio.positions.count)
                 .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))

@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CR: MarketsView alert + portfolio list transitions (Chat A)
+**What:** Added insertion/removal animations to the two remaining plain `ForEach` lists in `MarketsView`. (1) Alert signals list: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `signalAlertRow` + `.animation(DS.Motion.smooth, value: alertSignals.count)` on the `VStack(spacing: 1)` container — alert rows now slide in/out from the leading edge when the monitor scan updates the signal list. (2) Portfolio positions list: same treatment — `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `positionRow` + `.animation(DS.Motion.smooth, value: portfolio.positions.count)` — position rows animate when added/removed.
+**Files:** `Views/MarketsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CQ: more panel transitions (Chat A)
 **What:** Two more conditional-panel transitions. (1) `ContentView` pinned-message strip: `.transition(.move(edge: .top).combined(with: .opacity))` on the strip + `.animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)` on the ScrollView context — the strip now slides down from the top edge when the first message is pinned and slides back up when unpinned. (2) `ScratchpadView` AI result card: `.transition(.opacity.combined(with: .offset(y: 8)))` on `aiResultCard` + `.animation(DS.Motion.smooth, value: aiResult.isEmpty)` on the parent Group so the LLM-generated result fades+slides in when it arrives.
 **Files:** `Views/ContentView.swift`, `Views/ScratchpadView.swift`.
-**Commit:** `(next)`
+**Commit:** `075a3a3`
 
 ## 2026-06-12 — marathon CP: panel entry/exit transitions + AgentCard active indicator (Chat A)
 **What:** Five targeted panel/item transitions. (1) `ContentView` chat search bar: `.transition(.move(edge: .top).combined(with: .opacity))` so ⌘F slides the bar down from the top instead of snapping. (2) `ContentView` attachment chips row: `.transition(.scale(0.8)+.opacity)` on each chip + `.animation(DS.Motion.smooth, value: attachments.count)` on HStack + `.transition(.opacity+.offset(y: 8))` on the whole row + `.animation(DS.Motion.smooth, value: attachments.isEmpty)` on the inputBar VStack — chips scale in/out and the row fades+slides as it appears/disappears. (3) `AgentsView` AgentCard active indicator: `.transition(.scale(0.7)+.opacity)` on the pulsing-dot+spinner HStack + `.transition(.opacity)` on the rest arrow — they animate in/out when an agent starts/stops.
