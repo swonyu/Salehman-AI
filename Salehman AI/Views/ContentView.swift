@@ -85,6 +85,9 @@ struct ContentView: View {
     @ObservedObject private var library = PromptLibrary.shared
     @State private var savingPrompt = false
     @State private var newPromptTitle = ""
+    /// Drives the self-dismissing "Saved to Notes" banner. Set true on save;
+    /// a .task(id:) clears it automatically after 1.8s.
+    @State private var noteSavedPulse = false
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
@@ -451,7 +454,11 @@ struct ContentView: View {
                                                                                 : mission + "\n" + q + "\n"
                                                       inputFocused = true
                                                   },
-                                                  onTogglePin: { vm.togglePin($0) })
+                                                  onTogglePin: { vm.togglePin($0) },
+                                                  onSaveToNotes: { text in
+                                                      ScratchpadStore.shared.addNote(text)
+                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                  })
                                         .equatable()
                                         .padding(.top, isFirst ? 14 : 0)
                                 }
@@ -990,6 +997,9 @@ struct ContentView: View {
         .init(id: "pin", icon: "pin",
               blurb: "Pin the last AI reply to the top strip",
               kind: .action("pin")),
+        .init(id: "note", icon: "note.text.badge.plus",
+              blurb: "Save the last AI reply as a Note",
+              kind: .action("note")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -1031,6 +1041,11 @@ struct ContentView: View {
                 if let last = vm.messages.last(where: { !$0.isUser }) {
                     vm.togglePin(last)
                 }
+            case "note":
+                if let last = vm.messages.last(where: { !$0.isUser }) {
+                    ScratchpadStore.shared.addNote(last.text)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                }
             default: break
             }
         }
@@ -1039,6 +1054,25 @@ struct ContentView: View {
     // MARK: Input bar
     private var inputBar: some View {
         VStack(spacing: 8) {
+            // Self-dismissing "Saved to Notes" confirmation banner.
+            if noteSavedPulse {
+                HStack(spacing: 6) {
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.success.opacity(0.85))
+                    Text("Saved to Notes")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .task(id: noteSavedPulse) {
+                    guard noteSavedPulse else { return }
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
+                    withAnimation(DS.Motion.fade) { noteSavedPulse = false }
+                }
+            }
             // Pending attachment chips — one per file, individually removable.
             if loadingAttachment {
                 attachmentChip(icon: "hourglass", title: "Reading attachment…")
@@ -1926,6 +1960,8 @@ struct MessageBubble: View, Equatable {
     var onQuote: ((String) -> Void)? = nil
     /// Pin/unpin this message (context menu, either side). nil hides it.
     var onTogglePin: ((ChatMessage) -> Void)? = nil
+    /// Save this message's text as a note in ScratchpadStore. nil hides it.
+    var onSaveToNotes: ((String) -> Void)? = nil
     /// QA only: render the hover action pill as if the pointer were on the
     /// row, so static captures (which can't hover) can see and baseline it.
     var qaShowActions: Bool = false
@@ -2016,6 +2052,11 @@ struct MessageBubble: View, Equatable {
                 if onRegenerate != nil {
                     Button { onRegenerate?(message) } label: {
                         Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+                if onSaveToNotes != nil {
+                    Button { onSaveToNotes?(displayedText) } label: {
+                        Label("Save as Note", systemImage: "note.text.badge.plus")
                     }
                 }
                 Divider()

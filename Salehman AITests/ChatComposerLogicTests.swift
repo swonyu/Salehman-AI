@@ -212,6 +212,57 @@ struct ChatGreetingBucketTests {
     }
 }
 
+// MARK: - ScratchpadStore.addNote — note-saving contract for /note and "Save as Note"
+//
+// Tests run in an isolated temp directory so the real scratchpad.json is never
+// touched. The trim + guard-empty contract is the key invariant: blank strings
+// must not reach the store (the plain-text of some replies can be whitespace-only
+// after stripping, e.g. a code-only block).
+
+@MainActor
+@Suite(.serialized)
+struct NoteFromChatTests {
+
+    private func makeStore() -> ScratchpadStore {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("note_test_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        return ScratchpadStore(testingBaseDirectory: tmp)
+    }
+
+    @Test func addNoteStoresText() {
+        let store = makeStore()
+        store.addNote("Hello from the chat")
+        #expect(store.notes.first?.text == "Hello from the chat")
+    }
+
+    @Test func addNoteTrimsWhitespace() {
+        let store = makeStore()
+        store.addNote("  hello  \n")
+        #expect(store.notes.first?.text == "hello")
+    }
+
+    @Test func addNoteIgnoresBlankInput() {
+        let store = makeStore()
+        store.addNote("   ")
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func addNoteIgnoresEmptyInput() {
+        let store = makeStore()
+        store.addNote("")
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func multipleNotesInsertAtFront() {
+        let store = makeStore()
+        store.addNote("first")
+        store.addNote("second")
+        #expect(store.notes.first?.text == "second")
+        #expect(store.notes.last?.text == "first")
+    }
+}
+
 // MARK: - MessageBubble.plainText — markdown stripping contract
 //
 // `copyPlainText` writes this to the pasteboard for users pasting into
