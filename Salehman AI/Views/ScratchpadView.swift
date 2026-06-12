@@ -180,6 +180,8 @@ struct ScratchpadView: View {
                 .padding(.horizontal, 10).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+                .animation(DS.Motion.lux, value: addFocused)
                 .focused($addFocused)
                 .onSubmit(add)
                 .onKeyPress(.escape) { newText = ""; return .handled }

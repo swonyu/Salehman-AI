@@ -854,6 +854,8 @@ struct ContentView: View {
             Text(count.label)
                 .font(.system(size: 10.5).monospacedDigit())
                 .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .contentTransition(.numericText())
+                .animation(DS.Motion.smooth, value: count.label)
                 .help(count.warn ? "Very long message — consider splitting it or attaching a file"
                                  : "Draft length")
                 .accessibilityIdentifier("chat.composer.count")

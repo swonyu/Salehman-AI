@@ -344,6 +344,8 @@ struct MemoryView: View {
         .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.lux, value: addFocused)
         .animation(DS.Motion.smooth, value: newFact.isEmpty)
     }
 

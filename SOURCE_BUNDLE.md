@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:40 +03 · Swift files: 150 · Swift LOC: 34173_
+_Generated: 2026-06-13 02:43 +03 · Swift files: 150 · Swift LOC: 34179_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17729,7 +17729,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2864 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2866 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18587,6 +18587,8 @@ struct ContentView: View {
             Text(count.label)
                 .font(.system(size: 10.5).monospacedDigit())
                 .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .contentTransition(.numericText())
+                .animation(DS.Motion.smooth, value: count.label)
                 .help(count.warn ? "Very long message — consider splitting it or attaching a file"
                                  : "Draft length")
                 .accessibilityIdentifier("chat.composer.count")
@@ -23149,7 +23151,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (370 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (372 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23497,6 +23499,8 @@ struct MemoryView: View {
         .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.lux, value: addFocused)
         .animation(DS.Motion.smooth, value: newFact.isEmpty)
     }
 
@@ -23844,7 +23848,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (664 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (666 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24028,6 +24032,8 @@ struct ScratchpadView: View {
                 .padding(.horizontal, 10).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+                .animation(DS.Motion.lux, value: addFocused)
                 .focused($addFocused)
                 .onSubmit(add)
                 .onKeyPress(.escape) { newText = ""; return .handled }
@@ -36741,7 +36747,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4181 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4193 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39878,6 +39884,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 - `Views/CodeView.swift`: File attachment chip (before composer) — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.05]`. "Restore all" inspector pill — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.04]`.
 
 **Why:** Attachment chips and action pills are medium-size interactive elements where the ~4:1 top:bottom gradient ratio is visible and adds depth. Tiny informational eyebrow labels (8–9pt) remain flat.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EY: Focus glow + composer count numericText transition
+
+**What changed:**
+- `Views/ContentView.swift`: `composerCountBadge` — added `.contentTransition(.numericText())` + `.animation(DS.Motion.smooth, value: count.label)` so the character count rolls like a number counter.
+- `Views/ScratchpadView.swift`: `addRow` TextField container — added `accent.opacity(addFocused ? 0.15 : 0)` focus glow shadow animated via `DS.Motion.lux`.
+- `Views/MemoryView.swift`: `addFactRow` TextField container — same focus glow treatment.
+
+**Why:** Focus glow on text input fields is standard in the composer (ContentView + CodeView); applying the same treatment to the Scratchpad and Memory add-fields makes all editable text inputs feel consistent and premium. The composer count animation makes the character counter feel alive rather than static.
 
 **Result:** Zero Swift compiler errors.
 

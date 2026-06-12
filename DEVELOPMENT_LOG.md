@@ -3138,6 +3138,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EY: Focus glow + composer count numericText transition
+
+**What changed:**
+- `Views/ContentView.swift`: `composerCountBadge` — added `.contentTransition(.numericText())` + `.animation(DS.Motion.smooth, value: count.label)` so the character count rolls like a number counter.
+- `Views/ScratchpadView.swift`: `addRow` TextField container — added `accent.opacity(addFocused ? 0.15 : 0)` focus glow shadow animated via `DS.Motion.lux`.
+- `Views/MemoryView.swift`: `addFactRow` TextField container — same focus glow treatment.
+
+**Why:** Focus glow on text input fields is standard in the composer (ContentView + CodeView); applying the same treatment to the Scratchpad and Memory add-fields makes all editable text inputs feel consistent and premium. The composer count animation makes the character counter feel alive rather than static.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
