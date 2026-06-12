@@ -1580,6 +1580,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Marathon Z: History row preview snippets**
+
+**What changed:**
+- `Views/ContentView.swift`: `ChatStore.ArchivedChat` gains `preview: String` (custom init with default `""`). New `archivePreview(for:)` pure static function — first non-empty line of the first assistant reply, `.prefix(90)`. Wired into `archives()`. Existing `archiveTitle` and `archives()` call sites unchanged.
+- `Views/ChatHistoryView.swift`: row now shows the preview as a third italic line (`.white.opacity(0.32)`, `lineLimit(1)`) below the date/count subtitle — makes archived conversations identifiable at a glance.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: Added `ArchivePreviewTests` (6 tests): empty messages, no-assistant-reply, first-line extraction, blank-first-line skip, long-line truncation, first-of-many-assistants.
+
+**Why:** History rows previously showed only title + date + message count — hard to distinguish conversations with similar titles. Preview snippet is zero-cost (messages are already decoded in `archives()`).
+
+**Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 6 new unit tests.
+
+---
 **2026-06-12 — Marathon Y: Notes context menus + save AI result + composer token count**
 
 **What changed:**

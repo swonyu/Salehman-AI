@@ -1646,6 +1646,12 @@ enum ChatStore {
         let title: String
         let date: Date       // last activity (newest message timestamp)
         let messageCount: Int
+        let preview: String  // first non-empty line of the first AI reply
+
+        init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
+            self.id = id; self.title = title; self.date = date
+            self.messageCount = messageCount; self.preview = preview
+        }
     }
 
     nonisolated private static var archiveDir: URL {
@@ -1661,6 +1667,15 @@ enum ChatStore {
             .components(separatedBy: "\n").first?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return firstLine.isEmpty ? "Conversation" : String(firstLine.prefix(60))
+    }
+
+    /// First non-empty line of the first assistant reply, truncated for the row.
+    /// Pure for tests; returns "" when there are no assistant messages.
+    nonisolated static func archivePreview(for messages: [ChatMessage]) -> String {
+        guard let reply = messages.first(where: { !$0.isUser }) else { return "" }
+        let first = reply.text.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        return String(first.trimmingCharacters(in: .whitespacesAndNewlines).prefix(90))
     }
 
     /// Snapshot the CURRENT (on-disk) conversation into the archive. No-op for
@@ -1700,7 +1715,8 @@ enum ChatStore {
                 return ArchivedChat(id: url,
                                     title: archiveTitle(for: msgs),
                                     date: msgs.map(\.timestamp).max() ?? .distantPast,
-                                    messageCount: msgs.count)
+                                    messageCount: msgs.count,
+                                    preview: archivePreview(for: msgs))
             }
             .sorted { $0.date > $1.date }
     }

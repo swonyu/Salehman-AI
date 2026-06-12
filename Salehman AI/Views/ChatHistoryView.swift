@@ -130,13 +130,19 @@ struct ChatHistoryView: View {
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
                 Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) messages")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                if !item.preview.isEmpty {
+                    Text(item.preview)
+                        .font(.system(size: 10.5).italic())
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:10 +03 · Swift files: 150 · Swift LOC: 31662_
+_Generated: 2026-06-12 07:15 +03 · Swift files: 150 · Swift LOC: 31731_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13871,7 +13871,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (176 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (182 lines) =====
 ```swift
 import SwiftUI
 
@@ -14005,13 +14005,19 @@ struct ChatHistoryView: View {
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
                 Text("\(item.date.formatted(date: .abbreviated, time: .shortened)) · \(item.messageCount) messages")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                if !item.preview.isEmpty {
+                    Text(item.preview)
+                        .font(.system(size: 10.5).italic())
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
@@ -17030,7 +17036,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2719 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2735 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18680,6 +18686,12 @@ enum ChatStore {
         let title: String
         let date: Date       // last activity (newest message timestamp)
         let messageCount: Int
+        let preview: String  // first non-empty line of the first AI reply
+
+        init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
+            self.id = id; self.title = title; self.date = date
+            self.messageCount = messageCount; self.preview = preview
+        }
     }
 
     nonisolated private static var archiveDir: URL {
@@ -18695,6 +18707,15 @@ enum ChatStore {
             .components(separatedBy: "\n").first?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return firstLine.isEmpty ? "Conversation" : String(firstLine.prefix(60))
+    }
+
+    /// First non-empty line of the first assistant reply, truncated for the row.
+    /// Pure for tests; returns "" when there are no assistant messages.
+    nonisolated static func archivePreview(for messages: [ChatMessage]) -> String {
+        guard let reply = messages.first(where: { !$0.isUser }) else { return "" }
+        let first = reply.text.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        return String(first.trimmingCharacters(in: .whitespacesAndNewlines).prefix(90))
     }
 
     /// Snapshot the CURRENT (on-disk) conversation into the archive. No-op for
@@ -18734,7 +18755,8 @@ enum ChatStore {
                 return ArchivedChat(id: url,
                                     title: archiveTitle(for: msgs),
                                     date: msgs.map(\.timestamp).max() ?? .distantPast,
-                                    messageCount: msgs.count)
+                                    messageCount: msgs.count,
+                                    preview: archivePreview(for: msgs))
             }
             .sorted { $0.date > $1.date }
     }
@@ -26664,7 +26686,7 @@ struct ChatHistoryFilterExtendedTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (490 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (537 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26967,6 +26989,53 @@ struct ChatHistoryFilterTests {
 
     @Test func noMatchIsEmptyNotEverything() {
         #expect(ChatHistoryView.filtered([arc("Plan my week")], query: "zzz").isEmpty)
+    }
+}
+
+// MARK: - Archive preview snippet
+
+struct ArchivePreviewTests {
+
+    private func msg(_ text: String, isUser: Bool) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: isUser,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func emptyMessagesYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: []) == "")
+    }
+
+    @Test func noAssistantReplyYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: [msg("Hello", isUser: true)]) == "")
+    }
+
+    @Test func firstAssistantFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("Hello! How can I help?\nMore text.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Hello! How can I help?")
+    }
+
+    @Test func skipsBlankFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("\nActual content.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Actual content.")
+    }
+
+    @Test func truncatesLongLine() {
+        let long = String(repeating: "word ", count: 40)   // 200 chars
+        let msgs = [msg("Hi", isUser: true), msg(long, isUser: false)]
+        let preview = ChatStore.archivePreview(for: msgs)
+        #expect(preview.count <= 90)
+        #expect(!preview.isEmpty)
+    }
+
+    @Test func firstAssistantPickedWhenManyMessages() {
+        // Only the FIRST assistant message should be used, even if there are more.
+        let msgs = [msg("Hi", isUser: true),
+                    msg("First reply.", isUser: false),
+                    msg("Follow-up", isUser: true),
+                    msg("Second reply.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "First reply.")
     }
 }
 
@@ -34213,7 +34282,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2492 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2506 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35794,6 +35863,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Views/SettingsView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
 
 **Result:** `** BUILD SUCCEEDED **`
+
+---
+**2026-06-12 — Marathon Z: History row preview snippets**
+
+**What changed:**
+- `Views/ContentView.swift`: `ChatStore.ArchivedChat` gains `preview: String` (custom init with default `""`). New `archivePreview(for:)` pure static function — first non-empty line of the first assistant reply, `.prefix(90)`. Wired into `archives()`. Existing `archiveTitle` and `archives()` call sites unchanged.
+- `Views/ChatHistoryView.swift`: row now shows the preview as a third italic line (`.white.opacity(0.32)`, `lineLimit(1)`) below the date/count subtitle — makes archived conversations identifiable at a glance.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: Added `ArchivePreviewTests` (6 tests): empty messages, no-assistant-reply, first-line extraction, blank-first-line skip, long-line truncation, first-of-many-assistants.
+
+**Why:** History rows previously showed only title + date + message count — hard to distinguish conversations with similar titles. Preview snippet is zero-cost (messages are already decoded in `archives()`).
+
+**Files:** `Views/ContentView.swift`, `Views/ChatHistoryView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 6 new unit tests.
 
 ---
 **2026-06-12 — Marathon Y: Notes context menus + save AI result + composer token count**

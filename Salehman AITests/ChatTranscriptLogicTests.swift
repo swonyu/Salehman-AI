@@ -302,6 +302,53 @@ struct ChatHistoryFilterTests {
     }
 }
 
+// MARK: - Archive preview snippet
+
+struct ArchivePreviewTests {
+
+    private func msg(_ text: String, isUser: Bool) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: isUser,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func emptyMessagesYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: []) == "")
+    }
+
+    @Test func noAssistantReplyYieldsEmpty() {
+        #expect(ChatStore.archivePreview(for: [msg("Hello", isUser: true)]) == "")
+    }
+
+    @Test func firstAssistantFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("Hello! How can I help?\nMore text.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Hello! How can I help?")
+    }
+
+    @Test func skipsBlankFirstLine() {
+        let msgs = [msg("Hi", isUser: true),
+                    msg("\nActual content.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "Actual content.")
+    }
+
+    @Test func truncatesLongLine() {
+        let long = String(repeating: "word ", count: 40)   // 200 chars
+        let msgs = [msg("Hi", isUser: true), msg(long, isUser: false)]
+        let preview = ChatStore.archivePreview(for: msgs)
+        #expect(preview.count <= 90)
+        #expect(!preview.isEmpty)
+    }
+
+    @Test func firstAssistantPickedWhenManyMessages() {
+        // Only the FIRST assistant message should be used, even if there are more.
+        let msgs = [msg("Hi", isUser: true),
+                    msg("First reply.", isUser: false),
+                    msg("Follow-up", isUser: true),
+                    msg("Second reply.", isUser: false)]
+        #expect(ChatStore.archivePreview(for: msgs) == "First reply.")
+    }
+}
+
 // MARK: - Composer length readout
 
 struct ComposerCountTests {
