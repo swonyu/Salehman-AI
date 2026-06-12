@@ -88,6 +88,22 @@ enum OllamaClient {
     /// Is a given model available locally? (Cached for 30s.)
     static func hasModel(_ name: String) async -> Bool { await Reachability.shared.hasModel(name) }
 
+    /// Start `ollama serve` in the background if the server isn't already up.
+    /// Safe to call on every launch — exits immediately if Ollama is already
+    /// running. The spawned process is detached (no pipes, no waitUntilExit)
+    /// so it outlives the app and keeps the server warm between sessions.
+    nonisolated static func ensureServing() async {
+        guard await !isUp() else { return }
+        let candidates = ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/usr/bin/ollama"]
+        guard let binary = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: binary)
+        p.arguments = ["serve"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()   // fire-and-forget; Ollama manages its own lifecycle
+    }
+
     /// Default context window. 2048 tokens is plenty for chat-style turns and
     /// keeps Ollama's KV cache small.
     nonisolated static let defaultNumCtx: Int = 2048

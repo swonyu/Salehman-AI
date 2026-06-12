@@ -1420,6 +1420,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
 
 ---
+**2026-06-12 — Auto-start Ollama + fix stale cloud-key messages (Chat C, owner-directed)**
+
+**What changed:**
+- `LLM/OllamaClient.swift`: added `ensureServing()` — checks if Ollama is up, and if not, finds the binary (`/usr/local/bin` or `/opt/homebrew/bin`) and launches it detached (fire-and-forget, no pipes, no `waitUntilExit`).
+- `App/Salehman_AIApp.swift`: `.task { await OllamaClient.ensureServing() }` at launch so Ollama starts automatically.
+- `LLM/LocalLLM.swift`: fixed stale cloud-key messages (`offMessage`, `.auto`/`.salehman` in `unavailableMessage`, `noCloudKeyHint`) + `lacksCloudKey` now returns `false` for `.salehman` (amber cloud-key banner was incorrectly firing).
+
+**Why:** Owner: "make ollama serve automatic when launch app" + error message showed stale cloud-key advice after cloud-removal commit.
+
+**Files:** `LLM/OllamaClient.swift`, `App/Salehman_AIApp.swift`, `LLM/LocalLLM.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 **2026-06-12 — SalehmanEngine: strip all external servers (Chat C, owner-directed)**
 
 **What changed:** Rewrote `LLM/SalehmanEngine.swift` to be on-device only. Removed the entire cloud chain (NVIDIA DeepSeek, OpenRouter, Cerebras, Groq, Mistral), the standalone-cloud fallbacks (Gemini, Grok, OpenAI, Anthropic), the `refine()`/`deepSeekCritique()` critic loop, and all `offline`-gate logic. `hasAnyCloud` now returns `false` (kept so call sites compile unchanged). Also removed the `SalehmanEngine.refine()` call in `LLM/SalehmanLeader.swift`. Resolution order is now: MLX → Ollama `salehman`.
@@ -2267,6 +2281,14 @@ Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
 replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
 rollback, not deleted). App launched. Owner-authorized explicitly after the
 permission classifier blocked the first attempt.
+
+## 2026-06-12 — marathon O: search no-results state, unpin from strip, inline note/task edit (Chat A)
+**What (owner: "continue"):**
+- Search no-results empty state: when in-chat search returns zero matches a centred card echoes the query and offers a "Clear search" link — replaces the silently blank scroll area.
+- Unpin directly from the pinned-message strip: each chip gains a trailing × button that calls `vm.togglePin` so the user can unpin without scrolling to the message.
+- Inline note/task editing (Notes tab): each row has a pencil button that swaps the label for a plain `TextField`; ↩ commits the edit, Esc cancels. `ScratchpadStore.updateNote(_:text:)` + `updateTask(_:title:)` guard against empty-string overwrites.
+**Files:** `Views/ContentView.swift`, `Views/ScratchpadView.swift`, `Persistence/ScratchpadStore.swift`.
+**Commit:** `6b7a0aa`
 
 ## 2026-06-12 — marathon N: /shot in Chat tab + multi-step recall + export from history (Chat A)
 **What (owner: "continue"):**

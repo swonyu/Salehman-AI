@@ -43,7 +43,7 @@ enum LocalLLM {
     /// For the context-aware text we *display* (rather than return as a
     /// sentinel), see `unavailableMessage` below.
     nonisolated static let offMessage =
-        "No model is reachable right now. Add a free cloud key (NVIDIA / Groq / Cerebras / OpenRouter) in Settings → Brain, or start the Ollama server (`ollama serve`) with a model pulled."
+        "No model is reachable right now. Start Ollama with `ollama serve` and make sure the `salehman` model is pulled (`ollama pull salehman`)."
 
     /// Context-aware UI-facing text describing why the currently-pinned brain
     /// can't answer. Names the brain the user actually selected and the exact
@@ -58,7 +58,7 @@ enum LocalLLM {
         let pref = AppSettings.brainPreferenceCurrent
         switch pref {
         case .auto:
-            return "No model is reachable right now. Add a free cloud key (NVIDIA / Groq / Cerebras / OpenRouter) in Settings, or start the Ollama server (`ollama serve`) with a model pulled."
+            return "No model is reachable right now. Start Ollama with `ollama serve` and make sure a model is pulled."
         case .ollama:
             return "Ollama qwen-coder is your selected brain, but the Ollama server isn't reachable. Start it with `ollama serve` (with qwen2.5-coder pulled), or switch to Auto in Settings."
         case .copilot:
@@ -76,7 +76,7 @@ enum LocalLLM {
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "Salehman runs on the cloud — add any free key in Settings (NVIDIA for REAL DeepSeek V4 free, or Groq / Cerebras / OpenRouter) and he leads on a big model at $0. To run fully on-device instead, pull your Ollama model (`ollama pull \(AppSettings.customModelNameCurrent)`) and start `ollama serve`."
+            return "Salehman runs on-device. Start Ollama with `ollama serve` and make sure the model is pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -95,7 +95,9 @@ enum LocalLLM {
     /// never silent. Cheap Keychain-existence check; safe to read each SwiftUI render.
     nonisolated static var lacksCloudKey: Bool {
         switch AppSettings.brainPreferenceCurrent {
-        case .salehman, .freeAuto, .freeCoding:
+        case .salehman:
+            return false   // local-only by design; no cloud key needed or used
+        case .freeAuto, .freeCoding:
             return !SalehmanEngine.hasAnyCloud
         case .cloudCoding:
             // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
@@ -112,7 +114,7 @@ enum LocalLLM {
     /// One-line, actionable nudge for the `lacksCloudKey` banner. Honest across
     /// all four modes (slow local fallback for three, unavailable for cloudCoding).
     nonisolated static let noCloudKeyHint =
-        "No cloud key — replies are slow (local fallback) or unavailable. Add a free Groq or Cerebras key in Settings → Brain for ~1-second answers."
+        "No cloud key — replies may be unavailable. Add a key in Settings → Brain for the selected brain."
 
     /// Identifies which brain handled (or would handle) a request. Used by the
     /// UI to label the current state honestly.
