@@ -185,6 +185,8 @@ struct KnowledgeView: View {
                     } label: {
                         Label(copiedAnswer ? "Copied!" : "Copy",
                               systemImage: copiedAnswer ? "checkmark" : "doc.on.doc")
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: copiedAnswer)
                     }
                     .help("Copy answer to clipboard")
                     .accessibilityLabel("Copy answer")

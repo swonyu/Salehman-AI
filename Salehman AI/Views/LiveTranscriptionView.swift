@@ -244,9 +244,13 @@ struct LiveTranscriptionView: View {
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copied)
+            }
+            .buttonStyle(.bordered)
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText

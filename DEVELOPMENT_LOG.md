@@ -2503,6 +2503,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All live numeric fields in MarketsView now animate on data refresh.
 
 ---
+
+## 2026-06-12 · Marathon CF — symbolEffect(.replace) on all copy-button symbol swaps
+
+**What:** Added `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: copied)` to every copy button that swaps `doc.on.doc` ↔ `checkmark`: `MarkdownText` code block copy, `ScratchpadView` copy-all header button, `KnowledgeView` answer copy button, `LiveTranscriptionView` footer copy button. The `doc.on.doc → checkmark` swap now animates as a crisp SF Symbol crossfade instead of an instant icon replacement.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Why:** The `contentTransition(.symbolEffect(.replace))` API gives a smooth, semantic animation to icon swaps that the system understands as "the same icon with a different state." Applied here, the checkmark feel confident and premium — the kind of micro-interaction detail that separates $150k agency builds from templates.
+
+**Result:** All copy-feedback icon transitions across the app are now animated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

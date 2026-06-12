@@ -133,6 +133,8 @@ struct ScratchpadView: View {
                 Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 13))
                     .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copyAllPulse)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:55 +03 · Swift files: 150 · Swift LOC: 33440_
+_Generated: 2026-06-12 21:57 +03 · Swift files: 150 · Swift LOC: 33450_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20561,7 +20561,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (645 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (647 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20750,6 +20750,8 @@ struct KnowledgeView: View {
                     } label: {
                         Label(copiedAnswer ? "Copied!" : "Copy",
                               systemImage: copiedAnswer ? "checkmark" : "doc.on.doc")
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: copiedAnswer)
                     }
                     .help("Copy answer to clipboard")
                     .accessibilityLabel("Copy answer")
@@ -21210,7 +21212,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (309 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (313 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21458,9 +21460,13 @@ struct LiveTranscriptionView: View {
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copied)
+            }
+            .buttonStyle(.bordered)
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText
@@ -21523,7 +21529,7 @@ struct LiveTranscriptionView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarkdownText.swift (422 lines) =====
+===== FILE: Salehman AI/Views/MarkdownText.swift (424 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21909,6 +21915,8 @@ struct CodeBlock: View {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(copied ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: copied)
                         // Comfortable hit target: the tight 10pt label is hard
                         // to land on with assistive pointers / Voice Control.
                         // `.contentShape` over a minimum frame keeps the visual
@@ -23287,7 +23295,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (621 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (623 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23424,6 +23432,8 @@ struct ScratchpadView: View {
                 Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 13))
                     .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copyAllPulse)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
@@ -36008,7 +36018,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3374 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3386 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38512,6 +38522,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Comprehensive numeric-text sweep — every data field in MarketsView that displays a live float (price, % change) now rolls smoothly on update instead of instant-swapping. Consistent with the portfolio summary treatment from CD.
 
 **Result:** All live numeric fields in MarketsView now animate on data refresh.
+
+---
+
+## 2026-06-12 · Marathon CF — symbolEffect(.replace) on all copy-button symbol swaps
+
+**What:** Added `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: copied)` to every copy button that swaps `doc.on.doc` ↔ `checkmark`: `MarkdownText` code block copy, `ScratchpadView` copy-all header button, `KnowledgeView` answer copy button, `LiveTranscriptionView` footer copy button. The `doc.on.doc → checkmark` swap now animates as a crisp SF Symbol crossfade instead of an instant icon replacement.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Why:** The `contentTransition(.symbolEffect(.replace))` API gives a smooth, semantic animation to icon swaps that the system understands as "the same icon with a different state." Applied here, the checkmark feel confident and premium — the kind of micro-interaction detail that separates $150k agency builds from templates.
+
+**Result:** All copy-feedback icon transitions across the app are now animated.
 
 ---
 ## Standing notes / known issues

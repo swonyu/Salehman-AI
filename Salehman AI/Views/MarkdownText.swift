@@ -382,6 +382,8 @@ struct CodeBlock: View {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(copied ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: copied)
                         // Comfortable hit target: the tight 10pt label is hard
                         // to land on with assistive pointers / Voice Control.
                         // `.contentShape` over a minimum frame keeps the visual
