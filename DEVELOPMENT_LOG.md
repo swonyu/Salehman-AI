@@ -2191,3 +2191,9 @@ The bar chrome itself isn't a captured QA surface (window_0_live mechanism is st
 flagged earlier) — owner sees it live; app relaunched with the new bar.
 **Files:** `App/AppState.swift`, `Views/TabSwitcherBar.swift`, `COORDINATION.md`,
 `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:2x) — Chat D: Release deploy to /Applications (owner: "deploy it")
+Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
+replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
+rollback, not deleted). App launched. Owner-authorized explicitly after the
+permission classifier blocked the first attempt.
