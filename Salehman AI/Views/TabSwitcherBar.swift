@@ -158,6 +158,7 @@ struct TabSwitcherBar: View {
                     Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
                 )
                 .scaleEffect(marketHovering ? 1.04 : 1.0)
+                .animation(DS.Motion.smooth, value: market.session.isOpen)
                 .onHover { h in withAnimation(DS.Motion.press) { marketHovering = h } }
                 .help(market.session.isOpen ? "Market is open" : "Market is closed")
                 .accessibilityElement(children: .ignore)

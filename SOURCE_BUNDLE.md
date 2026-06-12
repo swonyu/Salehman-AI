@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:58 +03 · Swift files: 150 · Swift LOC: 33928_
+_Generated: 2026-06-13 00:59 +03 · Swift files: 150 · Swift LOC: 33929_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26738,7 +26738,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (268 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (269 lines) =====
 ```swift
 import SwiftUI
 
@@ -26900,6 +26900,7 @@ struct TabSwitcherBar: View {
                     Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
                 )
                 .scaleEffect(marketHovering ? 1.04 : 1.0)
+                .animation(DS.Motion.smooth, value: market.session.isOpen)
                 .onHover { h in withAnimation(DS.Motion.press) { marketHovering = h } }
                 .help(market.session.isOpen ? "Market is open" : "Market is closed")
                 .accessibilityElement(children: .ignore)
@@ -36496,7 +36497,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3928 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3940 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39380,6 +39381,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/OnboardingView.swift`, `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/SettingsView.swift`
 
 **Why:** These were the last perceptible snap-in transitions in views covered by the marathon scope. The progress dot pill expansion was the most visible — users tap Next multiple times during onboarding and the abrupt width jump was jarring. The Tasks↔Notes switch is a high-frequency action. The mode-row checkmark pops in with every settings change.
+
+**Result:** Zero Swift compilation errors.
+
+---
+## 2026-06-13 — Marathon ED: TabSwitcherBar market-pill open/close animation
+
+**What changed:**
+- `TabSwitcherBar.swift` — added `.animation(DS.Motion.smooth, value: market.session.isOpen)` to the market status pill's HStack modifier chain, just before `.onHover`. This makes the background color (successSoft → white/0.04) and text color (white → secondary) cross-fade when the market opens or closes instead of snapping.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** The market open/close is a once-per-day event but is clearly visible in the top bar. Without the animation driver, the pill's background and text color change was instant even though the dot transition (PhaseAnimator → plain Circle) already had continuous animation. The `.animation(smooth, value: isOpen)` makes the background + foreground changes animate in sync with the dot.
 
 **Result:** Zero Swift compilation errors.
 

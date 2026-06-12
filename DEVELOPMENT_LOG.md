@@ -2885,6 +2885,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors.
 
 ---
+## 2026-06-13 — Marathon ED: TabSwitcherBar market-pill open/close animation
+
+**What changed:**
+- `TabSwitcherBar.swift` — added `.animation(DS.Motion.smooth, value: market.session.isOpen)` to the market status pill's HStack modifier chain, just before `.onHover`. This makes the background color (successSoft → white/0.04) and text color (white → secondary) cross-fade when the market opens or closes instead of snapping.
+
+**Files:** `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** The market open/close is a once-per-day event but is clearly visible in the top bar. Without the animation driver, the pill's background and text color change was instant even though the dot transition (PhaseAnimator → plain Circle) already had continuous animation. The `.animation(smooth, value: isOpen)` makes the background + foreground changes animate in sync with the dot.
+
+**Result:** Zero Swift compilation errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
