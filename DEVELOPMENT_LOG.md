@@ -1498,6 +1498,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Build-capable session confirms compile; 8 new unit tests (total ~53). Sandbox prevents `xcodebuild` in this session — owner to run tests.
 
 ---
+**2026-06-12 — AgentPipeline: offload MemoryStore.recall to background thread (Chat C)**
+
+**What changed:**
+- `Agents/AgentPipeline.swift` line 458: `MemoryStore.shared.recall(mission)` now runs in a `Task.detached` closure. Previously it blocked the implicit `@MainActor` context while loading the NLEmbedding model + running cosine similarity (~50–200 ms on first call). Fix: capture `MemoryStore.shared` before the hop, then `await Task.detached { _store.recall(mission) }.value`.
+
+**Why:** `SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` makes `AgentPipeline.run` implicitly `@MainActor`. The recall call did NLEmbedding model-load + O(n) cosine scan on the main thread, hitching the UI on every mission dispatch.
+
+**Files:** `Agents/AgentPipeline.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
