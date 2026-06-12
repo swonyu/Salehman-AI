@@ -729,10 +729,12 @@ struct SettingsView: View {
                         .fill(statusColor)
                         .frame(width: 8, height: 8)
                         .shadow(color: statusColor.opacity(0.5), radius: 3, y: 1)
+                        .animation(DS.Motion.smooth, value: ready)
                     if selected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(DS.Palette.successSoft)
+                            .transition(.opacity.combined(with: .scale(scale: 0.6)))
                     }
                 }
                 Text(pref.title)
@@ -756,6 +758,7 @@ struct SettingsView: View {
                             lineWidth: 1)
             )
             .contentShape(Rectangle())
+            .animation(DS.Motion.snappy, value: selected)
         }
         .buttonStyle(.plain)
         .help(pref.subtitle)
@@ -1529,19 +1532,26 @@ struct SettingsView: View {
         HStack(spacing: 6) {
             if testing {
                 ProgressView().controlSize(.mini)
+                    .transition(.opacity)
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: working)
+                    .transition(.opacity)
                 Text(working ? "Working" : "Not working")
                     .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .transition(.opacity)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: testing)
     }
 
     /// Live ping for Copilot — does a one-token chat through the real path.

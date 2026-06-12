@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:14 +03 · Swift files: 150 · Swift LOC: 33805_
+_Generated: 2026-06-13 00:17 +03 · Swift files: 150 · Swift LOC: 33815_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24367,7 +24367,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2057 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2067 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25100,10 +25100,12 @@ struct SettingsView: View {
                         .fill(statusColor)
                         .frame(width: 8, height: 8)
                         .shadow(color: statusColor.opacity(0.5), radius: 3, y: 1)
+                        .animation(DS.Motion.smooth, value: ready)
                     if selected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(DS.Palette.successSoft)
+                            .transition(.opacity.combined(with: .scale(scale: 0.6)))
                     }
                 }
                 Text(pref.title)
@@ -25127,6 +25129,7 @@ struct SettingsView: View {
                             lineWidth: 1)
             )
             .contentShape(Rectangle())
+            .animation(DS.Motion.snappy, value: selected)
         }
         .buttonStyle(.plain)
         .help(pref.subtitle)
@@ -25900,19 +25903,26 @@ struct SettingsView: View {
         HStack(spacing: 6) {
             if testing {
                 ProgressView().controlSize(.mini)
+                    .transition(.opacity)
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: working)
+                    .transition(.opacity)
                 Text(working ? "Working" : "Not working")
                     .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .transition(.opacity)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: testing)
     }
 
     /// Live ping for Copilot — does a one-token chat through the real path.
@@ -36373,7 +36383,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3739 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3752 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39044,6 +39054,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DR: SettingsView brain grid + workingBadge transition polish
+
+**What changed:**
+- `Views/SettingsView.swift` — `brainGridCell`: added `.animation(DS.Motion.smooth, value: ready)` on the readiness dot so its color crossfades when a key is added/removed; added `.transition(.opacity.combined(with: .scale(scale: 0.6)))` on the selection checkmark so it pops in/out instead of snapping; added `.animation(DS.Motion.snappy, value: selected)` on the cell VStack so the background fill and border stroke animate when the user taps a new brain.
+- `Views/SettingsView.swift` — `workingBadge`: added `.transition(.opacity)` to all three branch elements (spinner, icon, "not tested" icon/text) and added `.animation(DS.Motion.smooth, value: testing)` on the containing HStack so the spinner→result→"not tested" transitions are smooth instead of instant. Previously the badge swapped its entire content silently.
+
+**Files:** `Views/SettingsView.swift`
+
+**Why:** The brain selection grid had no animation on the highlight change — tapping a different brain instantly swapped the background fill, border, icon color, and checkmark without any interpolation. The working badge used by all three test rows (activeBrain, Copilot) had no container animation, so the spinner→"Working"/"Not working" swap was abrupt.
+
+**Result:** Brain grid selection is snappy and satisfying; readiness dot crossfades; badge transitions are smooth across all states.
 
 ---
 ### 2026-06-13 — Marathon DQ: AboutView + ShortcutsView staggered entrance animation

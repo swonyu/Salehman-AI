@@ -2670,6 +2670,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
+### 2026-06-13 — Marathon DR: SettingsView brain grid + workingBadge transition polish
+
+**What changed:**
+- `Views/SettingsView.swift` — `brainGridCell`: added `.animation(DS.Motion.smooth, value: ready)` on the readiness dot so its color crossfades when a key is added/removed; added `.transition(.opacity.combined(with: .scale(scale: 0.6)))` on the selection checkmark so it pops in/out instead of snapping; added `.animation(DS.Motion.snappy, value: selected)` on the cell VStack so the background fill and border stroke animate when the user taps a new brain.
+- `Views/SettingsView.swift` — `workingBadge`: added `.transition(.opacity)` to all three branch elements (spinner, icon, "not tested" icon/text) and added `.animation(DS.Motion.smooth, value: testing)` on the containing HStack so the spinner→result→"not tested" transitions are smooth instead of instant. Previously the badge swapped its entire content silently.
+
+**Files:** `Views/SettingsView.swift`
+
+**Why:** The brain selection grid had no animation on the highlight change — tapping a different brain instantly swapped the background fill, border, icon color, and checkmark without any interpolation. The working badge used by all three test rows (activeBrain, Copilot) had no container animation, so the spinner→"Working"/"Not working" swap was abrupt.
+
+**Result:** Brain grid selection is snappy and satisfying; readiness dot crossfades; badge transitions are smooth across all states.
+
+---
 ### 2026-06-13 — Marathon DQ: AboutView + ShortcutsView staggered entrance animation
 
 **What changed:**
