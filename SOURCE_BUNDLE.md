@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:44 +03 · Swift files: 150 · Swift LOC: 33747_
+_Generated: 2026-06-12 23:46 +03 · Swift files: 150 · Swift LOC: 33752_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17546,7 +17546,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2825 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2828 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18199,14 +18199,17 @@ struct ContentView: View {
             if !searchQuery.isEmpty {
                 Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
             Button("Done") { withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" } }
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
+        .animation(DS.Motion.magnetic, value: searchQuery.isEmpty)
         .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
@@ -22816,7 +22819,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (363 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (365 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23054,11 +23057,13 @@ struct MemoryView: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
         .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.magnetic, value: query.isEmpty)
     }
 
     private var sortMenu: some View {
@@ -36315,7 +36320,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3630 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3644 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38903,6 +38908,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Three small unanimated moments missed in earlier marathon sweeps, found on final cross-view audit.
 
 **Result:** No remaining unpolished snap-changes visible across the standard interaction paths.
+
+---
+
+### 2026-06-12 — Marathon DJ: search bar polish — ContentView match label + MemoryView clear button
+
+**What changed:**
+- `Views/ContentView.swift`: `searchBar` match-count label gets `.contentTransition(.opacity)` (crossfades as the count updates while typing). The xmark clear button gets `.transition(.opacity)`. The parent HStack gets `.animation(DS.Motion.magnetic, value: searchQuery.isEmpty)`.
+- `Views/MemoryView.swift`: `searchField` clear button (`if !query.isEmpty { Button }`) gets `.transition(.opacity)` + parent HStack gets `.animation(DS.Motion.magnetic, value: query.isEmpty)` — same pattern as the other 4 search fields across the app.
+
+**Files:** `Views/ContentView.swift`, `Views/MemoryView.swift`
+
+**Why:** Last two search clear buttons across the codebase that lacked transitions — found on final audit.
+
+**Result:** All 6 search-field clear buttons in the app now fade in/out (Chat, Scratchpad, MemoryView, KnowledgeView, LiveTranscription, ChatHistory).
 
 ---
 ## Standing notes / known issues

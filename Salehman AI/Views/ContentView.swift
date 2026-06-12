@@ -649,14 +649,17 @@ struct ContentView: View {
             if !searchQuery.isEmpty {
                 Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
             Button("Done") { withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" } }
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
+        .animation(DS.Motion.magnetic, value: searchQuery.isEmpty)
         .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }

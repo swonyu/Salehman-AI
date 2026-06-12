@@ -234,11 +234,13 @@ struct MemoryView: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
         .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.magnetic, value: query.isEmpty)
     }
 
     private var sortMenu: some View {
