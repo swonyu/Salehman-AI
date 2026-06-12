@@ -42,6 +42,11 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 .shadow(color: DS.Palette.accent.opacity(0.30), radius: 8, y: 2)

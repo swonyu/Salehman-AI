@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:51 +03 · Swift files: 150 · Swift LOC: 34217_
+_Generated: 2026-06-13 02:54 +03 · Swift files: 150 · Swift LOC: 34231_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14206,7 +14206,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (254 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (262 lines) =====
 ```swift
 import SwiftUI
 
@@ -14257,6 +14257,11 @@ struct ChatHistoryView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 30, height: 30)
                         .dsShadow(DS.Elevation.accentGlow(0.32))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
                     KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 13, weight: .bold))
@@ -14408,6 +14413,9 @@ struct ChatHistoryView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
@@ -21616,7 +21624,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (330 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (331 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21812,6 +21820,7 @@ struct LiveTranscriptionView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         .animation(DS.Motion.magnetic, value: searchText.isEmpty)
     }
 
@@ -26994,7 +27003,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (274 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (279 lines) =====
 ```swift
 import SwiftUI
 
@@ -27040,6 +27049,11 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 .shadow(color: DS.Palette.accent.opacity(0.30), radius: 8, y: 2)
@@ -36785,7 +36799,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4231 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4245 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39973,6 +39987,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** Completing the icon-well audit sweep across the full marathon directive list. Circular elements (save button, orb) correctly kept flat per design rule — direction is imperceptible on small circles.
 
 **Result:** Build exit 0, 0 real Swift errors (grep).
+
+---
+
+---
+
+## 2026-06-13 — Marathon EFC: ChatHistoryView, LiveTranscriptionView, TabSwitcherBar strokes
+
+**What changed:** Adversarial audit of all remaining unreviewed views. Added top-lit gradient strokes: (1) ChatHistoryView 30px brand tile `[white@0.48, white@0.02]` and 28px row icon wells `[white@0.20, white@0.04]`; (2) LiveTranscriptionView search field — added missing `surfaceStroke` Capsule overlay for consistency with every other search field in the app; (3) TabSwitcherBar 36px brand logo tile `[white@0.48, white@0.02]`. RootView and BackgroundView confirmed clean (no icon wells — pure structural/infrastructure). CopilotSignInView confirmed correct (standalone SF Symbol hero, no background well). SettingsBrainReadiness is pure model logic.
+
+**Files:** `Salehman AI/Views/ChatHistoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** Completing the app-wide icon-well depth audit. Every interactive tile and status indicator across the full view tree now carries the standard top-lit gradient stroke.
+
+**Result:** Build exit 0, 0 real Swift errors.
 
 ---
 

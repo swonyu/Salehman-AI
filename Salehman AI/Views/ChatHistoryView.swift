@@ -47,6 +47,11 @@ struct ChatHistoryView: View {
                         .fill(DS.Gradient.brand)
                         .frame(width: 30, height: 30)
                         .dsShadow(DS.Elevation.accentGlow(0.32))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
                     KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 13, weight: .bold))
@@ -198,6 +203,9 @@ struct ChatHistoryView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))

@@ -3188,6 +3188,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+---
+
+## 2026-06-13 — Marathon EFC: ChatHistoryView, LiveTranscriptionView, TabSwitcherBar strokes
+
+**What changed:** Adversarial audit of all remaining unreviewed views. Added top-lit gradient strokes: (1) ChatHistoryView 30px brand tile `[white@0.48, white@0.02]` and 28px row icon wells `[white@0.20, white@0.04]`; (2) LiveTranscriptionView search field — added missing `surfaceStroke` Capsule overlay for consistency with every other search field in the app; (3) TabSwitcherBar 36px brand logo tile `[white@0.48, white@0.02]`. RootView and BackgroundView confirmed clean (no icon wells — pure structural/infrastructure). CopilotSignInView confirmed correct (standalone SF Symbol hero, no background well). SettingsBrainReadiness is pure model logic.
+
+**Files:** `Salehman AI/Views/ChatHistoryView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** Completing the app-wide icon-well depth audit. Every interactive tile and status indicator across the full view tree now carries the standard top-lit gradient stroke.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

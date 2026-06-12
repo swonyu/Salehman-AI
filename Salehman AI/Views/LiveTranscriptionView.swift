@@ -192,6 +192,7 @@ struct LiveTranscriptionView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         .animation(DS.Motion.magnetic, value: searchText.isEmpty)
     }
 
