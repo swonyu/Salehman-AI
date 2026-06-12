@@ -48,13 +48,9 @@ struct BrainReadiness {
     /// The cloud coder pool shared by `.freeCoding` and `.cloudCoding`.
     var anyCloudCoder: Bool { groq || cerebras || mistral || openRouter }
 
-    /// Mirrors `SalehmanEngine.hasAnyCloud` (hosted endpoint or ANY chain
-    /// key) over the cached flags — the `.salehman` cloud-first gate.
-    var salehmanAnyCloud: Bool {
-        vllmConfigured || unslothConfigured
-            || nvidia || openRouter || cerebras || groq || mistral
-            || gemini || grok || openAI || anthropic
-    }
+    /// Mirrors `SalehmanEngine.hasAnyCloud` — local endpoint engines only.
+    /// Salehman is pure local-first; cloud API keys are NOT checked.
+    var salehmanAnyCloud: Bool { vllmConfigured || unslothConfigured }
 
     /// Whether `pref` is reachable right now. Exact behavior copy of the old
     /// `SettingsView.brainReady` switch — if reachability rules change,
@@ -85,9 +81,9 @@ struct BrainReadiness {
         case .freeCoding:  return localFloor || anyCloudCoder
         // Cloud Coding is cloud-ONLY — no local floor.
         case .cloudCoding: return anyCloudCoder
-        // Salehman is CLOUD-FIRST: any cloud engine, or the user's own Ollama
-        // model plausibly present (the exact pulled-model check stays async
-        // at runtime via `OllamaClient.hasCustomModel`).
+        // Salehman is LOCAL-FIRST: vLLM or Unsloth endpoint configured, or
+        // the user's own Ollama model (named + server up). Cloud API keys do
+        // NOT light this — Salehman never contacts third-party clouds.
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured

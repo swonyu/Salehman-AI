@@ -80,22 +80,22 @@ struct SettingsBrainReadyTests {
     }
 
     @Test
-    func salehmanIsCloudFirstAndItsLocalFloorNeedsANamedModel() {
-        // The original stub's case: Ollama up but customModelName blank and
-        // no cloud anywhere → NOT ready (nothing would actually answer).
+    func salehmanIsLocalFirstAndItsFloorNeedsANamedModel() {
+        // Ollama up but customModelName blank and no local endpoint → NOT ready.
         #expect(!Self.flags { $0.ollamaUp = true }.ready(.salehman))
         // Name + server → the local floor stands.
         #expect(Self.flags { $0.ollamaUp = true; $0.customModelNamed = true }
             .ready(.salehman))
         // A name with the server DOWN is not a floor.
         #expect(!Self.flags { $0.customModelNamed = true }.ready(.salehman))
-        // Cloud-first: ANY single cloud signal lights it with zero local —
-        // including endpoint engines and every chain key.
-        #expect(Self.flags { $0.gemini = true }.ready(.salehman))
-        #expect(Self.flags { $0.nvidia = true }.ready(.salehman))
+        // Local-first: cloud API keys alone do NOT light Salehman —
+        // it never contacts third-party clouds.
+        #expect(!Self.flags { $0.gemini = true }.ready(.salehman))
+        #expect(!Self.flags { $0.nvidia = true }.ready(.salehman))
+        #expect(!Self.flags { $0.anthropic = true }.ready(.salehman))
+        // Endpoint engines DO light it (the local resolution order).
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.salehman))
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.salehman))
-        #expect(Self.flags { $0.anthropic = true }.ready(.salehman))
     }
 
     @Test
