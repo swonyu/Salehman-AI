@@ -1854,6 +1854,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Full keyboard flow: type to filter → ↑/↓ to select → Enter to run. List auto-scrolls to keep selected item visible. SourceKit false positives expected.
 
 ---
+### 2026-06-12 — Marathon AL — MemoryView: manual "Add memory" field + copy feedback flash
+
+**What changed:**
+- `MemoryView.swift` — added `@State private var newFact = ""` + `@State private var copiedFact: String?`; `addFactRow` computed var: a TextField + "Add" button that calls `MemoryStore.shared.remember(trimmed)` and reloads; `copy(_:)` now also sets `copiedFact = s` and resets after 1.5s; copy button label swaps to "Copied!" text when `copiedFact == fact`
+
+**Files:** `MemoryView.swift`
+
+**Why:** The memory sheet was read-only — users could view/delete/search facts but had no way to seed facts manually (e.g. "My name is Saleh" or "I use macOS 15"). The copy flash matches the pattern introduced in KnowledgeView (marathon AH).
+
+**Result:** Users can now manually add memories; the copy button gives confirmation feedback. SourceKit false positives expected.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

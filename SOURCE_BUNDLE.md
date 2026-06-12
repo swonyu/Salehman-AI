@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:58 +03 · Swift files: 150 · Swift LOC: 32296_
+_Generated: 2026-06-12 09:00 +03 · Swift files: 150 · Swift LOC: 32356_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17181,7 +17181,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2770 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2772 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17253,6 +17253,7 @@ struct ContentView: View {
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
@@ -17842,14 +17843,15 @@ struct ContentView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "sparkles")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
-                .frame(width: 60, height: 60)
-                .background(DS.Palette.accent.opacity(0.12), in: Circle())
-                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+                .frame(width: 68, height: 68)
+                .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.22), DS.Palette.accent.opacity(0.07)], center: .center, startRadius: 0, endRadius: 34), in: Circle())
+                .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.35), radius: 28, y: 4)
+                .shadow(color: DS.Palette.accent.opacity(0.12), radius: 6, y: 1)
             Text(greetingLine)
-                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("Ask me anything, or let me run things on your Mac — inspect it, find files, check storage, tidy things up.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -22030,7 +22032,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (250 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (295 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22083,6 +22085,8 @@ struct MemoryView: View {
     @State private var query = ""
     @State private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
+    @State private var newFact = ""
+    @State private var copiedFact: String?
 
     var body: some View {
         ZStack {
@@ -22092,6 +22096,8 @@ struct MemoryView: View {
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+
+                addFactRow
 
                 if facts.isEmpty {
                     emptyState
@@ -22249,13 +22255,19 @@ struct MemoryView: View {
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             Button { copy(fact) } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
+                Group {
+                    if copiedFact == fact {
+                        Text("Copied!").font(.system(size: 10, weight: .semibold))
+                    } else {
+                        Image(systemName: "doc.on.doc").font(.system(size: 12))
+                    }
+                }
+                .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
             }
             .buttonStyle(.plain)
             .help("Copy")
             .accessibilityLabel("Copy memory")
+            .animation(DS.Motion.smooth, value: copiedFact == fact)
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
@@ -22275,9 +22287,44 @@ struct MemoryView: View {
         }
     }
 
+    private var addFactRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+            TextField("Add a memory…", text: $newFact)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .onSubmit { addFact() }
+                .accessibilityLabel("New memory text")
+            if !newFact.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button("Add", action: addFact)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.smooth, value: newFact.isEmpty)
+    }
+
+    private func addFact() {
+        let trimmed = newFact.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        MemoryStore.shared.remember(trimmed)
+        newFact = ""
+        reload()
+    }
+
     private func copy(_ s: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(s, forType: .string)
+        copiedFact = s
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if copiedFact == s { copiedFact = nil }
+        }
     }
 
     private func reload() { facts = MemoryStore.shared.allFacts() }
@@ -22576,7 +22623,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (542 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (555 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -22686,8 +22733,13 @@ struct ScratchpadView: View {
                         if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
                         Text(pad == .tasks ? "Organize" : "Summarize")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
         }
@@ -22826,7 +22878,7 @@ struct ScratchpadView: View {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
-                    .foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : (hovered ? .white.opacity(0.5) : .secondary))
+                    .foregroundStyle(t.done ? Color(red: 0.35, green: 0.82, blue: 0.48) : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -22856,7 +22908,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.press) {
                 if over { hoveredTaskID = t.id }
                 else if hoveredTaskID == t.id { hoveredTaskID = nil }
             }
@@ -22934,7 +22986,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.press) {
                 if over { hoveredNoteID = n.id }
                 else if hoveredNoteID == n.id { hoveredNoteID = nil }
             }
@@ -23015,12 +23067,17 @@ struct ScratchpadView: View {
         VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(DS.Palette.accent.opacity(0.16))
-                    .frame(width: 90)
-                    .blur(radius: 20)
+                    .fill(DS.Palette.accent.opacity(0.14))
+                    .frame(width: 100)
+                    .blur(radius: 28)
+                    .allowsHitTesting(false)
                 Image(systemName: icon)
-                    .font(.system(size: 36, weight: .light))
-                    .foregroundStyle(DS.Palette.accent.opacity(0.9))
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(DS.Palette.accent)
+                    .frame(width: 54, height: 54)
+                    .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.18), DS.Palette.accent.opacity(0.05)], center: .center, startRadius: 0, endRadius: 27), in: Circle())
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    .shadow(color: DS.Palette.accent.opacity(0.26), radius: 14, y: 3)
             }
             .padding(.bottom, 2)
             Text(pad == .tasks ? "YOUR TASKS" : "YOUR NOTES")
@@ -23029,7 +23086,7 @@ struct ScratchpadView: View {
                 .foregroundStyle(DS.Palette.accent)
             Text(text)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.white)
             Text(pad == .tasks ? "Type above and hit ↩ to add one." : "Type above and hit ↩ to add one.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
@@ -23047,9 +23104,12 @@ struct ScratchpadView: View {
                 } label: {
                     Label("Save as Note", systemImage: "note.text.badge.plus")
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.70))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                 }
-                .buttonStyle(.plain).help("Save this summary as a note")
+                .buttonStyle(LuxPressStyle()).help("Save this summary as a note")
                 .accessibilityLabel("Save AI summary as note")
 
                 Button { aiResult = "" } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary) }
@@ -34853,7 +34913,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2725 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2737 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36708,6 +36768,18 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** ↑/↓ keyboard navigation is the standard affordance for a command palette — without it, filtering + Enter always runs the first result, and mouse-only selection breaks the keyboard-native flow.
 
 **Result:** Full keyboard flow: type to filter → ↑/↓ to select → Enter to run. List auto-scrolls to keep selected item visible. SourceKit false positives expected.
+
+---
+### 2026-06-12 — Marathon AL — MemoryView: manual "Add memory" field + copy feedback flash
+
+**What changed:**
+- `MemoryView.swift` — added `@State private var newFact = ""` + `@State private var copiedFact: String?`; `addFactRow` computed var: a TextField + "Add" button that calls `MemoryStore.shared.remember(trimmed)` and reloads; `copy(_:)` now also sets `copiedFact = s` and resets after 1.5s; copy button label swaps to "Copied!" text when `copiedFact == fact`
+
+**Files:** `MemoryView.swift`
+
+**Why:** The memory sheet was read-only — users could view/delete/search facts but had no way to seed facts manually (e.g. "My name is Saleh" or "I use macOS 15"). The copy flash matches the pattern introduced in KnowledgeView (marathon AH).
+
+**Result:** Users can now manually add memories; the copy button gives confirmation feedback. SourceKit false positives expected.
 
 ---
 ## Standing notes / known issues

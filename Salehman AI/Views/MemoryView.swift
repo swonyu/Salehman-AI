@@ -49,6 +49,8 @@ struct MemoryView: View {
     @State private var query = ""
     @State private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
+    @State private var newFact = ""
+    @State private var copiedFact: String?
 
     var body: some View {
         ZStack {
@@ -58,6 +60,8 @@ struct MemoryView: View {
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+
+                addFactRow
 
                 if facts.isEmpty {
                     emptyState
@@ -215,13 +219,19 @@ struct MemoryView: View {
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             Button { copy(fact) } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
+                Group {
+                    if copiedFact == fact {
+                        Text("Copied!").font(.system(size: 10, weight: .semibold))
+                    } else {
+                        Image(systemName: "doc.on.doc").font(.system(size: 12))
+                    }
+                }
+                .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
             }
             .buttonStyle(.plain)
             .help("Copy")
             .accessibilityLabel("Copy memory")
+            .animation(DS.Motion.smooth, value: copiedFact == fact)
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
@@ -241,9 +251,44 @@ struct MemoryView: View {
         }
     }
 
+    private var addFactRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+            TextField("Add a memory…", text: $newFact)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .onSubmit { addFact() }
+                .accessibilityLabel("New memory text")
+            if !newFact.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button("Add", action: addFact)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.smooth, value: newFact.isEmpty)
+    }
+
+    private func addFact() {
+        let trimmed = newFact.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        MemoryStore.shared.remember(trimmed)
+        newFact = ""
+        reload()
+    }
+
     private func copy(_ s: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(s, forType: .string)
+        copiedFact = s
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if copiedFact == s { copiedFact = nil }
+        }
     }
 
     private func reload() { facts = MemoryStore.shared.allFacts() }
