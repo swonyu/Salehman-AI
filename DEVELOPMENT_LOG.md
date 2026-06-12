@@ -2988,6 +2988,15 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors. CodeView empty states now visually consistent with all other empty states in the app.
 
 ---
+## 2026-06-13 — Marathon EM: Eyebrow component — top-lit tinted gradient border (14 views)
+
+**What:** Upgraded `DS.Eyebrow`'s border from a flat `color.opacity(0.22)` stroke to a `LinearGradient(color@0.40→color@0.08, top→bottom)` — the same physical top-lit treatment as key badges in ShortcutsView and BottomShortcutBar, but tinted to the Eyebrow's own color (accent). Single DS change propagates to all 14 Eyebrow instances across every view in the app.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Result:** Zero Swift compiler errors. All 14 Eyebrow capsules now read as physically lit pills rather than flat outlines.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

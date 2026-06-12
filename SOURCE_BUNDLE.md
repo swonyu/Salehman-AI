@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:59 +03 · Swift files: 150 · Swift LOC: 34027_
+_Generated: 2026-06-13 02:02 +03 · Swift files: 150 · Swift LOC: 34030_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (409 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (412 lines) =====
 ```swift
 import SwiftUI
 
@@ -2407,7 +2407,10 @@ struct Eyebrow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(color.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.22), lineWidth: 0.5))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [color.opacity(0.40), color.opacity(0.08)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 0.5))
     }
 }
 
@@ -36595,7 +36598,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4031 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4040 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39584,6 +39587,15 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/CodeView.swift`
 
 **Result:** Zero Swift compiler errors. CodeView empty states now visually consistent with all other empty states in the app.
+
+---
+## 2026-06-13 — Marathon EM: Eyebrow component — top-lit tinted gradient border (14 views)
+
+**What:** Upgraded `DS.Eyebrow`'s border from a flat `color.opacity(0.22)` stroke to a `LinearGradient(color@0.40→color@0.08, top→bottom)` — the same physical top-lit treatment as key badges in ShortcutsView and BottomShortcutBar, but tinted to the Eyebrow's own color (accent). Single DS change propagates to all 14 Eyebrow instances across every view in the app.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Result:** Zero Swift compiler errors. All 14 Eyebrow capsules now read as physically lit pills rather than flat outlines.
 
 ---
 ## Standing notes / known issues

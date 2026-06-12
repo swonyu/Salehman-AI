@@ -270,7 +270,10 @@ struct Eyebrow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(color.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.22), lineWidth: 0.5))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [color.opacity(0.40), color.opacity(0.08)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 0.5))
     }
 }
 
