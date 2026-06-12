@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:30 +03 · Swift files: 150 · Swift LOC: 32881_
+_Generated: 2026-06-12 20:32 +03 · Swift files: 150 · Swift LOC: 32911_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22363,7 +22363,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (300 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (330 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22452,7 +22452,14 @@ struct MemoryView: View {
                                     row(fact)
                                 }
                             }
-                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .background(
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .fill(Color.white.opacity(0.035))
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                                }
+                            )
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
@@ -22481,11 +22488,30 @@ struct MemoryView: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("What I know about you")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — consistent with TodayView / AgentsView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 40, height: 40)
+                    .dsShadow(DS.Elevation.accentGlow(0.40))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("What I know about you")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Long-term Memory")
+                }
                 Text("\(facts.count) fact\(facts.count == 1 ? "" : "s") saved on this Mac")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -22547,9 +22573,8 @@ struct MemoryView: View {
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var sortMenu: some View {
@@ -22568,9 +22593,8 @@ struct MemoryView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.07), in: Capsule())
+            .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -22580,9 +22604,15 @@ struct MemoryView: View {
     private func row(_ fact: String) -> some View {
         let hovered = hoveredFact == fact
         return HStack(spacing: 12) {
-            Image(systemName: "sparkle")
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.7))
-                .frame(width: 18)
+            // Icon well — accent fill brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             Text(fact).font(.system(size: 14))
                 .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
@@ -22604,7 +22634,7 @@ struct MemoryView: View {
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : .secondary)
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
             .buttonStyle(.plain)
             .help("Forget this")
@@ -22614,7 +22644,7 @@ struct MemoryView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 hoveredFact = over ? fact : (hoveredFact == fact ? nil : hoveredFact)
             }
         }
@@ -35449,7 +35479,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3091 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3102 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37637,6 +37667,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
 
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
+## 2026-06-12 — Marathon BJ — MemoryView premium elevation
+
+**What changed:** Header upgraded to brand icon tile (40×40 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Long-term Memory")` + bigger 18pt bold title. Fact list container changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight + surfaceStroke). Fact row leading icon changed from bare `sparkle` SF Symbol to a 24×24 `RoundedRectangle` icon well with accent fill that brightens on hover. Row hover animation upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Trash icon opacity lowered to 50% at rest, shows `danger` tint on hover (consistent with Knowledge doc rows). Search field and sort menu trigger upgraded from `RoundedRectangle(cornerRadius: small)` to `Capsule` style.
+
+**Files:** `Views/MemoryView.swift`
+
+**Why:** MemoryView lacked the icon well treatment applied to every other view in this marathon series; search/sort were mismatched against the capsule style used in AgentsView and LiveTranscriptionView.
+
+**Result:** Code verified structurally correct.
 
 ---
 ## 2026-06-12 — Marathon BI — KnowledgeView premium elevation

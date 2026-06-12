@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BJ — MemoryView premium elevation
+
+**What changed:** Header upgraded to brand icon tile (40×40 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Long-term Memory")` + bigger 18pt bold title. Fact list container changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight + surfaceStroke). Fact row leading icon changed from bare `sparkle` SF Symbol to a 24×24 `RoundedRectangle` icon well with accent fill that brightens on hover. Row hover animation upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Trash icon opacity lowered to 50% at rest, shows `danger` tint on hover (consistent with Knowledge doc rows). Search field and sort menu trigger upgraded from `RoundedRectangle(cornerRadius: small)` to `Capsule` style.
+
+**Files:** `Views/MemoryView.swift`
+
+**Why:** MemoryView lacked the icon well treatment applied to every other view in this marathon series; search/sort were mismatched against the capsule style used in AgentsView and LiveTranscriptionView.
+
+**Result:** Code verified structurally correct.
+
+---
 ## 2026-06-12 — Marathon BI — KnowledgeView premium elevation
 
 **What changed:** Header upgraded from raw ZStack + raw eyebrow string to brand icon tile (36×36 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Private Vault")` + subtitle; "Add file" button uses `DS.Gradient.brand` fill. Ask card changed from flat `codeSurfaceSide` to full Bezel treatment (outer shell + inner core; core tints `accent.opacity(0.05)` when an answer is shown). Copy answer button gains `copiedAnswer` state with 1.5s checkmark flash (consistent with all other copy buttons). Doc list container changed from `codeSurfaceSide` to bezel fill + inner highlight. Doc rows upgraded: icon changed from plain SF Symbol to 28×28 `RoundedRectangle` icon well with accent fill; trailing indicator flips from `sparkles` to `arrow.up.right` on hover with diagonal offset; trash icon shows `danger` tint on hover; `DS.Motion.magnetic` hover; `DS.Motion.smooth` → `magnetic`. Staggered entrance animation (3 sections, 0/0.07/0.14 s). Merged double `.onAppear` into one.

@@ -85,7 +85,14 @@ struct MemoryView: View {
                                     row(fact)
                                 }
                             }
-                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .background(
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .fill(Color.white.opacity(0.035))
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                                }
+                            )
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
@@ -114,11 +121,30 @@ struct MemoryView: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("What I know about you")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — consistent with TodayView / AgentsView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 40, height: 40)
+                    .dsShadow(DS.Elevation.accentGlow(0.40))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("What I know about you")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Long-term Memory")
+                }
                 Text("\(facts.count) fact\(facts.count == 1 ? "" : "s") saved on this Mac")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -180,9 +206,8 @@ struct MemoryView: View {
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var sortMenu: some View {
@@ -201,9 +226,8 @@ struct MemoryView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.07), in: Capsule())
+            .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -213,9 +237,15 @@ struct MemoryView: View {
     private func row(_ fact: String) -> some View {
         let hovered = hoveredFact == fact
         return HStack(spacing: 12) {
-            Image(systemName: "sparkle")
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.7))
-                .frame(width: 18)
+            // Icon well — accent fill brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             Text(fact).font(.system(size: 14))
                 .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
@@ -237,7 +267,7 @@ struct MemoryView: View {
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : .secondary)
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
             .buttonStyle(.plain)
             .help("Forget this")
@@ -247,7 +277,7 @@ struct MemoryView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 hoveredFact = over ? fact : (hoveredFact == fact ? nil : hoveredFact)
             }
         }
