@@ -987,6 +987,9 @@ struct ContentView: View {
         .init(id: "shot", icon: "camera.viewfinder",
               blurb: "Attach your latest screenshot as context",
               kind: .action("shot")),
+        .init(id: "pin", icon: "pin",
+              blurb: "Pin the last AI reply to the top strip",
+              kind: .action("pin")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -1024,6 +1027,10 @@ struct ContentView: View {
                 connectURL = ""
                 showConnect = true
             case "shot": Task { await attachLastScreenshot() }
+            case "pin":
+                if let last = vm.messages.last(where: { !$0.isUser }) {
+                    vm.togglePin(last)
+                }
             default: break
             }
         }
@@ -2011,6 +2018,10 @@ struct MessageBubble: View, Equatable {
                         Label("Regenerate", systemImage: "arrow.clockwise")
                     }
                 }
+                Divider()
+                Button { copyPlainText() } label: {
+                    Label("Copy as Plain Text", systemImage: "doc.plaintext")
+                }
             }
         }
         .onHover { hovering = $0 }
@@ -2106,6 +2117,12 @@ struct MessageBubble: View, Equatable {
                         }
                     }
                     actionButton("doc.on.doc", "Copy") { copyText() }
+                    if onTogglePin != nil {
+                        actionButton(message.pinned == true ? "pin.slash" : "pin",
+                                     message.pinned == true ? "Unpin" : "Pin to top") {
+                            onTogglePin?(message)
+                        }
+                    }
                 }
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(DS.Palette.codeSurfaceSide,
@@ -2174,6 +2191,12 @@ struct MessageBubble: View, Equatable {
                 if onRegenerate != nil {
                     actionButton("arrow.clockwise", "Regenerate") { onRegenerate?(message) }
                 }
+                if onTogglePin != nil {
+                    actionButton(message.pinned == true ? "pin.slash" : "pin",
+                                 message.pinned == true ? "Unpin" : "Pin to top") {
+                        onTogglePin?(message)
+                    }
+                }
             }
             .padding(.horizontal, 5).padding(.vertical, 3)
             .background(DS.Palette.codeSurfaceSide,
@@ -2203,6 +2226,47 @@ struct MessageBubble: View, Equatable {
     private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.text, forType: .string)
+    }
+
+    private func copyPlainText() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Self.plainText(message.text), forType: .string)
+    }
+
+    /// Strips common Markdown markers to produce clean plain text suitable for
+    /// pasting into non-markdown contexts (emails, notes, etc.). Pure — tested
+    /// directly. Keeps code content (strips fences / backticks), strips images,
+    /// and converts links to their display text. Not a full CommonMark parser —
+    /// covers the patterns Salehman's replies actually produce.
+    nonisolated static func plainText(_ markdown: String) -> String {
+        var s = markdown
+        // Fenced code blocks: remove fence lines, keep code body
+        s = s.replacingOccurrences(of: "(?s)```\\w*\\n(.*?)```",
+                                    with: "$1", options: .regularExpression)
+        // Remaining unmatched fences (no trailing ```)
+        s = s.replacingOccurrences(of: "```\\w*", with: "", options: .regularExpression)
+        // Inline code: keep content, drop backticks
+        s = s.replacingOccurrences(of: "`([^`\n]+)`", with: "$1", options: .regularExpression)
+        // ATX headings (# to ######)
+        s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
+        // Bold+italic (***), bold (**), italic (*) — non-greedy, no cross-line
+        s = s.replacingOccurrences(of: "\\*{3}(.+?)\\*{3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*{2}(.+?)\\*{2}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*([^*\n]+)\\*",   with: "$1", options: .regularExpression)
+        // Bold+italic (___), bold (__), italic (_)
+        s = s.replacingOccurrences(of: "_{3}(.+?)_{3}",    with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_{2}(.+?)_{2}",    with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_([^_\n]+)_",      with: "$1", options: .regularExpression)
+        // Images (drop entirely) then links (keep display text)
+        s = s.replacingOccurrences(of: "!\\[.*?\\]\\(.*?\\)", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\[(.+?)\\]\\(.*?\\)", with: "$1", options: .regularExpression)
+        // Blockquote leaders
+        s = s.replacingOccurrences(of: "(?m)^> ?", with: "", options: .regularExpression)
+        // Unordered list markers
+        s = s.replacingOccurrences(of: "(?m)^[-*+]\\s+", with: "", options: .regularExpression)
+        // Ordered list markers
+        s = s.replacingOccurrences(of: "(?m)^\\d+\\.\\s+", with: "", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

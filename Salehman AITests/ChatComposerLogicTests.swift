@@ -212,6 +212,62 @@ struct ChatGreetingBucketTests {
     }
 }
 
+// MARK: - MessageBubble.plainText — markdown stripping contract
+//
+// `copyPlainText` writes this to the pasteboard for users pasting into
+// non-markdown contexts. The contract: common patterns are stripped without
+// swallowing content; plain prose passes through unchanged.
+
+struct MessageBubblePlainTextTests {
+
+    @Test func plainProsePassesThrough() {
+        #expect(MessageBubble.plainText("Hello world") == "Hello world")
+    }
+
+    @Test func stripsAtxHeaders() {
+        #expect(MessageBubble.plainText("## Hello World") == "Hello World")
+        #expect(MessageBubble.plainText("### Three") == "Three")
+    }
+
+    @Test func stripsBold() {
+        #expect(MessageBubble.plainText("This is **bold** text") == "This is bold text")
+    }
+
+    @Test func stripsItalic() {
+        #expect(MessageBubble.plainText("This is *italic* text") == "This is italic text")
+    }
+
+    @Test func stripsInlineCode() {
+        #expect(MessageBubble.plainText("Use `print()` to debug") == "Use print() to debug")
+    }
+
+    @Test func stripsLinksKeepingDisplayText() {
+        #expect(MessageBubble.plainText("[Claude](https://claude.ai)") == "Claude")
+    }
+
+    @Test func stripsFencedCodeBlockFences() {
+        let md = "Here:\n```swift\nlet x = 1\n```\nDone."
+        let result = MessageBubble.plainText(md)
+        #expect(!result.contains("```"))
+        #expect(result.contains("let x = 1"))
+        #expect(result.contains("Done."))
+    }
+
+    @Test func stripsBlockquoteMarkers() {
+        let md = "> This is a quote\n> Second line"
+        let result = MessageBubble.plainText(md)
+        #expect(!result.contains(">"))
+        #expect(result.contains("This is a quote"))
+    }
+
+    @Test func stripsUnorderedListMarkers() {
+        let md = "Items:\n- Alpha\n- Beta\n- Gamma"
+        let result = MessageBubble.plainText(md)
+        #expect(!result.contains("- "))
+        #expect(result.contains("Alpha"))
+    }
+}
+
 // MARK: - ContentView.recalledMessage — message-recall cycling contract
 //
 // ↑ in the empty composer cycles backward through user messages (terminal
