@@ -33,6 +33,15 @@ struct BottomShortcutBar: View {
                 .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
             ]
             return Array(h.prefix(5))
+        case .code:
+            // Code-specific bar: the primary Code tab actions at a glance.
+            return [
+                .init(keys: "⌘R", label: "Review")  { app.reviewProjectRequested = true },
+                .init(keys: "⌘F", label: "Find in file") { app.toggleCodeFindRequested = true },
+                .init(keys: "⌘L", label: "Focus chat") { app.focusCodeInputRequested = true },
+                .init(keys: "⌘⇧E", label: "Tree")   { app.toggleCodeTreeRequested = true },
+                .init(keys: "⌘K", label: "Palette")  { app.showCommandPaletteRequested = true },
+            ]
         default:
             return [
                 .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },

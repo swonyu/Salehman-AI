@@ -2114,6 +2114,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. Zero banned patterns remain in any Views file.
 
 ---
+
+### 2026-06-12 — Marathon BB: Code-tab contextual BottomShortcutBar + CodeView edge-trigger wiring
+
+**What:** Added a `.code` case to `BottomShortcutBar.hints` that shows Code-tab-specific shortcuts: `⌘R Review`, `⌘F Find in file`, `⌘L Focus chat`, `⌘⇧E Tree`, `⌘K Palette`. The hints are clickable and trigger the same actions as the keyboard shortcuts. To make the hint buttons work, added four `@Published` edge-trigger flags to `AppState` (`reviewProjectRequested`, `toggleCodeFindRequested`, `focusCodeInputRequested`, `toggleCodeTreeRequested`) and wired four `.onChange` observers in `CodeView` that fire the corresponding local actions. Also added `@ObservedObject private var app = AppState.shared` to `CodeView` so the new `.onChange` observers are actually in SwiftUI's dependency graph.
+
+**Files:** `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/App/AppState.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** The Code tab showed the generic "Palette / New Chat / Voice / Shortcuts / Settings" hints, which are useless for a power user already on the Code tab. The Code tab has rich keyboard shortcuts (⌘R Review, ⌘F Find, ⌘L Focus, ⌘⇧E Tree) that aren't discoverable — showing them in the shortcut bar makes them visible and clickable.
+
+**Result:** Build not yet run (owner-side); all changes are edge-trigger additions + `@ObservedObject` addition to CodeView.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

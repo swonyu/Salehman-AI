@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:40 +03 · Swift files: 150 · Swift LOC: 32462_
+_Generated: 2026-06-12 09:42 +03 · Swift files: 150 · Swift LOC: 32500_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1894,7 +1894,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (103 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (110 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1941,6 +1941,13 @@ final class AppState: ObservableObject {
     /// also switches its segmented picker to Notes mode before focusing. Set by
     /// any action that means "create a note" (e.g. Today's "New Note" tile).
     @Published var scratchpadFocusNotesMode = false
+
+    /// Edge-triggers for Code-tab actions that originate outside CodeView
+    /// (e.g. BottomShortcutBar hints). CodeView observes these and clears them.
+    @Published var reviewProjectRequested    = false
+    @Published var toggleCodeFindRequested   = false
+    @Published var focusCodeInputRequested   = false
+    @Published var toggleCodeTreeRequested   = false
 
     private init() {}
 }
@@ -13841,7 +13848,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (85 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (94 lines) =====
 ```swift
 import SwiftUI
 
@@ -13878,6 +13885,15 @@ struct BottomShortcutBar: View {
                 .init(keys: "⌘,", label: "Settings") { app.showSettingsRequested = true },
             ]
             return Array(h.prefix(5))
+        case .code:
+            // Code-specific bar: the primary Code tab actions at a glance.
+            return [
+                .init(keys: "⌘R", label: "Review")  { app.reviewProjectRequested = true },
+                .init(keys: "⌘F", label: "Find in file") { app.toggleCodeFindRequested = true },
+                .init(keys: "⌘L", label: "Focus chat") { app.focusCodeInputRequested = true },
+                .init(keys: "⌘⇧E", label: "Tree")   { app.toggleCodeTreeRequested = true },
+                .init(keys: "⌘K", label: "Palette")  { app.showCommandPaletteRequested = true },
+            ]
         default:
             return [
                 .init(keys: "⌘K", label: "Palette") { app.showCommandPaletteRequested = true },
@@ -14521,7 +14537,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2512 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2534 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15049,6 +15065,7 @@ struct ChangedFileRow: View {
 
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
+    @ObservedObject private var app = AppState.shared
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -15139,7 +15156,7 @@ struct CodeView: View {
             // slow local model (or can't fit the codebase). Tap "Add key" → Settings
             // (ContentView stays mounted in RootView, so its sheet handles this).
             if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { AppState.shared.showSettingsRequested = true },
+                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
@@ -15214,6 +15231,27 @@ struct CodeView: View {
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
             if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+        }
+        // Edge-triggers from BottomShortcutBar hints (same actions as the local shortcuts).
+        .onChange(of: app.reviewProjectRequested) { _, req in
+            guard req else { return }
+            app.reviewProjectRequested = false
+            reviewProject()
+        }
+        .onChange(of: app.toggleCodeFindRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeFindRequested = false
+            if ws.selectedFile != nil { rightPane = .file; findFocused = true }
+        }
+        .onChange(of: app.focusCodeInputRequested) { _, req in
+            guard req else { return }
+            app.focusCodeInputRequested = false
+            inputFocused = true
+        }
+        .onChange(of: app.toggleCodeTreeRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeTreeRequested = false
+            withAnimation(CodeView.lux) { treeCollapsed.toggle() }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -35030,7 +35068,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2985 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2997 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37145,6 +37183,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `easeOut` and `borderedProminent` are explicitly banned in the design system. The smart quotes in SettingsView were a linter/editor autocorrect artifact that broke the build entirely.
 
 **Result:** `** BUILD SUCCEEDED **`. Zero banned patterns remain in any Views file.
+
+---
+
+### 2026-06-12 — Marathon BB: Code-tab contextual BottomShortcutBar + CodeView edge-trigger wiring
+
+**What:** Added a `.code` case to `BottomShortcutBar.hints` that shows Code-tab-specific shortcuts: `⌘R Review`, `⌘F Find in file`, `⌘L Focus chat`, `⌘⇧E Tree`, `⌘K Palette`. The hints are clickable and trigger the same actions as the keyboard shortcuts. To make the hint buttons work, added four `@Published` edge-trigger flags to `AppState` (`reviewProjectRequested`, `toggleCodeFindRequested`, `focusCodeInputRequested`, `toggleCodeTreeRequested`) and wired four `.onChange` observers in `CodeView` that fire the corresponding local actions. Also added `@ObservedObject private var app = AppState.shared` to `CodeView` so the new `.onChange` observers are actually in SwiftUI's dependency graph.
+
+**Files:** `Salehman AI/Views/BottomShortcutBar.swift`, `Salehman AI/App/AppState.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** The Code tab showed the generic "Palette / New Chat / Voice / Shortcuts / Settings" hints, which are useless for a power user already on the Code tab. The Code tab has rich keyboard shortcuts (⌘R Review, ⌘F Find, ⌘L Focus, ⌘⇧E Tree) that aren't discoverable — showing them in the shortcut bar makes them visible and clickable.
+
+**Result:** Build not yet run (owner-side); all changes are edge-trigger additions + `@ObservedObject` addition to CodeView.
 
 ---
 ## Standing notes / known issues

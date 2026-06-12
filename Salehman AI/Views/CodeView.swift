@@ -524,6 +524,7 @@ struct ChangedFileRow: View {
 
 struct CodeView: View {
     @StateObject private var ws = CodeWorkspace()
+    @ObservedObject private var app = AppState.shared
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
@@ -614,7 +615,7 @@ struct CodeView: View {
             // slow local model (or can't fit the codebase). Tap "Add key" → Settings
             // (ContentView stays mounted in RootView, so its sheet handles this).
             if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { AppState.shared.showSettingsRequested = true },
+                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
                                    onDismiss: { dismissedCloudHint = true })
             }
             HSplitView {
@@ -689,6 +690,27 @@ struct CodeView: View {
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
             if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+        }
+        // Edge-triggers from BottomShortcutBar hints (same actions as the local shortcuts).
+        .onChange(of: app.reviewProjectRequested) { _, req in
+            guard req else { return }
+            app.reviewProjectRequested = false
+            reviewProject()
+        }
+        .onChange(of: app.toggleCodeFindRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeFindRequested = false
+            if ws.selectedFile != nil { rightPane = .file; findFocused = true }
+        }
+        .onChange(of: app.focusCodeInputRequested) { _, req in
+            guard req else { return }
+            app.focusCodeInputRequested = false
+            inputFocused = true
+        }
+        .onChange(of: app.toggleCodeTreeRequested) { _, req in
+            guard req else { return }
+            app.toggleCodeTreeRequested = false
+            withAnimation(CodeView.lux) { treeCollapsed.toggle() }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {

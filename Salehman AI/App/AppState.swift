@@ -44,6 +44,13 @@ final class AppState: ObservableObject {
     /// any action that means "create a note" (e.g. Today's "New Note" tile).
     @Published var scratchpadFocusNotesMode = false
 
+    /// Edge-triggers for Code-tab actions that originate outside CodeView
+    /// (e.g. BottomShortcutBar hints). CodeView observes these and clears them.
+    @Published var reviewProjectRequested    = false
+    @Published var toggleCodeFindRequested   = false
+    @Published var focusCodeInputRequested   = false
+    @Published var toggleCodeTreeRequested   = false
+
     private init() {}
 }
 
