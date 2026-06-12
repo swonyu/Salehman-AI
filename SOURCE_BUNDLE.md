@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:54 +03 · Swift files: 150 · Swift LOC: 33432_
+_Generated: 2026-06-12 21:55 +03 · Swift files: 150 · Swift LOC: 33440_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21979,7 +21979,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (625 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (633 lines) =====
 ```swift
 import SwiftUI
 
@@ -22359,6 +22359,8 @@ struct MarketsView: View {
                                 .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
                             Text(String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: change)
                         }
                         // Legibility on saturated tiles: white on a strong green/red is
                         // borderline — a subtle dark shadow lifts the text on any shade.
@@ -22432,11 +22434,17 @@ struct MarketsView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 if let p = sym.latest?.price {
-                    Text(String(format: "%.2f", p)).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                    Text(String(format: "%.2f", p))
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
                     Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
-                    Text(String(format: "%+.2f%%", change)).font(.system(size: 12, weight: .medium))
+                    Text(String(format: "%+.2f%%", change))
+                        .font(.system(size: 12, weight: .medium))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: change)
                 }
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
             }
@@ -36000,7 +36008,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3362 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3374 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38492,6 +38500,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `contentTransition(.numericText())` is a semantic SwiftUI API that signals the text represents a changing number. The digit-roll effect it produces is one of the most visible marks of a premium app. Both surfaces show live-updating numeric data, making them ideal targets.
 
 **Result:** Numeric counters across Today and Markets now animate with digit-roll transitions instead of instant redraws.
+
+---
+
+## 2026-06-12 · Marathon CE — numericText transitions on all MarketsView live data fields
+
+**What:** Three more `contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` additions in `MarketsView`: heatmap tile change-% text, signal card price text, signal card change-% text. These cover the remaining live-updating numeric displays that would animate when the StockSage store refreshes prices.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Why:** Comprehensive numeric-text sweep — every data field in MarketsView that displays a live float (price, % change) now rolls smoothly on update instead of instant-swapping. Consistent with the portfolio summary treatment from CD.
+
+**Result:** All live numeric fields in MarketsView now animate on data refresh.
 
 ---
 ## Standing notes / known issues

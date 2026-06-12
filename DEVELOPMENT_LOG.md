@@ -2491,6 +2491,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Numeric counters across Today and Markets now animate with digit-roll transitions instead of instant redraws.
 
 ---
+
+## 2026-06-12 · Marathon CE — numericText transitions on all MarketsView live data fields
+
+**What:** Three more `contentTransition(.numericText()) + .animation(DS.Motion.smooth, value:)` additions in `MarketsView`: heatmap tile change-% text, signal card price text, signal card change-% text. These cover the remaining live-updating numeric displays that would animate when the StockSage store refreshes prices.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`
+
+**Why:** Comprehensive numeric-text sweep — every data field in MarketsView that displays a live float (price, % change) now rolls smoothly on update instead of instant-swapping. Consistent with the portfolio summary treatment from CD.
+
+**Result:** All live numeric fields in MarketsView now animate on data refresh.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

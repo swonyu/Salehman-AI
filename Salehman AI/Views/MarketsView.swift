@@ -376,6 +376,8 @@ struct MarketsView: View {
                                 .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
                             Text(String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: change)
                         }
                         // Legibility on saturated tiles: white on a strong green/red is
                         // borderline — a subtle dark shadow lifts the text on any shade.
@@ -449,11 +451,17 @@ struct MarketsView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 if let p = sym.latest?.price {
-                    Text(String(format: "%.2f", p)).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                    Text(String(format: "%.2f", p))
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
                     Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
-                    Text(String(format: "%+.2f%%", change)).font(.system(size: 12, weight: .medium))
+                    Text(String(format: "%+.2f%%", change))
+                        .font(.system(size: 12, weight: .medium))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: change)
                 }
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
             }
