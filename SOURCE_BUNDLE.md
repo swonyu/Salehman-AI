@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:43 +03 · Swift files: 150 · Swift LOC: 34179_
+_Generated: 2026-06-13 02:45 +03 · Swift files: 150 · Swift LOC: 34188_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27251,7 +27251,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (367 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (376 lines) =====
 ```swift
 import SwiftUI
 
@@ -27361,9 +27361,18 @@ struct TodayView: View {
                                 lineWidth: 0.75
                             )
                     )
-                Image(systemName: greetingIcon)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: greetingIcon)
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 5) {
@@ -36747,7 +36756,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4193 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4203 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39896,6 +39905,16 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 - `Views/MemoryView.swift`: `addFactRow` TextField container — same focus glow treatment.
 
 **Why:** Focus glow on text input fields is standard in the composer (ContentView + CodeView); applying the same treatment to the Scratchpad and Memory add-fields makes all editable text inputs feel consistent and premium. The composer count animation makes the character counter feel alive rather than static.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EZ: TodayView greeting icon spring-bounce entrance
+
+**What changed:**
+- `Views/TodayView.swift`: Wrapped the greeting header icon (`greetingIcon` systemImage, 24pt) in `KeyframeAnimator(trigger: appeared)` with the same 3-step spring sequence used in all other view headers: compress 0.60 → overshoot 1.18 → settle 1.0. Fires once on first `.onAppear`.
+
+**Why:** All other tab headers (Agents, Knowledge, Memory, Scratchpad, Shortcuts) already use `KeyframeAnimator` for the spring-bounce icon entrance. TodayView's 54px brand icon was the sole exception — now consistent.
 
 **Result:** Zero Swift compiler errors.
 

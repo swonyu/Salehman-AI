@@ -3150,6 +3150,16 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EZ: TodayView greeting icon spring-bounce entrance
+
+**What changed:**
+- `Views/TodayView.swift`: Wrapped the greeting header icon (`greetingIcon` systemImage, 24pt) in `KeyframeAnimator(trigger: appeared)` with the same 3-step spring sequence used in all other view headers: compress 0.60 → overshoot 1.18 → settle 1.0. Fires once on first `.onAppear`.
+
+**Why:** All other tab headers (Agents, Knowledge, Memory, Scratchpad, Shortcuts) already use `KeyframeAnimator` for the spring-bounce icon entrance. TodayView's 54px brand icon was the sole exception — now consistent.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
