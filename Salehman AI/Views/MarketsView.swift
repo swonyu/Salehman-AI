@@ -458,6 +458,8 @@ struct MarketsView: View {
                 }
                 HStack(spacing: 3) {
                     Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: up)
                     Text(String(format: "%+.2f%%", change))
                         .font(.system(size: 12, weight: .medium))
                         .contentTransition(.numericText())

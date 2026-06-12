@@ -360,6 +360,8 @@ struct KnowledgeView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.80) : .secondary)
                         .offset(x: hovered ? 1 : 0, y: hovered ? -1 : 0)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: hovered)
                 }
                 .contentShape(Rectangle())
             }

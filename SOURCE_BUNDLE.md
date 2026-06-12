@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:25 +03 · Swift files: 150 · Swift LOC: 33520_
+_Generated: 2026-06-12 22:31 +03 · Swift files: 150 · Swift LOC: 33526_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13997,7 +13997,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (94 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (96 lines) =====
 ```swift
 import SwiftUI
 
@@ -14008,13 +14008,13 @@ import SwiftUI
 /// the content above it.
 struct BottomShortcutBar: View {
     @ObservedObject private var app = AppState.shared
-    @State private var hoveredHintID: UUID?
+    @State private var hoveredHintID: String?
 
     private struct Hint: Identifiable {
-        let id = UUID()
         let keys: String
         let label: String
         let run: () -> Void
+        var id: String { keys }
     }
 
     private var hints: [Hint] {
@@ -14076,6 +14076,7 @@ struct BottomShortcutBar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))
                 .onHover { over in
                     withAnimation(DS.Motion.press) {
                         hoveredHintID = over ? hint.id : (hoveredHintID == hint.id ? nil : hoveredHintID)
@@ -14086,6 +14087,7 @@ struct BottomShortcutBar: View {
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: app.aiIsRunning)
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
@@ -20592,7 +20594,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (650 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (652 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20956,6 +20958,8 @@ struct KnowledgeView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.80) : .secondary)
                         .offset(x: hovered ? 1 : 0, y: hovered ? -1 : 0)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: hovered)
                 }
                 .contentShape(Rectangle())
             }
@@ -22023,7 +22027,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (651 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (653 lines) =====
 ```swift
 import SwiftUI
 
@@ -22485,6 +22489,8 @@ struct MarketsView: View {
                 }
                 HStack(spacing: 3) {
                     Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: up)
                     Text(String(format: "%+.2f%%", change))
                         .font(.system(size: 12, weight: .medium))
                         .contentTransition(.numericText())
@@ -36088,7 +36094,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3487 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3492 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39572,10 +39578,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CN: final symbolEffect gaps + BottomShortcutBar Stop hint animation (Chat A)
+**What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.
+**Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CM: isolated entry/exit animations (Chat A)
 **What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.
 **Files:** `Views/ContentView.swift`, `Views/KnowledgeView.swift`.
-**Commit:** `(next)`
+**Commit:** `dbc8f69`
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

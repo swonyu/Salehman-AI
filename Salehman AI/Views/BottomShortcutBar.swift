@@ -7,13 +7,13 @@ import SwiftUI
 /// the content above it.
 struct BottomShortcutBar: View {
     @ObservedObject private var app = AppState.shared
-    @State private var hoveredHintID: UUID?
+    @State private var hoveredHintID: String?
 
     private struct Hint: Identifiable {
-        let id = UUID()
         let keys: String
         let label: String
         let run: () -> Void
+        var id: String { keys }
     }
 
     private var hints: [Hint] {
@@ -75,6 +75,7 @@ struct BottomShortcutBar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))
                 .onHover { over in
                     withAnimation(DS.Motion.press) {
                         hoveredHintID = over ? hint.id : (hoveredHintID == hint.id ? nil : hoveredHintID)
@@ -85,6 +86,7 @@ struct BottomShortcutBar: View {
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: app.aiIsRunning)
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
