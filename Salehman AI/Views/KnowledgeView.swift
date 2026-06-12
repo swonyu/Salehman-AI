@@ -554,9 +554,11 @@ private struct DocDetailSheet: View {
                             Text("Summarizing on-device…").font(.callout).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
                     } else {
                         Text(summary).font(.callout).foregroundStyle(.white)
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
                     }
 
                     if !answer.isEmpty {
@@ -577,13 +579,17 @@ private struct DocDetailSheet: View {
                             } label: {
                                 Label(answerSaved ? "Saved!" : "Save to Notes",
                                       systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                                    .contentTransition(.symbolEffect(.replace))
                             }
+                            .animation(DS.Motion.smooth, value: answerSaved)
                             .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
                             Spacer(minLength: 0)
                         }
                         .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
+                .animation(DS.Motion.smooth, value: loading)
+                .animation(DS.Motion.smooth, value: answer.isEmpty)
             }
 
             // Ask scoped to THIS document only.
@@ -594,10 +600,14 @@ private struct DocDetailSheet: View {
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    }
+                    .transition(.opacity)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Ask about this document")
+                .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)

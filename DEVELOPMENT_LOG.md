@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DD: KnowledgeView document-detail panel animations (Chat A)
+**What:** Four unanimated moments in the KnowledgeView document-detail sheet now animate. (1) `if loading { spinner } else { Text(summary) }`: `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: loading)` on the VStack. (2) `if !answer.isEmpty { ... }`: parent VStack gains `.animation(DS.Motion.smooth, value: answer.isEmpty)` so the answer section fades in when the AI reply arrives. (3) "Save to Notes" button label: `Label(answerSaved ? "Saved!" : "Save to Notes", ...)` gets `.contentTransition(.symbolEffect(.replace))` + `.animation(.smooth, value: answerSaved)` on the Button. (4) Ask-button send-icon spinner: `Group { if asking { ProgressView } else { Image } }.transition(.opacity)` + `.animation(.smooth, value: asking)` — the arrow crossfades to a spinner while the on-device model answers.
+**Files:** `Views/KnowledgeView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DC: MemoryView + CommandPalette empty-state transitions (Chat A)
 **What:** Two "no results" moments now animate instead of snapping. (1) `MemoryView` search no-match: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }` — each branch gets `.transition(.opacity)` and the Group carries `.animation(DS.Motion.smooth, value: shown.isEmpty)`. Also added `.transition(.opacity)` to `emptyState` + `.animation(.smooth, value: facts.isEmpty)` on the outer VStack for when all memories are cleared. (2) `CommandPalette` "No matching commands" text: `.transition(.opacity)` so it crossfades in as the filter goes empty — the containing LazyVStack already had the needed `.animation(.smooth, value: filtered.count)`.
 **Files:** `Views/MemoryView.swift`, `Views/CommandPalette.swift`.
-**Commit:** TBD
+**Commit:** `465a51e`
 
 ## 2026-06-12 — marathon DB: LiveTranscriptionView search + empty state + partial text transitions (Chat A)
 **What:** Three UI moments in `LiveTranscriptionView` that previously snapped now animate. (1) Search-field clear button (×): `.transition(.opacity)` + `.animation(DS.Motion.magnetic, value: searchText.isEmpty)` on the HStack — button fades in/out as user types rather than snapping. (2) Empty-state placeholder text ("Listening…" / "Press Start"): `.transition(.opacity.combined(with: .offset(y: 4)))` + already-present LazyVStack animation drives it up as transcription begins. (3) In-flight partial text row (live: true): `.transition(.opacity)` + new `.animation(DS.Motion.smooth, value: live.partialThem.isEmpty)` on the LazyVStack so the partial bubble fades in when the first syllable arrives and fades out when finalized.

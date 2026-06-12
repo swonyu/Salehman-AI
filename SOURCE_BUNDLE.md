@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:24 +03 · Swift files: 150 · Swift LOC: 33672_
+_Generated: 2026-06-12 23:26 +03 · Swift files: 150 · Swift LOC: 33682_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20643,7 +20643,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (656 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (666 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21201,9 +21201,11 @@ private struct DocDetailSheet: View {
                             Text("Summarizing on-device…").font(.callout).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
                     } else {
                         Text(summary).font(.callout).foregroundStyle(.white)
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
                     }
 
                     if !answer.isEmpty {
@@ -21224,13 +21226,17 @@ private struct DocDetailSheet: View {
                             } label: {
                                 Label(answerSaved ? "Saved!" : "Save to Notes",
                                       systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                                    .contentTransition(.symbolEffect(.replace))
                             }
+                            .animation(DS.Motion.smooth, value: answerSaved)
                             .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
                             Spacer(minLength: 0)
                         }
                         .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
+                .animation(DS.Motion.smooth, value: loading)
+                .animation(DS.Motion.smooth, value: answer.isEmpty)
             }
 
             // Ask scoped to THIS document only.
@@ -21241,10 +21247,14 @@ private struct DocDetailSheet: View {
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    }
+                    .transition(.opacity)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Ask about this document")
+                .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
@@ -36240,7 +36250,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3567 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3572 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39724,10 +39734,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DD: KnowledgeView document-detail panel animations (Chat A)
+**What:** Four unanimated moments in the KnowledgeView document-detail sheet now animate. (1) `if loading { spinner } else { Text(summary) }`: `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: loading)` on the VStack. (2) `if !answer.isEmpty { ... }`: parent VStack gains `.animation(DS.Motion.smooth, value: answer.isEmpty)` so the answer section fades in when the AI reply arrives. (3) "Save to Notes" button label: `Label(answerSaved ? "Saved!" : "Save to Notes", ...)` gets `.contentTransition(.symbolEffect(.replace))` + `.animation(.smooth, value: answerSaved)` on the Button. (4) Ask-button send-icon spinner: `Group { if asking { ProgressView } else { Image } }.transition(.opacity)` + `.animation(.smooth, value: asking)` — the arrow crossfades to a spinner while the on-device model answers.
+**Files:** `Views/KnowledgeView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DC: MemoryView + CommandPalette empty-state transitions (Chat A)
 **What:** Two "no results" moments now animate instead of snapping. (1) `MemoryView` search no-match: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }` — each branch gets `.transition(.opacity)` and the Group carries `.animation(DS.Motion.smooth, value: shown.isEmpty)`. Also added `.transition(.opacity)` to `emptyState` + `.animation(.smooth, value: facts.isEmpty)` on the outer VStack for when all memories are cleared. (2) `CommandPalette` "No matching commands" text: `.transition(.opacity)` so it crossfades in as the filter goes empty — the containing LazyVStack already had the needed `.animation(.smooth, value: filtered.count)`.
 **Files:** `Views/MemoryView.swift`, `Views/CommandPalette.swift`.
-**Commit:** TBD
+**Commit:** `465a51e`
 
 ## 2026-06-12 — marathon DB: LiveTranscriptionView search + empty state + partial text transitions (Chat A)
 **What:** Three UI moments in `LiveTranscriptionView` that previously snapped now animate. (1) Search-field clear button (×): `.transition(.opacity)` + `.animation(DS.Motion.magnetic, value: searchText.isEmpty)` on the HStack — button fades in/out as user types rather than snapping. (2) Empty-state placeholder text ("Listening…" / "Press Start"): `.transition(.opacity.combined(with: .offset(y: 4)))` + already-present LazyVStack animation drives it up as transcription begins. (3) In-flight partial text row (live: true): `.transition(.opacity)` + new `.animation(DS.Motion.smooth, value: live.partialThem.isEmpty)` on the LazyVStack so the partial bubble fades in when the first syllable arrives and fades out when finalized.
