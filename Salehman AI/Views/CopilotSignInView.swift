@@ -12,11 +12,35 @@ struct CopilotSignInView: View {
     @State private var status = "Requesting a device code from GitHub…"
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
+    @State private var appeared = false
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "person.2.badge.gearshape.fill")
-                .font(.system(size: 34)).foregroundStyle(DS.Palette.accent)
+            ZStack {
+                PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 72, height: 72)
+                        .blur(radius: 16)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.11
+                        ? .spring(duration: 2.4, bounce: 0.06)
+                        : .easeOut(duration: 2.0)
+                }
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "person.2.badge.gearshape.fill")
+                        .font(.system(size: 34))
+                        .foregroundStyle(DS.Palette.accent)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
+            }
             Text("Sign in to GitHub Copilot").font(.title2.weight(.bold))
             Text("Requires an active Copilot subscription on your GitHub account.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -61,7 +85,10 @@ struct CopilotSignInView: View {
         }
         .padding(24)
         .frame(width: 380)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
         .task { await start() }
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .onDisappear { pollTask?.cancel() }
     }
 

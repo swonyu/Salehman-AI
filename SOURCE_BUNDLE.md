@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:48 +03 · Swift files: 150 · Swift LOC: 33351_
+_Generated: 2026-06-12 21:50 +03 · Swift files: 150 · Swift LOC: 33394_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20267,7 +20267,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (92 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (119 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20283,11 +20283,35 @@ struct CopilotSignInView: View {
     @State private var status = "Requesting a device code from GitHub…"
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
+    @State private var appeared = false
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "person.2.badge.gearshape.fill")
-                .font(.system(size: 34)).foregroundStyle(DS.Palette.accent)
+            ZStack {
+                PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 72, height: 72)
+                        .blur(radius: 16)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.11
+                        ? .spring(duration: 2.4, bounce: 0.06)
+                        : .easeOut(duration: 2.0)
+                }
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "person.2.badge.gearshape.fill")
+                        .font(.system(size: 34))
+                        .foregroundStyle(DS.Palette.accent)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
+            }
             Text("Sign in to GitHub Copilot").font(.title2.weight(.bold))
             Text("Requires an active Copilot subscription on your GitHub account.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -20332,7 +20356,10 @@ struct CopilotSignInView: View {
         }
         .padding(24)
         .frame(width: 380)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
         .task { await start() }
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .onDisappear { pollTask?.cancel() }
     }
 
@@ -21952,7 +21979,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (575 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (591 lines) =====
 ```swift
 import SwiftUI
 
@@ -21982,6 +22009,7 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
+    @State private var appeared = false
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -21992,9 +22020,23 @@ struct MarketsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
                     header
-                    if store.isSampleData { sampleBanner }
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(DS.Motion.lux, value: appeared)
+                    if store.isSampleData {
+                        sampleBanner
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(0.05), value: appeared)
+                    }
                     sectionPicker
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.08), value: appeared)
                     content
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 6)
+                        .animation(DS.Motion.lux.delay(0.12), value: appeared)
                 }
                 .padding(DS.Space.xl)
                 // Centered content column, same as the chat surfaces.
@@ -22005,6 +22047,7 @@ struct MarketsView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
+        .onAppear { appeared = true }
     }
 
     private var header: some View {
@@ -35919,7 +35962,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3326 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3338 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38375,6 +38418,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The market dot is always visible in the tab bar — upgrading it to a live breathing indicator makes the "market is open" state immediately legible at a glance. ChatHistoryView already had staggered rows (from a prior session); the brand tile and empty-state were the remaining static elements.
 
 **Result:** Market status dot now pulses like a live indicator. ChatHistoryView has full entrance + empty-state parity with the rest of the app.
+
+---
+
+## 2026-06-12 · Marathon CB — MarketsView + CopilotSignInView entrance animations
+
+**What:** `MarketsView`: added `@State private var appeared = false`; `.onAppear { appeared = true }` on the outer VStack; four top-level sections (header, sampleBanner, sectionPicker, content) now cascade in with `DS.Motion.lux` at 0 / 50 / 80 / 120 ms delays. `CopilotSignInView`: added `appeared` state + `.onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }` alongside `.task`; the large icon replaced with a `ZStack` wrapping a `PhaseAnimator` ambient glow halo + `KeyframeAnimator(trigger: appeared)` rubber-band bounce; whole-VStack entrance via `.opacity + .offset` driven by `appeared`.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/CopilotSignInView.swift`
+
+**Why:** These were the last two non-sheet, non-component views without entrance animations. MarketsView uses block-level cascade (not per-row) because content sections are complex/stateful. CopilotSignInView gets the same ZStack PhaseAnimator+KeyframeAnimator treatment as other utility sheets.
+
+**Result:** Every primary tab and utility sheet in the app now has a polished entrance animation.
 
 ---
 ## Standing notes / known issues

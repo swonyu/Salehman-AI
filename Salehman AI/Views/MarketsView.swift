@@ -26,6 +26,7 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
+    @State private var appeared = false
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -36,9 +37,23 @@ struct MarketsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
                     header
-                    if store.isSampleData { sampleBanner }
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(DS.Motion.lux, value: appeared)
+                    if store.isSampleData {
+                        sampleBanner
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(0.05), value: appeared)
+                    }
                     sectionPicker
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.08), value: appeared)
                     content
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 6)
+                        .animation(DS.Motion.lux.delay(0.12), value: appeared)
                 }
                 .padding(DS.Space.xl)
                 // Centered content column, same as the chat surfaces.
@@ -49,6 +64,7 @@ struct MarketsView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
+        .onAppear { appeared = true }
     }
 
     private var header: some View {

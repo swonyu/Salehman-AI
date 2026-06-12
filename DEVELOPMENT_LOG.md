@@ -2455,6 +2455,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Market status dot now pulses like a live indicator. ChatHistoryView has full entrance + empty-state parity with the rest of the app.
 
 ---
+
+## 2026-06-12 · Marathon CB — MarketsView + CopilotSignInView entrance animations
+
+**What:** `MarketsView`: added `@State private var appeared = false`; `.onAppear { appeared = true }` on the outer VStack; four top-level sections (header, sampleBanner, sectionPicker, content) now cascade in with `DS.Motion.lux` at 0 / 50 / 80 / 120 ms delays. `CopilotSignInView`: added `appeared` state + `.onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }` alongside `.task`; the large icon replaced with a `ZStack` wrapping a `PhaseAnimator` ambient glow halo + `KeyframeAnimator(trigger: appeared)` rubber-band bounce; whole-VStack entrance via `.opacity + .offset` driven by `appeared`.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/CopilotSignInView.swift`
+
+**Why:** These were the last two non-sheet, non-component views without entrance animations. MarketsView uses block-level cascade (not per-row) because content sections are complex/stateful. CopilotSignInView gets the same ZStack PhaseAnimator+KeyframeAnimator treatment as other utility sheets.
+
+**Result:** Every primary tab and utility sheet in the app now has a polished entrance animation.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
