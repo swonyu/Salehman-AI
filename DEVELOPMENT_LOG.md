@@ -3062,6 +3062,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon ES: contentTransition sweep — SettingsView status labels
+
+**What changed:**
+- `SettingsView.swift` `brainGridCell`: Added `.contentTransition(.opacity)` and `.animation(DS.Motion.smooth, value: ready)` on `statusText` — "Connected" ↔ "Offline" now crossfades when connection state changes.
+- `SettingsView.swift` Unsloth Studio test status: Added `.transition(.opacity.combined(with: .move(edge: .top)))` so the result text slides down elegantly when the test completes.
+- `SettingsView.swift` vLLM test status: Same transition.
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Why:** The brainGridCell status text was the last dynamic label in the app without a crossfade — all other changing labels (voice phase, brain title, market prices, progress counters) already had contentTransition. The test status appearances are shown/hidden conditionally; without a transition they snap in abruptly.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

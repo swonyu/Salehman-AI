@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:17 +03 · Swift files: 150 · Swift LOC: 34083_
+_Generated: 2026-06-13 02:19 +03 · Swift files: 150 · Swift LOC: 34087_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24609,7 +24609,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2085 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2089 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25360,6 +25360,8 @@ struct SettingsView: View {
                 Text(statusText)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(statusColor)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: ready)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -25480,6 +25482,7 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
@@ -25551,6 +25554,7 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
@@ -36651,7 +36655,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4105 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4119 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39712,6 +39716,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
 
 **Why:** The brain-picker is the most-used control in both chat and code tabs — switching models is a frequent operation. Without `contentTransition`, the label snaps to the new name. The missing border made it visually "floating" without a surface definition despite every other Capsule control in the chrome now having the top-lit gradient stroke.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon ES: contentTransition sweep — SettingsView status labels
+
+**What changed:**
+- `SettingsView.swift` `brainGridCell`: Added `.contentTransition(.opacity)` and `.animation(DS.Motion.smooth, value: ready)` on `statusText` — "Connected" ↔ "Offline" now crossfades when connection state changes.
+- `SettingsView.swift` Unsloth Studio test status: Added `.transition(.opacity.combined(with: .move(edge: .top)))` so the result text slides down elegantly when the test completes.
+- `SettingsView.swift` vLLM test status: Same transition.
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Why:** The brainGridCell status text was the last dynamic label in the app without a crossfade — all other changing labels (voice phase, brain title, market prices, progress counters) already had contentTransition. The test status appearances are shown/hidden conditionally; without a transition they snap in abruptly.
 
 **Result:** Zero Swift compiler errors.
 

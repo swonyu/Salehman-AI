@@ -747,6 +747,8 @@ struct SettingsView: View {
                 Text(statusText)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(statusColor)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: ready)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -867,6 +869,7 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
@@ -938,6 +941,7 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
