@@ -15,6 +15,8 @@ struct ScratchpadView: View {
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
     @State private var editingText = ""
+    @State private var hoveredTaskID: UUID?
+    @State private var hoveredNoteID: UUID?
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -45,21 +47,37 @@ struct ScratchpadView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Notes").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button { Task { await runAI() } } label: {
-                HStack(spacing: 6) {
-                    if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
-                    Text(pad == .tasks ? "Organize" : "Summarize")
+        ZStack(alignment: .topLeading) {
+            // Ambient glow — soft depth behind the title.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.12))
+                .frame(width: 180)
+                .blur(radius: 65)
+                .offset(x: -20, y: -35)
+                .allowsHitTesting(false)
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("NOTES & TASKS")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(2)
+                        .foregroundStyle(DS.Palette.accent)
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Your scratchpad — Salehman can add & complete these from chat too.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button { Task { await runAI() } } label: {
+                    HStack(spacing: 6) {
+                        if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
+                        Text(pad == .tasks ? "Organize" : "Summarize")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
-            .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
-            .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
         }
     }
 
@@ -148,10 +166,12 @@ struct ScratchpadView: View {
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
-        HStack(spacing: 12) {
+        let hovered = hoveredTaskID == t.id
+        return HStack(spacing: 12) {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16)).foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : .secondary)
+                    .font(.system(size: 16))
+                    .foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -161,7 +181,9 @@ struct ScratchpadView: View {
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
             } else {
                 Text(t.title)
-                    .font(.system(size: 14)).foregroundStyle(t.done ? Color.secondary : Color.white).strikethrough(t.done)
+                    .font(.system(size: 14))
+                    .foregroundStyle(t.done ? Color.secondary : (hovered ? .white : .white.opacity(0.9)))
+                    .strikethrough(t.done)
             }
             Spacer(minLength: 8)
             if editingId != t.id {
@@ -170,6 +192,14 @@ struct ScratchpadView: View {
             deleteButton { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredTaskID = t.id }
+                else if hoveredTaskID == t.id { hoveredTaskID = nil }
+            }
+        }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
@@ -194,15 +224,22 @@ struct ScratchpadView: View {
     }
 
     private func noteRow(_ n: Note) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "note.text").font(.system(size: 13)).foregroundStyle(DS.Palette.accent).frame(width: 18)
+        let hovered = hoveredNoteID == n.id
+        return HStack(spacing: 12) {
+            Image(systemName: "note.text")
+                .font(.system(size: 13))
+                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
+                .frame(width: 18)
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: true, id: n.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
             } else {
-                Text(n.text).font(.system(size: 14)).foregroundStyle(.white).textSelection(.enabled)
+                Text(n.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 8)
             if editingId != n.id {
@@ -211,6 +248,14 @@ struct ScratchpadView: View {
             deleteButton { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredNoteID = n.id }
+                else if hoveredNoteID == n.id { hoveredNoteID = nil }
+            }
+        }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
@@ -272,11 +317,28 @@ struct ScratchpadView: View {
     }
 
     private func emptyState(_ text: String, _ icon: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 34)).foregroundStyle(DS.Palette.accent.opacity(0.8))
-            Text(text).font(.callout).foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.16))
+                    .frame(width: 90)
+                    .blur(radius: 20)
+                Image(systemName: icon)
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.9))
+            }
+            .padding(.bottom, 2)
+            Text(pad == .tasks ? "YOUR TASKS" : "YOUR NOTES")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(2)
+                .foregroundStyle(DS.Palette.accent)
+            Text(text)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+            Text(pad == .tasks ? "Type above and hit ↩ to add one." : "Type above and hit ↩ to add one.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 36)
+        .frame(maxWidth: .infinity).padding(.vertical, 40)
     }
 
     private var aiResultCard: some View {
