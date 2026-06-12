@@ -1420,6 +1420,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Verification:** typecheck EXIT 0 ×2; `** BUILD SUCCEEDED **`; full QA cycle green; CVD pass clean on the bar.
 
 ---
+**2026-06-12 — Stale copy + visual polish: ShortcutsView, KnowledgeView, AboutView, OnboardingView (Chat C)**
+
+**What changed:**
+- AboutView + OnboardingView: updated stale cloud-first copy to honest on-device after cloud removal.
+- ShortcutsView: full premium visual rewrite — gradient bg, ambient glow, editorial eyebrow, hover states on rows, top-lit key badges, entrance animation.
+- KnowledgeView: ambient glow + KNOWLEDGE VAULT eyebrow; hover states on doc rows; elevated empty state.
+- ScratchpadStore: added import SwiftUI (was blocking clean builds — IndexSet.move needs SwiftUI).
+
+**Files:** Views/AboutView.swift, Views/OnboardingView.swift, Views/ShortcutsView.swift, Views/KnowledgeView.swift, Persistence/ScratchpadStore.swift
+
+**Result:** BUILD SUCCEEDED
+
+---
 **2026-06-12 — Auto-start Ollama + fix stale cloud-key messages (Chat C, owner-directed)**
 
 **What changed:**
@@ -2281,6 +2294,26 @@ Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
 replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
 rollback, not deleted). App launched. Owner-authorized explicitly after the
 permission classifier blocked the first attempt.
+
+## 2026-06-12 — marathon R: drag-to-reorder notes and tasks (Chat A)
+**What (owner: "continue"):**
+- `ScratchpadStore.moveNote/moveTask` — `Array.move(fromOffsets:toOffset:)` wrappers with immediate persist.
+- `ScratchpadView.tasksList`/`notesList`: when search is empty, shows items in stored order inside a SwiftUI `List` with `.onMove` (macOS drag handles on hover). When search is active, uses the existing sorted/filtered `listCard`.
+- `reorderList()` helper: `List` + `.scrollDisabled(true)` + `.scrollContentBackground(.hidden)` wrapped in the design-language rounded panel + stroke overlay.
+- Per-row `.listRowBackground(Color.clear)` + `.listRowInsets(EdgeInsets())` — no-ops in the VStack path, required in the List path.
+- Tests: `moveNoteChangesOrder` + `moveTaskChangesOrder` with hermetic temp stores.
+**Files:** `Persistence/ScratchpadStore.swift`, `Views/ScratchpadView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`.
+**Commit:** `72e70de`
+
+## 2026-06-12 — marathon Q: /note + Save as Note + auto-dismiss toast (Chat A)
+**What (owner: "continue"):**
+- `/note` slash command: saves the most recent AI reply as a note in the scratchpad.
+- "Save as Note" in the assistant right-click context menu: saves `displayedText` without tab-switching.
+- Self-dismissing "Saved to Notes ✓" banner above the input bar: auto-clears after 1.8 s via `.task(id:)` — no modal, no timer.
+- `onSaveToNotes: ((String) -> Void)?` added to `MessageBubble` (closure, excluded from `==` per the equatable contract).
+- Tests: `NoteFromChatTests` ×5 (stores text, trims whitespace, ignores blank/empty, multiple notes insert at front).
+**Files:** `Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`.
+**Commit:** `074dc6c`
 
 ## 2026-06-12 — marathon P: pin in hover pills + /pin command + Copy as Plain Text (Chat A)
 **What (owner: "continue"):**

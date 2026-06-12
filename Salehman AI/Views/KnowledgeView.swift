@@ -30,6 +30,7 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    @State private var hoveredDocID: UUID?
 
     var body: some View {
         ScrollView {
@@ -62,24 +63,40 @@ struct KnowledgeView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Knowledge").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Chat with your own documents — private, on this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                .accessibilityLabel("Paste text").disabled(ingesting)
-            Button(action: addFile) {
-                HStack(spacing: 6) {
-                    if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
-                    Text(ingesting ? "Reading…" : "Add file")
+        ZStack(alignment: .topLeading) {
+            // Ambient glow — soft depth behind the title area.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.13))
+                .frame(width: 200)
+                .blur(radius: 70)
+                .offset(x: -30, y: -40)
+                .allowsHitTesting(false)
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("KNOWLEDGE VAULT")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(2)
+                        .foregroundStyle(DS.Palette.accent)
+                    Text("Knowledge")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Chat with your own documents — private, on this Mac.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
+                Spacer()
+                Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
+                    .buttonStyle(.bordered).controlSize(.small).help("Paste text")
+                    .accessibilityLabel("Paste text").disabled(ingesting)
+                Button(action: addFile) {
+                    HStack(spacing: 6) {
+                        if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
+                        Text(ingesting ? "Reading…" : "Add file")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .disabled(ingesting)
             }
-            .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
-            .disabled(ingesting)
         }
     }
 
@@ -134,16 +151,25 @@ struct KnowledgeView: View {
 
     @ViewBuilder private var documentsSection: some View {
         if docs.isEmpty {
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.14)).frame(width: 84, height: 84).blur(radius: 16)
-                    Image(systemName: "books.vertical.fill").font(.system(size: 38)).foregroundStyle(DS.Palette.accent.opacity(0.85))
+                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
-                Text("No documents yet").font(.headline).foregroundStyle(.white)
+                .padding(.bottom, 4)
+                Text("START YOUR VAULT")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(2)
+                    .foregroundStyle(DS.Palette.accent)
+                Text("No documents yet")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
                 Text("Add PDFs, text, or notes. Everything stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 30)
+            .frame(maxWidth: .infinity).padding(.vertical, 40)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
@@ -199,28 +225,47 @@ struct KnowledgeView: View {
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
-        HStack(spacing: 12) {
+        let hovered = hoveredDocID == doc.id
+        return HStack(spacing: 12) {
             // Tapping the row opens the detail sheet (on-device summary + info).
             Button { detailDoc = doc } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: doc.icon).font(.system(size: 14)).foregroundStyle(DS.Palette.accent).frame(width: 20)
+                    Image(systemName: doc.icon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
+                        .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(doc.name).font(.system(size: 14, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+                        Text(doc.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                            .lineLimit(1)
                         Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s")")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.6) : .secondary)
             }
             .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredDocID = doc.id }
+                else if hoveredDocID == doc.id { hoveredDocID = nil }
+            }
+        }
     }
 
     // MARK: Actions
