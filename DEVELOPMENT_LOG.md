@@ -2162,6 +2162,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); additive state + icon swap.
 
 ---
+
+### 2026-06-12 — Marathon BF: Copy-feedback flash — LiveTranscriptionView + CodeMessageRow
+
+**What:** Extended the copy-feedback flash pattern (established in marathon BE for ContentView's MessageBubble) to two more views: `LiveTranscriptionView` Copy button now shows "Copied!" label + checkmark icon for 1.5s; `CodeMessageRow` Copy action button now flips from `"doc.on.doc"` to `"checkmark"` for 1.5s.
+
+**Files:** `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Consistency — all three copy surfaces now give the same confirmation signal. Previously only ScratchpadView's "Copy all" button and MemoryView's row copy had the flash.
+
+**Result:** Build not yet run (owner-side); additive @State + icon swap in two views.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

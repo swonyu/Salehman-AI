@@ -5,6 +5,7 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    @State private var copied = false
     var onAsk: (String) -> Void
 
     private var filteredLines: [TranscriptLine] {
@@ -193,7 +194,9 @@ struct LiveTranscriptionView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
-            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                copied = true
+                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .buttonStyle(.bordered)
                 .disabled(live.combinedText.isEmpty)
 

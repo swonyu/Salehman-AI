@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:47 +03 · Swift files: 150 · Swift LOC: 32526_
+_Generated: 2026-06-12 09:48 +03 · Swift files: 150 · Swift LOC: 32532_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14537,7 +14537,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2534 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2537 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16896,6 +16896,7 @@ struct CodeMessageRow: View {
     var onRegenerate: (() -> Void)? = nil
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
+    @State private var copied = false
 
     var body: some View {
         if msg.isUser {
@@ -16928,9 +16929,11 @@ struct CodeMessageRow: View {
                            "Read aloud", active: speech.speakingID == msg.id) {
                         speech.toggle(msg.text, id: msg.id)
                     }
-                    action("doc.on.doc", "Copy") {
+                    action(copied ? "checkmark" : "doc.on.doc", "Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(msg.text, forType: .string)
+                        copied = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
                     }
                     if let regen = onRegenerate {
                         action("arrow.clockwise", "Regenerate", regen)
@@ -20874,7 +20877,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (258 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (261 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20883,6 +20886,7 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    @State private var copied = false
     var onAsk: (String) -> Void
 
     private var filteredLines: [TranscriptLine] {
@@ -21071,7 +21075,9 @@ struct LiveTranscriptionView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
-            } label: { Label("Copy", systemImage: "doc.on.doc") }
+                copied = true
+                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .buttonStyle(.bordered)
                 .disabled(live.combinedText.isEmpty)
 
@@ -35094,7 +35100,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3033 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3045 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37257,6 +37263,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The Copy button was previously silent — no visual confirmation. Every well-crafted app (VS Code, Linear, Notion) flashes a checkmark to confirm clipboard writes.
 
 **Result:** Build not yet run (owner-side); additive state + icon swap.
+
+---
+
+### 2026-06-12 — Marathon BF: Copy-feedback flash — LiveTranscriptionView + CodeMessageRow
+
+**What:** Extended the copy-feedback flash pattern (established in marathon BE for ContentView's MessageBubble) to two more views: `LiveTranscriptionView` Copy button now shows "Copied!" label + checkmark icon for 1.5s; `CodeMessageRow` Copy action button now flips from `"doc.on.doc"` to `"checkmark"` for 1.5s.
+
+**Files:** `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Why:** Consistency — all three copy surfaces now give the same confirmation signal. Previously only ScratchpadView's "Copy all" button and MemoryView's row copy had the flash.
+
+**Result:** Build not yet run (owner-side); additive @State + icon swap in two views.
 
 ---
 ## Standing notes / known issues

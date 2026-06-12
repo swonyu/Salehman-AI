@@ -2355,6 +2355,7 @@ struct CodeMessageRow: View {
     var onRegenerate: (() -> Void)? = nil
     @ObservedObject private var speech = SpeechOut.shared
     @State private var hovering = false
+    @State private var copied = false
 
     var body: some View {
         if msg.isUser {
@@ -2387,9 +2388,11 @@ struct CodeMessageRow: View {
                            "Read aloud", active: speech.speakingID == msg.id) {
                         speech.toggle(msg.text, id: msg.id)
                     }
-                    action("doc.on.doc", "Copy") {
+                    action(copied ? "checkmark" : "doc.on.doc", "Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(msg.text, forType: .string)
+                        copied = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
                     }
                     if let regen = onRegenerate {
                         action("arrow.clockwise", "Regenerate", regen)
