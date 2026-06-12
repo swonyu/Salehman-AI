@@ -2103,6 +2103,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); all changes are additive property-wrapper replacements with no logic impact.
 
 ---
+### 2026-06-12 — Marathon BA: Fix build-breaking banned patterns + Unicode smart quotes in SettingsView
+
+**What:** Three fixes that the linter-modified files introduced: (1) `LiveTranscriptionView` — replaced remaining banned `.easeOut(duration:0.15)` scroll animation with `.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)`; replaced banned `.borderedProminent` on the "Answer the questions" footer button with `LuxPressStyle()` + accent Capsule pill (consistent with all other CTA buttons in the app); (2) `SettingsView` — Unicode curly quotes (`"“"`, `"”"`) were auto-inserted into Swift string literals (breaking the `systemName:` strings and `Text()` content), causing build failures. Used `perl -i` byte-level replacement to flush all smart quotes, then escaped inner quote pairs with `\"...\"`; resolved the resulting unescaped-quote parse error on line 1358.
+
+**Files:** `Salehman AI/Views/LiveTranscriptionView.swift`, `Salehman AI/Views/SettingsView.swift`
+
+**Why:** `easeOut` and `borderedProminent` are explicitly banned in the design system. The smart quotes in SettingsView were a linter/editor autocorrect artifact that broke the build entirely.
+
+**Result:** `** BUILD SUCCEEDED **`. Zero banned patterns remain in any Views file.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
