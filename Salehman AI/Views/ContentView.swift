@@ -2208,6 +2208,14 @@ struct MessageBubble: View, Equatable {
             // layout row beneath the block.
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 2) {
+                    // Send time — same metadata-on-demand pattern as the
+                    // assistant's duration label. Appears at leading edge of
+                    // the pill so timestamp scans left-to-right like reading.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                     if onEdit != nil {
                         actionButton("pencil", "Edit & resend (removes this turn and everything after)") {
                             onEdit?(message)
@@ -2274,6 +2282,15 @@ struct MessageBubble: View, Equatable {
                         // Full stats on demand (the pill only renders on
                         // hover, so the word count split is effectively free).
                         .help("Generated in \(String(format: "%.1f", d))s · \(message.text.split { $0.isWhitespace }.count) words · \(message.timestamp.formatted(date: .omitted, time: .shortened))")
+                } else {
+                    // Fallback for history-loaded replies that have no recorded
+                    // duration — still show the timestamp so every bubble has
+                    // time context on hover.
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 5).padding(.trailing, 2)
+                        .help(message.timestamp.formatted(date: .long, time: .standard))
                 }
                 actionButton(speech.speakingID == message.id ? "speaker.wave.2.fill" : "speaker.wave.2",
                              "Read aloud", active: speech.speakingID == message.id) {

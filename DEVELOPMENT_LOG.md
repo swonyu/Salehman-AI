@@ -1678,6 +1678,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`.
 
 ---
+## 2026-06-12 — Marathon AB: timestamp on user-row hover pill + assistant fallback
+
+**What changed:**
+- `ContentView.swift` → `userRow` overlay: added send-timestamp `Text` before the edit button, shown on hover. Formatted as shortened time (`h:mm a`); `.help` tooltip shows full date+time.
+- `ContentView.swift` → `assistantRow` overlay: added `else` branch after `if let d = message.duration { ... }` — history-loaded replies (where `duration == nil`) now show their timestamp in the same pill position instead of showing nothing.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** Every bubble now exposes its timestamp on hover regardless of whether it came from a live response or was loaded from history. The assistant `else` branch avoids a dead hover state for older sessions.
+
+**Result:** Source change only; build/test deferred to owner (sandbox restriction). SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

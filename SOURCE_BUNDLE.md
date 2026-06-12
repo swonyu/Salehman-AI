@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:27 +03 · Swift files: 150 · Swift LOC: 31893_
+_Generated: 2026-06-12 08:29 +03 · Swift files: 150 · Swift LOC: 31893_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5047,7 +5047,7 @@ enum LocalLLM {
     /// For the context-aware text we *display* (rather than return as a
     /// sentinel), see `unavailableMessage` below.
     nonisolated static let offMessage =
-        "No model is reachable right now. Start Ollama with `ollama serve` and make sure the `salehman` model is pulled (`ollama pull salehman`)."
+        "No model is reachable right now. Make sure the salehman model is pulled: `ollama pull salehman`."
 
     /// Context-aware UI-facing text describing why the currently-pinned brain
     /// can't answer. Names the brain the user actually selected and the exact
@@ -34444,7 +34444,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2536 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2562 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36110,6 +36110,32 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Views/MarketsView.swift`, `Views/AgentsView.swift`, `Views/FileTree.swift`, `Views/BottomShortcutBar.swift`, `Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
 
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
+
+---
+## 2026-06-12 — Purge NVIDIA/Groq/cloud-key copy from Salehman "no model" messages
+
+**What:** Fixed three stale messages in `LocalLLM.swift` (commit 06b9d85) that told the user to "add a free cloud key (NVIDIA/Groq/Cerebras/OpenRouter)" when the Salehman brain couldn't reach any model — contradicting the local-first, owner-only-model directive.
+
+- `unavailableMessage(.salehman)` — now says: run `ollama serve` + pull the model, or switch to vLLM in Settings → Brain for a RunPod endpoint. No third-party cloud mentions.
+- `currentBrainLabel(.none, .salehman)` — header tooltip was "add a free cloud key (NVIDIA/Groq/…)"; now "run `ollama serve` + pull the model (or switch to vLLM for RunPod)".
+- `generate(.salehman)` code comment — updated from "CLOUD-FIRST via NVIDIA → free frontier/120B tiers" to "LOCAL-FIRST: MLX → Ollama. No external cloud."
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`.
+
+---
+## 2026-06-12 — Marathon AB: timestamp on user-row hover pill + assistant fallback
+
+**What changed:**
+- `ContentView.swift` → `userRow` overlay: added send-timestamp `Text` before the edit button, shown on hover. Formatted as shortened time (`h:mm a`); `.help` tooltip shows full date+time.
+- `ContentView.swift` → `assistantRow` overlay: added `else` branch after `if let d = message.duration { ... }` — history-loaded replies (where `duration == nil`) now show their timestamp in the same pill position instead of showing nothing.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** Every bubble now exposes its timestamp on hover regardless of whether it came from a live response or was loaded from history. The assistant `else` branch avoids a dead hover state for older sessions.
+
+**Result:** Source change only; build/test deferred to owner (sandbox restriction). SOURCE_BUNDLE.md regenerated.
 
 ---
 ## Standing notes / known issues
