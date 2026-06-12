@@ -1703,6 +1703,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** TEST SUCCEEDED **` (41a61a5). SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AC: pending-task badge on Notes tab icon
+
+**What changed:**
+- `ScratchpadStore.swift` → added `var pendingTaskCount: Int` computed property (open tasks only; derived from `tasks` array, no new `@Published` needed).
+- `TabSwitcherBar.swift` → observed `ScratchpadStore.shared`; added `.overlay(alignment: .topTrailing)` badge on the `.scratchpad` corner button — visible when `pendingCount > 0`, capped at "9+", animated with `DS.Motion.spring`, accessibility label "N pending task(s)".
+- `ChatComposerLogicTests.swift` → added `ScratchpadPendingCountTests` (5 tests): empty → 0, two open → 2, done excluded, mixed, decreases after toggle.
+
+**Files:** `Salehman AI/Persistence/ScratchpadStore.swift`, `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Why:** The Notes tab had no live feedback for pending work. The badge mirrors the mental model of an unread count — users see open tasks at a glance from any other tab.
+
+**Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

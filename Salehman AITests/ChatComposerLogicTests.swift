@@ -745,3 +745,61 @@ struct ChatHistoryFilterExtendedTests {
         #expect(ChatHistoryView.filtered(items, query: "about").map(\.title) == ["My chat about cats"])
     }
 }
+
+// MARK: - ScratchpadStore.pendingTaskCount — badge count contract
+//
+// The pending count drives the notification badge on the Notes tab corner
+// button. It must count only open tasks, ignore completed ones, and stay at
+// zero when no tasks exist.
+
+@MainActor
+@Suite(.serialized)
+struct ScratchpadPendingCountTests {
+
+    private func makeStore() -> ScratchpadStore {
+        ScratchpadStore(testingBaseDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString))
+    }
+
+    @Test func zeroWhenEmpty() {
+        let store = makeStore()
+        #expect(store.pendingTaskCount == 0)
+    }
+
+    @Test func countsOpenTasks() {
+        let store = makeStore()
+        store.addTask("buy milk")
+        store.addTask("call dentist")
+        #expect(store.pendingTaskCount == 2)
+    }
+
+    @Test func excludesCompletedTasks() {
+        let store = makeStore()
+        store.addTask("done task")
+        let id = store.tasks.first!.id
+        store.toggleTask(id)       // mark done
+        #expect(store.tasks.first!.done == true)
+        #expect(store.pendingTaskCount == 0)
+    }
+
+    @Test func mixedOpenAndDone() {
+        let store = makeStore()
+        store.addTask("open one")
+        store.addTask("open two")
+        store.addTask("done one")
+        // tasks inserted at index 0, so tasks[0] = "done one"
+        store.toggleTask(store.tasks[0].id)
+        #expect(store.pendingTaskCount == 2)
+    }
+
+    @Test func decreasesAfterToggle() {
+        let store = makeStore()
+        store.addTask("task A")
+        store.addTask("task B")
+        #expect(store.pendingTaskCount == 2)
+        store.toggleTask(store.tasks[0].id)
+        #expect(store.pendingTaskCount == 1)
+        store.toggleTask(store.tasks[1].id)
+        #expect(store.pendingTaskCount == 0)
+    }
+}

@@ -9,6 +9,7 @@ struct TabSwitcherBar: View {
     /// `AppState` bridge keeps the sheet's `@State` owned by ContentView while
     /// any sibling view (like this tab bar) can trigger it without a new Binding.
     @ObservedObject private var app = AppState.shared
+    @ObservedObject private var scratchpad = ScratchpadStore.shared
 
     /// Pointer hover state for the market status pill — drives a subtle scale +
     /// brightening that signals "this thing has a tooltip / is interactive" to a
@@ -87,6 +88,7 @@ struct TabSwitcherBar: View {
                 let cornerTabs = AppTab.corner.filter { !AppTab.hidden.contains($0) }
                 HStack(spacing: 6) {
                     ForEach(cornerTabs) { tab in
+                        let pending = tab == .scratchpad ? scratchpad.pendingTaskCount : 0
                         CircleIconButton(systemName: tab.icon,
                                          size: 28, iconSize: 13,
                                          tint: Color.white.opacity(0.70),
@@ -94,6 +96,20 @@ struct TabSwitcherBar: View {
                                          help: "\(tab.title) (⌘\(tab == .scratchpad ? "6" : "7"))",
                                          accessibilityLabel: tab.title) {
                             withAnimation(DS.Motion.snappy) { selection = tab }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if pending > 0 {
+                                Text(pending > 9 ? "9+" : "\(pending)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, pending > 9 ? 3.5 : 0)
+                                    .frame(minWidth: 14, minHeight: 14)
+                                    .background(DS.Palette.accent, in: Capsule())
+                                    .offset(x: 4, y: -4)
+                                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                                    .animation(DS.Motion.spring, value: pending)
+                                    .accessibilityLabel("\(pending) pending task\(pending == 1 ? "" : "s")")
+                            }
                         }
                     }
                 }

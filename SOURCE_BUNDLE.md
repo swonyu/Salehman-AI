@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:32 +03 · Swift files: 150 · Swift LOC: 31908_
+_Generated: 2026-06-12 08:33 +03 · Swift files: 150 · Swift LOC: 31966_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26112,7 +26112,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (747 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (805 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26859,6 +26859,64 @@ struct ChatHistoryFilterExtendedTests {
     @Test func substrMatchWorksInTheMiddle() {
         let items = [archive("My chat about cats"), archive("dogs")]
         #expect(ChatHistoryView.filtered(items, query: "about").map(\.title) == ["My chat about cats"])
+    }
+}
+
+// MARK: - ScratchpadStore.pendingTaskCount — badge count contract
+//
+// The pending count drives the notification badge on the Notes tab corner
+// button. It must count only open tasks, ignore completed ones, and stay at
+// zero when no tasks exist.
+
+@MainActor
+@Suite(.serialized)
+struct ScratchpadPendingCountTests {
+
+    private func makeStore() -> ScratchpadStore {
+        ScratchpadStore(testingBaseDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString))
+    }
+
+    @Test func zeroWhenEmpty() {
+        let store = makeStore()
+        #expect(store.pendingTaskCount == 0)
+    }
+
+    @Test func countsOpenTasks() {
+        let store = makeStore()
+        store.addTask("buy milk")
+        store.addTask("call dentist")
+        #expect(store.pendingTaskCount == 2)
+    }
+
+    @Test func excludesCompletedTasks() {
+        let store = makeStore()
+        store.addTask("done task")
+        let id = store.tasks.first!.id
+        store.toggleTask(id)       // mark done
+        #expect(store.tasks.first!.done == true)
+        #expect(store.pendingTaskCount == 0)
+    }
+
+    @Test func mixedOpenAndDone() {
+        let store = makeStore()
+        store.addTask("open one")
+        store.addTask("open two")
+        store.addTask("done one")
+        // tasks inserted at index 0, so tasks[0] = "done one"
+        store.toggleTask(store.tasks[0].id)
+        #expect(store.pendingTaskCount == 2)
+    }
+
+    @Test func decreasesAfterToggle() {
+        let store = makeStore()
+        store.addTask("task A")
+        store.addTask("task B")
+        #expect(store.pendingTaskCount == 2)
+        store.toggleTask(store.tasks[0].id)
+        #expect(store.pendingTaskCount == 1)
+        store.toggleTask(store.tasks[1].id)
+        #expect(store.pendingTaskCount == 0)
     }
 }
 ```
@@ -34459,7 +34517,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2562 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2588 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36151,6 +36209,32 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Every bubble now exposes its timestamp on hover regardless of whether it came from a live response or was loaded from history. The assistant `else` branch avoids a dead hover state for older sessions.
 
 **Result:** Source change only; build/test deferred to owner (sandbox restriction). SOURCE_BUNDLE.md regenerated.
+
+---
+
+## 2026-06-12 — Remove vLLM/cloud references from "no model" messages
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift`
+
+**What changed:** Stripped all vLLM, NVIDIA, Groq, Cerebras, and OpenRouter guidance from three message sites: `offMessage` (stored sentinel), `unavailableMessage(.salehman)` (chat bubble copy), and `currentBrainLabel()` brain-status tooltip. Ollama auto-starts on launch, so the only actionable fix when Salehman is unreachable is pulling the model. All three sites now point exclusively to `ollama pull salehman` (or `ollama pull <customModelName>` where dynamic). Collapsed the MLX/Ollama-separate-branch in `currentBrainLabel` into a single message.
+
+**Why:** Owner clarified: "no vllm no nothing just salehman and ollama serve is auto on launch." Previous messages were confusing users with suggestions for cloud keys and explicit `ollama serve` steps that are no longer relevant.
+
+**Result:** `** TEST SUCCEEDED **` (41a61a5). SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AC: pending-task badge on Notes tab icon
+
+**What changed:**
+- `ScratchpadStore.swift` → added `var pendingTaskCount: Int` computed property (open tasks only; derived from `tasks` array, no new `@Published` needed).
+- `TabSwitcherBar.swift` → observed `ScratchpadStore.shared`; added `.overlay(alignment: .topTrailing)` badge on the `.scratchpad` corner button — visible when `pendingCount > 0`, capped at "9+", animated with `DS.Motion.spring`, accessibility label "N pending task(s)".
+- `ChatComposerLogicTests.swift` → added `ScratchpadPendingCountTests` (5 tests): empty → 0, two open → 2, done excluded, mixed, decreases after toggle.
+
+**Files:** `Salehman AI/Persistence/ScratchpadStore.swift`, `Salehman AI/Views/TabSwitcherBar.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Why:** The Notes tab had no live feedback for pending work. The badge mirrors the mental model of an unread count — users see open tasks at a glance from any other tab.
+
+**Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
 ## Standing notes / known issues

@@ -30,6 +30,9 @@ final class ScratchpadStore: ObservableObject {
     @Published private(set) var notes: [Note] = []
     @Published private(set) var tasks: [TaskItem] = []
 
+    /// Count of open (not-done) tasks — drives the badge on the Notes tab icon.
+    var pendingTaskCount: Int { tasks.filter { !$0.done }.count }
+
     private let store: JSONFileStore<Snapshot>
 
     private init() {
