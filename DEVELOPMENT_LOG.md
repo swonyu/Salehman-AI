@@ -1510,6 +1510,17 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+## 2026-06-12 — Marathon W: rating counts in ChatStats + /stats blurb update
+
+**What changed:**
+- `ContentView.swift` `ChatStats`: added `ratedUp: Int` and `ratedDown: Int` (assistant messages with `rating == true/false`). Updated `blurb` to include `· 2↑ 1↓` when any ratings exist (omitted entirely when none). Updated `summarize` to count from `assistantMsgs`.
+- `ChatComposerLogicTests.swift`: added `ChatStatsRatingTests` (4 tests) covering count ignores user messages, no-ratings are zero, blurb includes `↑`/`↓` when rated, blurb omits them when none.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~84. Closes the loop on marathon U by surfacing rating data in `/stats`.
+
+---
 ## 2026-06-12 — Marathon V: ChatMessage.rating Codable forward-compat + MarkdownText table parser tests
 
 **What changed:**

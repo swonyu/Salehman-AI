@@ -459,6 +459,55 @@ struct ChatRecallTests {
     }
 }
 
+// MARK: - ChatStats rating summary — ratedUp/ratedDown counts + blurb format
+
+@MainActor
+@Suite(.serialized)
+struct ChatStatsRatingTests {
+
+    private func msg(_ text: String, user: Bool, rating: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: user, timestamp: .now)
+        m.rating = rating
+        return m
+    }
+
+    @Test func ratingCountsIgnoreUserMessages() {
+        let msgs = [
+            msg("my question", user: true, rating: true),   // user — must not count
+            msg("great reply", user: false, rating: true),
+            msg("bad reply",   user: false, rating: false),
+        ]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.ratedUp == 1)
+        #expect(stats.ratedDown == 1)
+    }
+
+    @Test func noRatingsAreZero() {
+        let msgs = [msg("hi", user: true), msg("hello", user: false)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.ratedUp == 0)
+        #expect(stats.ratedDown == 0)
+    }
+
+    @Test func blurbIncludesRatingWhenAnyRated() {
+        let msgs = [
+            msg("user", user: true),
+            msg("good", user: false, rating: true),
+            msg("bad",  user: false, rating: false),
+        ]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(blurb.contains("1↑"))
+        #expect(blurb.contains("1↓"))
+    }
+
+    @Test func blurbOmitsRatingChunkWhenNoneRated() {
+        let msgs = [msg("user", user: true), msg("reply", user: false)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(!blurb.contains("↑"))
+        #expect(!blurb.contains("↓"))
+    }
+}
+
 // MARK: - Chat rating feature — togglingRating contract
 //
 // `true` = thumbs-up, `false` = thumbs-down, `nil` = unrated.
@@ -532,7 +581,7 @@ struct ChatRatingTests {
 // is the mutation kernel — the VM just wraps it. `pinPreview` is the chip
 // label; truncation + newline stripping are the fragile bits.
 
-struct ChatPinTests {
+struct ChatPinOperationTests {
 
     private func msg(_ text: String, pinned: Bool? = nil) -> ChatMessage {
         var m = ChatMessage(id: UUID(), text: text, isUser: false, timestamp: .now)

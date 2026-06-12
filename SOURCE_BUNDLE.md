@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:55 +03 · Swift files: 150 · Swift LOC: 31391_
+_Generated: 2026-06-12 06:57 +03 · Swift files: 150 · Swift LOC: 31448_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17023,7 +17023,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2703 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2711 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18866,13 +18866,16 @@ struct ChatStats: Equatable {
     let words: Int
     let approxTokens: Int           // rough English estimate: words × 1.3
     let longestReplyWords: Int?     // word count of the longest assistant reply
+    let ratedUp: Int                // replies marked thumbs-up
+    let ratedDown: Int              // replies marked thumbs-down
     let avgReplySeconds: Double?    // nil when no reply carries a duration
     let spanSeconds: TimeInterval?  // nil for 0–1 messages
 
     nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
         let yours = msgs.filter(\.isUser).count
         let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
-        let replyWordCounts = msgs.filter { !$0.isUser }
+        let assistantMsgs = msgs.filter { !$0.isUser }
+        let replyWordCounts = assistantMsgs
             .map { $0.text.split(whereSeparator: \.isWhitespace).count }
         let durations = msgs.compactMap(\.duration)
         let stamps = msgs.map(\.timestamp)
@@ -18885,6 +18888,8 @@ struct ChatStats: Equatable {
             words: words,
             approxTokens: Int((Double(words) * 1.3).rounded()),
             longestReplyWords: replyWordCounts.max(),
+            ratedUp: assistantMsgs.filter { $0.rating == true }.count,
+            ratedDown: assistantMsgs.filter { $0.rating == false }.count,
             avgReplySeconds: durations.isEmpty ? nil
                 : durations.reduce(0, +) / Double(durations.count),
             spanSeconds: span)
@@ -18908,6 +18913,9 @@ struct ChatStats: Equatable {
         let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
         var tail = counted(words, "word") + " · ~\(approxTokens) tok"
         if let lw = longestReplyWords { tail += " · longest: \(lw)w" }
+        if ratedUp > 0 || ratedDown > 0 {
+            tail += " · \(ratedUp)↑ \(ratedDown)↓"
+        }
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail
@@ -25826,7 +25834,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (655 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (704 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26286,6 +26294,55 @@ struct ChatRecallTests {
 
     @Test func emptyHistoryReturnsNil() {
         #expect(ContentView.recalledMessage(idx: 0, from: []) == nil)
+    }
+}
+
+// MARK: - ChatStats rating summary — ratedUp/ratedDown counts + blurb format
+
+@MainActor
+@Suite(.serialized)
+struct ChatStatsRatingTests {
+
+    private func msg(_ text: String, user: Bool, rating: Bool? = nil) -> ChatMessage {
+        var m = ChatMessage(id: UUID(), text: text, isUser: user, timestamp: .now)
+        m.rating = rating
+        return m
+    }
+
+    @Test func ratingCountsIgnoreUserMessages() {
+        let msgs = [
+            msg("my question", user: true, rating: true),   // user — must not count
+            msg("great reply", user: false, rating: true),
+            msg("bad reply",   user: false, rating: false),
+        ]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.ratedUp == 1)
+        #expect(stats.ratedDown == 1)
+    }
+
+    @Test func noRatingsAreZero() {
+        let msgs = [msg("hi", user: true), msg("hello", user: false)]
+        let stats = ChatStats.summarize(msgs)
+        #expect(stats.ratedUp == 0)
+        #expect(stats.ratedDown == 0)
+    }
+
+    @Test func blurbIncludesRatingWhenAnyRated() {
+        let msgs = [
+            msg("user", user: true),
+            msg("good", user: false, rating: true),
+            msg("bad",  user: false, rating: false),
+        ]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(blurb.contains("1↑"))
+        #expect(blurb.contains("1↓"))
+    }
+
+    @Test func blurbOmitsRatingChunkWhenNoneRated() {
+        let msgs = [msg("user", user: true), msg("reply", user: false)]
+        let blurb = ChatStats.summarize(msgs).blurb
+        #expect(!blurb.contains("↑"))
+        #expect(!blurb.contains("↓"))
     }
 }
 
@@ -33942,7 +33999,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2440 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2451 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35453,6 +35510,17 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Agents/AgentPipeline.swift`
 
 **Result:** `** BUILD SUCCEEDED **`
+
+---
+## 2026-06-12 — Marathon W: rating counts in ChatStats + /stats blurb update
+
+**What changed:**
+- `ContentView.swift` `ChatStats`: added `ratedUp: Int` and `ratedDown: Int` (assistant messages with `rating == true/false`). Updated `blurb` to include `· 2↑ 1↓` when any ratings exist (omitted entirely when none). Updated `summarize` to count from `assistantMsgs`.
+- `ChatComposerLogicTests.swift`: added `ChatStatsRatingTests` (4 tests) covering count ignores user messages, no-ratings are zero, blurb includes `↑`/`↓` when rated, blurb omits them when none.
+
+**Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AITests/ChatComposerLogicTests.swift`
+
+**Result:** Build-capable session to run. Total unit tests ~84. Closes the loop on marathon U by surfacing rating data in `/stats`.
 
 ---
 ## 2026-06-12 — Marathon V: ChatMessage.rating Codable forward-compat + MarkdownText table parser tests

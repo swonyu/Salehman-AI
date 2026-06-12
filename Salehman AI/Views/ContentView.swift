@@ -1839,13 +1839,16 @@ struct ChatStats: Equatable {
     let words: Int
     let approxTokens: Int           // rough English estimate: words × 1.3
     let longestReplyWords: Int?     // word count of the longest assistant reply
+    let ratedUp: Int                // replies marked thumbs-up
+    let ratedDown: Int              // replies marked thumbs-down
     let avgReplySeconds: Double?    // nil when no reply carries a duration
     let spanSeconds: TimeInterval?  // nil for 0–1 messages
 
     nonisolated static func summarize(_ msgs: [ChatMessage]) -> ChatStats {
         let yours = msgs.filter(\.isUser).count
         let words = msgs.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
-        let replyWordCounts = msgs.filter { !$0.isUser }
+        let assistantMsgs = msgs.filter { !$0.isUser }
+        let replyWordCounts = assistantMsgs
             .map { $0.text.split(whereSeparator: \.isWhitespace).count }
         let durations = msgs.compactMap(\.duration)
         let stamps = msgs.map(\.timestamp)
@@ -1858,6 +1861,8 @@ struct ChatStats: Equatable {
             words: words,
             approxTokens: Int((Double(words) * 1.3).rounded()),
             longestReplyWords: replyWordCounts.max(),
+            ratedUp: assistantMsgs.filter { $0.rating == true }.count,
+            ratedDown: assistantMsgs.filter { $0.rating == false }.count,
             avgReplySeconds: durations.isEmpty ? nil
                 : durations.reduce(0, +) / Double(durations.count),
             spanSeconds: span)
@@ -1881,6 +1886,9 @@ struct ChatStats: Equatable {
         let head = "\(counted(messages, "message")) — \(yours) yours, \(counted(replies, "reply", "replies"))"
         var tail = counted(words, "word") + " · ~\(approxTokens) tok"
         if let lw = longestReplyWords { tail += " · longest: \(lw)w" }
+        if ratedUp > 0 || ratedDown > 0 {
+            tail += " · \(ratedUp)↑ \(ratedDown)↓"
+        }
         if let avg = avgReplySeconds { tail += String(format: " · avg reply %.1fs", avg) }
         if let span = spanSeconds { tail += " · spans \(Self.human(span))" }
         return head + "\n" + tail
