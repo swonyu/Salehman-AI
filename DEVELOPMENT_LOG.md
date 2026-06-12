@@ -2376,6 +2376,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
+### [2026-06-12] Marathon BV — KeyframeAnimator rubber-band pop-in (OnboardingView + AboutView)
+
+**Files:** `Salehman AI/Views/OnboardingView.swift`, `Salehman AI/Views/AboutView.swift`
+
+**Changes:**
+- OnboardingView hero icon: `.transition(.scale(0.6).combined(.opacity))` replaced with `KeyframeAnimator(initialValue: 1.0, trigger: page)` — on every page change: compress 0.55 (linear 0.07s) → overshoot 1.18 (spring .snappy 0.28s) → settle 1.0 (spring .bouncy 0.22s). `.contentTransition(.symbolEffect(.replace))` handles the icon crossfade simultaneously.
+- AboutView brand tile icon: `KeyframeAnimator(initialValue: 1.0, trigger: appeared)` — on sheet-open `appeared` flip: compress 0.60 → overshoot 1.20 → settle 1.0 using same spring keyframe chain.
+
+**Why:** First use of `KeyframeAnimator` from the deep-research SwiftUI 6 API sweep. The physics-accurate bounce (linear compress → snappy spring → bouncy settle) reads as real weight rather than CSS ease-in-out. OnboardingView's page transitions no longer feel like plain opacity swaps.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

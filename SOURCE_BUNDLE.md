@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:29 +03 · Swift files: 150 · Swift LOC: 33193_
+_Generated: 2026-06-12 21:32 +03 · Swift files: 150 · Swift LOC: 33216_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13244,7 +13244,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (171 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (182 lines) =====
 ```swift
 import SwiftUI
 
@@ -13321,9 +13321,20 @@ struct AboutView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 1)
                             )
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(.white)
+                        // KeyframeAnimator: compress → overshoot → settle on
+                        // first appear. Hardware-accurate bounce physics.
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.20, spring: .snappy, duration: 0.30)
+                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.24)
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Salehman AI")
@@ -22799,7 +22810,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (175 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (187 lines) =====
 ```swift
 import SwiftUI
 
@@ -22877,11 +22888,23 @@ struct OnboardingView: View {
                                                        startPoint: .top, endPoint: .bottom),
                                         lineWidth: 1)
                         )
-                    Image(systemName: pages[page].icon)
-                        .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(.white)
-                        .id("icon\(page)")
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+
+                    // KeyframeAnimator gives each page-change a physics-accurate
+                    // rubber-band pop: compress → overshoot → settle. Symbol
+                    // crossfade handled by contentTransition, scale by the track.
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                        Image(systemName: pages[page].icon)
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                            .contentTransition(.symbolEffect(.replace))
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.55, duration: 0.07)
+                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        }
+                    }
                 }
                 .padding(.bottom, 26)
 
@@ -35761,7 +35784,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3247 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3260 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38136,6 +38159,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - KnowledgeView empty-state halo: `PhaseAnimator([0.18, 0.28, 0.18])` with matching timing.
 
 **Why:** Four static indicator orbs replaced with `PhaseAnimator` loops; all use the same "third phase = dead frame pause" trick as TodayView orb (BS). Consistent PhaseAnimator cadence across all status/empty surfaces.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
+### [2026-06-12] Marathon BV — KeyframeAnimator rubber-band pop-in (OnboardingView + AboutView)
+
+**Files:** `Salehman AI/Views/OnboardingView.swift`, `Salehman AI/Views/AboutView.swift`
+
+**Changes:**
+- OnboardingView hero icon: `.transition(.scale(0.6).combined(.opacity))` replaced with `KeyframeAnimator(initialValue: 1.0, trigger: page)` — on every page change: compress 0.55 (linear 0.07s) → overshoot 1.18 (spring .snappy 0.28s) → settle 1.0 (spring .bouncy 0.22s). `.contentTransition(.symbolEffect(.replace))` handles the icon crossfade simultaneously.
+- AboutView brand tile icon: `KeyframeAnimator(initialValue: 1.0, trigger: appeared)` — on sheet-open `appeared` flip: compress 0.60 → overshoot 1.20 → settle 1.0 using same spring keyframe chain.
+
+**Why:** First use of `KeyframeAnimator` from the deep-research SwiftUI 6 API sweep. The physics-accurate bounce (linear compress → snappy spring → bouncy settle) reads as real weight rather than CSS ease-in-out. OnboardingView's page transitions no longer feel like plain opacity swaps.
 
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 

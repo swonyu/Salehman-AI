@@ -73,9 +73,20 @@ struct AboutView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 1)
                             )
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(.white)
+                        // KeyframeAnimator: compress → overshoot → settle on
+                        // first appear. Hardware-accurate bounce physics.
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.20, spring: .snappy, duration: 0.30)
+                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.24)
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Salehman AI")

@@ -74,11 +74,23 @@ struct OnboardingView: View {
                                                        startPoint: .top, endPoint: .bottom),
                                         lineWidth: 1)
                         )
-                    Image(systemName: pages[page].icon)
-                        .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(.white)
-                        .id("icon\(page)")
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+
+                    // KeyframeAnimator gives each page-change a physics-accurate
+                    // rubber-band pop: compress → overshoot → settle. Symbol
+                    // crossfade handled by contentTransition, scale by the track.
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                        Image(systemName: pages[page].icon)
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                            .contentTransition(.symbolEffect(.replace))
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.55, duration: 0.07)
+                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        }
+                    }
                 }
                 .padding(.bottom, 26)
 
