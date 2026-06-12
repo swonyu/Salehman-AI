@@ -2572,6 +2572,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Every conditional UI element in SettingsView now fades/slides in and out smoothly.
 
 ---
+
+### 2026-06-12 — Marathon DI: final cleanup — CloudKeyHintBanner, autonomousMode text, ScratchpadView search clear
+
+**What changed:**
+- `Views/ContentView.swift`: `CloudKeyHintBanner` dismissal now wrapped in `withAnimation(DS.Motion.smooth)` + `.transition(.opacity.combined(with: .offset(y: -6)))` so the banner slides up and fades out instead of snapping off.
+- `Views/AgentsView.swift`: `settings.autonomousMode` description Text now has `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: settings.autonomousMode)` — the description crossfades between "autonomous" and "classic mode" copy when the toggle flips. The outer VStack already had `.animation(value: settings.autonomousMode)` from prior work, so the conditional button block fades by default.
+- `Views/ScratchpadView.swift`: `searchRow` clear button (`if !search.isEmpty { Button }`) now has `.transition(.opacity)` and the parent HStack gets `.animation(DS.Motion.magnetic, value: search.isEmpty)` — same pattern applied to LiveTranscriptionView, ChatHistoryView in earlier slices.
+
+**Files:** `Views/ContentView.swift`, `Views/AgentsView.swift`, `Views/ScratchpadView.swift`
+
+**Why:** Three small unanimated moments missed in earlier marathon sweeps, found on final cross-view audit.
+
+**Result:** No remaining unpolished snap-changes visible across the standard interaction paths.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

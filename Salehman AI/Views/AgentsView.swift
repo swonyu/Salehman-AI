@@ -141,6 +141,8 @@ struct AgentsView: View {
                  ? "Agents can chain tasks, self-correct, and continue working with minimal input."
                  : "Classic mode: you give a mission — they execute once.")
                 .font(.caption).foregroundStyle(DS.Palette.textSecondary)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: settings.autonomousMode)
 
             if settings.autonomousMode {
                 Button {

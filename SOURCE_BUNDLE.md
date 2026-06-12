@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:41 +03 · Swift files: 150 · Swift LOC: 33740_
+_Generated: 2026-06-12 23:44 +03 · Swift files: 150 · Swift LOC: 33747_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (532 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (534 lines) =====
 ```swift
 import SwiftUI
 
@@ -13577,6 +13577,8 @@ struct AgentsView: View {
                  ? "Agents can chain tasks, self-correct, and continue working with minimal input."
                  : "Classic mode: you give a mission — they execute once.")
                 .font(.caption).foregroundStyle(DS.Palette.textSecondary)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: settings.autonomousMode)
 
             if settings.autonomousMode {
                 Button {
@@ -17544,7 +17546,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2822 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2825 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17691,7 +17693,10 @@ struct ContentView: View {
                 // local fallback (or unavailable). Tap "Add key" → Settings.
                 if LocalLLM.lacksCloudKey && !dismissedCloudHint {
                     CloudKeyHintBanner(onAddKey: { showSettings = true },
-                                       onDismiss: { dismissedCloudHint = true })
+                                       onDismiss: {
+                                           withAnimation(DS.Motion.smooth) { dismissedCloudHint = true }
+                                       })
+                        .transition(.opacity.combined(with: .offset(y: -6)))
                 }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
@@ -23497,7 +23502,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (641 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (643 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23706,11 +23711,13 @@ struct ScratchpadView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.white.opacity(0.06), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .animation(DS.Motion.magnetic, value: search.isEmpty)
     }
 
     private var noMatch: some View {
@@ -36308,7 +36315,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3615 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3630 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38881,6 +38888,21 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** Key-saved state buttons (Clear, Copy, Test) and the auth-swap snap in/out with no visual feedback. The rotation and Copilot test-row panels had the same problem. The collapsible "N/M set" badge flickered when a key was added/removed.
 
 **Result:** Every conditional UI element in SettingsView now fades/slides in and out smoothly.
+
+---
+
+### 2026-06-12 — Marathon DI: final cleanup — CloudKeyHintBanner, autonomousMode text, ScratchpadView search clear
+
+**What changed:**
+- `Views/ContentView.swift`: `CloudKeyHintBanner` dismissal now wrapped in `withAnimation(DS.Motion.smooth)` + `.transition(.opacity.combined(with: .offset(y: -6)))` so the banner slides up and fades out instead of snapping off.
+- `Views/AgentsView.swift`: `settings.autonomousMode` description Text now has `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: settings.autonomousMode)` — the description crossfades between "autonomous" and "classic mode" copy when the toggle flips. The outer VStack already had `.animation(value: settings.autonomousMode)` from prior work, so the conditional button block fades by default.
+- `Views/ScratchpadView.swift`: `searchRow` clear button (`if !search.isEmpty { Button }`) now has `.transition(.opacity)` and the parent HStack gets `.animation(DS.Motion.magnetic, value: search.isEmpty)` — same pattern applied to LiveTranscriptionView, ChatHistoryView in earlier slices.
+
+**Files:** `Views/ContentView.swift`, `Views/AgentsView.swift`, `Views/ScratchpadView.swift`
+
+**Why:** Three small unanimated moments missed in earlier marathon sweeps, found on final cross-view audit.
+
+**Result:** No remaining unpolished snap-changes visible across the standard interaction paths.
 
 ---
 ## Standing notes / known issues

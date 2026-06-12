@@ -143,7 +143,10 @@ struct ContentView: View {
                 // local fallback (or unavailable). Tap "Add key" → Settings.
                 if LocalLLM.lacksCloudKey && !dismissedCloudHint {
                     CloudKeyHintBanner(onAddKey: { showSettings = true },
-                                       onDismiss: { dismissedCloudHint = true })
+                                       onDismiss: {
+                                           withAnimation(DS.Motion.smooth) { dismissedCloudHint = true }
+                                       })
+                        .transition(.opacity.combined(with: .offset(y: -6)))
                 }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
