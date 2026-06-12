@@ -25,6 +25,7 @@ struct AgentsView: View {
     // Drives the Stop confirmation dialog — guards against an accidental click
     // discarding the current iteration's work mid-run.
     @State private var showStopConfirm = false
+    @State private var runHistory: [RunEntry] = []
 
     var body: some View {
         ZStack {
@@ -38,6 +39,7 @@ struct AgentsView: View {
                 ScrollView {
                     VStack(spacing: DS.Space.lg) {
                         autonomousControlSection
+                        if !runHistory.isEmpty { runHistorySection.transition(.opacity.combined(with: .move(edge: .top))) }
                         agentsGrid
                     }
                     .padding(DS.Space.xl)
@@ -191,6 +193,47 @@ struct AgentsView: View {
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
+    private var runHistorySection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(spacing: 6) {
+                Text("Run log")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(runHistory.count)")
+                    .font(.caption2.monospacedDigit())
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(DS.Palette.accent.opacity(0.15), in: Capsule())
+                    .foregroundStyle(DS.Palette.accent)
+                Spacer()
+                Button("Clear") { runHistory.removeAll() }
+                    .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 1) {
+                ForEach(runHistory) { entry in
+                    HStack(spacing: 10) {
+                        Text("#\(entry.iteration)")
+                            .font(.system(size: 10, weight: .bold).monospacedDigit())
+                            .foregroundStyle(DS.Palette.accent)
+                            .frame(minWidth: 28, alignment: .trailing)
+                        Text(entry.preview)
+                            .font(.caption2)
+                            .foregroundStyle(DS.Palette.textSecondary)
+                            .lineLimit(2)
+                        Spacer(minLength: 4)
+                        Text(entry.timestamp, style: .time)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(Color.secondary.opacity(0.5))
+                    }
+                    .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
+                }
+            }
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        }
+    }
+
     /// Toggle between starting and stopping the autonomous loop.
     ///
     /// Why a `Task` (not just a boolean flag): `AgentPipeline.run` is `async`,
@@ -233,6 +276,10 @@ struct AgentsView: View {
 
                 await MainActor.run {
                     lastResultPreview = result
+                    runHistory.insert(
+                        RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
+                        at: 0
+                    )
                 }
 
                 // Bail if the agents signaled completion. This is now the
@@ -324,4 +371,13 @@ enum AgentFilter {
         guard !q.isEmpty else { return specs }
         return specs.filter { $0.name.lowercased().contains(q) || $0.role.lowercased().contains(q) }
     }
+}
+
+// MARK: - Run-log entry
+/// One completed autonomous iteration: its number, first 120 chars of output, and the wall-clock time it finished.
+private struct RunEntry: Identifiable {
+    let id = UUID()
+    let iteration: Int
+    let preview: String
+    let timestamp: Date
 }

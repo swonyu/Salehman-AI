@@ -172,10 +172,9 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(salehmanLeader, forKey: Keys.salehmanLeader) }
     }
 
-    /// Self-improvement loop: after Salehman answers, a reasoner-class critic
-    /// (DeepSeek-V4-pro via NVIDIA's free tier) critiques the answer and Salehman
-    /// revises it. Smarter replies, but ~2–3× slower and more quota — **default
-    /// OFF for speed** (owner asked to make it faster); turn ON for max-quality
+    /// Self-improvement loop: after Salehman answers, a self-critic pass analyses
+    /// the reply and Salehman revises it via `SelfCritique.refine`. Smarter replies,
+    /// but ~2–3× slower — **default OFF for speed**; turn ON for max-quality
     /// single answers.
     @Published var salehmanRefine: Bool {
         didSet { UserDefaults.standard.set(salehmanRefine, forKey: Keys.salehmanRefine) }
@@ -480,7 +479,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
     // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
     case ensemble   // run ALL reachable brains in parallel, show every answer
-    case salehman   // THE primary brain: cloud-first (NVIDIA DeepSeek V4 free → free frontier/120B tiers) + local floor (MLX, Ollama)
+    case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
@@ -549,7 +548,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
         case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
         case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
-        case .salehman:    return "Cloud-first · REAL DeepSeek V4 free (NVIDIA) → free frontier/120B tiers → local floor; self-improves via a critique pass"
+        case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
         }

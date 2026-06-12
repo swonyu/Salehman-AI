@@ -1472,6 +1472,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`
 
 ---
+**2026-06-12 — KnowledgeView hover rows + AgentsView run-log panel + AppSettings stale-string cleanup (Chat C)**
+
+**What changed:**
+- `Views/KnowledgeView.swift`: Doc rows now show a hover state — accent-tinted icon/sparkles/trash, soft accent background wash (`accent.opacity(0.07)`). Implemented via `@State private var hoveredDocID: UUID?` pattern (linter), matching the established hover language across the app.
+- `Views/AgentsView.swift`: Added `RunEntry` (private struct, file-level) and a "Run log" panel — each completed autonomous iteration records its number, first 120 chars of output, and timestamp; panel appears with a slide-in transition when history exists, with a Clear button. Entries newest-first.
+- `App/AppSettings.swift`: Fixed three stale doc strings: `.salehman` case comment (was "cloud-first/NVIDIA"), `.salehman` subtitle (was "DeepSeek V4 free"), and `salehmanRefine` docstring (was "DeepSeek-V4-pro via NVIDIA"). All now reflect the pure local-first engine.
+
+**Why:** Owner "contunye" — marathon polish pass. KnowledgeView doc rows lacked hover (visible gap vs. AgentCard, SuggestionCard). AgentsView had no mission history; owner has no visibility into what past autonomous runs produced. AppSettings comments drifted from reality after SalehmanEngine was made local-only.
+
+**Files:** `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `App/AppSettings.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
