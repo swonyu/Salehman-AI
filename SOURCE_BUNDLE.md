@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:14 +03 · Swift files: 150 · Swift LOC: 33505_
+_Generated: 2026-06-12 22:15 +03 · Swift files: 150 · Swift LOC: 33508_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17485,7 +17485,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2794 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2797 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20053,6 +20053,8 @@ struct AgentRunView: View {
                 Text("\(doneCount)/\(steps.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: doneCount)
             }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(steps) { step in
@@ -20091,6 +20093,7 @@ struct AgentRow: View {
             Spacer(minLength: 0)
         }
         .opacity(isPending ? 0.55 : 1)
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder private var statusIcon: some View {
@@ -36073,7 +36076,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3472 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3477 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39546,6 +39549,11 @@ permission classifier blocked the first attempt.
 - `SettingsView` (×4): model rotation checkbox, Unsloth key saved indicator, connection test result, brain readiness icons
 **Files:** `Views/ScratchpadView.swift`, `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`, `Views/CodeView.swift`, `Views/OnboardingView.swift`, `Views/VoiceModeView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`.
 **Result:** Build: xcodebuild blocked by xcrun sandbox restriction (no new code errors — all edits are standard SwiftUI modifiers already used throughout the codebase; SourceKit shows only pre-existing cross-module false positives).
+
+## 2026-06-12 — marathon CK: ActivityStepRow status animation + MarketsView empty state glow (Chat A)
+**What:** `ActivityStepRow` (CodeView.swift): left accent bar now slides in from leading edge with `.transition(.move(edge: .leading).combined(with: .opacity))` when status → running; container gets `.animation(DS.Motion.smooth, value: step.status)` so the background highlight ripples in/out on each step state change. `MarketsView.emptyState`: upgraded from plain Text to PhaseAnimator([0.10, 0.18, 0.10]) ambient glow + chart icon, matching the empty-state treatment in ChatHistoryView, KnowledgeView, and TodayView.
+**Files:** `Views/CodeView.swift`, `Views/MarketsView.swift`.
+**Commit:** `c63d421`
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)

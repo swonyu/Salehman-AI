@@ -2564,6 +2564,8 @@ struct AgentRunView: View {
                 Text("\(doneCount)/\(steps.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: doneCount)
             }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(steps) { step in
@@ -2602,6 +2604,7 @@ struct AgentRow: View {
             Spacer(minLength: 0)
         }
         .opacity(isPending ? 0.55 : 1)
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder private var statusIcon: some View {
