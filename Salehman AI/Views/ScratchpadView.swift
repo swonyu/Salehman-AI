@@ -113,7 +113,6 @@ struct ScratchpadView: View {
     }
 
     private var tasksList: some View {
-        let items = ScratchpadList.tasks(store.tasks, filter: search)
         let done = ScratchpadList.completedCount(store.tasks)
         return Group {
             if store.tasks.isEmpty {
@@ -128,7 +127,17 @@ struct ScratchpadView: View {
                                 .accessibilityLabel("Clear \(done) completed task\(done == 1 ? "" : "s")")
                         }
                     }
-                    if items.isEmpty { noMatch } else { listCard { ForEach(items) { taskRow($0) } } }
+                    if search.isEmpty {
+                        // No filter active: show in stored order with drag-to-reorder.
+                        reorderList {
+                            ForEach(store.tasks) { taskRow($0) }
+                                .onMove { store.moveTask(from: $0, to: $1) }
+                        }
+                    } else {
+                        let filtered = ScratchpadList.tasks(store.tasks, filter: search)
+                        if filtered.isEmpty { noMatch }
+                        else { listCard { ForEach(filtered) { taskRow($0) } } }
+                    }
                 }
             }
         }
@@ -161,17 +170,25 @@ struct ScratchpadView: View {
             deleteButton { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparatorTint(DS.Palette.surfaceStroke)
     }
 
     private var notesList: some View {
-        let items = ScratchpadList.notes(store.notes, filter: search)
-        return Group {
+        Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
-            } else if items.isEmpty {
-                noMatch
+            } else if search.isEmpty {
+                // No filter: stored order + drag-to-reorder.
+                reorderList {
+                    ForEach(store.notes) { noteRow($0) }
+                        .onMove { store.moveNote(from: $0, to: $1) }
+                }
             } else {
-                listCard { ForEach(items) { noteRow($0) } }
+                let filtered = ScratchpadList.notes(store.notes, filter: search)
+                if filtered.isEmpty { noMatch }
+                else { listCard { ForEach(filtered) { noteRow($0) } } }
             }
         }
     }
@@ -194,6 +211,9 @@ struct ScratchpadView: View {
             deleteButton { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparatorTint(DS.Palette.surfaceStroke)
     }
 
     private func startEdit(id: UUID, text: String) {
@@ -228,6 +248,25 @@ struct ScratchpadView: View {
             .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    /// Like `listCard` but uses a `List` so rows are reorderable by drag.
+    /// `.scrollDisabled` lets the outer `ScrollView` drive paging; the `List`
+    /// is purely a container here. `.scrollContentBackground(.hidden)` + per-row
+    /// background keeps the design-language flat dark surface.
+    private func reorderList<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        List { content() }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
+            .listRowSeparatorTint(DS.Palette.surfaceStroke)
+            // Intrinsic height: 56pt × N rows (matches the 10+10pt padding in each row).
+            .frame(minHeight: 0)
+            .background(DS.Palette.codeSurfaceSide,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .environment(\.defaultMinListRowHeight, 1)
     }
 
     private func emptyState(_ text: String, _ icon: String) -> some View {

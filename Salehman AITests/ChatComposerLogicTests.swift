@@ -261,6 +261,26 @@ struct NoteFromChatTests {
         #expect(store.notes.first?.text == "second")
         #expect(store.notes.last?.text == "first")
     }
+
+    @Test func moveNoteChangesOrder() {
+        let store = makeStore()
+        store.addNote("a")
+        store.addNote("b")
+        store.addNote("c")
+        // After inserts: ["c","b","a"]. Move index 0 ("c") to after index 2 → ["b","a","c"]
+        store.moveNote(from: IndexSet(integer: 0), to: 3)
+        #expect(store.notes.map(\.text) == ["b", "a", "c"])
+    }
+
+    @Test func moveTaskChangesOrder() {
+        let store = makeStore()
+        store.addTask("x")
+        store.addTask("y")
+        store.addTask("z")
+        // After inserts: ["z","y","x"]. Move index 2 ("x") to top (index 0) → ["x","z","y"]
+        store.moveTask(from: IndexSet(integer: 2), to: 0)
+        #expect(store.tasks.map(\.title) == ["x", "z", "y"])
+    }
 }
 
 // MARK: - MessageBubble.plainText — markdown stripping contract

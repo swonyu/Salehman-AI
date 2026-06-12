@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 /// A captured note (free text).
 struct Note: Codable, Identifiable, Equatable, Sendable {
@@ -72,6 +73,16 @@ final class ScratchpadStore: ObservableObject {
         tasks[i].done = true
         save()
         return true
+    }
+
+    func moveNote(from offsets: IndexSet, to dest: Int) {
+        notes.move(fromOffsets: offsets, toOffset: dest)
+        save()
+    }
+
+    func moveTask(from offsets: IndexSet, to dest: Int) {
+        tasks.move(fromOffsets: offsets, toOffset: dest)
+        save()
     }
 
     func updateNote(_ id: UUID, text: String) {
