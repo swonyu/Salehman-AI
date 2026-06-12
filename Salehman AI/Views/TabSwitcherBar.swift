@@ -44,6 +44,7 @@ struct TabSwitcherBar: View {
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
+                .shadow(color: DS.Palette.accent.opacity(0.30), radius: 8, y: 2)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Salehman")
                         .font(.system(size: 14, weight: .bold, design: .rounded))

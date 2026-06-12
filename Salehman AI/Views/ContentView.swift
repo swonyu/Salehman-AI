@@ -68,6 +68,7 @@ struct ContentView: View {
     /// launches — offscreen renders never fire onAppear, so captures would
     /// otherwise photograph an invisible welcome.
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
@@ -657,14 +658,15 @@ struct ContentView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "sparkles")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
-                .frame(width: 60, height: 60)
-                .background(DS.Palette.accent.opacity(0.12), in: Circle())
-                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.22), lineWidth: 1))
-                .shadow(color: DS.Palette.accent.opacity(0.16), radius: 10)
+                .frame(width: 68, height: 68)
+                .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.22), DS.Palette.accent.opacity(0.07)], center: .center, startRadius: 0, endRadius: 34), in: Circle())
+                .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(0.35), radius: 28, y: 4)
+                .shadow(color: DS.Palette.accent.opacity(0.12), radius: 6, y: 1)
             Text(greetingLine)
-                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("Ask me anything, or let me run things on your Mac — inspect it, find files, check storage, tidy things up.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -673,10 +675,13 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 ForEach(suggestions.prefix(3), id: \.self) { s in
                     Button { submit(s.prompt) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: s.icon).font(.system(size: 10.5))
+                        HStack(spacing: 6) {
+                            Image(systemName: s.icon).font(.system(size: 10))
                                 .foregroundStyle(DS.Palette.accent)
-                            Text(s.title).font(.system(size: 11.5, weight: .medium))
+                                .frame(width: 22, height: 22)
+                                .background(DS.Palette.accent.opacity(0.10), in: Circle())
+                                .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                            Text(s.title).font(.system(size: 12, weight: .medium))
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
@@ -693,12 +698,16 @@ struct ContentView: View {
                 }
             }
             .padding(.top, 6)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             HStack(spacing: 16) {
                 welcomeShortcutHint("⌘N", "New chat")
                 welcomeShortcutHint("⌘F", "Find")
                 welcomeShortcutHint("⌘J", "Voice")
             }
             .padding(.top, 10)
+            .opacity(welcomeContentAppeared ? 1 : 0)
+            .offset(y: welcomeContentAppeared ? 0 : 8)
             // Honest status, Code-tab position (replaces the old eyebrow
             // capsule — the Code welcome has no eyebrow): offline mode wins,
             // else the live fine-tune when it's actually pulled.
@@ -728,6 +737,11 @@ struct ContentView: View {
                 .help("Browse and restore archived conversations")
             }
         }
+        .background {
+            RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
+                           center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)
+                .allowsHitTesting(false)
+        }
         .frame(maxWidth: .infinity)
         // Entrance: same heavy fade-up the Code welcome performs (lux curve,
         // 16pt rise, 0.05s settle delay). QA launches skip it via the
@@ -737,6 +751,7 @@ struct ContentView: View {
         .onAppear {
             guard !welcomeAppeared else { return }
             withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+            withAnimation(DS.Motion.lux.delay(0.22)) { welcomeContentAppeared = true }
         }
         // The chat viewport starts 55pt lower than the Code tab's (header row
         // 54pt + 1pt divider, MEASURED from capture pixels — the rgb(19) band
@@ -784,7 +799,9 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
     }
