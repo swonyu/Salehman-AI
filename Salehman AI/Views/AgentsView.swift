@@ -137,6 +137,7 @@ struct AgentsView: View {
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
+                    .onKeyPress(.escape) { directCommand = ""; return .handled }
                     .accessibilityLabel("Direct command to agents")
 
                 Button("Send") {

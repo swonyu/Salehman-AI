@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:27 +03 · Swift files: 150 · Swift LOC: 32446_
+_Generated: 2026-06-12 09:33 +03 · Swift files: 150 · Swift LOC: 32449_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13406,7 +13406,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (394 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (395 lines) =====
 ```swift
 import SwiftUI
 
@@ -13547,6 +13547,7 @@ struct AgentsView: View {
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     .onSubmit { Task { await sendDirectCommand() } }
+                    .onKeyPress(.escape) { directCommand = ""; return .handled }
                     .accessibilityLabel("Direct command to agents")
 
                 Button("Send") {
@@ -20253,7 +20254,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (558 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (560 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20367,6 +20368,7 @@ struct KnowledgeView: View {
                 TextField("Ask your documents…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 15))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
@@ -20752,6 +20754,7 @@ private struct DocDetailSheet: View {
                 TextField("Ask about this document…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
                     else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
@@ -35014,7 +35017,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2938 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2950 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37082,6 +37085,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** The `testStatusColor` helper (cloud test rows) already used desaturated soft tokens with the comment "full-saturation `.green`/`.orange` reads as alarming on the dark canvas" — but four other areas in the same file still used raw system colors, creating an inconsistency. One sweep makes the whole file coherent with the DS palette contract.
 
 **Result:** Build not yet run (owner-side); all changes are pure color-token swaps with no logic impact.
+
+---
+
+### 2026-06-12 — Marathon AY: Escape-to-clear final coverage (KnowledgeView + AgentsView)
+
+**What:** Added `.onKeyPress(.escape) { field = ""; return .handled }` to the three remaining TextFields that had `.onSubmit` but no escape handler: `KnowledgeView` main ask-card field, `KnowledgeView` DocDetailSheet scoped-question field, and `AgentsView` direct-command field. Conducted a full audit of all 27 view files — only `CommandPalette` has `onSubmit` without an escape handler, which is intentional (sheet-level Escape dismissal is the correct UX for a command palette).
+
+**Files:** `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/AgentsView.swift`
+
+**Why:** Marathon series AT–AV had established the Escape-to-clear pattern across MemoryView, LiveTranscriptionView, ScratchpadView, ChatHistoryView, and CodeView. This marathon closes the remaining 3 gaps confirmed by cross-file audit.
+
+**Result:** Build not yet run (owner-side); all changes are pure `.onKeyPress` additions with no logic impact.
 
 ---
 ## Standing notes / known issues

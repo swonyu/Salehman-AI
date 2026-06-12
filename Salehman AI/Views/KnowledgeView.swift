@@ -110,6 +110,7 @@ struct KnowledgeView: View {
                 TextField("Ask your documents…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 15))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
@@ -495,6 +496,7 @@ private struct DocDetailSheet: View {
                 TextField("Ask about this document…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { Task { await ask() } }
+                    .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
                     if asking { ProgressView().controlSize(.small) }
                     else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
