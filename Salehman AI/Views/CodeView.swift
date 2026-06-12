@@ -501,10 +501,10 @@ struct ChangedFileRow: View {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
-                            Text("+\(stat.added)").foregroundStyle(Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.85))
+                            Text("+\(stat.added)").foregroundStyle(DS.Palette.successSoft.opacity(0.85))
                         }
                         if stat.removed > 0 {
-                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                            Text("−\(stat.removed)").foregroundStyle(DS.Palette.danger.opacity(0.8))
                         }
                     }
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
@@ -908,7 +908,7 @@ struct CodeView: View {
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
-                    Circle().fill(Color.orange.opacity(0.75)).frame(width: 5, height: 5)
+                    Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
                 }
             }
@@ -1858,7 +1858,7 @@ struct CodeView: View {
                 // fast right now" answer lives where the run activity lives.
                 if let stats = OllamaClient.lastStats {
                     HStack(spacing: 5) {
-                        Circle().fill(Color.green.opacity(0.65)).frame(width: 5, height: 5)
+                        Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
                         Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
                             .font(.system(size: 9.5, weight: .medium))
                     }
@@ -1941,12 +1941,12 @@ struct CodeView: View {
                     let stats = diffStats
                     HStack(spacing: 8) {
                         HStack(spacing: 3) {
-                            Circle().fill(Color.green.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.green)
+                            Circle().fill(DS.Palette.successSoft.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                         }
                         HStack(spacing: 3) {
-                            Circle().fill(Color.red.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red)
+                            Circle().fill(DS.Palette.danger.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.danger)
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)

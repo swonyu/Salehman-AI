@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 09:24 +03 · Swift files: 150 · Swift LOC: 32446_
+_Generated: 2026-06-12 09:26 +03 · Swift files: 150 · Swift LOC: 32446_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15025,10 +15025,10 @@ struct ChangedFileRow: View {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
-                            Text("+\(stat.added)").foregroundStyle(Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.85))
+                            Text("+\(stat.added)").foregroundStyle(DS.Palette.successSoft.opacity(0.85))
                         }
                         if stat.removed > 0 {
-                            Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
+                            Text("−\(stat.removed)").foregroundStyle(DS.Palette.danger.opacity(0.8))
                         }
                     }
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
@@ -15432,7 +15432,7 @@ struct CodeView: View {
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
-                    Circle().fill(Color.orange.opacity(0.75)).frame(width: 5, height: 5)
+                    Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
                 }
             }
@@ -16382,7 +16382,7 @@ struct CodeView: View {
                 // fast right now" answer lives where the run activity lives.
                 if let stats = OllamaClient.lastStats {
                     HStack(spacing: 5) {
-                        Circle().fill(Color.green.opacity(0.65)).frame(width: 5, height: 5)
+                        Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
                         Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
                             .font(.system(size: 9.5, weight: .medium))
                     }
@@ -16465,12 +16465,12 @@ struct CodeView: View {
                     let stats = diffStats
                     HStack(spacing: 8) {
                         HStack(spacing: 3) {
-                            Circle().fill(Color.green.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.green)
+                            Circle().fill(DS.Palette.successSoft.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("+\(stats.added)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                         }
                         HStack(spacing: 3) {
-                            Circle().fill(Color.red.opacity(0.8)).frame(width: 4, height: 4)
-                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.red)
+                            Circle().fill(DS.Palette.danger.opacity(0.8)).frame(width: 4, height: 4)
+                            Text("-\(stats.removed)").font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.danger)
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -35014,7 +35014,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2909 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2927 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36990,6 +36990,24 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Completing the Escape-to-clear/dismiss sweep started in marathon AP and continued through AT–AU. After AV, every filter, search, and entry TextField in the app handles Escape consistently.
 
 **Result:** Build not yet run; all changes are 1-modifier additions.
+
+---
+### 2026-06-12 — Marathon AW — CodeView: DS palette token sweep for git diff + file-status indicators
+
+**What changed:** Five remaining raw color usages in `CodeView.swift` updated to DS tokens:
+- Git stat pill `+N` added: `Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.85)` → `DS.Palette.successSoft.opacity(0.85)`
+- Git stat pill `−N` removed: `Color.red.opacity(0.8)` → `DS.Palette.danger.opacity(0.8)`
+- File tree modified dot: `Color.orange.opacity(0.75)` → `DS.Palette.warningSoft.opacity(0.75)`
+- Last-run speed pill dot: `Color.green.opacity(0.65)` → `DS.Palette.successSoft.opacity(0.65)`
+- Diff header +N/-N circles and text: `Color.green`/`Color.red` → `successSoft`/`danger`
+
+`DS.Palette.danger = Color.red` — semantically correct for git deletions (destructive / loss); `successSoft` for additions.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** After AR/AS/AU/AW sweeps, every hardcoded `Color.green`/`.red`/`.orange` in the Views directory (except the intentional MarketsView heatmap and destructive `.tint(.red)` buttons) now routes through the DS palette token layer.
+
+**Result:** Build not yet run; all changes are pure color-token swaps in rendering code.
 
 ---
 ### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field

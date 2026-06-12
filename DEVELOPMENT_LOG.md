@@ -1975,6 +1975,24 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Build not yet run; all changes are 1-modifier additions.
 
 ---
+### 2026-06-12 — Marathon AW — CodeView: DS palette token sweep for git diff + file-status indicators
+
+**What changed:** Five remaining raw color usages in `CodeView.swift` updated to DS tokens:
+- Git stat pill `+N` added: `Color(red: 0.35, green: 0.82, blue: 0.48).opacity(0.85)` → `DS.Palette.successSoft.opacity(0.85)`
+- Git stat pill `−N` removed: `Color.red.opacity(0.8)` → `DS.Palette.danger.opacity(0.8)`
+- File tree modified dot: `Color.orange.opacity(0.75)` → `DS.Palette.warningSoft.opacity(0.75)`
+- Last-run speed pill dot: `Color.green.opacity(0.65)` → `DS.Palette.successSoft.opacity(0.65)`
+- Diff header +N/-N circles and text: `Color.green`/`Color.red` → `successSoft`/`danger`
+
+`DS.Palette.danger = Color.red` — semantically correct for git deletions (destructive / loss); `successSoft` for additions.
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** After AR/AS/AU/AW sweeps, every hardcoded `Color.green`/`.red`/`.orange` in the Views directory (except the intentional MarketsView heatmap and destructive `.tint(.red)` buttons) now routes through the DS palette token layer.
+
+**Result:** Build not yet run; all changes are pure color-token swaps in rendering code.
+
+---
 ### 2026-06-12 — Marathon AU — ScratchpadView: token-aligned checkmark + Escape on search field
 
 **What changed:**
