@@ -1387,6 +1387,16 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Verification:** full live-tree `swiftc -typecheck` EXIT 0; also EXIT 0 with the other session's in-flight LocalLLM/SalehmanEngine pinned to HEAD. **Owed: rebuild+reinstall** (the fix only helps once the binary is rebuilt) + the standing AITests run. Follow-up flagged: for pinned `.salehman`, skip the cloud roster probe entirely until the local floor fails (optimization, not required for the freeze fix).
 
+## 2026-06-12 · FEAT: find-in-conversation now highlights matches in-place + smarter match count (Chat B)
+
+**Files:** `Views/MarkdownText.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**What:** `/find` (the chat search bar) previously filtered the transcript to matching messages but gave no in-text cue *where* the term hit, and the caption counted messages ("3 matches" = 3 messages). Now: (1) every occurrence is painted with an amber wash wherever it lands — prose, headings, list items, table cells, and code blocks; (2) the caption counts true occurrences with message span when they differ ("5 matches in 3 messages").
+
+**How:** added `MarkdownText.highlighted(_:query:)` — a pure attribute overlay applied AFTER the markdown/attributed-string cache, so the parse cache stays query-independent and only a cheap O(text) pass re-runs per keystroke. Threaded an optional `highlight` through `MarkdownText` → `lineView`/`tableView`/`CodeBlock`, and through `MessageBubble` (added to its `Equatable ==`, or a stale equality would freeze the highlight when the query changes — the documented MessageBubble hazard). User rows and quote cards render via `Text(MarkdownText.highlighted(AttributedString(text), query:))`. Amber, deliberately not the red brand accent (red = error/active in this UI). New pure `ChatSearch` enum (occurrences / totalMatches / matchingMessageCount / matchLabel) backs the caption — case-insensitive, non-overlapping.
+
+**Verification:** whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test -only-testing:"Salehman AITests"` → **TEST SUCCEEDED**, including 10 new tests (6 `ChatSearchTests` + 4 `MarkdownHighlightTests`), 0 failures. Zero behavior change when not searching (`highlight==""` → `highlighted` early-returns the base string).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.

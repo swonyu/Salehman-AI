@@ -386,6 +386,14 @@ struct ContentView: View {
         return vm.messages.filter { $0.text.localizedCaseInsensitiveContains(q) }
     }
 
+    /// The term to paint inside each bubble — only while the search bar is open
+    /// with a non-blank query, otherwise "" (no highlight). Threaded into every
+    /// MessageBubble so the matched word lights up wherever it sits in the reply.
+    private var searchHighlight: String {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (searching && !q.isEmpty) ? q : ""
+    }
+
     private var conversation: some View {
         VStack(spacing: 0) {
             if searching { searchBar }
@@ -414,6 +422,7 @@ struct ContentView: View {
                                     }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
+                                                  highlight: searchHighlight,
                                                   onRegenerate: vm.regenerate,
                                                   onEdit: { m in
                                                       if let text = vm.extractForEdit(m) {
@@ -587,7 +596,7 @@ struct ContentView: View {
                     return .handled
                 }
             if !searchQuery.isEmpty {
-                Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
+                Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -1746,6 +1755,54 @@ struct ChatStats: Equatable {
     }
 }
 
+/// Pure helpers behind find-in-conversation. Kept free of view state so the
+/// counting logic is unit-testable (ChatTranscriptLogicTests) — the searchBar
+/// just renders `matchLabel(...)`.
+enum ChatSearch {
+    /// Count NON-overlapping, case-insensitive occurrences of `query` in `text`.
+    /// "aa" in "aaaa" → 2, not 3 — we advance past each whole match (mirrors how
+    /// a user reading the highlight counts them, and how the highlighter paints
+    /// them). Blank query → 0.
+    nonisolated static func occurrences(of query: String, in text: String) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        var count = 0
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let r = text.range(of: q, options: .caseInsensitive,
+                                 range: searchStart..<text.endIndex) {
+            count += 1
+            // Advance past the whole match so overlaps aren't double-counted; the
+            // guard against an empty match keeps this from looping forever.
+            searchStart = r.upperBound > r.lowerBound ? r.upperBound
+                                                      : text.index(after: r.lowerBound)
+        }
+        return count
+    }
+
+    /// Total occurrences across every message — the number the searchBar shows.
+    nonisolated static func totalMatches(of query: String, in messages: [ChatMessage]) -> Int {
+        messages.reduce(0) { $0 + occurrences(of: query, in: $1.text) }
+    }
+
+    /// How many messages contain at least one occurrence (the filtered-row count).
+    nonisolated static func matchingMessageCount(of query: String, in messages: [ChatMessage]) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.count
+    }
+
+    /// SearchBar caption: total matches, plus how many messages they span when
+    /// the two differ (e.g. "5 matches in 3 messages"). "No matches" when none.
+    nonisolated static func matchLabel(of query: String, in messages: [ChatMessage]) -> String {
+        let total = totalMatches(of: query, in: messages)
+        guard total > 0 else { return "No matches" }
+        let msgs = matchingMessageCount(of: query, in: messages)
+        let head = counted(total, "match", "matches")
+        return msgs == total ? head : "\(head) in \(counted(msgs, "message"))"
+    }
+}
+
 // MARK: - Message Bubble
 struct MessageBubble: View, Equatable {
     /// Equality gates body re-evaluation (used via `.equatable()` at the
@@ -1764,10 +1821,16 @@ struct MessageBubble: View, Equatable {
     /// the point); `.equatable()` at the call site is REQUIRED, conformance
     /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
     static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
-        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+        lhs.message == rhs.message
+            && lhs.qaShowActions == rhs.qaShowActions
+            && lhs.highlight == rhs.highlight
     }
 
     let message: ChatMessage
+    /// Active find-in-conversation term to highlight inside this bubble's text.
+    /// Empty in the common (not-searching) case. MUST be in `==` above — a stale
+    /// equality would freeze the highlight when the query changes (see warning).
+    var highlight: String = ""
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     /// Edit-and-resend on user rows: the view model truncates the transcript
     /// from this message and the composer reloads its text. nil hides the action.
@@ -1901,7 +1964,7 @@ struct MessageBubble: View, Equatable {
             RoundedRectangle(cornerRadius: 1)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
-            Text(quote)
+            Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
                 .font(.system(size: 12))
                 .lineSpacing(1.2)
                 .foregroundStyle(.white.opacity(0.55))
@@ -1919,14 +1982,14 @@ struct MessageBubble: View, Equatable {
         if let split = Self.splitLeadingQuote(message.text) {
             quoteCard(split.quote)
             if !split.body.isEmpty {
-                Text(split.body)
+                Text(MarkdownText.highlighted(AttributedString(split.body), query: highlight))
                     .font(.system(size: 13.5))
                     .lineSpacing(1.5)
                     .textSelection(.enabled)
                     .foregroundStyle(.white)
             }
         } else {
-            Text(message.text)
+            Text(MarkdownText.highlighted(AttributedString(message.text), query: highlight))
                 .font(.system(size: 13.5))
                 .lineSpacing(1.5)
                 .textSelection(.enabled)
@@ -1978,7 +2041,7 @@ struct MessageBubble: View, Equatable {
 
     private var assistantRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MarkdownText(text: displayedText)
+            MarkdownText(text: displayedText, highlight: highlight)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
             // Failure rows get an INLINE retry — hover-regenerate exists but

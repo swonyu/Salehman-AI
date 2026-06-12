@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import SwiftUI   // search-highlight tests inspect the .backgroundColor attribute
 @testable import Salehman_AI
 
 // MARK: - Chat transcript pure logic — exporter format
@@ -318,5 +319,80 @@ struct ComposerCountTests {
         let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
         let c = ContentView.composerCount(draft)
         #expect(c?.label == "2000 words" && c?.warn == true)
+    }
+}
+
+// MARK: - Find-in-conversation: occurrence counting + caption
+
+struct ChatSearchTests {
+
+    private func msg(_ text: String) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: false,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func occurrencesAreCaseInsensitiveAndNonOverlapping() {
+        #expect(ChatSearch.occurrences(of: "the", in: "The theory of the THE") == 4)
+        #expect(ChatSearch.occurrences(of: "aa", in: "aaaa") == 2)   // non-overlapping
+        #expect(ChatSearch.occurrences(of: "x", in: "no match here") == 0)
+    }
+
+    @Test func blankQueryCountsNothing() {
+        #expect(ChatSearch.occurrences(of: "", in: "anything") == 0)
+        #expect(ChatSearch.occurrences(of: "   ", in: "anything") == 0)
+    }
+
+    @Test func totalMatchesSumAcrossMessagesAndMessageCount() {
+        let msgs = [msg("alpha alpha"), msg("ALPHA beta"), msg("gamma")]
+        #expect(ChatSearch.totalMatches(of: "alpha", in: msgs) == 3)
+        #expect(ChatSearch.matchingMessageCount(of: "alpha", in: msgs) == 2)
+    }
+
+    @Test func labelCollapsesWhenOneMatchPerMessage() {
+        // 2 matches across 2 messages → no "in N messages" tail.
+        let msgs = [msg("alpha"), msg("alpha beta")]
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "2 matches")
+    }
+
+    @Test func labelShowsSpanWhenMatchesExceedMessages() {
+        let msgs = [msg("alpha alpha alpha"), msg("alpha")]   // 4 matches, 2 messages
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "4 matches in 2 messages")
+    }
+
+    @Test func labelSingularGrammarAndNoMatches() {
+        #expect(ChatSearch.matchLabel(of: "alpha", in: [msg("alpha beta gamma")]) == "1 match")
+        #expect(ChatSearch.matchLabel(of: "zzz", in: [msg("nothing here")]) == "No matches")
+    }
+}
+
+// MARK: - Find-in-conversation: highlight attribute overlay
+
+struct MarkdownHighlightTests {
+
+    /// The matched substrings, lowercased, in document order.
+    private func marked(_ s: AttributedString) -> [String] {
+        s.runs.filter { $0.backgroundColor != nil }
+            .map { String(s[$0.range].characters).lowercased() }
+    }
+
+    @Test func preservesCharactersAndMarksEveryMatch() {
+        let out = MarkdownText.highlighted(AttributedString("find the word find"), query: "find")
+        #expect(String(out.characters) == "find the word find")   // text untouched
+        #expect(marked(out) == ["find", "find"])
+    }
+
+    @Test func matchIsCaseInsensitive() {
+        let out = MarkdownText.highlighted(AttributedString("Swift swift SWIFT"), query: "swift")
+        #expect(marked(out).count == 3)
+    }
+
+    @Test func blankQueryLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("nothing to mark"), query: "  ")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+
+    @Test func noMatchLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("alpha beta"), query: "zzz")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
     }
 }

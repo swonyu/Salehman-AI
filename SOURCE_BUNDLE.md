@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 03:00 +03 · Swift files: 150 · Swift LOC: 30475_
+_Generated: 2026-06-12 03:42 +03 · Swift files: 150 · Swift LOC: 30724_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -3524,7 +3524,7 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainRouting.swift (335 lines) =====
+===== FILE: Salehman AI/LLM/BrainRouting.swift (349 lines) =====
 ```swift
 import Foundation
 
@@ -3713,10 +3713,24 @@ nonisolated struct BrainRouteConfig: Sendable {
     static func live() async -> BrainRouteConfig {
         let pref = AppSettings.brainPreferenceCurrent
         var c = BrainRouteConfig(pref: pref, offlineOnly: AppSettings.isOfflineOnly)
-        c.configured = CloudProvider.configuredNow()
-        c.unslothConfigured = UnslothStudio.isConfigured
-        c.vllmConfigured = VLLM.isConfigured
-        c.salehmanCloudReady = SalehmanEngine.hasAnyCloud
+        // These four probes are SYNCHRONOUS Keychain reads (SecItemCopyMatching,
+        // 10+ items). macOS can block such a read for SECONDS — or forever — when
+        // it needs an authorization prompt (e.g. after the app is rebuilt and its
+        // code signature no longer matches an item's "always allow" ACL, the
+        // hidden SecurityAgent dialog blocks the call). On the MAIN actor that
+        // froze the whole UI mid-send (observed: Code tab stuck on "Working",
+        // main thread parked in SecItemCopyMatching). Run them OFF-main so the
+        // prompt can surface and the UI stays alive. All return Sendable values.
+        let probes = await Task.detached(priority: .userInitiated) {
+            (configured: CloudProvider.configuredNow(),
+             unsloth: UnslothStudio.isConfigured,
+             vllm: VLLM.isConfigured,
+             salehmanCloud: SalehmanEngine.hasAnyCloud)
+        }.value
+        c.configured = probes.configured
+        c.unslothConfigured = probes.unsloth
+        c.vllmConfigured = probes.vllm
+        c.salehmanCloudReady = probes.salehmanCloud
         switch pref {
         case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
             c.ollamaReady = await LocalLLM.ollamaReady()
@@ -4876,7 +4890,7 @@ enum GrokClient {
 }
 ```
 
-===== FILE: Salehman AI/LLM/KeychainStore.swift (130 lines) =====
+===== FILE: Salehman AI/LLM/KeychainStore.swift (136 lines) =====
 ```swift
 import Foundation
 import Security
@@ -4934,6 +4948,12 @@ enum KeychainStore {
         /// Settings can substitute the real `ANTHROPIC_AUTH_TOKEN` into the
         /// copy-to-clipboard payload (see Unsloth's Claude-Code guide).
         case unslothStudioAPIKey = "unsloth-studio-api-key"
+        /// Hugging Face token (read scope). Used OUTSIDE the app: the free
+        /// cloud-GPU notebook (salehman_cloud_gpu.ipynb) needs it to download
+        /// the private salehman GGUF — Settings keeps it in the Keychain with
+        /// a Copy button so it's pasted into Colab, never retyped or stored
+        /// in a notebook/file.
+        case hfToken = "hf-token"
         /// Optional bearer token for a self-hosted vLLM server started with
         /// `--api-key`. Needed when you host the vLLM brain on a PUBLIC cloud GPU
         /// (so the endpoint isn't open to the world); a localhost `vllm serve`
@@ -17222,7 +17242,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2421 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2484 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17612,6 +17632,14 @@ struct ContentView: View {
         return vm.messages.filter { $0.text.localizedCaseInsensitiveContains(q) }
     }
 
+    /// The term to paint inside each bubble — only while the search bar is open
+    /// with a non-blank query, otherwise "" (no highlight). Threaded into every
+    /// MessageBubble so the matched word lights up wherever it sits in the reply.
+    private var searchHighlight: String {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (searching && !q.isEmpty) ? q : ""
+    }
+
     private var conversation: some View {
         VStack(spacing: 0) {
             if searching { searchBar }
@@ -17640,6 +17668,7 @@ struct ContentView: View {
                                     }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
                                     MessageBubble(message: msg,
+                                                  highlight: searchHighlight,
                                                   onRegenerate: vm.regenerate,
                                                   onEdit: { m in
                                                       if let text = vm.extractForEdit(m) {
@@ -17813,7 +17842,7 @@ struct ContentView: View {
                     return .handled
                 }
             if !searchQuery.isEmpty {
-                Text("\(filteredMessages.count) match\(filteredMessages.count == 1 ? "" : "es")")
+                Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -18972,6 +19001,54 @@ struct ChatStats: Equatable {
     }
 }
 
+/// Pure helpers behind find-in-conversation. Kept free of view state so the
+/// counting logic is unit-testable (ChatTranscriptLogicTests) — the searchBar
+/// just renders `matchLabel(...)`.
+enum ChatSearch {
+    /// Count NON-overlapping, case-insensitive occurrences of `query` in `text`.
+    /// "aa" in "aaaa" → 2, not 3 — we advance past each whole match (mirrors how
+    /// a user reading the highlight counts them, and how the highlighter paints
+    /// them). Blank query → 0.
+    nonisolated static func occurrences(of query: String, in text: String) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        var count = 0
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let r = text.range(of: q, options: .caseInsensitive,
+                                 range: searchStart..<text.endIndex) {
+            count += 1
+            // Advance past the whole match so overlaps aren't double-counted; the
+            // guard against an empty match keeps this from looping forever.
+            searchStart = r.upperBound > r.lowerBound ? r.upperBound
+                                                      : text.index(after: r.lowerBound)
+        }
+        return count
+    }
+
+    /// Total occurrences across every message — the number the searchBar shows.
+    nonisolated static func totalMatches(of query: String, in messages: [ChatMessage]) -> Int {
+        messages.reduce(0) { $0 + occurrences(of: query, in: $1.text) }
+    }
+
+    /// How many messages contain at least one occurrence (the filtered-row count).
+    nonisolated static func matchingMessageCount(of query: String, in messages: [ChatMessage]) -> Int {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return 0 }
+        return messages.filter { $0.text.localizedCaseInsensitiveContains(q) }.count
+    }
+
+    /// SearchBar caption: total matches, plus how many messages they span when
+    /// the two differ (e.g. "5 matches in 3 messages"). "No matches" when none.
+    nonisolated static func matchLabel(of query: String, in messages: [ChatMessage]) -> String {
+        let total = totalMatches(of: query, in: messages)
+        guard total > 0 else { return "No matches" }
+        let msgs = matchingMessageCount(of: query, in: messages)
+        let head = counted(total, "match", "matches")
+        return msgs == total ? head : "\(head) in \(counted(msgs, "message"))"
+    }
+}
+
 // MARK: - Message Bubble
 struct MessageBubble: View, Equatable {
     /// Equality gates body re-evaluation (used via `.equatable()` at the
@@ -18990,10 +19067,16 @@ struct MessageBubble: View, Equatable {
     /// the point); `.equatable()` at the call site is REQUIRED, conformance
     /// alone is ignored by SwiftUI (swiftui-lab.com/equatableview).
     static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
-        lhs.message == rhs.message && lhs.qaShowActions == rhs.qaShowActions
+        lhs.message == rhs.message
+            && lhs.qaShowActions == rhs.qaShowActions
+            && lhs.highlight == rhs.highlight
     }
 
     let message: ChatMessage
+    /// Active find-in-conversation term to highlight inside this bubble's text.
+    /// Empty in the common (not-searching) case. MUST be in `==` above — a stale
+    /// equality would freeze the highlight when the query changes (see warning).
+    var highlight: String = ""
     var onRegenerate: ((ChatMessage) -> Void)? = nil
     /// Edit-and-resend on user rows: the view model truncates the transcript
     /// from this message and the composer reloads its text. nil hides the action.
@@ -19127,7 +19210,7 @@ struct MessageBubble: View, Equatable {
             RoundedRectangle(cornerRadius: 1)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
-            Text(quote)
+            Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
                 .font(.system(size: 12))
                 .lineSpacing(1.2)
                 .foregroundStyle(.white.opacity(0.55))
@@ -19145,14 +19228,14 @@ struct MessageBubble: View, Equatable {
         if let split = Self.splitLeadingQuote(message.text) {
             quoteCard(split.quote)
             if !split.body.isEmpty {
-                Text(split.body)
+                Text(MarkdownText.highlighted(AttributedString(split.body), query: highlight))
                     .font(.system(size: 13.5))
                     .lineSpacing(1.5)
                     .textSelection(.enabled)
                     .foregroundStyle(.white)
             }
         } else {
-            Text(message.text)
+            Text(MarkdownText.highlighted(AttributedString(message.text), query: highlight))
                 .font(.system(size: 13.5))
                 .lineSpacing(1.5)
                 .textSelection(.enabled)
@@ -19204,7 +19287,7 @@ struct MessageBubble: View, Equatable {
 
     private var assistantRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MarkdownText(text: displayedText)
+            MarkdownText(text: displayedText, highlight: highlight)
                 .foregroundStyle(Color.white.opacity(0.92))
                 .lineSpacing(2)               // calmer reading rhythm on long replies
             // Failure rows get an INLINE retry — hover-regenerate exists but
@@ -20611,7 +20694,7 @@ struct LiveTranscriptionView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarkdownText.swift (384 lines) =====
+===== FILE: Salehman AI/Views/MarkdownText.swift (422 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20621,6 +20704,10 @@ import AppKit
 /// inline code). No third-party dependencies.
 struct MarkdownText: View {
     let text: String
+    /// Find-in-conversation term to highlight (case-insensitive). Empty = no
+    /// highlight, the common path. Threaded down to every rendered run so a
+    /// match lights up wherever it lands — prose, list item, table cell, code.
+    var highlight: String = ""
 
     var body: some View {
         let parsed = MarkdownText.segments(for: text)
@@ -20628,7 +20715,7 @@ struct MarkdownText: View {
             ForEach(Array(parsed.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .code(let language, let code):
-                    CodeBlock(language: language, code: code)
+                    CodeBlock(language: language, code: code, highlight: highlight)
                 case .text(let body):
                     // Render block-by-block so `##` headings, `- `/`1.` lists, and
                     // `| a | b |` tables read as real structure instead of literal text.
@@ -20636,11 +20723,11 @@ struct MarkdownText: View {
                         ForEach(Array(MarkdownText.blocks(for: body).enumerated()), id: \.offset) { _, block in
                             switch block {
                             case .table(let header, let rows):
-                                MarkdownText.tableView(header: header, rows: rows)
+                                MarkdownText.tableView(header: header, rows: rows, highlight: highlight)
                             case .lines(let chunk):
                                 VStack(alignment: .leading, spacing: 5) {
                                     ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
-                                        MarkdownText.lineView(raw)
+                                        MarkdownText.lineView(raw, highlight: highlight)
                                     }
                                 }
                             }
@@ -20740,17 +20827,43 @@ struct MarkdownText: View {
         return attr
     }
 
+    /// Amber wash painted behind find-in-conversation matches. Deliberately NOT
+    /// the red brand accent — red reads as "error/active brain" in this UI and
+    /// would muddy the meaning of a match. Amber is the universal "found it" cue.
+    private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
+
+    /// Overlay a search highlight on an already-rendered (and cached) attributed
+    /// string. Applied AFTER the markdown cache so the parse cache stays
+    /// query-independent — only this cheap O(text) attribute pass re-runs as the
+    /// query changes. Highlights EVERY case-insensitive occurrence, not just the
+    /// first. Returns `base` untouched when `query` is blank (the hot path).
+    static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return base }
+        var out = base
+        var cursor = out.startIndex
+        // Setting color attributes never changes the character count, so indices
+        // stay valid across iterations — we just walk forward past each hit.
+        while cursor < out.endIndex,
+              let hit = out[cursor..<out.endIndex].range(of: q, options: .caseInsensitive) {
+            out[hit].backgroundColor = highlightWash
+            out[hit].foregroundColor = .white   // matches pop a touch over the 0.92 body
+            cursor = hit.upperBound
+        }
+        return out
+    }
+
     /// Render one source line with block-level styling (headings, bullets,
     /// numbered items) on top of the inline markdown. LLM replies lean on `##`
     /// headings and `- ` lists that the old single-`Text` renderer showed as
     /// literal "##" / "-" — this makes them read as real document structure.
     @ViewBuilder
-    static func lineView(_ raw: String) -> some View {
+    static func lineView(_ raw: String, highlight: String = "") -> some View {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty {
             Color.clear.frame(height: 3)
         } else if let h = heading(trimmed) {
-            Text(inlineMarkdown(h.text))
+            Text(highlighted(inlineMarkdown(h.text), query: highlight))
                 .font(.system(size: h.level == 1 ? 19 : (h.level == 2 ? 16 : 14.5),
                               weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
@@ -20758,13 +20871,13 @@ struct MarkdownText: View {
         } else if let item = bullet(trimmed) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•").font(.system(size: 14, weight: .bold)).foregroundStyle(DS.Palette.accent)
-                Text(inlineMarkdown(item)).font(.system(size: 14))
+                Text(highlighted(inlineMarkdown(item), query: highlight)).font(.system(size: 14))
             }
             .padding(.leading, 2)
         } else if let num = numbered(trimmed) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(num.marker).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                Text(inlineMarkdown(num.text)).font(.system(size: 14))
+                Text(highlighted(inlineMarkdown(num.text), query: highlight)).font(.system(size: 14))
             }
             .padding(.leading, 2)
         } else if trimmed == "---" || trimmed == "***" || trimmed == "___" {
@@ -20777,13 +20890,13 @@ struct MarkdownText: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(DS.Palette.accent.opacity(0.7))
                     .frame(width: 3)
-                Text(inlineMarkdown(quote))
+                Text(highlighted(inlineMarkdown(quote), query: highlight))
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         } else {
-            Text(inlineMarkdown(raw)).font(.system(size: 14))
+            Text(highlighted(inlineMarkdown(raw), query: highlight)).font(.system(size: 14))
         }
     }
 
@@ -20876,12 +20989,12 @@ struct MarkdownText: View {
     /// ideal (single-line) width, so long cells overflowed the message column and
     /// were clipped mid-word (owner hit this). Wide tables h-scroll as the escape.
     @ViewBuilder
-    static func tableView(header: [String], rows: [[String]]) -> some View {
+    static func tableView(header: [String], rows: [[String]], highlight: String = "") -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(inlineMarkdown(cell))
+                        Text(highlighted(inlineMarkdown(cell), query: highlight))
                             .font(.system(size: 13.5, weight: .bold)).foregroundStyle(.white)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: 300, alignment: .leading)
@@ -20891,7 +21004,7 @@ struct MarkdownText: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(inlineMarkdown(cell)).font(.system(size: 13.5))
+                            Text(highlighted(inlineMarkdown(cell), query: highlight)).font(.system(size: 13.5))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: 300, alignment: .leading)
                         }
@@ -20908,6 +21021,8 @@ struct MarkdownText: View {
 struct CodeBlock: View {
     let language: String
     let code: String
+    /// Find-in-conversation term, painted over the syntax colors. Empty = none.
+    var highlight: String = ""
     @State private var copied = false
 
     /// Map a fenced-block language label → an extension `CodeSyntax` understands
@@ -20928,16 +21043,22 @@ struct CodeBlock: View {
     /// Very large blocks fall back to plain text — highlighting re-runs on every
     /// redraw (incl. token-by-token while streaming), which is O(n²) on size.
     private var highlightedCode: AttributedString {
-        guard code.count < 6000 else {
-            var a = AttributedString(code); a.foregroundColor = CodeSyntax.base; return a
+        let base: AttributedString
+        if code.count < 6000 {
+            let lines = code.components(separatedBy: "\n")
+            var result = AttributedString()
+            for (i, line) in lines.enumerated() {
+                result.append(CodeSyntax.highlight(line, ext: ext))
+                if i < lines.count - 1 { result.append(AttributedString("\n")) }
+            }
+            base = result
+        } else {
+            // Big block: skip syntax highlighting (O(n²) on every redraw).
+            var a = AttributedString(code); a.foregroundColor = CodeSyntax.base; base = a
         }
-        let lines = code.components(separatedBy: "\n")
-        var result = AttributedString()
-        for (i, line) in lines.enumerated() {
-            result.append(CodeSyntax.highlight(line, ext: ext))
-            if i < lines.count - 1 { result.append(AttributedString("\n")) }
-        }
-        return result
+        // Search highlight is a cheap attribute pass, applied even on the big-block
+        // fallback so a match in a long block still lights up.
+        return MarkdownText.highlighted(base, query: highlight)
     }
 
     var body: some View {
@@ -22520,7 +22641,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1922 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1974 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -22764,6 +22885,7 @@ struct SettingsView: View {
                         unslothStudioModelRow
                         unslothStudioTestRow
                         unslothStudioKeyRow
+                        hfTokenRow
                         claudeCodeUsageRow
                     }
 
@@ -23515,6 +23637,57 @@ struct SettingsView: View {
     /// env-var snippet (below) so the copy-to-clipboard payload uses the user's
     /// real token instead of a placeholder. Per CLAUDE.md, the key lives ONLY
     /// in Keychain — never UserDefaults, logs, or source.
+    /// Hugging Face token — the free cloud-GPU notebook needs it to download
+    /// the private salehman GGUF. Keychain-only (never UserDefaults/files);
+    /// Copy puts it on the clipboard for pasting into Colab's login box.
+    private var hfTokenRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hugging Face token").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(hfTokenSaved
+                     ? "Saved in macOS Keychain · Copy → paste into the cloud-GPU notebook's token box"
+                     : "For the free cloud-GPU notebook (downloads your private salehman model). Read scope is enough.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            SecureField("hf_…", text: $hfTokenDraft)
+                .textFieldStyle(.plain).frame(width: 140)
+                .multilineTextAlignment(.trailing).foregroundStyle(.white)
+                .accessibilityLabel("Hugging Face token")
+            Button("Save") {
+                let trimmed = hfTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                _ = KeychainStore.write(trimmed, to: .hfToken)
+                hfTokenDraft = ""                      // Wipe the in-memory copy immediately.
+                hfTokenSaved = true
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .disabled(hfTokenDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            if hfTokenSaved {
+                Button("Copy") {
+                    if let token = KeychainStore.read(.hfToken) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(token, forType: .string)
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("Copies the token for pasting into the Colab notebook")
+                .accessibilityLabel("Copy Hugging Face token")
+                Button("Clear") {
+                    _ = KeychainStore.delete(.hfToken)
+                    hfTokenSaved = false
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.red)
+                .accessibilityLabel("Clear Hugging Face token")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
+    @State private var hfTokenDraft: String = ""
+
     private var unslothStudioKeyRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
@@ -25732,10 +25905,11 @@ struct ChatGreetingBucketTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (322 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (398 lines) =====
 ```swift
 import Testing
 import Foundation
+import SwiftUI   // search-highlight tests inspect the .backgroundColor attribute
 @testable import Salehman_AI
 
 // MARK: - Chat transcript pure logic — exporter format
@@ -26054,6 +26228,81 @@ struct ComposerCountTests {
         let draft = Array(repeating: "w", count: 2_000).joined(separator: "\n")
         let c = ContentView.composerCount(draft)
         #expect(c?.label == "2000 words" && c?.warn == true)
+    }
+}
+
+// MARK: - Find-in-conversation: occurrence counting + caption
+
+struct ChatSearchTests {
+
+    private func msg(_ text: String) -> ChatMessage {
+        ChatMessage(id: UUID(), text: text, isUser: false,
+                    timestamp: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func occurrencesAreCaseInsensitiveAndNonOverlapping() {
+        #expect(ChatSearch.occurrences(of: "the", in: "The theory of the THE") == 4)
+        #expect(ChatSearch.occurrences(of: "aa", in: "aaaa") == 2)   // non-overlapping
+        #expect(ChatSearch.occurrences(of: "x", in: "no match here") == 0)
+    }
+
+    @Test func blankQueryCountsNothing() {
+        #expect(ChatSearch.occurrences(of: "", in: "anything") == 0)
+        #expect(ChatSearch.occurrences(of: "   ", in: "anything") == 0)
+    }
+
+    @Test func totalMatchesSumAcrossMessagesAndMessageCount() {
+        let msgs = [msg("alpha alpha"), msg("ALPHA beta"), msg("gamma")]
+        #expect(ChatSearch.totalMatches(of: "alpha", in: msgs) == 3)
+        #expect(ChatSearch.matchingMessageCount(of: "alpha", in: msgs) == 2)
+    }
+
+    @Test func labelCollapsesWhenOneMatchPerMessage() {
+        // 2 matches across 2 messages → no "in N messages" tail.
+        let msgs = [msg("alpha"), msg("alpha beta")]
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "2 matches")
+    }
+
+    @Test func labelShowsSpanWhenMatchesExceedMessages() {
+        let msgs = [msg("alpha alpha alpha"), msg("alpha")]   // 4 matches, 2 messages
+        #expect(ChatSearch.matchLabel(of: "alpha", in: msgs) == "4 matches in 2 messages")
+    }
+
+    @Test func labelSingularGrammarAndNoMatches() {
+        #expect(ChatSearch.matchLabel(of: "alpha", in: [msg("alpha beta gamma")]) == "1 match")
+        #expect(ChatSearch.matchLabel(of: "zzz", in: [msg("nothing here")]) == "No matches")
+    }
+}
+
+// MARK: - Find-in-conversation: highlight attribute overlay
+
+struct MarkdownHighlightTests {
+
+    /// The matched substrings, lowercased, in document order.
+    private func marked(_ s: AttributedString) -> [String] {
+        s.runs.filter { $0.backgroundColor != nil }
+            .map { String(s[$0.range].characters).lowercased() }
+    }
+
+    @Test func preservesCharactersAndMarksEveryMatch() {
+        let out = MarkdownText.highlighted(AttributedString("find the word find"), query: "find")
+        #expect(String(out.characters) == "find the word find")   // text untouched
+        #expect(marked(out) == ["find", "find"])
+    }
+
+    @Test func matchIsCaseInsensitive() {
+        let out = MarkdownText.highlighted(AttributedString("Swift swift SWIFT"), query: "swift")
+        #expect(marked(out).count == 3)
+    }
+
+    @Test func blankQueryLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("nothing to mark"), query: "  ")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+
+    @Test func noMatchLeavesEverythingUnhighlighted() {
+        let out = MarkdownText.highlighted(AttributedString("alpha beta"), query: "zzz")
+        #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
     }
 }
 ```
@@ -31951,7 +32200,7 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (129 lines) =====
+===== FILE: COORDINATION.md (131 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
@@ -31968,6 +32217,8 @@ THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules
 >
 > ✅ (Chat B: fixed at 20:4x in `0abed68` — `import CoreGraphics` added to QAGeometryTests; stale banner, kept for the record) ~~🟠 **Chat C → QA-test owner (~20:25): APP builds GREEN, but the AITests TARGET does NOT compile**~~ — `Salehman AITests/QAGeometryTests.swift:31` (and 32/41/51/61/82) use `CGRect(x:y:width:height:)` but the file is **missing `import CoreGraphics`** (add `import CoreGraphics`, or `import Foundation`). So `xcodebuild test` fails for everyone. Not Chat C's lane (QA/tests) and the file's idle, so flagging not fixing — same lesson as the ContentView red: a `-typecheck`/partial pre-check passed it but the real test build doesn't. (My `TodayView` privacy-copy fix `026a425` is committed; app-target build verified green.)
 
+> 🔴→✅ **Chat B → routing owner (2026-06-12 ~03:2x): FIXED a main-thread freeze in YOUR `BrainRouting.swift` (`230c6a9`) — cross-lane, owner's app was frozen.** Owner: "code tab doesnt work." `sample` of the hung app: main thread parked 2515 deep in `BrainRouteConfig.live()` → `configuredNow()` → `SecItemCopyMatching`/`AddItemResults` with SecurityAgent live = a hidden Keychain auth prompt (rebuild changed the code signature → saved API-key ACLs re-prompt). Your R1 (`f66209a`) centralized the 10 sync key checks into one EAGER main-actor call in `live()`, so the synchronous read froze the UI. Fix: the 4 sync probes now run in `Task.detached`. Behavior-identical, just off-main. **Heads-up: I edited `live()` — re-read before your next BrainRouting edit.** Follow-up you may want: for pinned `.salehman`, skip the cloud roster probe until the local floor fails. **Build-capable session: this needs a rebuild+reinstall to reach the owner's running app.**
+>
 Up to three build sessions work this repo at the same time: **two Claude Code** +
 **one Grok** (added 2026-06-06). There is **no direct session-to-session channel** —
 this file is how we stay in sync. **Every session reads and updates this file.** When
@@ -33019,7 +33270,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2185 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2221 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -34389,6 +34640,36 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 
 **Result:** typecheck EXIT 0; standing AITests request grows by 3 (41 total in ChatTranscriptLogicTests). Owner runbook: colab.research.google.com → Upload → salehman_cloud_gpu.ipynb → Runtime=T4 → Run all → paste hf token → copy printed URL → /connect in the app.
 
+## 2026-06-12 · Settings: Hugging Face token row (Keychain + Copy-for-notebook) — Chat B
+
+**Files:** `LLM/KeychainStore.swift` (new `.hfToken` account), `Views/SettingsView.swift` (`hfTokenRow` in the Unsloth Studio section)
+
+**What & why:** Owner wants the HF token kept in the app instead of retyped per Colab session. Row mirrors the established key-row pattern: SecureField + Save (Keychain write, in-memory draft wiped), **Copy** (clipboard, for the notebook's login box — the notebook itself stays token-free), Clear. The pasted token was also written directly to the Keychain via `security` under the app's service/account, so the row shows Saved immediately. Token characters appear in NO source/log/UserDefaults. Note: the token transited chat → flagged to owner to rotate once and store the replacement via this row (transcripts feed `ingest_sessions.py`).
+
+**Result:** typecheck EXIT 0; AITests request unchanged. Free-GPU flow is now: Settings→Copy → Colab Run-all → paste token → /connect the printed URL.
+
+## 2026-06-12 · FIX: Code-tab UI freeze — main-thread Keychain read during route planning (Chat B, cross-lane)
+
+**Files:** `LLM/BrainRouting.swift` (other session's file — committed/clean; critical user-facing freeze, flagged on board)
+
+**Symptom:** owner: "code tab doesnt work but chat does." Code-tab send stuck on "Working" forever.
+
+**Diagnosis by MEASUREMENT (not guess):** `sample`d the live app (PID 52436) → main thread frozen 2515 samples deep: `AgentPipeline.run` → `BrainRouteConfig.live()` → `CloudProvider.configuredNow()` → `isConfiguredNow.getter` → `KeychainStore.read` → **`SecItemCopyMatching` → `AddItemResults`** (the ACL-authorization path), and `SecurityAgent` (PID 52525) was running = a hidden Keychain auth dialog. Root cause: `configuredNow()` does 10+ SYNCHRONOUS Keychain reads on the main actor; macOS blocks such a read until an auth prompt is answered, and the prompt fires after the app is rebuilt (changed code signature invalidates saved API-key items' "always allow" ACLs). Synchronous-on-main + invisible dialog = total UI freeze. Contributing trigger: I'd written the HF token via the `security` CLI (wrong ACL owner) — deleted it; the architectural flaw remained.
+
+**Fix:** wrapped the four sync probes in `BrainRouteConfig.live()` (`configuredNow` + Unsloth/VLLM/SalehmanEngine-cloud checks, all Sendable-returning) in `Task.detached(.userInitiated)` so they never run on the main thread. The prompt can now surface and be clicked; the UI never freezes. Introduced by the 02:26 R1 routing refactor (`f66209a`) — pre-R1 these checks were also sync but scattered; R1 centralized them into one eager main-actor call.
+
+**Verification:** full live-tree `swiftc -typecheck` EXIT 0; also EXIT 0 with the other session's in-flight LocalLLM/SalehmanEngine pinned to HEAD. **Owed: rebuild+reinstall** (the fix only helps once the binary is rebuilt) + the standing AITests run. Follow-up flagged: for pinned `.salehman`, skip the cloud roster probe entirely until the local floor fails (optimization, not required for the freeze fix).
+
+## 2026-06-12 · FEAT: find-in-conversation now highlights matches in-place + smarter match count (Chat B)
+
+**Files:** `Views/MarkdownText.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**What:** `/find` (the chat search bar) previously filtered the transcript to matching messages but gave no in-text cue *where* the term hit, and the caption counted messages ("3 matches" = 3 messages). Now: (1) every occurrence is painted with an amber wash wherever it lands — prose, headings, list items, table cells, and code blocks; (2) the caption counts true occurrences with message span when they differ ("5 matches in 3 messages").
+
+**How:** added `MarkdownText.highlighted(_:query:)` — a pure attribute overlay applied AFTER the markdown/attributed-string cache, so the parse cache stays query-independent and only a cheap O(text) pass re-runs per keystroke. Threaded an optional `highlight` through `MarkdownText` → `lineView`/`tableView`/`CodeBlock`, and through `MessageBubble` (added to its `Equatable ==`, or a stale equality would freeze the highlight when the query changes — the documented MessageBubble hazard). User rows and quote cards render via `Text(MarkdownText.highlighted(AttributedString(text), query:))`. Amber, deliberately not the red brand accent (red = error/active in this UI). New pure `ChatSearch` enum (occurrences / totalMatches / matchingMessageCount / matchLabel) backs the caption — case-insensitive, non-overlapping.
+
+**Verification:** whole-module `swiftc -typecheck` EXIT 0; canonical `xcodebuild test -only-testing:"Salehman AITests"` → **TEST SUCCEEDED**, including 10 new tests (6 `ChatSearchTests` + 4 `MarkdownHighlightTests`), 0 failures. Zero behavior change when not searching (`highlight==""` → `highlighted` early-returns the base string).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07):** owner pasted a DeepSeek key into chat. Treated as compromised — must be rotated at platform.deepseek.com/api_keys and re-entered via Settings (Keychain). Never written to source/logs.
@@ -35205,6 +35486,12 @@ The bar chrome itself isn't a captured QA surface (window_0_live mechanism is st
 flagged earlier) — owner sees it live; app relaunched with the new bar.
 **Files:** `App/AppState.swift`, `Views/TabSwitcherBar.swift`, `COORDINATION.md`,
 `DEVELOPMENT_LOG.md`.
+
+## 2026-06-12 (~03:2x) — Chat D: Release deploy to /Applications (owner: "deploy it")
+Fresh Release build (includes hidden Markets `c866eb1` + corner tabs `211788f`)
+replaced `/Applications/Salehman AI.app`; previous app moved to TRASH (recoverable
+rollback, not deleted). App launched. Owner-authorized explicitly after the
+permission classifier blocked the first attempt.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
