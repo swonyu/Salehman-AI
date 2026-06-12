@@ -61,16 +61,28 @@ struct ShortcutsView: View {
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("KEYBOARD SHORTCUTS")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(2)
-                            .foregroundStyle(DS.Palette.accent)
+                // Header — brand tile + eyebrow component.
+                HStack(alignment: .center, spacing: DS.Space.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .fill(DS.Gradient.brand)
+                            .frame(width: 36, height: 36)
+                            .dsShadow(DS.Elevation.accentGlow(0.38))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: 0.75)
+                            )
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Every shortcut in one place")
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
+                        Eyebrow(text: "Keyboard Shortcuts")
                     }
                     Spacer()
                     Button { onClose() } label: {
@@ -108,8 +120,14 @@ struct ShortcutsView: View {
             VStack(spacing: 1) {
                 ForEach(group.items) { s in shortcutRow(s) }
             }
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
@@ -142,7 +160,7 @@ struct ShortcutsView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredID = s.id }
                 else if hoveredID == s.id { hoveredID = nil }
             }

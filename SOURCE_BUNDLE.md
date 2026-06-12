@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:44 +03 · Swift files: 150 · Swift LOC: 33083_
+_Generated: 2026-06-12 20:45 +03 · Swift files: 150 · Swift LOC: 33101_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25783,7 +25783,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (153 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (171 lines) =====
 ```swift
 import SwiftUI
 
@@ -25848,16 +25848,28 @@ struct ShortcutsView: View {
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("KEYBOARD SHORTCUTS")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(2)
-                            .foregroundStyle(DS.Palette.accent)
+                // Header — brand tile + eyebrow component.
+                HStack(alignment: .center, spacing: DS.Space.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .fill(DS.Gradient.brand)
+                            .frame(width: 36, height: 36)
+                            .dsShadow(DS.Elevation.accentGlow(0.38))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: 0.75)
+                            )
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Every shortcut in one place")
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
+                        Eyebrow(text: "Keyboard Shortcuts")
                     }
                     Spacer()
                     Button { onClose() } label: {
@@ -25895,8 +25907,14 @@ struct ShortcutsView: View {
             VStack(spacing: 1) {
                 ForEach(group.items) { s in shortcutRow(s) }
             }
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
@@ -25929,7 +25947,7 @@ struct ShortcutsView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredID = s.id }
                 else if hoveredID == s.id { hoveredID = nil }
             }
@@ -35651,7 +35669,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3180 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3193 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37961,6 +37979,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** ChatHistoryView is the sheet opened from ContentView's conversation history — frequently visited. Its plain header and iconless rows were inconsistent with the depth system applied across BG–BO.
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/ChatStore references; xcodebuild resolves fine.
+
+---
+
+### 2026-06-12 — Marathon BQ: ShortcutsView premium elevation pass
+
+**What changed:** `Salehman AI/Views/ShortcutsView.swift`
+- Header: raw tracked "KEYBOARD SHORTCUTS" + plain title → 36×36 brand icon tile (keyboard) + `Eyebrow("Keyboard Shortcuts")` + 18pt title — matches all other sheet headers (BM–BO)
+- Group containers: `DS.Palette.codeSurfaceSide` flat fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` 1pt)
+- Row hover: `DS.Motion.smooth` (ease) → `DS.Motion.magnetic` (spring)
+
+**Why:** ShortcutsView was the last supporting sheet using a hand-rolled eyebrow label and flat group containers. Consistent depth treatment across every sheet makes the system feel designed, not assembled.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/AppTab references; xcodebuild resolves fine.
 
 ---
 ## Standing notes / known issues

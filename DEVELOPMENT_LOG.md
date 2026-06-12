@@ -2309,6 +2309,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/ChatStore references; xcodebuild resolves fine.
 
 ---
+
+### 2026-06-12 — Marathon BQ: ShortcutsView premium elevation pass
+
+**What changed:** `Salehman AI/Views/ShortcutsView.swift`
+- Header: raw tracked "KEYBOARD SHORTCUTS" + plain title → 36×36 brand icon tile (keyboard) + `Eyebrow("Keyboard Shortcuts")` + 18pt title — matches all other sheet headers (BM–BO)
+- Group containers: `DS.Palette.codeSurfaceSide` flat fill → bezel fill (`white.opacity(0.035)` + `DS.Bezel.coreInnerHighlight` strokeBorder 0.5pt + `surfaceStroke` 1pt)
+- Row hover: `DS.Motion.smooth` (ease) → `DS.Motion.magnetic` (spring)
+
+**Why:** ShortcutsView was the last supporting sheet using a hand-rolled eyebrow label and flat group containers. Consistent depth treatment across every sheet makes the system feel designed, not assembled.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/AppTab references; xcodebuild resolves fine.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
