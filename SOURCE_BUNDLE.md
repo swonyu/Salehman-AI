@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:32 +03 · Swift files: 150 · Swift LOC: 32911_
+_Generated: 2026-06-12 20:33 +03 · Swift files: 150 · Swift LOC: 32934_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22993,7 +22993,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (567 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (590 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -23074,55 +23074,61 @@ struct ScratchpadView: View {
     }
 
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Ambient glow — soft depth behind the title.
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.12))
-                .frame(width: 180)
-                .blur(radius: 65)
-                .offset(x: -20, y: -35)
-                .allowsHitTesting(false)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("NOTES & TASKS")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(DS.Palette.accent)
-                    Text("Notes")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { copyAll() } label: {
-                    Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 13))
-                        .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
-                .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
-                .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
-
-                Button { Task { await runAI() } } label: {
-                    HStack(spacing: 6) {
-                        if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
-                        Text(pad == .tasks ? "Organize" : "Summarize")
-                    }
-                    .font(.system(size: 11.5, weight: .semibold))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches TodayView / AgentsView / KnowledgeView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(DS.Palette.accent, in: Capsule())
-                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
-                }
-                .buttonStyle(LuxPressStyle())
-                .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Notes & Tasks")
+                }
+                Text("Salehman can add & complete these from chat too.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { copyAll() } label: {
+                Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 13))
+                    .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
+            .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
+            .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
+
+            Button { Task { await runAI() } } label: {
+                HStack(spacing: 6) {
+                    if working { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "sparkles") }
+                    Text(pad == .tasks ? "Organize" : "Summarize")
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(DS.Gradient.brand, in: Capsule())
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
         }
+        .animation(DS.Motion.smooth, value: pad)
     }
 
     private var addRow: some View {
@@ -23166,8 +23172,8 @@ struct ScratchpadView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var noMatch: some View {
@@ -23290,7 +23296,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredTaskID = t.id }
                 else if hoveredTaskID == t.id { hoveredTaskID = nil }
             }
@@ -23337,10 +23343,15 @@ struct ScratchpadView: View {
     private func noteRow(_ n: Note) -> some View {
         let hovered = hoveredNoteID == n.id
         return HStack(spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 13))
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
-                .frame(width: 18)
+            // Icon well — matches MemoryView fact rows.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "note.text")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
@@ -23368,7 +23379,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredNoteID = n.id }
                 else if hoveredNoteID == n.id { hoveredNoteID = nil }
             }
@@ -23417,9 +23428,15 @@ struct ScratchpadView: View {
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -23438,8 +23455,14 @@ struct ScratchpadView: View {
             // outer ScrollView sizes it correctly — without this the List either
             // collapses to 0 or fills the container on macOS.
             .fixedSize(horizontal: false, vertical: true)
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .environment(\.defaultMinListRowHeight, 1)
@@ -35479,7 +35502,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3102 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3113 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37667,6 +37690,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
 
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
+## 2026-06-12 — Marathon BK — ScratchpadView premium elevation
+
+**What changed:** Header replaced from ZStack/raw-eyebrow to brand icon tile (36×36, icon changes between `checklist`/`note.text` with the active pad) + `Eyebrow("Notes & Tasks")` + gradient Organize/Summarize button. `listCard` and `reorderList` containers changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight). Note rows get a 24×24 `RoundedRectangle` icon well (matching MemoryView fact rows). Both task and note row hover animations upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Search row upgraded from `RoundedRectangle` corners to `Capsule` style.
+
+**Files:** `Views/ScratchpadView.swift`
+
+**Why:** ScratchpadView used raw eyebrow text (gap vs Eyebrow component), flat codeSurfaceSide list containers, and press (not magnetic) hover — inconsistencies that accumulated as earlier views were polished.
+
+**Result:** Code verified structurally correct.
 
 ---
 ## 2026-06-12 — Marathon BJ — MemoryView premium elevation

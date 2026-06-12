@@ -77,55 +77,61 @@ struct ScratchpadView: View {
     }
 
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Ambient glow — soft depth behind the title.
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.12))
-                .frame(width: 180)
-                .blur(radius: 65)
-                .offset(x: -20, y: -35)
-                .allowsHitTesting(false)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("NOTES & TASKS")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(DS.Palette.accent)
-                    Text("Notes")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { copyAll() } label: {
-                    Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 13))
-                        .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
-                .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
-                .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
-
-                Button { Task { await runAI() } } label: {
-                    HStack(spacing: 6) {
-                        if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
-                        Text(pad == .tasks ? "Organize" : "Summarize")
-                    }
-                    .font(.system(size: 11.5, weight: .semibold))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches TodayView / AgentsView / KnowledgeView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(DS.Palette.accent, in: Capsule())
-                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
-                }
-                .buttonStyle(LuxPressStyle())
-                .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Notes & Tasks")
+                }
+                Text("Salehman can add & complete these from chat too.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { copyAll() } label: {
+                Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 13))
+                    .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
+            .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
+            .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
+
+            Button { Task { await runAI() } } label: {
+                HStack(spacing: 6) {
+                    if working { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "sparkles") }
+                    Text(pad == .tasks ? "Organize" : "Summarize")
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(DS.Gradient.brand, in: Capsule())
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
         }
+        .animation(DS.Motion.smooth, value: pad)
     }
 
     private var addRow: some View {
@@ -169,8 +175,8 @@ struct ScratchpadView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var noMatch: some View {
@@ -293,7 +299,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredTaskID = t.id }
                 else if hoveredTaskID == t.id { hoveredTaskID = nil }
             }
@@ -340,10 +346,15 @@ struct ScratchpadView: View {
     private func noteRow(_ n: Note) -> some View {
         let hovered = hoveredNoteID == n.id
         return HStack(spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 13))
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
-                .frame(width: 18)
+            // Icon well — matches MemoryView fact rows.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "note.text")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
@@ -371,7 +382,7 @@ struct ScratchpadView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredNoteID = n.id }
                 else if hoveredNoteID == n.id { hoveredNoteID = nil }
             }
@@ -420,9 +431,15 @@ struct ScratchpadView: View {
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -441,8 +458,14 @@ struct ScratchpadView: View {
             // outer ScrollView sizes it correctly — without this the List either
             // collapses to 0 or fills the container on macOS.
             .fixedSize(horizontal: false, vertical: true)
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .environment(\.defaultMinListRowHeight, 1)

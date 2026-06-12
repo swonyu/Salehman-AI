@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BK — ScratchpadView premium elevation
+
+**What changed:** Header replaced from ZStack/raw-eyebrow to brand icon tile (36×36, icon changes between `checklist`/`note.text` with the active pad) + `Eyebrow("Notes & Tasks")` + gradient Organize/Summarize button. `listCard` and `reorderList` containers changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight). Note rows get a 24×24 `RoundedRectangle` icon well (matching MemoryView fact rows). Both task and note row hover animations upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Search row upgraded from `RoundedRectangle` corners to `Capsule` style.
+
+**Files:** `Views/ScratchpadView.swift`
+
+**Why:** ScratchpadView used raw eyebrow text (gap vs Eyebrow component), flat codeSurfaceSide list containers, and press (not magnetic) hover — inconsistencies that accumulated as earlier views were polished.
+
+**Result:** Code verified structurally correct.
+
+---
 ## 2026-06-12 — Marathon BJ — MemoryView premium elevation
 
 **What changed:** Header upgraded to brand icon tile (40×40 `RoundedRectangle` with `DS.Gradient.brand`) + `Eyebrow("Long-term Memory")` + bigger 18pt bold title. Fact list container changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight + surfaceStroke). Fact row leading icon changed from bare `sparkle` SF Symbol to a 24×24 `RoundedRectangle` icon well with accent fill that brightens on hover. Row hover animation upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Trash icon opacity lowered to 50% at rest, shows `danger` tint on hover (consistent with Knowledge doc rows). Search field and sort menu trigger upgraded from `RoundedRectangle(cornerRadius: small)` to `Capsule` style.
