@@ -541,9 +541,15 @@ struct MarketsView: View {
                 Spacer()
                 Button { Task { await generateBriefing() } } label: {
                     HStack(spacing: 6) {
-                        if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
-                        else { Image(systemName: "sparkles") }
+                        Group {
+                            if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
+                            else { Image(systemName: "sparkles") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: loadingBriefing)
                         Text(loadingBriefing ? "Generating…" : "Generate")
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: loadingBriefing)
                     }
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(.white)
@@ -558,6 +564,8 @@ struct MarketsView: View {
                 .font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: briefing.isEmpty)
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)

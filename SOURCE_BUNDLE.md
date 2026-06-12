@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:53 +03 · Swift files: 150 · Swift LOC: 33584_
+_Generated: 2026-06-12 22:55 +03 · Swift files: 150 · Swift LOC: 33594_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21289,7 +21289,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (315 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (317 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21491,6 +21491,7 @@ struct LiveTranscriptionView: View {
 
                     ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
                         lineView(text: line.text, live: false)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                     // In-flight (not yet finalized) text, shown faded.
                     if searchText.isEmpty && !live.partialThem.isEmpty {
@@ -21498,6 +21499,7 @@ struct LiveTranscriptionView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .animation(DS.Motion.smooth, value: live.lines.count)
                 .padding(.vertical, 4)
             }
             .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
@@ -22066,7 +22068,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (666 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (674 lines) =====
 ```swift
 import SwiftUI
 
@@ -22611,9 +22613,15 @@ struct MarketsView: View {
                 Spacer()
                 Button { Task { await generateBriefing() } } label: {
                     HStack(spacing: 6) {
-                        if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
-                        else { Image(systemName: "sparkles") }
+                        Group {
+                            if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
+                            else { Image(systemName: "sparkles") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: loadingBriefing)
                         Text(loadingBriefing ? "Generating…" : "Generate")
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: loadingBriefing)
                     }
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(.white)
@@ -22628,6 +22636,8 @@ struct MarketsView: View {
                 .font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: briefing.isEmpty)
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -36152,7 +36162,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3527 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3532 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39636,10 +39646,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CV: live transcript line entry + briefing button/body crossfades (Chat A)
+**What:** Two files. (1) `LiveTranscriptionView`: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each finalized transcript line row + `.animation(DS.Motion.smooth, value: live.lines.count)` on the `LazyVStack` — new transcribed lines slide in from the leading edge as they're finalized. (2) `MarketsView` briefing panel: ProgressView↔sparkles icon swap wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: loadingBriefing)` so the button icon fades between states; button label text gets `.contentTransition(.opacity)` for the same; briefing body `Text` gets `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: briefing.isEmpty)` so the AI-generated text crossfades in instead of snapping.
+**Files:** `Views/LiveTranscriptionView.swift`, `Views/MarketsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
 **What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.
 **Files:** `Views/ContentView.swift`.
-**Commit:** `(next)`
+**Commit:** `fb66718`
 
 ## 2026-06-12 — marathon CT: CodeView slash autocomplete, file search + code chat bubble transitions (Chat A)
 **What:** Three more CodeView list transitions. (1) Slash-command autocomplete popup: `.transition(.opacity.combined(with: .offset(y: 4)))` on each Button row + `.animation(DS.Motion.smooth, value: matches.count)` on the VStack — command rows fade+slide when user types and the filtered list changes. (2) File-search results: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `fileRow` + `.animation(DS.Motion.smooth, value: shown.count)` on the LazyVStack — file rows slide in/out when the filter updates. (3) Code-tab chat bubbles: `.transition(.opacity.combined(with: .offset(y: 8)))` on each `codeBubble` — new AI/user messages fade+slide up; the container LazyVStack already had `.animation(value: messages.count)` so no additional animation context needed.

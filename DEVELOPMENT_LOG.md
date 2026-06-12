@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CV: live transcript line entry + briefing button/body crossfades (Chat A)
+**What:** Two files. (1) `LiveTranscriptionView`: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each finalized transcript line row + `.animation(DS.Motion.smooth, value: live.lines.count)` on the `LazyVStack` — new transcribed lines slide in from the leading edge as they're finalized. (2) `MarketsView` briefing panel: ProgressView↔sparkles icon swap wrapped in `Group { }.transition(.opacity)` + `.animation(DS.Motion.smooth, value: loadingBriefing)` so the button icon fades between states; button label text gets `.contentTransition(.opacity)` for the same; briefing body `Text` gets `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: briefing.isEmpty)` so the AI-generated text crossfades in instead of snapping.
+**Files:** `Views/LiveTranscriptionView.swift`, `Views/MarketsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CU: main chat bubble entry animation + slash suggestions transitions (Chat A)
 **What:** Two transitions in `ContentView`. (1) Main chat transcript — each `ForEach` item wrapped in `Group { TimeSeparator? + MessageBubble }` with `.transition(.opacity.combined(with: .offset(y: 8)))` on the Group; `.animation(DS.Motion.smooth, value: vm.messages.count)` added to the transcript container — new user/AI messages now fade+slide up from below instead of snapping in. (2) Chat slash-command autocomplete (the inline `/`-popup) — `.transition(.opacity.combined(with: .offset(y: 4)))` on each command button + `.animation(DS.Motion.smooth, value: chatSlashMatches.count)` on the VStack — suggestion rows animate as the user types and the match list changes.
 **Files:** `Views/ContentView.swift`.
-**Commit:** `(next)`
+**Commit:** `fb66718`
 
 ## 2026-06-12 — marathon CT: CodeView slash autocomplete, file search + code chat bubble transitions (Chat A)
 **What:** Three more CodeView list transitions. (1) Slash-command autocomplete popup: `.transition(.opacity.combined(with: .offset(y: 4)))` on each Button row + `.animation(DS.Motion.smooth, value: matches.count)` on the VStack — command rows fade+slide when user types and the filtered list changes. (2) File-search results: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `fileRow` + `.animation(DS.Motion.smooth, value: shown.count)` on the LazyVStack — file rows slide in/out when the filter updates. (3) Code-tab chat bubbles: `.transition(.opacity.combined(with: .offset(y: 8)))` on each `codeBubble` — new AI/user messages fade+slide up; the container LazyVStack already had `.animation(value: messages.count)` so no additional animation context needed.

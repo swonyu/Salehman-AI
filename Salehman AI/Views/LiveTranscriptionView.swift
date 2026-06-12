@@ -198,6 +198,7 @@ struct LiveTranscriptionView: View {
 
                     ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
                         lineView(text: line.text, live: false)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                     // In-flight (not yet finalized) text, shown faded.
                     if searchText.isEmpty && !live.partialThem.isEmpty {
@@ -205,6 +206,7 @@ struct LiveTranscriptionView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .animation(DS.Motion.smooth, value: live.lines.count)
                 .padding(.vertical, 4)
             }
             .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
