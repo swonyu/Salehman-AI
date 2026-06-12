@@ -43,7 +43,7 @@ enum LocalLLM {
     /// For the context-aware text we *display* (rather than return as a
     /// sentinel), see `unavailableMessage` below.
     nonisolated static let offMessage =
-        "No model is reachable right now. Start Ollama with `ollama serve` and make sure the `salehman` model is pulled (`ollama pull salehman`)."
+        "No model is reachable right now. Make sure the salehman model is pulled: `ollama pull salehman`."
 
     /// Context-aware UI-facing text describing why the currently-pinned brain
     /// can't answer. Names the brain the user actually selected and the exact
@@ -76,7 +76,7 @@ enum LocalLLM {
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "No model is reachable right now. For Salehman: run `ollama serve` and pull the model with `ollama pull \(AppSettings.customModelNameCurrent)`. For a cloud GPU, switch to the vLLM brain in Settings → Brain and paste your RunPod (or local) endpoint URL."
+            return "Salehman model isn't responding. Make sure it's pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -556,13 +556,9 @@ enum LocalLLM {
             case .ollama:  return "Ollama selected · not running"
             case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
-                // Local-first: MLX (on-device) → Ollama. No third-party cloud.
-                // For a cloud GPU, the user switches to the vLLM brain instead.
-                if MLXSalehmanEngine.isPackageLinked {
-                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\", or load the MLX engine"
-                } else {
-                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\" (or switch to vLLM for RunPod)"
-                }
+                // Local-only: MLX (on-device) → Ollama. Ollama auto-starts on launch;
+                // the only fix when this fires is pulling the model.
+                return "Salehman: pull the model — `ollama pull \(AppSettings.customModelNameCurrent)`"
             case .unslothStudio:
                 // Different failure mode from the cloud brains — no key, just a
                 // local URL the user has to set + a server that has to be running.
