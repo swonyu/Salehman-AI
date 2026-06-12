@@ -448,6 +448,9 @@ struct SettingsView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(sel ? DS.Palette.accent : .secondary)
                 }
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mode.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text(mode.detail).font(.caption2).foregroundStyle(.secondary)
@@ -1973,6 +1976,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(subtitle).font(.caption2).foregroundStyle(.secondary)
@@ -1995,6 +2001,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Speaking speed").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text("How fast replies are read aloud").font(.caption2).foregroundStyle(.secondary)
@@ -2015,6 +2024,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
             Spacer()
             Picker("Voice", selection: $settings.speechVoiceID) {
@@ -2054,6 +2066,9 @@ struct SettingsView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Manage memory").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text("See and delete what Salehman AI remembers about you").font(.caption2).foregroundStyle(.secondary)
@@ -2079,6 +2094,9 @@ struct SettingsView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: ok)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)

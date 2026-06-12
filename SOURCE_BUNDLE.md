@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:45 +03 · Swift files: 150 · Swift LOC: 34188_
+_Generated: 2026-06-13 02:49 +03 · Swift files: 150 · Swift LOC: 34206_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24691,7 +24691,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2089 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2107 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25143,6 +25143,9 @@ struct SettingsView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(sel ? DS.Palette.accent : .secondary)
                 }
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mode.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text(mode.detail).font(.caption2).foregroundStyle(.secondary)
@@ -26668,6 +26671,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(subtitle).font(.caption2).foregroundStyle(.secondary)
@@ -26690,6 +26696,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Speaking speed").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text("How fast replies are read aloud").font(.caption2).foregroundStyle(.secondary)
@@ -26710,6 +26719,9 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
             Spacer()
             Picker("Voice", selection: $settings.speechVoiceID) {
@@ -26749,6 +26761,9 @@ struct SettingsView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Manage memory").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text("See and delete what Salehman AI remembers about you").font(.caption2).foregroundStyle(.secondary)
@@ -26774,6 +26789,9 @@ struct SettingsView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: ok)
             }
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)
@@ -36756,7 +36774,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4203 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4217 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39919,6 +39937,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+---
+
+## 2026-06-13 — Marathon EFA: SettingsView icon well top-lit gradient strokes
+
+**What changed:** Added 0.75pt top-lit gradient stroke `[white@0.20, white@0.04]` to all five 26px icon well types in SettingsView — `responseMode` button, `toggle()` function (covers all 10+ toggle rows at once), `speedRow`, `voiceRow`, `memoryRow`, and `statusRow`. SettingsView is now fully aligned with the app-wide icon well depth language established across AgentsView, MemoryView, KnowledgeView, ScratchpadView, TodayView, CodeView, and CommandPalette.
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Why:** The 2026-06-11 icon-well audit identified SettingsView as the last view with bare ZStack icon wells. Adding the stroke to `toggle()` in one shot propagates to every toggle row (memory, stream, auto-scroll, unrestricted mode, show-agents, etc.) without per-row edits.
+
+**Result:** Build exit 0, `grep -c '\.swift:[0-9]*:[0-9]*: error:' log` → 0. SourceKit cross-module false positives only (pre-existing).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
