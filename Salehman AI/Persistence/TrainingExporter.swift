@@ -25,7 +25,11 @@ enum TrainingExporter {
     }
 
     /// Build the JSONL string from a message list. Returns the content and stats.
-    nonisolated static func jsonl(from messages: [ChatMessage]) -> (String, Stats) {
+    /// When `ratedOnly` is true, only user→assistant pairs where the assistant
+    /// reply was rated thumbs-up (`rating == true`) are included — useful for
+    /// exporting only the user's "good reply" training signal.
+    nonisolated static func jsonl(from messages: [ChatMessage],
+                                   ratedOnly: Bool = false) -> (String, Stats) {
         let system = LocalLLM.cloudSystemPromptBase  // static, nonisolated
         var lines: [String] = []
         var skipped = 0
@@ -34,6 +38,7 @@ enum TrainingExporter {
             let a = messages[i]
             let b = messages[i + 1]
             guard a.isUser, !b.isUser else { i += 1; continue }
+            if ratedOnly, b.rating != true { i += 2; skipped += 1; continue }
             let userText = a.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let assistantText = b.text.trimmingCharacters(in: .whitespacesAndNewlines)
             // Skip very short or error-sentinel exchanges — they add noise.
@@ -60,19 +65,21 @@ enum TrainingExporter {
     }
 
     /// Show a save-panel and write the JSONL file. Must be called on the main actor.
-    @MainActor static func savePanel(messages: [ChatMessage]) {
-        let (content, stats) = jsonl(from: messages)
+    @MainActor static func savePanel(messages: [ChatMessage], ratedOnly: Bool = false) {
+        let (content, stats) = jsonl(from: messages, ratedOnly: ratedOnly)
         guard stats.examples > 0 else {
             let alert = NSAlert()
-            alert.messageText = "No training examples"
-            alert.informativeText = "The conversation doesn't have enough user/assistant pairs yet."
+            alert.messageText = ratedOnly ? "No rated examples" : "No training examples"
+            alert.informativeText = ratedOnly
+                ? "None of the thumbs-up rated replies meet the minimum length for training."
+                : "The conversation doesn't have enough user/assistant pairs yet."
             alert.runModal()
             return
         }
 
         let panel = NSSavePanel()
-        panel.title = "Export Training Data"
-        panel.nameFieldStringValue = "salehman_training.jsonl"
+        panel.title = ratedOnly ? "Export Best Replies" : "Export Training Data"
+        panel.nameFieldStringValue = ratedOnly ? "salehman_best_replies.jsonl" : "salehman_training.jsonl"
         panel.allowedContentTypes = [.init(filenameExtension: "jsonl")!]
         panel.message = "\(stats.examples) examples · \(stats.skipped) skipped · \(stats.bytes / 1024) KB"
 

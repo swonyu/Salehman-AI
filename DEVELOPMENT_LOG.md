@@ -1580,6 +1580,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — Marathon X: rating-filtered training export (`ratedOnly`)**
+
+**What changed:**
+- `Persistence/TrainingExporter.swift`: `jsonl(from:ratedOnly:Bool=false)` — new `ratedOnly` parameter; when true, only user→assistant pairs where `b.rating == true` (thumbs-up) are included; unrated or thumbs-down pairs count as `skipped`. `savePanel(messages:ratedOnly:Bool=false)` — different panel title/filename/alert text based on `ratedOnly`.
+- `Views/ContentView.swift`: "Export Best Replies" button added to the chat header Menu (hidden unless at least one thumbs-up rating exists); calls `TrainingExporter.savePanel(messages:ratedOnly:true)`. `ChatStats` extended with `ratedUp`, `ratedDown`; `blurb` shows `↑N ↓N` suffix when non-zero; `summarize()` computes counts from `assistantMsgs`.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: appended `TrainingExporterTests` suite (7 tests): valid pair → 1 example; short pair skipped; empty conversation; `ratedOnly` skips unrated; `ratedOnly` skips thumbs-down; default export includes unrated; output is valid JSONL per `JSONSerialization`.
+
+**Why:** Users can now export only their high-quality (thumbs-up) assistant replies as a filtered training set — better signal-to-noise for fine-tuning than exporting everything.
+
+**Files:** `Persistence/TrainingExporter.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

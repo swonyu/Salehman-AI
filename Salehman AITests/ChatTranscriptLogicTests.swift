@@ -107,11 +107,13 @@ struct ChatStatsTests {
             msg("one two", user: true, at: 0),
             msg("three", user: false, at: 90, duration: 1.5),
         ])
-        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · avg reply 1.5s · spans 1m")
+        // approxTokens = Int(3 * 1.3 rounded) = 4; longestReplyWords = 1 ("three")
+        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · ~4 tok · longest: 1w · avg reply 1.5s · spans 1m")
     }
 
     @Test func emptyConversationBlurbIsCalm() {
-        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words")
+        // approxTokens = 0; longestReplyWords = nil (no replies) → no "longest:" segment
+        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words · ~0 tok")
     }
 }
 
@@ -394,5 +396,83 @@ struct MarkdownHighlightTests {
     @Test func noMatchLeavesEverythingUnhighlighted() {
         let out = MarkdownText.highlighted(AttributedString("alpha beta"), query: "zzz")
         #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+}
+
+// MARK: - TrainingExporter.jsonl — rating-filtered export contract
+//
+// `jsonl(from:ratedOnly:)` is pure on its inputs; tests verify the pair-
+// extraction, quality guard, and `ratedOnly` filter in isolation.
+
+struct TrainingExporterTests {
+
+    private func pair(user: String, assistant: String,
+                      rating: Bool? = nil) -> [ChatMessage] {
+        let a = ChatMessage(id: UUID(), text: user, isUser: true, timestamp: .now)
+        var b = ChatMessage(id: UUID(), text: assistant, isUser: false, timestamp: .now)
+        b.rating = rating
+        return [a, b]
+    }
+
+    @Test func validPairBecomesOneExample() {
+        let msgs = pair(user: "Tell me about Swift concurrency.",
+                        assistant: "Swift concurrency uses async/await to structure asynchronous code.")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 1)
+        #expect(stats.skipped == 0)
+    }
+
+    @Test func shortPairIsSkipped() {
+        let msgs = pair(user: "Hi", assistant: "Hello")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 0)
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func emptyConversationHasNoExamples() {
+        let (content, stats) = TrainingExporter.jsonl(from: [])
+        #expect(stats.examples == 0)
+        #expect(content.isEmpty)
+    }
+
+    @Test func ratedOnlySkipsUnratedPairs() {
+        let rated = pair(user: "Explain async/await in Swift clearly please.",
+                         assistant: "Async/await lets you write asynchronous code that reads like synchronous code.",
+                         rating: true)
+        let unrated = pair(user: "What is a Swift protocol and how does it work?",
+                           assistant: "A Swift protocol defines a blueprint of methods, properties, and requirements.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: rated + unrated, ratedOnly: true)
+        #expect(stats.examples == 1)
+        // The unrated pair is counted as skipped.
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func ratedOnlySkipsThumbsDownPairs() {
+        let downvoted = pair(user: "Please write me a poem about coding.",
+                             assistant: "In circuits deep and logic gates abound, A coder's world is beautifully profound.",
+                             rating: false)
+        let (_, stats) = TrainingExporter.jsonl(from: downvoted, ratedOnly: true)
+        #expect(stats.examples == 0)
+    }
+
+    @Test func defaultExportIncludesUnratedPairs() {
+        let unrated = pair(user: "Tell me about Swift protocols and generics.",
+                           assistant: "Swift protocols define contracts; generics let you write reusable parameterized code.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: unrated, ratedOnly: false)
+        #expect(stats.examples == 1)
+    }
+
+    @Test func outputIsValidJSONL() throws {
+        let msgs = pair(user: "How does SwiftUI differ from UIKit in Swift development?",
+                        assistant: "SwiftUI is a declarative framework while UIKit is imperative; both target Apple platforms.",
+                        rating: true)
+        let (content, stats) = TrainingExporter.jsonl(from: msgs)
+        guard stats.examples > 0 else { return }
+        for line in content.components(separatedBy: "\n") where !line.isEmpty {
+            let data = Data(line.utf8)
+            _ = try JSONSerialization.jsonObject(with: data)
+        }
     }
 }

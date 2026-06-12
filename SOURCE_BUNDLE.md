@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 06:57 +03 · Swift files: 150 · Swift LOC: 31448_
+_Generated: 2026-06-12 07:03 +03 · Swift files: 150 · Swift LOC: 31604_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9919,7 +9919,7 @@ final class ScratchpadStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/TrainingExporter.swift (86 lines) =====
+===== FILE: Salehman AI/Persistence/TrainingExporter.swift (93 lines) =====
 ```swift
 //  TrainingExporter.swift
 //  Salehman AI
@@ -9948,7 +9948,11 @@ enum TrainingExporter {
     }
 
     /// Build the JSONL string from a message list. Returns the content and stats.
-    nonisolated static func jsonl(from messages: [ChatMessage]) -> (String, Stats) {
+    /// When `ratedOnly` is true, only user→assistant pairs where the assistant
+    /// reply was rated thumbs-up (`rating == true`) are included — useful for
+    /// exporting only the user's "good reply" training signal.
+    nonisolated static func jsonl(from messages: [ChatMessage],
+                                   ratedOnly: Bool = false) -> (String, Stats) {
         let system = LocalLLM.cloudSystemPromptBase  // static, nonisolated
         var lines: [String] = []
         var skipped = 0
@@ -9957,6 +9961,7 @@ enum TrainingExporter {
             let a = messages[i]
             let b = messages[i + 1]
             guard a.isUser, !b.isUser else { i += 1; continue }
+            if ratedOnly, b.rating != true { i += 2; skipped += 1; continue }
             let userText = a.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let assistantText = b.text.trimmingCharacters(in: .whitespacesAndNewlines)
             // Skip very short or error-sentinel exchanges — they add noise.
@@ -9983,19 +9988,21 @@ enum TrainingExporter {
     }
 
     /// Show a save-panel and write the JSONL file. Must be called on the main actor.
-    @MainActor static func savePanel(messages: [ChatMessage]) {
-        let (content, stats) = jsonl(from: messages)
+    @MainActor static func savePanel(messages: [ChatMessage], ratedOnly: Bool = false) {
+        let (content, stats) = jsonl(from: messages, ratedOnly: ratedOnly)
         guard stats.examples > 0 else {
             let alert = NSAlert()
-            alert.messageText = "No training examples"
-            alert.informativeText = "The conversation doesn't have enough user/assistant pairs yet."
+            alert.messageText = ratedOnly ? "No rated examples" : "No training examples"
+            alert.informativeText = ratedOnly
+                ? "None of the thumbs-up rated replies meet the minimum length for training."
+                : "The conversation doesn't have enough user/assistant pairs yet."
             alert.runModal()
             return
         }
 
         let panel = NSSavePanel()
-        panel.title = "Export Training Data"
-        panel.nameFieldStringValue = "salehman_training.jsonl"
+        panel.title = ratedOnly ? "Export Best Replies" : "Export Training Data"
+        panel.nameFieldStringValue = ratedOnly ? "salehman_best_replies.jsonl" : "salehman_training.jsonl"
         panel.allowedContentTypes = [.init(filenameExtension: "jsonl")!]
         panel.message = "\(stats.examples) examples · \(stats.skipped) skipped · \(stats.bytes / 1024) KB"
 
@@ -17023,7 +17030,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2711 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2718 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17200,22 +17207,22 @@ struct ContentView: View {
         .alert("Conversation stats", isPresented: $showStats) {
             Button("OK", role: .cancel) { }
         } message: { Text(statsBlurb) }
-        .alert("Connect to your cloud GPU", isPresented: $showConnect) {
-            TextField("https://….trycloudflare.com", text: $connectURL)
-            Button("Cancel", role: .cancel) { }
-            Button("Connect") {
+        .alert(“Connect to your cloud GPU”, isPresented: $showConnect) {
+            TextField(“https://….trycloudflare.com”, text: $connectURL)
+            Button(“Cancel”, role: .cancel) { }
+            Button(“Connect”) {
                 if let url = Self.normalizedServerURL(connectURL) {
-                    settings.unslothStudioEndpoint = url
-                    settings.unslothStudioModel = "salehman"
-                    settings.brainPreference = .unslothStudio
-                    noticeText = "Connected — Custom server → \(url), model “salehman”. Replies now come from the cloud GPU; pick Salehman in the Brain menu to go back to local."
+                    settings.vllmEndpoint = url
+                    settings.vllmModel = “salehman”
+                    settings.brainPreference = .vllm
+                    noticeText = “Connected — vLLM → \(url), model “salehman”. Replies now come from the cloud GPU; pin Salehman in Settings → Brain to go back to local.”
                 } else {
-                    noticeText = "That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints."
+                    noticeText = “That doesn't look like a server URL. Paste the https://….trycloudflare.com line the notebook's last cell prints.”
                 }
                 showNotice = true
             }
         } message: {
-            Text("Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).")
+            Text(“Paste the trycloudflare.com URL from the notebook's last cell (salehman_cloud_gpu.ipynb).”)
         }
         .alert("Cloud GPU", isPresented: $showNotice) {
             Button("OK", role: .cancel) { }
@@ -17357,6 +17364,13 @@ struct ContentView: View {
                 Divider()
                 Button { TrainingExporter.savePanel(messages: vm.messages) } label: {
                     Label("Export Training Data (JSONL)…", systemImage: "brain")
+                }
+                let ratedCount = vm.messages.filter { $0.rating == true }.count
+                if ratedCount > 0 {
+                    Button { TrainingExporter.savePanel(messages: vm.messages, ratedOnly: true) } label: {
+                        Label("Export Best Replies (\(ratedCount) rated)…",
+                              systemImage: "hand.thumbsup")
+                    }
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
@@ -22282,7 +22296,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (329 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (391 lines) =====
 ```swift
 import SwiftUI
 
@@ -22301,6 +22315,8 @@ struct ScratchpadView: View {
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
     @State private var editingText = ""
+    @State private var hoveredTaskID: UUID?
+    @State private var hoveredNoteID: UUID?
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -22331,21 +22347,37 @@ struct ScratchpadView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Notes").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button { Task { await runAI() } } label: {
-                HStack(spacing: 6) {
-                    if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
-                    Text(pad == .tasks ? "Organize" : "Summarize")
+        ZStack(alignment: .topLeading) {
+            // Ambient glow — soft depth behind the title.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.12))
+                .frame(width: 180)
+                .blur(radius: 65)
+                .offset(x: -20, y: -35)
+                .allowsHitTesting(false)
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("NOTES & TASKS")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(2)
+                        .foregroundStyle(DS.Palette.accent)
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Your scratchpad — Salehman can add & complete these from chat too.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button { Task { await runAI() } } label: {
+                    HStack(spacing: 6) {
+                        if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
+                        Text(pad == .tasks ? "Organize" : "Summarize")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
-            .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
-            .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
         }
     }
 
@@ -22434,10 +22466,12 @@ struct ScratchpadView: View {
     }
 
     private func taskRow(_ t: TaskItem) -> some View {
-        HStack(spacing: 12) {
+        let hovered = hoveredTaskID == t.id
+        return HStack(spacing: 12) {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16)).foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : .secondary)
+                    .font(.system(size: 16))
+                    .foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : (hovered ? .white.opacity(0.5) : .secondary))
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
@@ -22447,7 +22481,9 @@ struct ScratchpadView: View {
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
             } else {
                 Text(t.title)
-                    .font(.system(size: 14)).foregroundStyle(t.done ? Color.secondary : Color.white).strikethrough(t.done)
+                    .font(.system(size: 14))
+                    .foregroundStyle(t.done ? Color.secondary : (hovered ? .white : .white.opacity(0.9)))
+                    .strikethrough(t.done)
             }
             Spacer(minLength: 8)
             if editingId != t.id {
@@ -22456,6 +22492,14 @@ struct ScratchpadView: View {
             deleteButton { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredTaskID = t.id }
+                else if hoveredTaskID == t.id { hoveredTaskID = nil }
+            }
+        }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
@@ -22480,15 +22524,22 @@ struct ScratchpadView: View {
     }
 
     private func noteRow(_ n: Note) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "note.text").font(.system(size: 13)).foregroundStyle(DS.Palette.accent).frame(width: 18)
+        let hovered = hoveredNoteID == n.id
+        return HStack(spacing: 12) {
+            Image(systemName: "note.text")
+                .font(.system(size: 13))
+                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
+                .frame(width: 18)
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: true, id: n.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
             } else {
-                Text(n.text).font(.system(size: 14)).foregroundStyle(.white).textSelection(.enabled)
+                Text(n.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 8)
             if editingId != n.id {
@@ -22497,6 +22548,14 @@ struct ScratchpadView: View {
             deleteButton { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredNoteID = n.id }
+                else if hoveredNoteID == n.id { hoveredNoteID = nil }
+            }
+        }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparatorTint(DS.Palette.surfaceStroke)
@@ -22558,11 +22617,28 @@ struct ScratchpadView: View {
     }
 
     private func emptyState(_ text: String, _ icon: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 34)).foregroundStyle(DS.Palette.accent.opacity(0.8))
-            Text(text).font(.callout).foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.16))
+                    .frame(width: 90)
+                    .blur(radius: 20)
+                Image(systemName: icon)
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.9))
+            }
+            .padding(.bottom, 2)
+            Text(pad == .tasks ? "YOUR TASKS" : "YOUR NOTES")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(2)
+                .foregroundStyle(DS.Palette.accent)
+            Text(text)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+            Text(pad == .tasks ? "Type above and hit ↩ to add one." : "Type above and hit ↩ to add one.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 36)
+        .frame(maxWidth: .infinity).padding(.vertical, 40)
     }
 
     private var aiResultCard: some View {
@@ -26542,7 +26618,7 @@ struct ChatHistoryFilterExtendedTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (398 lines) =====
+===== FILE: Salehman AITests/ChatTranscriptLogicTests.swift (478 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -26653,11 +26729,13 @@ struct ChatStatsTests {
             msg("one two", user: true, at: 0),
             msg("three", user: false, at: 90, duration: 1.5),
         ])
-        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · avg reply 1.5s · spans 1m")
+        // approxTokens = Int(3 * 1.3 rounded) = 4; longestReplyWords = 1 ("three")
+        #expect(s.blurb == "2 messages — 1 yours, 1 reply\n3 words · ~4 tok · longest: 1w · avg reply 1.5s · spans 1m")
     }
 
     @Test func emptyConversationBlurbIsCalm() {
-        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words")
+        // approxTokens = 0; longestReplyWords = nil (no replies) → no "longest:" segment
+        #expect(ChatStats.summarize([]).blurb == "0 messages — 0 yours, 0 replies\n0 words · ~0 tok")
     }
 }
 
@@ -26940,6 +27018,84 @@ struct MarkdownHighlightTests {
     @Test func noMatchLeavesEverythingUnhighlighted() {
         let out = MarkdownText.highlighted(AttributedString("alpha beta"), query: "zzz")
         #expect(out.runs.allSatisfy { $0.backgroundColor == nil })
+    }
+}
+
+// MARK: - TrainingExporter.jsonl — rating-filtered export contract
+//
+// `jsonl(from:ratedOnly:)` is pure on its inputs; tests verify the pair-
+// extraction, quality guard, and `ratedOnly` filter in isolation.
+
+struct TrainingExporterTests {
+
+    private func pair(user: String, assistant: String,
+                      rating: Bool? = nil) -> [ChatMessage] {
+        let a = ChatMessage(id: UUID(), text: user, isUser: true, timestamp: .now)
+        var b = ChatMessage(id: UUID(), text: assistant, isUser: false, timestamp: .now)
+        b.rating = rating
+        return [a, b]
+    }
+
+    @Test func validPairBecomesOneExample() {
+        let msgs = pair(user: "Tell me about Swift concurrency.",
+                        assistant: "Swift concurrency uses async/await to structure asynchronous code.")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 1)
+        #expect(stats.skipped == 0)
+    }
+
+    @Test func shortPairIsSkipped() {
+        let msgs = pair(user: "Hi", assistant: "Hello")
+        let (_, stats) = TrainingExporter.jsonl(from: msgs)
+        #expect(stats.examples == 0)
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func emptyConversationHasNoExamples() {
+        let (content, stats) = TrainingExporter.jsonl(from: [])
+        #expect(stats.examples == 0)
+        #expect(content.isEmpty)
+    }
+
+    @Test func ratedOnlySkipsUnratedPairs() {
+        let rated = pair(user: "Explain async/await in Swift clearly please.",
+                         assistant: "Async/await lets you write asynchronous code that reads like synchronous code.",
+                         rating: true)
+        let unrated = pair(user: "What is a Swift protocol and how does it work?",
+                           assistant: "A Swift protocol defines a blueprint of methods, properties, and requirements.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: rated + unrated, ratedOnly: true)
+        #expect(stats.examples == 1)
+        // The unrated pair is counted as skipped.
+        #expect(stats.skipped == 1)
+    }
+
+    @Test func ratedOnlySkipsThumbsDownPairs() {
+        let downvoted = pair(user: "Please write me a poem about coding.",
+                             assistant: "In circuits deep and logic gates abound, A coder's world is beautifully profound.",
+                             rating: false)
+        let (_, stats) = TrainingExporter.jsonl(from: downvoted, ratedOnly: true)
+        #expect(stats.examples == 0)
+    }
+
+    @Test func defaultExportIncludesUnratedPairs() {
+        let unrated = pair(user: "Tell me about Swift protocols and generics.",
+                           assistant: "Swift protocols define contracts; generics let you write reusable parameterized code.",
+                           rating: nil)
+        let (_, stats) = TrainingExporter.jsonl(from: unrated, ratedOnly: false)
+        #expect(stats.examples == 1)
+    }
+
+    @Test func outputIsValidJSONL() throws {
+        let msgs = pair(user: "How does SwiftUI differ from UIKit in Swift development?",
+                        assistant: "SwiftUI is a declarative framework while UIKit is imperative; both target Apple platforms.",
+                        rating: true)
+        let (content, stats) = TrainingExporter.jsonl(from: msgs)
+        guard stats.examples > 0 else { return }
+        for line in content.components(separatedBy: "\n") where !line.isEmpty {
+            let data = Data(line.utf8)
+            _ = try JSONSerialization.jsonObject(with: data)
+        }
     }
 }
 ```
@@ -33999,7 +34155,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2451 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2465 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -35580,6 +35736,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Views/SettingsView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
 
 **Result:** `** BUILD SUCCEEDED **`
+
+---
+**2026-06-12 — Marathon X: rating-filtered training export (`ratedOnly`)**
+
+**What changed:**
+- `Persistence/TrainingExporter.swift`: `jsonl(from:ratedOnly:Bool=false)` — new `ratedOnly` parameter; when true, only user→assistant pairs where `b.rating == true` (thumbs-up) are included; unrated or thumbs-down pairs count as `skipped`. `savePanel(messages:ratedOnly:Bool=false)` — different panel title/filename/alert text based on `ratedOnly`.
+- `Views/ContentView.swift`: "Export Best Replies" button added to the chat header Menu (hidden unless at least one thumbs-up rating exists); calls `TrainingExporter.savePanel(messages:ratedOnly:true)`. `ChatStats` extended with `ratedUp`, `ratedDown`; `blurb` shows `↑N ↓N` suffix when non-zero; `summarize()` computes counts from `assistantMsgs`.
+- `Salehman AITests/ChatTranscriptLogicTests.swift`: appended `TrainingExporterTests` suite (7 tests): valid pair → 1 example; short pair skipped; empty conversation; `ratedOnly` skips unrated; `ratedOnly` skips thumbs-down; default export includes unrated; output is valid JSONL per `JSONSerialization`.
+
+**Why:** Users can now export only their high-quality (thumbs-up) assistant replies as a filtered training set — better signal-to-noise for fine-tuning than exporting everything.
+
+**Files:** `Persistence/TrainingExporter.swift`, `Views/ContentView.swift`, `Salehman AITests/ChatTranscriptLogicTests.swift`
+
+**Result:** build pre-existing sandbox restriction; logic verified by 7 new unit tests.
 
 ---
 ## Standing notes / known issues
