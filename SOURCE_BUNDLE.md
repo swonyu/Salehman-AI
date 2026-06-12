@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:10 +03 · Swift files: 150 · Swift LOC: 33485_
+_Generated: 2026-06-12 22:14 +03 · Swift files: 150 · Swift LOC: 33505_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14738,7 +14738,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2548 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2550 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15186,6 +15186,7 @@ struct ActivityStepRow: View {
             if step.status == .running {
                 DS.Palette.accent.frame(width: 2.5)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         // Machined top bevel — each step card reads as a physical tile.
@@ -15194,6 +15195,7 @@ struct ActivityStepRow: View {
                 .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {
@@ -22006,7 +22008,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (633 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (651 lines) =====
 ```swift
 import SwiftUI
 
@@ -22570,9 +22572,27 @@ struct MarketsView: View {
     // MARK: Empty
 
     private var emptyState: some View {
-        Text("No symbols tracked yet.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 28)
+        VStack(spacing: 10) {
+            ZStack {
+                PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: 52, height: 52)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.14
+                        ? .spring(duration: 2.2, bounce: 0.06)
+                        : .easeOut(duration: 1.8)
+                }
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.80))
+            }
+            Text("No symbols tracked yet.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 28)
     }
 }
 

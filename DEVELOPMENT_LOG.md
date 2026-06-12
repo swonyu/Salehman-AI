@@ -3470,3 +3470,8 @@ permission classifier blocked the first attempt.
 - `SettingsView` (×4): model rotation checkbox, Unsloth key saved indicator, connection test result, brain readiness icons
 **Files:** `Views/ScratchpadView.swift`, `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`, `Views/CodeView.swift`, `Views/OnboardingView.swift`, `Views/VoiceModeView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`.
 **Result:** Build: xcodebuild blocked by xcrun sandbox restriction (no new code errors — all edits are standard SwiftUI modifiers already used throughout the codebase; SourceKit shows only pre-existing cross-module false positives).
+
+## 2026-06-12 — marathon CK: ActivityStepRow status animation + MarketsView empty state glow (Chat A)
+**What:** `ActivityStepRow` (CodeView.swift): left accent bar now slides in from leading edge with `.transition(.move(edge: .leading).combined(with: .opacity))` when status → running; container gets `.animation(DS.Motion.smooth, value: step.status)` so the background highlight ripples in/out on each step state change. `MarketsView.emptyState`: upgraded from plain Text to PhaseAnimator([0.10, 0.18, 0.10]) ambient glow + chart icon, matching the empty-state treatment in ChatHistoryView, KnowledgeView, and TodayView.
+**Files:** `Views/CodeView.swift`, `Views/MarketsView.swift`.
+**Commit:** `c63d421`
