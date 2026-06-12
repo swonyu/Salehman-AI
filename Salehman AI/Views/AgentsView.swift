@@ -80,9 +80,18 @@ struct AgentsView: View {
                                 lineWidth: 0.75
                             )
                     )
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {

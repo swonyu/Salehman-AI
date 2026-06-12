@@ -2417,6 +2417,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
+### [2026-06-12] Marathon BY — KeyframeAnimator pop-in completes all brand tile icons (Agents, Knowledge, LiveTranscription)
+
+**Files:** `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Changes:**
+- AgentsView `sparkles` icon: `KeyframeAnimator(trigger: appeared)` compress → overshoot → settle.
+- KnowledgeView `books.vertical.fill` icon: same keyframe chain.
+- LiveTranscriptionView `waveform.and.mic` icon: same keyframe chain.
+
+**Why:** All brand tile icons across the app now have consistent `KeyframeAnimator` pop-in on first appear. Previously only About, Onboarding, Shortcuts, Settings, Memory had it. Agents, Knowledge, and LiveTranscription were the remaining outliers.
+
+**Result:** `KeyframeAnimator` is now the standard brand-tile entrance treatment across all 8 views that have `appeared` state.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

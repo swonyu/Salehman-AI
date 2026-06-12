@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:37 +03 · Swift files: 150 · Swift LOC: 33260_
+_Generated: 2026-06-12 21:38 +03 · Swift files: 150 · Swift LOC: 33287_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13430,7 +13430,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (514 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (523 lines) =====
 ```swift
 import SwiftUI
 
@@ -13514,9 +13514,18 @@ struct AgentsView: View {
                                 lineWidth: 0.75
                             )
                     )
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
@@ -20503,7 +20512,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (636 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (645 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20601,9 +20610,18 @@ struct KnowledgeView: View {
                                 lineWidth: 0.75
                             )
                     )
-                Image(systemName: "books.vertical.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
@@ -21143,7 +21161,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (300 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (309 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21214,9 +21232,18 @@ struct LiveTranscriptionView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: "waveform.and.mic")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "waveform.and.mic")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             .animation(DS.Motion.smooth, value: live.isRunning)
             VStack(alignment: .leading, spacing: 2) {
@@ -35828,7 +35855,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3288 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3302 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38246,6 +38273,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** All 3 views have `appeared` state but only used it for sheet-level fade/offset. The brand tile icons had no pop-in; the memory rows appeared flat with no cascade. Now consistent with AboutView (BV).
 
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
+### [2026-06-12] Marathon BY — KeyframeAnimator pop-in completes all brand tile icons (Agents, Knowledge, LiveTranscription)
+
+**Files:** `Salehman AI/Views/AgentsView.swift`, `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/LiveTranscriptionView.swift`
+
+**Changes:**
+- AgentsView `sparkles` icon: `KeyframeAnimator(trigger: appeared)` compress → overshoot → settle.
+- KnowledgeView `books.vertical.fill` icon: same keyframe chain.
+- LiveTranscriptionView `waveform.and.mic` icon: same keyframe chain.
+
+**Why:** All brand tile icons across the app now have consistent `KeyframeAnimator` pop-in on first appear. Previously only About, Onboarding, Shortcuts, Settings, Memory had it. Agents, Knowledge, and LiveTranscription were the remaining outliers.
+
+**Result:** `KeyframeAnimator` is now the standard brand-tile entrance treatment across all 8 views that have `appeared` state.
 
 ---
 ## Standing notes / known issues
