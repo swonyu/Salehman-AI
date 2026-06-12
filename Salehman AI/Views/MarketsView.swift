@@ -349,11 +349,16 @@ struct MarketsView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(price == nil ? "— no price" : String(format: "%.2f", value))
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: value)
                 if price != nil {
                     Text((up ? "+" : "") + String(format: "%.2f", pl))
                         .font(.caption).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: pl)
                 }
             }
+            .animation(DS.Motion.smooth, value: up)
             Button { portfolio.remove(p.id) } label: {
                 Image(systemName: "trash").font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)

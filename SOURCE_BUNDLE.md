@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:19 +03 · Swift files: 150 · Swift LOC: 33819_
+_Generated: 2026-06-13 00:22 +03 · Swift files: 150 · Swift LOC: 33824_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22174,7 +22174,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (682 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (687 lines) =====
 ```swift
 import SwiftUI
 
@@ -22527,11 +22527,16 @@ struct MarketsView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(price == nil ? "— no price" : String(format: "%.2f", value))
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: value)
                 if price != nil {
                     Text((up ? "+" : "") + String(format: "%.2f", pl))
                         .font(.caption).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: pl)
                 }
             }
+            .animation(DS.Motion.smooth, value: up)
             Button { portfolio.remove(p.id) } label: {
                 Image(systemName: "trash").font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)
@@ -36387,7 +36392,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3764 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3776 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39058,6 +39063,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DT: MarketsView portfolio position row live-price transitions
+
+**What changed:**
+- `Views/MarketsView.swift` — `positionRow`: added `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: value)` on the position value display and `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: pl)` on the P&L Text; added `.animation(DS.Motion.smooth, value: up)` on the VStack so the green↔red P&L color crossfades when a position crosses zero.
+
+**Files:** `Views/MarketsView.swift`
+
+**Why:** The portfolio position rows display live prices that refresh whenever market data updates. The value (`%.2f`) and P&L numbers were changing silently — no numeric text transition, no color crossfade when a position went from profit to loss. The portfolio header row (total value / total P&L) already had these transitions; the individual position rows were the missing piece.
+
+**Result:** Live price updates in individual portfolio rows now animate smoothly with digit-level numeric interpolation, consistent with the total-portfolio row.
 
 ---
 ### 2026-06-13 — Marathon DS: ContentView welcome section fade-in transitions
