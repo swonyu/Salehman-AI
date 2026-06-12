@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 21:35 +03 · Swift files: 150 · Swift LOC: 33228_
+_Generated: 2026-06-12 21:37 +03 · Swift files: 150 · Swift LOC: 33260_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22482,7 +22482,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (336 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (350 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22532,6 +22532,7 @@ struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: [String] = []
     @State private var confirmClear = false
+    @State private var appeared = false
     @State private var query = ""
     @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
@@ -22567,8 +22568,12 @@ struct MemoryView: View {
                     } else {
                         ScrollView {
                             VStack(spacing: 1) {
-                                ForEach(shown, id: \.self) { fact in
+                                ForEach(Array(shown.enumerated()), id: \.element) { idx, fact in
                                     row(fact)
+                                        .opacity(appeared ? 1 : 0)
+                                        .offset(y: appeared ? 0 : 10)
+                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.040),
+                                                   value: appeared)
                                 }
                             }
                             .background(
@@ -22596,7 +22601,7 @@ struct MemoryView: View {
         }
         .frame(width: 480, height: 540)
         .preferredColorScheme(.dark)
-        .onAppear(perform: reload)
+        .onAppear { reload(); appeared = true }
         .confirmationDialog("Forget everything Salehman AI has remembered about you?",
                             isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Forget everything", role: .destructive) {
@@ -22620,9 +22625,18 @@ struct MemoryView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -23912,7 +23926,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1974 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1983 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -24297,9 +24311,18 @@ struct SettingsView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: "gear")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "gear")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Settings")
@@ -25890,7 +25913,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (171 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (180 lines) =====
 ```swift
 import SwiftUI
 
@@ -25968,9 +25991,18 @@ struct ShortcutsView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 0.75)
                             )
-                        Image(systemName: "keyboard")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                            Image(systemName: "keyboard")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Every shortcut in one place")
@@ -35796,7 +35828,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3274 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3288 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38198,6 +38230,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 - Icon wells: `Circle()` → `RoundedRectangle(cornerRadius: 6, style: .continuous)` — matches the DS icon well pattern used in ActionTile, AgentCard, toggle rows in Settings, and doc rows in Knowledge.
 
 **Why:** CommandPalette was the only high-frequency surface with instant-pop rows and Circle icon backgrounds. The stagger gives the palette a "curated reveal" on open while typing still gives immediate results. The icon well change aligns it with the unified DS icon well language established across all other views.
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
+### [2026-06-12] Marathon BX — KeyframeAnimator pop-in + staggered rows (Shortcuts, Settings, Memory)
+
+**Files:** `Salehman AI/Views/ShortcutsView.swift`, `Salehman AI/Views/SettingsView.swift`, `Salehman AI/Views/MemoryView.swift`
+
+**Changes:**
+- ShortcutsView brand tile `keyboard` icon: `KeyframeAnimator(trigger: appeared)` pop-in.
+- SettingsView brand tile `gear` icon: `KeyframeAnimator(trigger: appeared)` pop-in.
+- MemoryView: added `@State private var appeared = false`; flipped in `.onAppear { reload(); appeared = true }`; `brain.head.profile` brand tile icon gets `KeyframeAnimator` pop-in; fact rows stagger with `DS.Motion.lux.delay(min(idx, 8) × 0.040s)`.
+
+**Why:** All 3 views have `appeared` state but only used it for sheet-level fade/offset. The brand tile icons had no pop-in; the memory rows appeared flat with no cascade. Now consistent with AboutView (BV).
 
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 

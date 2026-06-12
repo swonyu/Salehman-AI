@@ -2403,6 +2403,20 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
 
 ---
+### [2026-06-12] Marathon BX — KeyframeAnimator pop-in + staggered rows (Shortcuts, Settings, Memory)
+
+**Files:** `Salehman AI/Views/ShortcutsView.swift`, `Salehman AI/Views/SettingsView.swift`, `Salehman AI/Views/MemoryView.swift`
+
+**Changes:**
+- ShortcutsView brand tile `keyboard` icon: `KeyframeAnimator(trigger: appeared)` pop-in.
+- SettingsView brand tile `gear` icon: `KeyframeAnimator(trigger: appeared)` pop-in.
+- MemoryView: added `@State private var appeared = false`; flipped in `.onAppear { reload(); appeared = true }`; `brain.head.profile` brand tile icon gets `KeyframeAnimator` pop-in; fact rows stagger with `DS.Motion.lux.delay(min(idx, 8) × 0.040s)`.
+
+**Why:** All 3 views have `appeared` state but only used it for sheet-level fade/offset. The brand tile icons had no pop-in; the memory rows appeared flat with no cascade. Now consistent with AboutView (BV).
+
+**Result:** No new SourceKit diagnostics beyond pre-existing cross-file false positives.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

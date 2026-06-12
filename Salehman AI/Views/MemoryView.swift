@@ -46,6 +46,7 @@ struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: [String] = []
     @State private var confirmClear = false
+    @State private var appeared = false
     @State private var query = ""
     @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
@@ -81,8 +82,12 @@ struct MemoryView: View {
                     } else {
                         ScrollView {
                             VStack(spacing: 1) {
-                                ForEach(shown, id: \.self) { fact in
+                                ForEach(Array(shown.enumerated()), id: \.element) { idx, fact in
                                     row(fact)
+                                        .opacity(appeared ? 1 : 0)
+                                        .offset(y: appeared ? 0 : 10)
+                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.040),
+                                                   value: appeared)
                                 }
                             }
                             .background(
@@ -110,7 +115,7 @@ struct MemoryView: View {
         }
         .frame(width: 480, height: 540)
         .preferredColorScheme(.dark)
-        .onAppear(perform: reload)
+        .onAppear { reload(); appeared = true }
         .confirmationDialog("Forget everything Salehman AI has remembered about you?",
                             isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Forget everything", role: .destructive) {
@@ -134,9 +139,18 @@ struct MemoryView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
+                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .scaleEffect(scale)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        LinearKeyframe(0.60, duration: 0.07)
+                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
+                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                    }
+                }
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
