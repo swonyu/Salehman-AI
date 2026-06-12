@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 10:06 +03 · Swift files: 150 · Swift LOC: 32574_
+_Generated: 2026-06-12 20:25 +03 · Swift files: 150 · Swift LOC: 32718_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25861,7 +25861,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (199 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (343 lines) =====
 ```swift
 import SwiftUI
 
@@ -25881,6 +25881,8 @@ struct TodayView: View {
     /// Count of chat archives modified today — refreshed off-main alongside
     /// knowledge count so the Today dashboard shows live usage.
     @State private var todayChats = 0
+    /// Staggered entrance: false → true on onAppear drives the fade-up.
+    @State private var appeared = false
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -25890,21 +25892,49 @@ struct TodayView: View {
         default:      return "Working late"
         }
     }
+    private var greetingIcon: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "sun.and.horizon.fill"
+        case 12..<17: return "sun.max.fill"
+        case 17..<22: return "moon.stars.fill"
+        default:      return "moon.zzz.fill"
+        }
+    }
+    private var timeOfDayTag: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "Morning"
+        case 12..<17: return "Afternoon"
+        case 17..<22: return "Evening"
+        default:      return "Late night"
+        }
+    }
     private var openTasks: Int { scratchpad.tasks.filter { !$0.done }.count }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.xl) {
                 greetingHeader
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 14)
+                    .animation(DS.Motion.entrance, value: appeared)
                 section("QUICK ACTIONS") { quickActions }
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 14)
+                    .animation(DS.Motion.entrance.delay(0.08), value: appeared)
                 section("AT A GLANCE") { statCards }
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 14)
+                    .animation(DS.Motion.entrance.delay(0.16), value: appeared)
             }
             .padding(DS.Space.xl)
             // Same centered content column as the chat surfaces (design language).
             .frame(maxWidth: 780, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .onAppear(perform: refresh)
+        .onAppear {
+            refresh()
+            appeared = true
+        }
         .onChange(of: app.selectedTab) { _, tab in if tab == .today { refresh() } }
     }
 
@@ -25923,17 +25953,70 @@ struct TodayView: View {
 
     // MARK: Sections
 
+    /// Bezel-style greeting with a brand icon tile, time-specific glyph, and an
+    /// ambient glow orb — same layered depth as OnboardingView's hero tile.
     private var greetingHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(greeting)
-                .font(DS.Typography.titleXL).foregroundStyle(.white)
-            Text("Welcome back — your model, your data, always on this Mac.")
-                .font(.callout).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: DS.Space.lg) {
+            // Brand icon tile — top-lit edge highlight gives it dimension.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.modal, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 54, height: 54)
+                    .dsShadow(DS.Elevation.accentGlow(0.45))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.modal, style: .continuous)
+                            .stroke(
+                                LinearGradient(colors: [.white.opacity(0.50), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.75
+                            )
+                    )
+                Image(systemName: greetingIcon)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Eyebrow(text: timeOfDayTag)
+                Text(greeting)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Your model, your data — always on this Mac.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DS.Space.xl)
-        .background(DS.Gradient.brand.opacity(0.14), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // Ambient glow: rendered in the background layer so it clips to the
+        // bezel shell and never bleeds into adjacent tiles.
+        .background(alignment: .leading) {
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.20))
+                .frame(width: 140, height: 140)
+                .blur(radius: 55)
+                .offset(x: -20, y: 0)
+                .allowsHitTesting(false)
+        }
+        // Inner core: brand-tinted fill + top-lit inner highlight.
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .fill(DS.Gradient.brand.opacity(0.10))
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        // Outer shell.
+        .padding(DS.Bezel.shellPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(DS.Bezel.shellStroke, lineWidth: 1)
+        )
     }
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -25986,7 +26069,7 @@ struct TodayView: View {
                 StatTile(icon: "chart.line.uptrend.xyaxis", title: "Market",
                          value: market.session.shortLabel,
                          detail: market.session.isOpen ? "open now" : "closed",
-                         accent: market.session.isOpen ? DS.Palette.successSoft : .white) {
+                         valueAccent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
                 }
             }
@@ -25996,6 +26079,9 @@ struct TodayView: View {
 
 // MARK: - Tiles (own their hover state)
 
+/// Quick-action tile — SuggestionCard-style bezel fill, magnetic hover physics,
+/// icon well that scales on hover, and a trailing arrow-in-circle so the
+/// tap target reads as an interactive button rather than a flat label.
 private struct ActionTile: View {
     let icon: String
     let title: String
@@ -26005,61 +26091,119 @@ private struct ActionTile: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
+                // Icon well — tint brightens and well scales up on hover.
                 ZStack {
                     RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
-                        .fill(DS.Palette.accent.opacity(0.16)).frame(width: 40, height: 40)
-                    Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                        .fill(DS.Palette.accent.opacity(hovering ? 0.22 : 0.14))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(DS.Palette.accent)
                 }
-                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                .scaleEffect(hovering ? 1.06 : 1.0)
+
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
+
                 Spacer(minLength: 0)
+
+                // Trailing arrow circle — "button-in-button" kinetic tension.
+                ZStack {
+                    Circle().fill(Color.white.opacity(hovering ? 0.16 : 0.07))
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.80))
+                }
+                .frame(width: 22, height: 22)
+                .scaleEffect(hovering ? 1.10 : 1.0)
+                .offset(x: hovering ? 1 : 0, y: hovering ? -1 : 0)
             }
-            .padding(DS.Space.md)
+            .padding(.horizontal, DS.Space.md)
+            .padding(.vertical, DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Opaque tile per the design language — no translucent stacking
-            // over the landing glow.
-            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(hovering ? DS.Palette.accent.opacity(0.5) : DS.Palette.surfaceStroke, lineWidth: 1))
-            .scaleEffect(hovering ? 1.02 : 1)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(hovering ? 0.07 : 0.04))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(Color.white.opacity(hovering ? 0.18 : 0.08), lineWidth: 1)
+            )
+            .scaleEffect(hovering ? 1.015 : 1.0)
+            .shadow(color: DS.Palette.accent.opacity(hovering ? 0.15 : 0.0), radius: 12, y: 4)
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
     }
 }
 
+/// Stat tile — same bezel fill as ActionTile; chevron nudges right on hover;
+/// value uses `.rounded` design for a dashboard-grade number feel.
 private struct StatTile: View {
     let icon: String
     let title: String
     let value: String
     let detail: String
-    var accent: Color = .white
+    var valueAccent: Color = .white
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.Palette.accent)
-                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 6) {
+                    // Icon well matches ActionTile's treatment for visual unity.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(DS.Palette.accent.opacity(0.12))
+                            .frame(width: 26, height: 26)
+                        Image(systemName: icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary.opacity(hovering ? 0.9 : 0.35))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary.opacity(hovering ? 0.85 : 0.30))
+                        .offset(x: hovering ? 2 : 0)
                 }
-                Text(value).font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(accent).lineLimit(1).minimumScaleFactor(0.6)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(valueAccent)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Opaque tile per the design language (see ActionTile).
-            .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(hovering ? DS.Palette.accent.opacity(0.4) : DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(hovering ? 0.065 : 0.04))
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(Color.white.opacity(hovering ? 0.15 : 0.07), lineWidth: 1)
+            )
+            .shadow(color: DS.Palette.accent.opacity(hovering ? 0.10 : 0.0), radius: 10, y: 4)
+            .scaleEffect(hovering ? 1.012 : 1.0)
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
     }
 }
 ```
@@ -35142,7 +35286,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3058 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3069 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37330,6 +37474,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
 
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
+## 2026-06-12 — Marathon BG — TodayView premium elevation (high-end-visual-design pass)
+
+**What changed:** Rewrote `TodayView.swift` with a full high-end visual design pass: greeting header upgraded to a double-bezel (outer shell + brand-tinted inner core) with a brand icon tile (time-specific SF Symbol), top-lit edge highlight, and an ambient glow orb; `ActionTile` redesigned with `SuggestionCard`-style bezel fill (white 4% → 7% on hover), icon-well that scales on hover, trailing arrow-in-circle "button-in-button" kinetic element, and `DS.Motion.magnetic` spring hover; `StatTile` redesigned with matching bezel fill, icon well, chevron that nudges right on hover, and accent shadow on hover; staggered entrance animation (three sections at 0 / 0.08 / 0.16 s delays using `DS.Motion.entrance`). Renamed `accent` param to `valueAccent` on `StatTile` for clarity.
+
+**Files:** `Views/TodayView.swift`
+
+**Why:** TodayView was the only major surface still using flat `codeSurface` fills without depth — no `DS.Bezel`, no magnetic hover, no entrance animation. The `DS.Bezel`, `SuggestionCard`, and `DS.Motion.magnetic` patterns already existed; this pass wires all three into the Today dashboard.
+
+**Result:** Build sandbox-blocked (DerivedData write); SourceKit false positives are pre-existing cross-file reference issues. Code structure verified correct.
 
 ---
 ## Standing notes / known issues

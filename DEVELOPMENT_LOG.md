@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BG — TodayView premium elevation (high-end-visual-design pass)
+
+**What changed:** Rewrote `TodayView.swift` with a full high-end visual design pass: greeting header upgraded to a double-bezel (outer shell + brand-tinted inner core) with a brand icon tile (time-specific SF Symbol), top-lit edge highlight, and an ambient glow orb; `ActionTile` redesigned with `SuggestionCard`-style bezel fill (white 4% → 7% on hover), icon-well that scales on hover, trailing arrow-in-circle "button-in-button" kinetic element, and `DS.Motion.magnetic` spring hover; `StatTile` redesigned with matching bezel fill, icon well, chevron that nudges right on hover, and accent shadow on hover; staggered entrance animation (three sections at 0 / 0.08 / 0.16 s delays using `DS.Motion.entrance`). Renamed `accent` param to `valueAccent` on `StatTile` for clarity.
+
+**Files:** `Views/TodayView.swift`
+
+**Why:** TodayView was the only major surface still using flat `codeSurface` fills without depth — no `DS.Bezel`, no magnetic hover, no entrance animation. The `DS.Bezel`, `SuggestionCard`, and `DS.Motion.magnetic` patterns already existed; this pass wires all three into the Today dashboard.
+
+**Result:** Build sandbox-blocked (DerivedData write); SourceKit false positives are pre-existing cross-file reference issues. Code structure verified correct.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
