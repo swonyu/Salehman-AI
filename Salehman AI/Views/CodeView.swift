@@ -365,14 +365,6 @@ struct SlashCommand: Identifiable {
 /// Press physics for pills and primary actions (design language): the whole
 /// control compresses slightly under the pointer — simulated mass, not a color
 /// swap. GPU-safe (transform only), sprung on the shared lux curve.
-struct LuxPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(CodeView.lux, value: configuration.isPressed)
-    }
-}
-
 /// The `/`-command dropdown rendered above the Code composer. Extracted as its own
 /// view so the QA gallery can photograph it deterministically (the inline version
 /// only exists while `input` starts with "/").

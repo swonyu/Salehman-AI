@@ -225,6 +225,18 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
+/// Gravity-pull press: 0.97 settle on the lux curve — heavier, more deliberate
+/// than PressableStyle's press curve. Use on tinted pill/capsule CTAs that
+/// provide their own chrome (brand gradient, accent border, etc.).
+/// Moved from CodeView so all tabs share one definition. (Marathon EN)
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
+            .animation(DS.Motion.lux, value: c.isPressed)
+    }
+}
+
 // MARK: - Bezel
 struct Bezel<Content: View>: View {
     var outerRadius: CGFloat = DS.Bezel.outerRadius

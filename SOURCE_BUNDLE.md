@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:02 +03 · Swift files: 150 · Swift LOC: 34030_
+_Generated: 2026-06-13 02:05 +03 · Swift files: 150 · Swift LOC: 34034_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (412 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (424 lines) =====
 ```swift
 import SwiftUI
 
@@ -2359,6 +2359,18 @@ struct PressableStyle: ButtonStyle {
         c.label
             .scaleEffect(c.isPressed ? 0.97 : 1)
             .animation(DS.Motion.press, value: c.isPressed)
+    }
+}
+
+/// Gravity-pull press: 0.97 settle on the lux curve — heavier, more deliberate
+/// than PressableStyle's press curve. Use on tinted pill/capsule CTAs that
+/// provide their own chrome (brand gradient, accent border, etc.).
+/// Moved from CodeView so all tabs share one definition. (Marathon EN)
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
+            .animation(DS.Motion.lux, value: c.isPressed)
     }
 }
 
@@ -14795,7 +14807,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2643 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2635 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15164,14 +15176,6 @@ struct SlashCommand: Identifiable {
 /// Press physics for pills and primary actions (design language): the whole
 /// control compresses slightly under the pointer — simulated mass, not a color
 /// swap. GPU-safe (transform only), sprung on the shared lux curve.
-struct LuxPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(CodeView.lux, value: configuration.isPressed)
-    }
-}
-
 /// The `/`-command dropdown rendered above the Code composer. Extracted as its own
 /// view so the QA gallery can photograph it deterministically (the inline version
 /// only exists while `input` starts with "/").
@@ -36598,7 +36602,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4040 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4049 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39596,6 +39600,15 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
 
 **Result:** Zero Swift compiler errors. All 14 Eyebrow capsules now read as physically lit pills rather than flat outlines.
+
+---
+## 2026-06-13 — Marathon EN: LuxPressStyle moved to DesignSystem (22 call sites, 10 files)
+
+**What:** `LuxPressStyle` was defined in `CodeView.swift` and referenced `CodeView.lux` directly. Moved to `DesignSystem.swift` alongside `PressableStyle` and the other DS button styles, updated to use `DS.Motion.lux`. All 22 call sites across 10 files (`MarketsView`, `CopilotSignInView`, `SettingsView`×3, `CodeView`×8, `LiveTranscriptionView`×3, `VoiceModeView`, `ScratchpadView`×2, `AgentsView`, `KnowledgeView`×2) resolve automatically — no view edits needed. Zero visual change.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Result:** Zero Swift compiler errors. LuxPressStyle is now a proper DS component.
 
 ---
 ## Standing notes / known issues

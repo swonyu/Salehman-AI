@@ -2997,6 +2997,15 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors. All 14 Eyebrow capsules now read as physically lit pills rather than flat outlines.
 
 ---
+## 2026-06-13 — Marathon EN: LuxPressStyle moved to DesignSystem (22 call sites, 10 files)
+
+**What:** `LuxPressStyle` was defined in `CodeView.swift` and referenced `CodeView.lux` directly. Moved to `DesignSystem.swift` alongside `PressableStyle` and the other DS button styles, updated to use `DS.Motion.lux`. All 22 call sites across 10 files (`MarketsView`, `CopilotSignInView`, `SettingsView`×3, `CodeView`×8, `LiveTranscriptionView`×3, `VoiceModeView`, `ScratchpadView`×2, `AgentsView`, `KnowledgeView`×2) resolve automatically — no view edits needed. Zero visual change.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/CodeView.swift`
+
+**Result:** Zero Swift compiler errors. LuxPressStyle is now a proper DS component.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
