@@ -1540,7 +1540,9 @@ struct CodeView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             // Slash-command menu — appears above the composer while typing `/…`.
@@ -1893,7 +1895,9 @@ struct CodeView: View {
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color.white.opacity(0.06), in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)

@@ -3127,6 +3127,17 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors.
 
 ---
+## 2026-06-13 — Marathon EX: Attachment chip + composer pill top-lit gradient borders
+
+**What changed:**
+- `Views/ContentView.swift`: `attachmentChip()` — added top-lit gradient border `[white@0.18, white@0.05]` over the `white@0.09` Capsule background.
+- `Views/CodeView.swift`: File attachment chip (before composer) — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.05]`. "Restore all" inspector pill — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.04]`.
+
+**Why:** Attachment chips and action pills are medium-size interactive elements where the ~4:1 top:bottom gradient ratio is visible and adds depth. Tiny informational eyebrow labels (8–9pt) remain flat.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1423,6 +1423,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
         // Chips size to content now (they sit in a horizontal row), but a
         // single long filename still shouldn't span the whole composer.
         .frame(maxWidth: 360, alignment: .leading)

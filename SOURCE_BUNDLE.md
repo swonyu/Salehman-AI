@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:38 +03 · Swift files: 150 · Swift LOC: 34166_
+_Generated: 2026-06-13 02:40 +03 · Swift files: 150 · Swift LOC: 34173_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14865,7 +14865,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2653 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2657 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16409,7 +16409,9 @@ struct CodeView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             // Slash-command menu — appears above the composer while typing `/…`.
@@ -16762,7 +16764,9 @@ struct CodeView: View {
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color.white.opacity(0.06), in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -17725,7 +17729,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2861 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2864 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19152,6 +19156,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
         // Chips size to content now (they sit in a horizontal row), but a
         // single long filename still shouldn't span the whole composer.
         .frame(maxWidth: 360, alignment: .leading)
@@ -36734,7 +36741,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4170 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4181 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39860,6 +39867,17 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 - `Views/TodayView.swift`: Both ActionTile (38px) and StatTile (26px) icon wells gain 0.75pt top-lit gradient strokes `[white@0.22, white@0.04]`.
 
 **Why:** Completing the icon-well depth vocabulary sweep. All icon wells across all 7 views that use them (AgentsView, MemoryView, ScratchpadView, KnowledgeView, TodayView, plus the header tiles) now have consistent top-lit gradient borders.
+
+**Result:** Zero Swift compiler errors.
+
+---
+## 2026-06-13 — Marathon EX: Attachment chip + composer pill top-lit gradient borders
+
+**What changed:**
+- `Views/ContentView.swift`: `attachmentChip()` — added top-lit gradient border `[white@0.18, white@0.05]` over the `white@0.09` Capsule background.
+- `Views/CodeView.swift`: File attachment chip (before composer) — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.05]`. "Restore all" inspector pill — upgraded flat `white@0.10` to top-lit `[white@0.18, white@0.04]`.
+
+**Why:** Attachment chips and action pills are medium-size interactive elements where the ~4:1 top:bottom gradient ratio is visible and adds depth. Tiny informational eyebrow labels (8–9pt) remain flat.
 
 **Result:** Zero Swift compiler errors.
 
