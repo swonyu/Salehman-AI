@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:45 +03 · Swift files: 150 · Swift LOC: 33101_
+_Generated: 2026-06-12 20:48 +03 · Swift files: 150 · Swift LOC: 33131_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21099,7 +21099,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (261 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (291 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21109,6 +21109,7 @@ struct LiveTranscriptionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var copied = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     var onAsk: (String) -> Void
 
     private var filteredLines: [TranscriptLine] {
@@ -21119,9 +21120,16 @@ struct LiveTranscriptionView: View {
 
     var body: some View {
         ZStack {
-            // Route through DS canvas tokens so this sheet inherits any palette
-            // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
+            DS.Palette.codeSurface.ignoresSafeArea()
+
+            // Ambient accent glow — depth on the flat canvas while listening.
+            Circle()
+                .fill((live.isRunning ? DS.Palette.accent : DS.Palette.accent.opacity(0.5)).opacity(0.14))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 200, y: -180)
+                .allowsHitTesting(false)
+                .animation(DS.Motion.smooth, value: live.isRunning)
 
             VStack(alignment: .leading, spacing: 14) {
                 header
@@ -21139,17 +21147,39 @@ struct LiveTranscriptionView: View {
                 footer
             }
             .padding(22)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
         }
         .frame(width: 640, height: 660)
         .preferredColorScheme(.dark)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
     }
 
     // MARK: Header
     private var header: some View {
-        HStack {
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches VoiceModeView and other utility sheets.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(live.isRunning ? 0.55 : 0.38))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                Image(systemName: "waveform.and.mic")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .animation(DS.Motion.smooth, value: live.isRunning)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Live Transcription").font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text("Transcribes the Mac's audio live (a call, video, or lecture)").font(.caption).foregroundStyle(.secondary)
+                Text("Live Transcription")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Eyebrow(text: "System Audio · On Device")
             }
             Spacer()
             Button { dismiss() } label: {
@@ -35669,7 +35699,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3193 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3206 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37992,6 +38022,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** ShortcutsView was the last supporting sheet using a hand-rolled eyebrow label and flat group containers. Consistent depth treatment across every sheet makes the system feel designed, not assembled.
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/AppTab references; xcodebuild resolves fine.
+
+---
+
+### 2026-06-12 — Marathon BR: LiveTranscriptionView premium elevation pass
+
+**What changed:** `Salehman AI/Views/LiveTranscriptionView.swift`
+- Added `@State private var appeared` + entrance animation (`DS.Motion.smooth` on `.onAppear`, VStack drifts up from `y: 10`)
+- Header: 24pt bold title + plain subtitle → 36×36 brand icon tile (`waveform.and.mic`, glow brightens when `isRunning`) + 15pt semibold title + `Eyebrow("System Audio · On Device")`
+- Ambient glow orb: none → `Circle().fill(accent.opacity(0.14)).blur(90).offset(200, -180)`; animates to brighter when isRunning
+
+**Why:** LiveTranscriptionView was the only user-visible sheet with no brand tile, no ambient glow, no entrance animation, and a 24pt display-sized title — visually jarring relative to all other sheets now polished BG–BQ.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/LiveTranscriber references; xcodebuild resolves fine.
 
 ---
 ## Standing notes / known issues

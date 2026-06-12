@@ -2322,6 +2322,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/AppTab references; xcodebuild resolves fine.
 
 ---
+
+### 2026-06-12 — Marathon BR: LiveTranscriptionView premium elevation pass
+
+**What changed:** `Salehman AI/Views/LiveTranscriptionView.swift`
+- Added `@State private var appeared` + entrance animation (`DS.Motion.smooth` on `.onAppear`, VStack drifts up from `y: 10`)
+- Header: 24pt bold title + plain subtitle → 36×36 brand icon tile (`waveform.and.mic`, glow brightens when `isRunning`) + 15pt semibold title + `Eyebrow("System Audio · On Device")`
+- Ambient glow orb: none → `Circle().fill(accent.opacity(0.14)).blur(90).offset(200, -180)`; animates to brighter when isRunning
+
+**Why:** LiveTranscriptionView was the only user-visible sheet with no brand tile, no ambient glow, no entrance animation, and a 24pt display-sized title — visually jarring relative to all other sheets now polished BG–BQ.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/LiveTranscriber references; xcodebuild resolves fine.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
