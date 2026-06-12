@@ -28,6 +28,13 @@ struct ContentView: View {
     /// Clamped against the CURRENT matches at use-time; reset when typing
     /// changes the query.
     @State private var slashSelection = 0
+    /// ↑/↓ recall: which past user message is currently shown in the composer
+    /// (-1 = not in recall mode). ↑ moves backward through history, ↓ moves
+    /// forward. Any manual keystroke resets this via `onChange(of: mission)`.
+    @State private var recallIdx = -1
+    /// Prevents `onChange(of: mission)` from resetting `recallIdx` when the
+    /// change was TRIGGERED BY the recall handlers (not by the user typing).
+    @State private var inRecall = false
     /// Whether the user's own fine-tuned Ollama model ("salehman") is pulled —
     /// drives the empty-state eyebrow. Probed once per empty-state appearance.
     @State private var localModelReady = false
@@ -206,7 +213,9 @@ struct ContentView: View {
             AppSettings.shared.applyCapturePrivacy()
             ChatStore.installTerminationFlush()
             // Restore an unsent draft (quitting mid-thought shouldn't eat it).
-            if mission.isEmpty {
+            // Skip under --uitesting so UITests always start with an empty composer.
+            let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+            if mission.isEmpty && !isUITesting {
                 mission = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
             }
         }
@@ -216,6 +225,10 @@ struct ContentView: View {
             UserDefaults.standard.set(draft, forKey: Self.draftKey)
             // Typing changes the slash query → selection restarts at the top.
             slashSelection = 0
+            // Recall state: a change triggered by the ↑/↓ recall handlers
+            // sets `inRecall = true` first. Clear the flag this frame and
+            // preserve recallIdx. Any OTHER change (user typing) resets recall.
+            if inRecall { inRecall = false } else { recallIdx = -1 }
         }
         .onChange(of: vm.messages) { _, new in ChatStore.scheduleSave(new) }
         .onDisappear { ChatStore.flushSave() }
@@ -868,6 +881,16 @@ struct ContentView: View {
         .accessibilityIdentifier("chat.pinnedstrip")
     }
 
+    /// Returns the user message at recall position `idx` (0 = most recent sent,
+    /// 1 = second-most-recent, …). `nil` when `idx` is out of range. Pure for
+    /// tests so the recall contract can be pinned without mocking state.
+    nonisolated static func recalledMessage(idx: Int, from messages: [ChatMessage]) -> String? {
+        guard idx >= 0 else { return nil }
+        let users = messages.filter(\.isUser).map(\.text)
+        guard idx < users.count else { return nil }
+        return users[users.count - 1 - idx]
+    }
+
     /// Markdown-quote a reply for the composer: every line gets a `> ` prefix
     /// (blank lines too, so multi-paragraph quotes stay one block). Pure for
     /// tests.
@@ -924,6 +947,9 @@ struct ContentView: View {
         .init(id: "connect", icon: "bolt.horizontal.circle",
               blurb: "Connect to your cloud-GPU Salehman (paste tunnel URL)",
               kind: .action("connect")),
+        .init(id: "shot", icon: "camera.viewfinder",
+              blurb: "Attach your latest screenshot as context",
+              kind: .action("shot")),
     ]
     /// Saved prompts join the `/` menu as templates — `/fix-my-code` inserts
     /// the prompt body. Builtins win id collisions; duplicate slugs keep the
@@ -960,6 +986,7 @@ struct ContentView: View {
             case "connect":
                 connectURL = ""
                 showConnect = true
+            case "shot": Task { await attachLastScreenshot() }
             default: break
             }
         }
@@ -1021,6 +1048,7 @@ struct ContentView: View {
                 .transition(.scale(scale: 0.97, anchor: .bottom)
                     .combined(with: .opacity)
                     .combined(with: .move(edge: .bottom)))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("chat.composer.slashmenu")
             }
 
@@ -1044,22 +1072,35 @@ struct ContentView: View {
                             applyChatSlash(chatSlashMatches[min(slashSelection, chatSlashMatches.count - 1)])
                         } else { submit(mission) }
                     }
-                    // ↑: move the slash selection when the menu is open; in an
-                    // EMPTY composer, recall the last message (no conflict —
-                    // an open menu implies a non-empty composer).
+                    // ↑: slash selection when menu is open; otherwise cycle
+                    // BACKWARD through user messages (terminal-history style).
+                    // Guarded so it only activates from an empty composer or
+                    // while already in recall mode — normal text editing is
+                    // not captured. ↓ reverses the cycle.
                     .onKeyPress(.upArrow) {
                         if !chatSlashMatches.isEmpty {
                             slashSelection = max(0, min(slashSelection, chatSlashMatches.count - 1) - 1)
                             return .handled
                         }
-                        guard mission.isEmpty,
-                              let last = vm.messages.last(where: { $0.isUser })?.text else { return .ignored }
-                        mission = last
+                        guard mission.isEmpty || recallIdx >= 0 else { return .ignored }
+                        let next = recallIdx + 1
+                        guard let text = Self.recalledMessage(idx: next, from: vm.messages) else { return .handled }
+                        inRecall = true; recallIdx = next; mission = text
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
-                        guard !chatSlashMatches.isEmpty else { return .ignored }
-                        slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
+                        if !chatSlashMatches.isEmpty {
+                            slashSelection = min(slashSelection + 1, chatSlashMatches.count - 1)
+                            return .handled
+                        }
+                        guard recallIdx >= 0 else { return .ignored }
+                        if recallIdx == 0 {
+                            inRecall = true; recallIdx = -1; mission = ""
+                            return .handled
+                        }
+                        let prev = recallIdx - 1
+                        guard let text = Self.recalledMessage(idx: prev, from: vm.messages) else { return .handled }
+                        inRecall = true; recallIdx = prev; mission = text
                         return .handled
                     }
                     // Esc: stop a running generation first; otherwise dismiss a
@@ -1275,10 +1316,12 @@ struct ContentView: View {
 
     @MainActor private func attachLastScreenshot() async {
         attachmentLoads += 1
-        if let url = AttachmentLoader.lastScreenshot() {
+        // Use ScreenshotGrabber so the lookup respects `com.apple.screencapture
+        // location` — the same picker the Code tab's /shot uses.
+        let dir = ScreenshotGrabber.screenshotsDirectory()
+        if let url = ScreenshotGrabber.latestScreenshot(in: dir) {
             attachments.append(await AttachmentLoader.load(url: url))
         } else if let url = AttachmentLoader.captureNow() {
-            // No saved screenshot found — capture the screen right now instead.
             attachments.append(await AttachmentLoader.load(url: url))
         } else {
             attachments.append(Attachment(name: "No screenshot found", kind: "note",

@@ -145,6 +145,18 @@ struct ChatHistoryView: View {
                 .foregroundStyle(DS.Palette.accent)
                 .help("Replace the current conversation with this one (the current one is archived first)")
             Button {
+                let msgs = ChatStore.loadArchive(item.id)
+                guard !msgs.isEmpty else { return }
+                ChatExporter.savePanel(msgs)
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Export this conversation as Markdown")
+            .accessibilityLabel("Export \(item.title)")
+            Button {
                 ChatStore.deleteArchive(item.id)
                 archives.removeAll { $0.id == item.id }
             } label: {

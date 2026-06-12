@@ -211,3 +211,88 @@ struct ChatGreetingBucketTests {
         #expect(ContentView.greeting(hour: hour) == expected)
     }
 }
+
+// MARK: - ContentView.recalledMessage — message-recall cycling contract
+//
+// ↑ in the empty composer cycles backward through user messages (terminal
+// history style). The pure helper is tested here; the state machine that
+// drives recallIdx is exercised by the UI tests.
+
+struct ChatRecallTests {
+
+    private func msg(_ t: String, user: Bool) -> ChatMessage {
+        ChatMessage(id: UUID(), text: t, isUser: user, timestamp: .now)
+    }
+
+    @Test func recallsNewestMessageAtIndexZero() {
+        let msgs = [msg("first", user: true), msg("reply", user: false), msg("second", user: true)]
+        #expect(ContentView.recalledMessage(idx: 0, from: msgs) == "second")
+    }
+
+    @Test func recallsOlderMessageAtHigherIndex() {
+        let msgs = [msg("first", user: true), msg("reply", user: false), msg("second", user: true)]
+        #expect(ContentView.recalledMessage(idx: 1, from: msgs) == "first")
+    }
+
+    @Test func outOfRangeReturnsNil() {
+        let msgs = [msg("only", user: true)]
+        #expect(ContentView.recalledMessage(idx: 1, from: msgs) == nil)
+        #expect(ContentView.recalledMessage(idx: -1, from: msgs) == nil)
+    }
+
+    @Test func assistantMessagesAreSkipped() {
+        let msgs = [msg("u1", user: true), msg("a1", user: false),
+                    msg("a2", user: false), msg("u2", user: true)]
+        #expect(ContentView.recalledMessage(idx: 0, from: msgs) == "u2")
+        #expect(ContentView.recalledMessage(idx: 1, from: msgs) == "u1")
+        #expect(ContentView.recalledMessage(idx: 2, from: msgs) == nil)
+    }
+
+    @Test func emptyHistoryReturnsNil() {
+        #expect(ContentView.recalledMessage(idx: 0, from: []) == nil)
+    }
+}
+
+// MARK: - ChatHistoryView.filtered — pure title search contract
+//
+// `nonisolated static` function added by the linter; tested here because the
+// contract it protects (case + diacritic insensitive substring, blank = all)
+// is exactly the kind of quiet regression that breaks foreign-language titles.
+
+struct ChatHistoryFilterExtendedTests {
+
+    private func archive(_ title: String) -> ChatStore.ArchivedChat {
+        ChatStore.ArchivedChat(id: URL(fileURLWithPath: "/tmp/\(title).json"),
+                               title: title, date: .now, messageCount: 1)
+    }
+
+    @Test func emptyQueryReturnsAll() {
+        let items = [archive("Alpha"), archive("Beta"), archive("Gamma")]
+        #expect(ChatHistoryView.filtered(items, query: "").count == 3)
+    }
+
+    @Test func whitespaceOnlyQueryIsAlsoAll() {
+        let items = [archive("Alpha"), archive("Beta")]
+        #expect(ChatHistoryView.filtered(items, query: "   ").count == 2)
+    }
+
+    @Test func filterIsCaseInsensitive() {
+        let items = [archive("Hello World"), archive("goodbye")]
+        #expect(ChatHistoryView.filtered(items, query: "HELLO").map(\.title) == ["Hello World"])
+    }
+
+    @Test func filterIsDiacriticInsensitive() {
+        let items = [archive("Résumé tips"), archive("Plain title")]
+        #expect(ChatHistoryView.filtered(items, query: "resume").map(\.title) == ["Résumé tips"])
+    }
+
+    @Test func noMatchReturnsEmpty() {
+        let items = [archive("Alpha"), archive("Beta")]
+        #expect(ChatHistoryView.filtered(items, query: "zzzz").isEmpty)
+    }
+
+    @Test func substrMatchWorksInTheMiddle() {
+        let items = [archive("My chat about cats"), archive("dogs")]
+        #expect(ChatHistoryView.filtered(items, query: "about").map(\.title) == ["My chat about cats"])
+    }
+}

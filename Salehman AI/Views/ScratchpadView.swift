@@ -138,7 +138,7 @@ struct ScratchpadView: View {
         HStack(spacing: 12) {
             Button { store.toggleTask(t.id) } label: {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16)).foregroundStyle(t.done ? DS.Palette.successSoft : .secondary)
+                    .font(.system(size: 16)).foregroundStyle(t.done ? Color(red: 0.30, green: 0.76, blue: 0.95) : .secondary)
             }
             .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             Text(t.title).font(.system(size: 14)).foregroundStyle(t.done ? Color.secondary : Color.white).strikethrough(t.done)

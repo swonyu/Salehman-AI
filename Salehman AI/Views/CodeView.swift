@@ -493,7 +493,7 @@ struct ChangedFileRow: View {
                     // "+12 −3" — git-style change magnitude at a glance.
                     HStack(spacing: 4) {
                         if stat.added > 0 {
-                            Text("+\(stat.added)").foregroundStyle(Color.green.opacity(0.85))
+                            Text("+\(stat.added)").foregroundStyle(Color(red: 0.27, green: 0.72, blue: 1.0).opacity(0.85))
                         }
                         if stat.removed > 0 {
                             Text("−\(stat.removed)").foregroundStyle(Color.red.opacity(0.8))
@@ -2091,10 +2091,12 @@ struct CodeView: View {
     }
 
     private func symbol(_ k: DiffLine.Kind) -> String { k == .add ? "+" : (k == .remove ? "−" : "") }
-    private func color(_ k: DiffLine.Kind) -> Color { k == .add ? .green : (k == .remove ? .red : .secondary) }
+    private func color(_ k: DiffLine.Kind) -> Color {
+        k == .add ? Color(red: 0.27, green: 0.72, blue: 1.0) : (k == .remove ? .red : .secondary)
+    }
     private func bg(_ k: DiffLine.Kind) -> Color {
         switch k {
-        case .add:    return Color.green.opacity(0.12)
+        case .add:    return Color(red: 0.27, green: 0.72, blue: 1.0).opacity(0.12)
         case .remove: return Color.red.opacity(0.12)
         case .same:   return .clear
         }
