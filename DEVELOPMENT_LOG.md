@@ -1533,6 +1533,19 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`
 
 ---
+**2026-06-12 — SettingsView "cloud-first" copy fix + UI-test stability (Chat C)**
+
+**What changed:**
+- `Views/SettingsView.swift` line 138: Intelligence section description "cloud-first, with a local floor" → "local-first: vLLM → Unsloth Studio → MLX → Ollama".
+- `Salehman AIUITests/ChatTabUITests.swift`: `tearDownWithError` override terminates the app after every test (prevents races on the next `app.launch()`); composer-field existence timeout bumped 10 → 30s (flaky on slower CI machines).
+
+**Why:** Copy drifted after cloud removal; UI test teardown omission was causing inter-test interference.
+
+**Files:** `Views/SettingsView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
+
+**Result:** `** BUILD SUCCEEDED **`
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

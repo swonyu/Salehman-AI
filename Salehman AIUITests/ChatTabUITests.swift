@@ -15,6 +15,12 @@ nonisolated final class ChatTabUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    // Terminate the app after every test so the next test's app.launch()
+    // gets a clean slate without racing against a half-alive previous instance.
+    override func tearDownWithError() throws {
+        XCUIApplication().terminate()
+    }
+
     @MainActor
     private func launchToChat() -> XCUIApplication {
         let app = XCUIApplication()
@@ -25,7 +31,7 @@ nonisolated final class ChatTabUITests: XCTestCase {
         // that exists in BOTH the empty state and a populated transcript.
         app.typeKey("2", modifierFlags: .command)
         XCTAssertTrue(app.textFields["chat.composer.field"]
-            .waitForExistence(timeout: 10), "Composer field should exist on the Chat tab")
+            .waitForExistence(timeout: 30), "Composer field should exist on the Chat tab")
         return app
     }
 
@@ -165,23 +171,26 @@ nonisolated final class ChatTabUITests: XCTestCase {
         let captureDone = snapshotsDir.appendingPathComponent("CAPTURE_DONE.txt")
         let auditURL = snapshotsDir.appendingPathComponent("AUDIT.json")
 
-        // Kill any stale app instance from previous runs. captureAll() runs
-        // ~5 min of synchronous @MainActor work, blocking the run loop so
-        // qa.terminate() (which sends an Apple Event) never gets processed.
-        // killall sends SIGTERM directly, bypassing the run loop.
+        // Stamp test start. Predicates below check modificationDate > startTime so
+        // stale files from a previous run are ignored even when removeItem fails
+        // silently in the UITest runner sandbox (macOS 26 provenance restrictions
+        // can block deletion of files created by a different app process).
+        let startTime = Date()
+
+        // Kill stale app: captureAll() is synchronous @MainActor, blocking the run
+        // loop so Apple Event quit never arrives. SIGTERM bypasses the run loop.
         let killer = Process()
         killer.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         killer.arguments = ["-TERM", "Salehman AI"]
         try? killer.run()
         killer.waitUntilExit()
-        Thread.sleep(forTimeInterval: 1.0)
 
         // Seed the file-trigger so checkAndRun() starts capture on this launch.
         try? FileManager.default.createDirectory(at: qaDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: requestFile.path, contents: nil)
-        // Remove stale completion markers BEFORE launch so we're sure the files
-        // we find were written by THIS run, not a leftover from a previous one.
+        // Best-effort removal of old markers; timestamp predicates make this
+        // non-critical — a stale file simply stays false until the new one lands.
         try? FileManager.default.removeItem(at: captureDone)
         try? FileManager.default.removeItem(at: auditURL)
 
@@ -189,36 +198,41 @@ nonisolated final class ChatTabUITests: XCTestCase {
         let qa = XCUIApplication()
         qa.launchArguments = ["--qa", "--uitesting"]
         qa.launch()
-        // Kill the QA instance when this test exits. Use SIGTERM directly (Apple
-        // Event quit won't reach the app while captureAll() owns the main thread).
         defer {
             let k = Process()
             k.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
             k.arguments = ["-TERM", "Salehman AI"]
             try? k.run(); k.waitUntilExit()
+            // SIGTERM is delivered async from the kernel; give the process 2 s to
+            // fully exit before tearDown's app.launch() runs the next test —
+            // otherwise the dying process can swallow the Apple Event quit and stall.
+            Thread.sleep(forTimeInterval: 2.0)
             try? FileManager.default.removeItem(at: requestFile)
         }
 
-        // Phase 1: wait for CAPTURE_DONE.txt — written synchronously after ALL
-        // surface PNGs are written, before QAColorVision + QAAudit run.
-        // Use XCTNSPredicateExpectation so the run loop stays free — Thread.sleep
-        // in @MainActor blocks XCUITest's internal event dispatching and causes
-        // premature test termination, while expectation-based waiting polls on idle.
+        // Phase 1: CAPTURE_DONE.txt — written synchronously after ALL surface PNGs.
+        // Predicate requires modDate > startTime so a leftover file never satisfies it.
         let captureDoneExp = XCTNSPredicateExpectation(
             predicate: NSPredicate(block: { _, _ in
-                FileManager.default.fileExists(atPath: captureDone.path)
+                guard let attr = try? FileManager.default.attributesOfItem(atPath: captureDone.path),
+                      let mod = attr[.modificationDate] as? Date else { return false }
+                return mod > startTime
             }),
             object: nil
         )
-        wait(for: [captureDoneExp], timeout: 300)   // ~30 surfaces × ~5s each
-        XCTAssertTrue(FileManager.default.fileExists(atPath: captureDone.path),
-                      "captureAll() should write CAPTURE_DONE.txt after rendering all surfaces")
+        wait(for: [captureDoneExp], timeout: 300)   // ~30 surfaces × ~5 s each
+        guard let cdAttr = try? FileManager.default.attributesOfItem(atPath: captureDone.path),
+              let cdMod = cdAttr[.modificationDate] as? Date, cdMod > startTime else {
+            XCTFail("captureAll() did not write a fresh CAPTURE_DONE.txt in this run"); return
+        }
 
-        // Phase 2: AUDIT.json written by QAAudit.run() after QAColorVision — usually
-        // < 30s after CAPTURE_DONE.txt; give 120s for slow machines.
+        // Phase 2: AUDIT.json written by QAAudit.run() after QAColorVision —
+        // usually < 30 s after CAPTURE_DONE.txt; give 120 s for slow machines.
         let auditExp = XCTNSPredicateExpectation(
             predicate: NSPredicate(block: { _, _ in
-                FileManager.default.fileExists(atPath: auditURL.path)
+                guard let attr = try? FileManager.default.attributesOfItem(atPath: auditURL.path),
+                      let mod = attr[.modificationDate] as? Date else { return false }
+                return mod > startTime
             }),
             object: nil
         )

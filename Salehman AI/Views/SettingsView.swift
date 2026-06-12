@@ -135,7 +135,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
 
-                    section("Intelligence", "How Salehman thinks — cloud-first, with a local floor.") {
+                    section("Intelligence", "How Salehman thinks — local-first: vLLM → Unsloth Studio → MLX → Ollama.") {
                         toggle("Offline mode (local only)",
                                "Hard-disable every cloud brain and web tool. Only the local Ollama brain can answer — no network call leaves this Mac.",
                                "wifi.slash", $settings.offlineOnly)
