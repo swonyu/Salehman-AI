@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:33 +03 · Swift files: 150 · Swift LOC: 32934_
+_Generated: 2026-06-12 20:34 +03 · Swift files: 150 · Swift LOC: 32965_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26424,7 +26424,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (142 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (173 lines) =====
 ```swift
 import SwiftUI
 
@@ -26475,17 +26475,31 @@ struct VoiceModeView: View {
             DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
             VStack(spacing: DS.Space.lg) {
-                HStack {
-                    Text("Talk to Salehman")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                HStack(spacing: DS.Space.md) {
+                    // Brand icon tile.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .fill(DS.Gradient.brand)
+                            .frame(width: 32, height: 32)
+                            .dsShadow(DS.Elevation.accentGlow(0.35))
+                        Image(systemName: "waveform")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Talk to Salehman")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Eyebrow(text: "Hands-Free Voice")
+                    }
                     Spacer()
                     Button { saveToNotes() } label: {
                         Image(systemName: savedConfirmation ? "checkmark.circle.fill" : "square.and.arrow.down")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(savedConfirmation ? DS.Palette.successSoft : .secondary)
                             .frame(width: 28, height: 28)
                             .background(Color.white.opacity(0.07), in: Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.09), lineWidth: 1))
+                            .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.75))
                     }
                     .buttonStyle(LuxPressStyle()).disabled(session.turns.isEmpty)
                     .help("Save this conversation to Notes")
@@ -26534,14 +26548,18 @@ struct VoiceModeView: View {
     }
 
     private var scrollback: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(session.turns.suffix(3)) { turn in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: turn.role == .salehman ? "sparkles" : "person.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(turn.role == .salehman ? DS.Palette.accent : .secondary)
-                        .frame(width: 18, height: 18)
-                        .background((turn.role == .salehman ? DS.Palette.accent : Color.white).opacity(0.08), in: Circle())
+                HStack(alignment: .top, spacing: 8) {
+                    // Icon well — matches the app-wide pattern.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill((turn.role == .salehman ? DS.Palette.accent : Color.white).opacity(0.12))
+                            .frame(width: 20, height: 20)
+                        Image(systemName: turn.role == .salehman ? "sparkles" : "person.fill")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(turn.role == .salehman ? DS.Palette.accent : .secondary)
+                    }
                     Text(turn.text)
                         .font(.caption)
                         .foregroundStyle(turn.role == .salehman ? .white.opacity(0.9) : .secondary)
@@ -26550,8 +26568,21 @@ struct VoiceModeView: View {
                 }
             }
         }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 72)
+        .frame(height: 80)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .opacity(session.turns.isEmpty ? 0 : 1)
+        .animation(DS.Motion.smooth, value: session.turns.isEmpty)
     }
 
     private var controls: some View {
@@ -35502,7 +35533,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3113 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3124 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37690,6 +37721,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
 
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
+## 2026-06-12 — Marathon BL — VoiceModeView premium elevation
+
+**What changed:** Header upgraded from plain `HStack`/title to brand icon tile (32×32 waveform) + `Eyebrow("Hands-Free Voice")` layout. Save button hairline upgraded to 0.75pt stroke. Scrollback section gets a bezel fill container (white 4% + inner highlight + surfaceStroke) with padding; it fades in/out with `DS.Motion.smooth` when turns appear. Speaker/person icons in scrollback upgraded from bare `Circle` backgrounds to 20×20 `RoundedRectangle` icon wells.
+
+**Files:** `Views/VoiceModeView.swift`
+
+**Why:** VoiceModeView's header matched no other modal's style (all others now use brand icon tile + Eyebrow); scrollback was an unstyled floating list.
+
+**Result:** Code verified structurally correct.
 
 ---
 ## 2026-06-12 — Marathon BK — ScratchpadView premium elevation

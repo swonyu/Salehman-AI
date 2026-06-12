@@ -2187,6 +2187,17 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
 
 ---
+## 2026-06-12 — Marathon BL — VoiceModeView premium elevation
+
+**What changed:** Header upgraded from plain `HStack`/title to brand icon tile (32×32 waveform) + `Eyebrow("Hands-Free Voice")` layout. Save button hairline upgraded to 0.75pt stroke. Scrollback section gets a bezel fill container (white 4% + inner highlight + surfaceStroke) with padding; it fades in/out with `DS.Motion.smooth` when turns appear. Speaker/person icons in scrollback upgraded from bare `Circle` backgrounds to 20×20 `RoundedRectangle` icon wells.
+
+**Files:** `Views/VoiceModeView.swift`
+
+**Why:** VoiceModeView's header matched no other modal's style (all others now use brand icon tile + Eyebrow); scrollback was an unstyled floating list.
+
+**Result:** Code verified structurally correct.
+
+---
 ## 2026-06-12 — Marathon BK — ScratchpadView premium elevation
 
 **What changed:** Header replaced from ZStack/raw-eyebrow to brand icon tile (36×36, icon changes between `checklist`/`note.text` with the active pad) + `Eyebrow("Notes & Tasks")` + gradient Organize/Summarize button. `listCard` and `reorderList` containers changed from flat `codeSurfaceSide` to bezel fill (white 3.5% + inner highlight). Note rows get a 24×24 `RoundedRectangle` icon well (matching MemoryView fact rows). Both task and note row hover animations upgraded from `DS.Motion.press` to `DS.Motion.magnetic`. Search row upgraded from `RoundedRectangle` corners to `Capsule` style.
