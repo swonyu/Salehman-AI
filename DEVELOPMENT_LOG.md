@@ -2296,6 +2296,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
 
 ---
+
+### 2026-06-12 — Marathon BP: ChatHistoryView premium elevation pass
+
+**What changed:** `Salehman AI/Views/ChatHistoryView.swift`
+- Header: plain "Conversations" text → 30×30 brand icon tile (clock.arrow.circlepath) + `Eyebrow("Chat History")`
+- Filter field: flat `codeSurfaceSide.opacity(0.6)` → Capsule search style (white 7% fill + surfaceStroke) matching MemoryView/KnowledgeView; added clear-X button when query non-empty
+- History rows: no icon → 28×28 `RoundedRectangle` icon well (`accent.opacity(0.10→0.20)` on hover); magnetic hover variable (`hov`) reused for well brightening
+
+**Why:** ChatHistoryView is the sheet opened from ContentView's conversation history — frequently visited. Its plain header and iconless rows were inconsistent with the depth system applied across BG–BO.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/ChatStore references; xcodebuild resolves fine.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

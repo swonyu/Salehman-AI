@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 20:42 +03 · Swift files: 150 · Swift LOC: 33053_
+_Generated: 2026-06-12 20:44 +03 · Swift files: 150 · Swift LOC: 33083_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14064,7 +14064,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (183 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (213 lines) =====
 ```swift
 import SwiftUI
 
@@ -14109,17 +14109,29 @@ struct ChatHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Conversations")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+            HStack(spacing: DS.Space.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                        .fill(DS.Gradient.brand)
+                        .frame(width: 30, height: 30)
+                        .dsShadow(DS.Elevation.accentGlow(0.32))
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Conversations")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Chat History")
+                }
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.plain)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 18).padding(.vertical, 12)
             .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                      alignment: .bottom)
@@ -14143,16 +14155,24 @@ struct ChatHistoryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }.buttonStyle(.plain)
+                    }
                 }
-                .padding(.horizontal, 18).padding(.vertical, 8)
+                .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
+                .background(Color.white.opacity(0.07), in: Capsule())
+                .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(DS.Palette.codeSurfaceSide.opacity(0.6))
                 .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                          alignment: .bottom)
@@ -14198,7 +14218,17 @@ struct ChatHistoryView: View {
     }
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
-        HStack(spacing: 12) {
+        let hov = hoveredRow == item.id
+        return HStack(spacing: 12) {
+            // Icon well — accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hov ? 0.20 : 0.10))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
@@ -35621,7 +35651,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3167 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3180 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -37918,6 +37948,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** OnboardingView already had the 88×88 brand tile, dual ambient orbs, and entrance animation from an earlier pass. The remaining two gaps were the non-DS eyebrow and the flat CTA that lacked the DS spec's "button-in-button" trailing icon pattern.
 
 **Result:** SourceKit false positives are pre-existing cross-file DS/Eyebrow references; xcodebuild resolves fine.
+
+---
+
+### 2026-06-12 — Marathon BP: ChatHistoryView premium elevation pass
+
+**What changed:** `Salehman AI/Views/ChatHistoryView.swift`
+- Header: plain "Conversations" text → 30×30 brand icon tile (clock.arrow.circlepath) + `Eyebrow("Chat History")`
+- Filter field: flat `codeSurfaceSide.opacity(0.6)` → Capsule search style (white 7% fill + surfaceStroke) matching MemoryView/KnowledgeView; added clear-X button when query non-empty
+- History rows: no icon → 28×28 `RoundedRectangle` icon well (`accent.opacity(0.10→0.20)` on hover); magnetic hover variable (`hov`) reused for well brightening
+
+**Why:** ChatHistoryView is the sheet opened from ContentView's conversation history — frequently visited. Its plain header and iconless rows were inconsistent with the depth system applied across BG–BO.
+
+**Result:** SourceKit false positives are pre-existing cross-file DS/ChatStore references; xcodebuild resolves fine.
 
 ---
 ## Standing notes / known issues

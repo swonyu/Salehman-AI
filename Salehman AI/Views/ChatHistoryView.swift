@@ -41,17 +41,29 @@ struct ChatHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Conversations")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+            HStack(spacing: DS.Space.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                        .fill(DS.Gradient.brand)
+                        .frame(width: 30, height: 30)
+                        .dsShadow(DS.Elevation.accentGlow(0.32))
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Conversations")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Chat History")
+                }
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.plain)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 18).padding(.vertical, 12)
             .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                      alignment: .bottom)
@@ -75,16 +87,24 @@ struct ChatHistoryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }.buttonStyle(.plain)
+                    }
                 }
-                .padding(.horizontal, 18).padding(.vertical, 8)
+                .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
+                .background(Color.white.opacity(0.07), in: Capsule())
+                .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(DS.Palette.codeSurfaceSide.opacity(0.6))
                 .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                          alignment: .bottom)
@@ -130,7 +150,17 @@ struct ChatHistoryView: View {
     }
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
-        HStack(spacing: 12) {
+        let hov = hoveredRow == item.id
+        return HStack(spacing: 12) {
+            // Icon well — accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hov ? 0.20 : 0.10))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
