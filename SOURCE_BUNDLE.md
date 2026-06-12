@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:30 +03 · Swift files: 150 · Swift LOC: 33694_
+_Generated: 2026-06-12 23:36 +03 · Swift files: 150 · Swift LOC: 33714_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (530 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (532 lines) =====
 ```swift
 import SwiftUI
 
@@ -13737,6 +13737,8 @@ struct AgentsView: View {
                     .foregroundStyle(.secondary)
                 Text("\(runHistory.count)")
                     .font(.caption2.monospacedDigit())
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: runHistory.count)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                     .foregroundStyle(DS.Palette.accent)
@@ -14760,7 +14762,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2570 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2582 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16143,6 +16145,8 @@ struct CodeView: View {
                 Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
@@ -16495,6 +16499,8 @@ struct CodeView: View {
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
                 }
                 // Live elapsed readout — long local runs are minutes of silence
                 // otherwise; a ticking clock shows the run is alive.
@@ -16583,6 +16589,8 @@ struct CodeView: View {
                     .foregroundStyle(.secondary.opacity(0.85))
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 Spacer()
                 // The run-level safety net: one click reverts EVERY AI edit from
                 // this run (your own edits in other files are untouched).
@@ -16725,6 +16733,8 @@ struct CodeView: View {
                 if !ws.changedFiles.isEmpty {
                     Text("\(ws.changedFiles.count) changed")
                         .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 }
                 Spacer()
             }
@@ -16773,6 +16783,8 @@ struct CodeView: View {
                         Text("\(ws.changedFiles.count) changed")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                     }
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
@@ -16844,6 +16856,8 @@ struct CodeView: View {
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: searchIndex)
                 Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
                     .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
                 Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
@@ -20653,7 +20667,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (666 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (668 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -20931,6 +20945,8 @@ struct KnowledgeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
                     if docs.count > 1 {
                         Menu {
@@ -22795,7 +22811,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (359 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (363 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22969,6 +22985,8 @@ struct MemoryView: View {
                 }
                 Text("\(facts.count) fact\(facts.count == 1 ? "" : "s") saved on this Mac")
                     .font(.caption).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: facts.count)
             }
             Spacer()
             Button { dismiss() } label: {
@@ -23082,8 +23100,10 @@ struct MemoryView: View {
                 Group {
                     if copiedFact == fact {
                         Text("Copied!").font(.system(size: 10, weight: .semibold))
+                            .transition(.opacity)
                     } else {
                         Image(systemName: "doc.on.doc").font(.system(size: 12))
+                            .transition(.opacity)
                     }
                 }
                 .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
@@ -36262,7 +36282,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3582 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3598 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -38804,6 +38824,22 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All `CircleIconButton` symbol changes now animate with SF Symbol crossfade.
 
 ---
+
+### 2026-06-12 — Marathon DG: `.contentTransition(.numericText())` on live count displays + MemoryView copy-button transition
+
+**What changed:**
+- `Views/MemoryView.swift`: Added `.transition(.opacity)` to both branches of the copy-button `if copiedFact == fact { Text("Copied!") } else { Image(...) }` conditional + `.animation(DS.Motion.smooth, value: copiedFact == fact)` on the button. Also added `.contentTransition(.numericText()) / .animation(DS.Motion.smooth, value: facts.count)` to the header "N facts saved" Text.
+- `Views/AgentsView.swift`: Added `.contentTransition(.numericText()) / .animation(DS.Motion.smooth, value: runHistory.count)` to the run-log badge count Text.
+- `Views/KnowledgeView.swift`: Added `.contentTransition(.numericText()) / .animation(DS.Motion.smooth, value: docs.count)` to the docs count header Text.
+- `Views/CodeView.swift`: Added `.contentTransition(.numericText())` to 5 count displays — two progress step `done/total` counters, two `changedFiles.count` labels, one `changedFiles.count` badge, and the search match `N/M` counter (keyed to `searchIndex`).
+
+**Files:** `Views/MemoryView.swift`, `Views/AgentsView.swift`, `Views/KnowledgeView.swift`, `Views/CodeView.swift`
+
+**Why:** Counts that change during normal use (run completions, file saves, search jumps, memory adds/deletes) snapped without animation. `.contentTransition(.numericText())` morphs digit glyphs in place; combined with `.animation(value:)` scoped to the count variable, these now feel live and physical.
+
+**Result:** All live-count Text views across the app now morph digits instead of flicking.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -39749,7 +39785,7 @@ permission classifier blocked the first attempt.
 ## 2026-06-12 — marathon DF: ChatHistoryView search clear + no-match transitions (Chat A)
 **What:** Two unanimated moments in `ChatHistoryView`. (1) Search filter clear button (×): `.transition(.opacity)` on the Button + `.animation(DS.Motion.magnetic, value: query.isEmpty)` on the capsule HStack — button fades in/out as the user types. (2) No-match state: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }.animation(DS.Motion.smooth, value: shown.isEmpty)` with `.transition(.opacity)` on both branches — the "No conversations match" text fades in rather than snapping when the filter yields zero results.
 **Files:** `Views/ChatHistoryView.swift`.
-**Commit:** TBD
+**Commit:** `2844d2d`
 
 ## 2026-06-12 — marathon DE: LiveTranscriptionView LIVE badge + AgentsView label transitions (Chat A)
 **What:** Three remaining unanimated moments. (1) `LiveTranscriptionView` LIVE recording badge: `.transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))` on the HStack + `.animation(DS.Motion.smooth, value: live.isRunning)` on the controls bar — badge scales in from the right when recording starts and fades out on stop. (2) `AgentsView` autonomous-run button label text (`"Stop · iteration N"` / `"Start Autonomous Run"`): `.contentTransition(.opacity)` + `.animation(.smooth, value: isRunningAutonomous)` — label crossfades instead of snapping when run starts/stops. (3) `AgentsView` latest-result preview text: `.transition(.opacity.combined(with: .offset(y: -4)))` — preview slides down from above when the first agent result arrives.

@@ -1379,6 +1379,8 @@ struct CodeView: View {
                 Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
@@ -1731,6 +1733,8 @@ struct CodeView: View {
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
                 }
                 // Live elapsed readout — long local runs are minutes of silence
                 // otherwise; a ticking clock shows the run is alive.
@@ -1819,6 +1823,8 @@ struct CodeView: View {
                     .foregroundStyle(.secondary.opacity(0.85))
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 Spacer()
                 // The run-level safety net: one click reverts EVERY AI edit from
                 // this run (your own edits in other files are untouched).
@@ -1961,6 +1967,8 @@ struct CodeView: View {
                 if !ws.changedFiles.isEmpty {
                     Text("\(ws.changedFiles.count) changed")
                         .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 }
                 Spacer()
             }
@@ -2009,6 +2017,8 @@ struct CodeView: View {
                         Text("\(ws.changedFiles.count) changed")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                     }
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
@@ -2080,6 +2090,8 @@ struct CodeView: View {
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: searchIndex)
                 Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
                     .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
                 Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }

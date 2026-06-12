@@ -301,6 +301,8 @@ struct AgentsView: View {
                     .foregroundStyle(.secondary)
                 Text("\(runHistory.count)")
                     .font(.caption2.monospacedDigit())
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: runHistory.count)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                     .foregroundStyle(DS.Palette.accent)

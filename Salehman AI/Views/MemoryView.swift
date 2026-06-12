@@ -170,6 +170,8 @@ struct MemoryView: View {
                 }
                 Text("\(facts.count) fact\(facts.count == 1 ? "" : "s") saved on this Mac")
                     .font(.caption).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: facts.count)
             }
             Spacer()
             Button { dismiss() } label: {
@@ -283,8 +285,10 @@ struct MemoryView: View {
                 Group {
                     if copiedFact == fact {
                         Text("Copied!").font(.system(size: 10, weight: .semibold))
+                            .transition(.opacity)
                     } else {
                         Image(systemName: "doc.on.doc").font(.system(size: 12))
+                            .transition(.opacity)
                     }
                 }
                 .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))

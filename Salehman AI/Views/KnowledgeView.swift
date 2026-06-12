@@ -274,6 +274,8 @@ struct KnowledgeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
                     if docs.count > 1 {
                         Menu {
