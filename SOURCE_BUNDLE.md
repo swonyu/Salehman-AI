@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:36 +03 · Swift files: 150 · Swift LOC: 31997_
+_Generated: 2026-06-12 08:39 +03 · Swift files: 150 · Swift LOC: 32020_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1894,7 +1894,7 @@ enum MachineInfo {
 }
 ```
 
-===== FILE: Salehman AI/App/AppState.swift (84 lines) =====
+===== FILE: Salehman AI/App/AppState.swift (89 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1922,6 +1922,11 @@ final class AppState: ObservableObject {
     @Published var showAboutRequested = false
     /// ⌘J hands-free Voice Mode (talk↔listen) — presented over the root window.
     @Published var showVoiceModeRequested = false
+
+    /// Set `true` when an AI reply completes while the user is on a non-Chat tab.
+    /// `TabSwitcherBar` uses it to render a pulse dot on the Chat pill; cleared
+    /// automatically when the user switches to the Chat tab.
+    @Published var chatHasUnread = false
 
     private init() {}
 }
@@ -14074,7 +14079,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (215 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (218 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -14248,6 +14253,7 @@ final class ChatViewModel: ObservableObject {
                 break
             }
             isRunning = false
+            if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             // Refresh the header brain dot now — it otherwise lags up to ~10s, so
             // this reflects reality right after a send (e.g. a brain that just failed).
             await BrainStatus.shared.refresh()
@@ -14273,6 +14279,7 @@ final class ChatViewModel: ObservableObject {
                   !transcript.hasPrefix("Couldn't"),
                   !transcript.contains("no captions") else {
                 isRunning = false
+                if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
                 return
             }
 
@@ -14285,6 +14292,7 @@ final class ChatViewModel: ObservableObject {
             let reply = ChatMessage(id: UUID(), text: result.output, isUser: false, timestamp: Date())
             messages.append(reply)
             isRunning = false
+            if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             if AppSettings.shared.autoSpeak {
                 SpeechOut.shared.speak(result.output, id: reply.id)
             }
@@ -22383,7 +22391,7 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         .onChange(of: app.selectedTab) { _, tab in
-            if tab == .chat    { visitedChat = true }
+            if tab == .chat    { visitedChat = true; app.chatHasUnread = false }
             if tab == .markets { visitedMarkets = true }
             if tab == .agents  { visitedAgents = true }
             if tab == .code    { visitedCode = true }
@@ -25120,7 +25128,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (235 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (250 lines) =====
 ```swift
 import SwiftUI
 
@@ -25355,6 +25363,21 @@ struct TabSwitcherBar: View {
         .accessibilityLabel(tab.title)
         .accessibilityHint("Show the \(tab.title) tab")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        // Unread dot — appears on the Chat pill while an AI reply has completed
+        // but the user is on another tab. The dot rides at the top-trailing edge
+        // of the pill, outside the capsule highlight so it's always visible.
+        .overlay(alignment: .topTrailing) {
+            if tab == .chat && app.chatHasUnread && !selected {
+                Circle()
+                    .fill(DS.Palette.accent)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    .offset(x: 3, y: -3)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    .animation(DS.Motion.spring, value: app.chatHasUnread)
+                    .accessibilityLabel("New message in Chat")
+            }
+        }
     }
 }
 ```
@@ -34554,7 +34577,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2603 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2618 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36285,6 +36308,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Files:** `Salehman AI/Views/ScratchpadView.swift`
 
 **Why:** Completed tasks were mixing with open ones, making the task list noisy. Folding them reduces visual clutter while keeping them accessible and bulk-clearable.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AE: unread dot on Chat pill when AI replies off-tab
+
+**What changed:**
+- `AppState.swift` → added `@Published var chatHasUnread = false`.
+- `ChatViewModel.swift` → after `isRunning = false` in both `send()` and `transcribeMedia()`, sets `AppState.shared.chatHasUnread = true` when `selectedTab != .chat`.
+- `RootView.swift` → `onChange(of: app.selectedTab)` now also sets `app.chatHasUnread = false` when switching to `.chat`.
+- `TabSwitcherBar.swift` → `pill()` gets an `.overlay(alignment: .topTrailing)` showing a 7pt accent `Circle` when `tab == .chat && app.chatHasUnread && !selected`. Spring-animated in/out.
+
+**Files:** `Salehman AI/App/AppState.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AI/Views/RootView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** Users on other tabs had no signal that a reply arrived. The dot mirrors iOS notification badges at minimal visual cost.
 
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 

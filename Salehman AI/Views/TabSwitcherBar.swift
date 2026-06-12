@@ -231,5 +231,20 @@ struct TabSwitcherBar: View {
         .accessibilityLabel(tab.title)
         .accessibilityHint("Show the \(tab.title) tab")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        // Unread dot — appears on the Chat pill while an AI reply has completed
+        // but the user is on another tab. The dot rides at the top-trailing edge
+        // of the pill, outside the capsule highlight so it's always visible.
+        .overlay(alignment: .topTrailing) {
+            if tab == .chat && app.chatHasUnread && !selected {
+                Circle()
+                    .fill(DS.Palette.accent)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    .offset(x: 3, y: -3)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    .animation(DS.Motion.spring, value: app.chatHasUnread)
+                    .accessibilityLabel("New message in Chat")
+            }
+        }
     }
 }

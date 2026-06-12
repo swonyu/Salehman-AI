@@ -25,6 +25,11 @@ final class AppState: ObservableObject {
     /// ⌘J hands-free Voice Mode (talk↔listen) — presented over the root window.
     @Published var showVoiceModeRequested = false
 
+    /// Set `true` when an AI reply completes while the user is on a non-Chat tab.
+    /// `TabSwitcherBar` uses it to render a pulse dot on the Chat pill; cleared
+    /// automatically when the user switches to the Chat tab.
+    @Published var chatHasUnread = false
+
     private init() {}
 }
 

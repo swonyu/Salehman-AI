@@ -170,6 +170,7 @@ final class ChatViewModel: ObservableObject {
                 break
             }
             isRunning = false
+            if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             // Refresh the header brain dot now — it otherwise lags up to ~10s, so
             // this reflects reality right after a send (e.g. a brain that just failed).
             await BrainStatus.shared.refresh()
@@ -195,6 +196,7 @@ final class ChatViewModel: ObservableObject {
                   !transcript.hasPrefix("Couldn't"),
                   !transcript.contains("no captions") else {
                 isRunning = false
+                if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
                 return
             }
 
@@ -207,6 +209,7 @@ final class ChatViewModel: ObservableObject {
             let reply = ChatMessage(id: UUID(), text: result.output, isUser: false, timestamp: Date())
             messages.append(reply)
             isRunning = false
+            if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }
             if AppSettings.shared.autoSpeak {
                 SpeechOut.shared.speak(result.output, id: reply.id)
             }

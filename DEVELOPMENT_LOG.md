@@ -1732,6 +1732,21 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AE: unread dot on Chat pill when AI replies off-tab
+
+**What changed:**
+- `AppState.swift` → added `@Published var chatHasUnread = false`.
+- `ChatViewModel.swift` → after `isRunning = false` in both `send()` and `transcribeMedia()`, sets `AppState.shared.chatHasUnread = true` when `selectedTab != .chat`.
+- `RootView.swift` → `onChange(of: app.selectedTab)` now also sets `app.chatHasUnread = false` when switching to `.chat`.
+- `TabSwitcherBar.swift` → `pill()` gets an `.overlay(alignment: .topTrailing)` showing a 7pt accent `Circle` when `tab == .chat && app.chatHasUnread && !selected`. Spring-animated in/out.
+
+**Files:** `Salehman AI/App/AppState.swift`, `Salehman AI/Views/ChatViewModel.swift`, `Salehman AI/Views/RootView.swift`, `Salehman AI/Views/TabSwitcherBar.swift`
+
+**Why:** Users on other tabs had no signal that a reply arrived. The dot mirrors iOS notification badges at minimal visual cost.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

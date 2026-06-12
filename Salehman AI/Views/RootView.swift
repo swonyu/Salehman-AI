@@ -100,7 +100,7 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         .onChange(of: app.selectedTab) { _, tab in
-            if tab == .chat    { visitedChat = true }
+            if tab == .chat    { visitedChat = true; app.chatHasUnread = false }
             if tab == .markets { visitedMarkets = true }
             if tab == .agents  { visitedAgents = true }
             if tab == .code    { visitedCode = true }
