@@ -2948,6 +2948,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Zero Swift compilation errors. Markets tab cards visually consistent with the rest of the app.
 
 ---
+## 2026-06-13 — Marathon EI: BottomShortcutBar — top-lit key badge gradient stroke
+
+**What:** Upgraded the key badge stroke in `BottomShortcutBar` from a flat `Color.white.opacity` uniform border to a `LinearGradient` top-lit stroke (`white@0.28→0.04` at rest, `white@0.40→0.08` on hover) — matching the machined keycap aesthetic already in `ShortcutsView`. Completes the final view in the Views directory audit.
+
+**Files:** `Salehman AI/Views/BottomShortcutBar.swift`
+
+**Result:** Zero Swift compiler errors. All 26 view files in the Views directory audited and fully polished. Every interactive surface now uses the same top-lit gradient key badge pattern.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

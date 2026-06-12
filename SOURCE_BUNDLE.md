@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:44 +03 · Swift files: 150 · Swift LOC: 33995_
+_Generated: 2026-06-13 01:49 +03 · Swift files: 150 · Swift LOC: 34000_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14021,7 +14021,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (97 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (102 lines) =====
 ```swift
 import SwiftUI
 
@@ -14090,8 +14090,13 @@ struct BottomShortcutBar: View {
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Color.white.opacity(hinted ? 0.14 : 0.08),
                                         in: RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.white.opacity(hinted ? 0.22 : 0.12), lineWidth: 1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(LinearGradient(
+                                        colors: [.white.opacity(hinted ? 0.40 : 0.28),
+                                                 .white.opacity(hinted ? 0.08 : 0.04)],
+                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            )
                             .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
                         Text(hint.label)
                             .font(.system(size: 11))
@@ -36563,7 +36568,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3991 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4000 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39512,6 +39517,15 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/MarketsView.swift`
 
 **Result:** Zero Swift compilation errors. Markets tab cards visually consistent with the rest of the app.
+
+---
+## 2026-06-13 — Marathon EI: BottomShortcutBar — top-lit key badge gradient stroke
+
+**What:** Upgraded the key badge stroke in `BottomShortcutBar` from a flat `Color.white.opacity` uniform border to a `LinearGradient` top-lit stroke (`white@0.28→0.04` at rest, `white@0.40→0.08` on hover) — matching the machined keycap aesthetic already in `ShortcutsView`. Completes the final view in the Views directory audit.
+
+**Files:** `Salehman AI/Views/BottomShortcutBar.swift`
+
+**Result:** Zero Swift compiler errors. All 26 view files in the Views directory audited and fully polished. Every interactive surface now uses the same top-lit gradient key badge pattern.
 
 ---
 ## Standing notes / known issues
