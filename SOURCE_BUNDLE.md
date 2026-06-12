@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 22:35 +03 · Swift files: 150 · Swift LOC: 33537_
+_Generated: 2026-06-12 22:40 +03 · Swift files: 150 · Swift LOC: 33543_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (525 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (527 lines) =====
 ```swift
 import SwiftUI
 
@@ -13912,10 +13912,12 @@ private struct AgentCard: View {
                     }
                     ProgressView().controlSize(.small)
                 }
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
             } else if hovering {
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary.opacity(0.60))
+                    .transition(.opacity)
             }
         }
         .padding(DS.Space.md)
@@ -17487,7 +17489,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2806 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2810 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -17911,7 +17913,7 @@ struct ContentView: View {
 
     private var conversation: some View {
         VStack(spacing: 0) {
-            if searching { searchBar }
+            if searching { searchBar.transition(.move(edge: .top).combined(with: .opacity)) }
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
@@ -18612,9 +18614,12 @@ struct ContentView: View {
                             attachmentChip(icon: att.icon,
                                            title: "\(att.name) · \(att.kind)",
                                            onRemove: { attachments.removeAll { $0.id == att.id } })
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
+                    .animation(DS.Motion.smooth, value: attachments.count)
                 }
+                .transition(.opacity.combined(with: .offset(y: 8)))
             }
 
             // Slash-command menu — floats above the composer while typing `/…`
@@ -18850,6 +18855,7 @@ struct ContentView: View {
         // Drives the slash-menu island's enter/exit transition (lux). Bound to
         // the EMPTY flip only — row updates while typing stay instant.
         .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
+        .animation(DS.Motion.smooth, value: attachments.isEmpty)
     }
 
     private func attachmentChip(icon: String, title: String,
@@ -36105,7 +36111,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3497 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3502 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39589,10 +39595,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CP: panel entry/exit transitions + AgentCard active indicator (Chat A)
+**What:** Five targeted panel/item transitions. (1) `ContentView` chat search bar: `.transition(.move(edge: .top).combined(with: .opacity))` so ⌘F slides the bar down from the top instead of snapping. (2) `ContentView` attachment chips row: `.transition(.scale(0.8)+.opacity)` on each chip + `.animation(DS.Motion.smooth, value: attachments.count)` on HStack + `.transition(.opacity+.offset(y: 8))` on the whole row + `.animation(DS.Motion.smooth, value: attachments.isEmpty)` on the inputBar VStack — chips scale in/out and the row fades+slides as it appears/disappears. (3) `AgentsView` AgentCard active indicator: `.transition(.scale(0.7)+.opacity)` on the pulsing-dot+spinner HStack + `.transition(.opacity)` on the rest arrow — they animate in/out when an agent starts/stops.
+**Files:** `Views/ContentView.swift`, `Views/AgentsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CO: list insertion/removal transitions (Chat A)
 **What:** Three views gain animated entry/exit transitions for data list items. `MemoryView` fact rows: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `row(fact)` + `.animation(DS.Motion.smooth, value: facts)` on the VStack — fact deletions now slide out from the leading edge instead of vanishing. `KnowledgeView` doc rows: same treatment keyed on `docs.count` so doc additions/deletions fade+slide. `MarketsView` signal cards list: `.transition(.opacity+.move(edge: .leading))` on each card + `.animation(value: store.symbols.count)` on the signalList VStack. `MarketsView` heatmap tiles: `.transition(.scale(0.7)+.opacity)` on each tile + `.animation(value: store.symbols.count)` on the LazyVGrid so tiles scale in/out when the watchlist changes.
 **Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/MarketsView.swift`.
-**Commit:** `(next)`
+**Commit:** `956ce6e`
 
 ## 2026-06-12 — marathon CN: final symbolEffect gaps + BottomShortcutBar Stop hint animation (Chat A)
 **What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.

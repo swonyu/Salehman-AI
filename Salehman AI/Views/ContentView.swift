@@ -420,7 +420,7 @@ struct ContentView: View {
 
     private var conversation: some View {
         VStack(spacing: 0) {
-            if searching { searchBar }
+            if searching { searchBar.transition(.move(edge: .top).combined(with: .opacity)) }
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
@@ -1121,9 +1121,12 @@ struct ContentView: View {
                             attachmentChip(icon: att.icon,
                                            title: "\(att.name) · \(att.kind)",
                                            onRemove: { attachments.removeAll { $0.id == att.id } })
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
+                    .animation(DS.Motion.smooth, value: attachments.count)
                 }
+                .transition(.opacity.combined(with: .offset(y: 8)))
             }
 
             // Slash-command menu — floats above the composer while typing `/…`
@@ -1359,6 +1362,7 @@ struct ContentView: View {
         // Drives the slash-menu island's enter/exit transition (lux). Bound to
         // the EMPTY flip only — row updates while typing stay instant.
         .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
+        .animation(DS.Motion.smooth, value: attachments.isEmpty)
     }
 
     private func attachmentChip(icon: String, title: String,

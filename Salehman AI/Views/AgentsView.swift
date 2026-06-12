@@ -476,10 +476,12 @@ private struct AgentCard: View {
                     }
                     ProgressView().controlSize(.small)
                 }
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
             } else if hovering {
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary.opacity(0.60))
+                    .transition(.opacity)
             }
         }
         .padding(DS.Space.md)
