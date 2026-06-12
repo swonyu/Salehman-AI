@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -31,6 +32,8 @@ struct KnowledgeView: View {
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
     @State private var hoveredDocID: UUID?
+    /// Pulses briefly after "Save to Notes" to confirm the action.
+    @State private var answerSaved = false
 
     var body: some View {
         ScrollView {
@@ -137,6 +140,32 @@ struct KnowledgeView: View {
                     }
                     .padding(.top, 4)
                 }
+                // Quick actions on the answer — Copy and Save to Notes.
+                HStack(spacing: 16) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(answer, forType: .string)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .help("Copy answer to clipboard")
+                    .accessibilityLabel("Copy answer")
+                    Button {
+                        ScratchpadStore.shared.addNote(answer)
+                        answerSaved = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                    } label: {
+                        Label(answerSaved ? "Saved!" : "Save to Notes",
+                              systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                    }
+                    .help("Save answer as a note")
+                    .accessibilityLabel("Save answer to Notes")
+                    Spacer(minLength: 0)
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -239,7 +268,7 @@ struct KnowledgeView: View {
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(hovered ? .white : .white.opacity(0.9))
                             .lineLimit(1)
-                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s")")
+                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: doc.addedAt))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)

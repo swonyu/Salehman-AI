@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 08:47 +03 · Swift files: 150 · Swift LOC: 32184_
+_Generated: 2026-06-12 08:49 +03 · Swift files: 150 · Swift LOC: 32214_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14478,7 +14478,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2502 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2503 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16252,8 +16252,9 @@ struct CodeView: View {
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             HStack(spacing: 6) {
                 Circle().fill(DS.Palette.accent).frame(width: 5, height: 5)
-                Text("CHANGED FILES").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(.secondary)
+                    .shadow(color: DS.Palette.accent.opacity(0.60), radius: 4)
+                Text("CHANGED FILES").font(.system(size: 9.5, weight: .semibold)).tracking(1.5)
+                    .foregroundStyle(.secondary.opacity(0.85))
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
                 Spacer()
@@ -20148,8 +20149,9 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (509 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (538 lines) =====
 ```swift
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -20183,6 +20185,8 @@ struct KnowledgeView: View {
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
     @State private var hoveredDocID: UUID?
+    /// Pulses briefly after "Save to Notes" to confirm the action.
+    @State private var answerSaved = false
 
     var body: some View {
         ScrollView {
@@ -20289,6 +20293,32 @@ struct KnowledgeView: View {
                     }
                     .padding(.top, 4)
                 }
+                // Quick actions on the answer — Copy and Save to Notes.
+                HStack(spacing: 16) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(answer, forType: .string)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .help("Copy answer to clipboard")
+                    .accessibilityLabel("Copy answer")
+                    Button {
+                        ScratchpadStore.shared.addNote(answer)
+                        answerSaved = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); answerSaved = false }
+                    } label: {
+                        Label(answerSaved ? "Saved!" : "Save to Notes",
+                              systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                    }
+                    .help("Save answer as a note")
+                    .accessibilityLabel("Save answer to Notes")
+                    Spacer(minLength: 0)
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -20391,7 +20421,7 @@ struct KnowledgeView: View {
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(hovered ? .white : .white.opacity(0.9))
                             .lineLimit(1)
-                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s")")
+                        Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: doc.addedAt))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
@@ -34741,7 +34771,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (2648 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (2662 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -36519,6 +36549,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Why:** Both `TaskItem` and `Note` have `createdAt: Date` but it was never surfaced in the UI. The hover-only placement keeps rows compact by default.
 
 **Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
+## 2026-06-12 — Marathon AH: Knowledge view — copy/save answer + doc age label
+
+**What changed:**
+- `KnowledgeView.swift` → added `import AppKit`; added `@State private var answerSaved = false`.
+- After the answer text and sources in `askCard`, added a two-button action row: **Copy** (NSPasteboard) and **Save to Notes** (`ScratchpadStore.shared.addNote(answer)` with 1.5s "Saved!" pulse). Both use `.buttonStyle(.plain)` caption-size styling matching the existing aesthetic.
+- `docRow` subtitle changed from `"\(kind) · N passage(s)"` to `"\(kind) · N passage(s) · <age>"` using the reusable `ScratchpadList.ageLabel(for: doc.addedAt)`.
+
+**Files:** `Salehman AI/Views/KnowledgeView.swift`
+
+**Why:** Knowledge answers had no quick-action path — users had to manually select + Cmd+C. The "Save to Notes" path closes a cross-feature loop. The doc age makes recency visible at a glance.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
 ## Standing notes / known issues

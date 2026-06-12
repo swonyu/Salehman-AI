@@ -1777,6 +1777,20 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** Source + test change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
 
 ---
+## 2026-06-12 — Marathon AH: Knowledge view — copy/save answer + doc age label
+
+**What changed:**
+- `KnowledgeView.swift` → added `import AppKit`; added `@State private var answerSaved = false`.
+- After the answer text and sources in `askCard`, added a two-button action row: **Copy** (NSPasteboard) and **Save to Notes** (`ScratchpadStore.shared.addNote(answer)` with 1.5s "Saved!" pulse). Both use `.buttonStyle(.plain)` caption-size styling matching the existing aesthetic.
+- `docRow` subtitle changed from `"\(kind) · N passage(s)"` to `"\(kind) · N passage(s) · <age>"` using the reusable `ScratchpadList.ageLabel(for: doc.addedAt)`.
+
+**Files:** `Salehman AI/Views/KnowledgeView.swift`
+
+**Why:** Knowledge answers had no quick-action path — users had to manually select + Cmd+C. The "Save to Notes" path closes a cross-feature loop. The doc age makes recency visible at a glance.
+
+**Result:** Source change; build/test deferred to owner. SOURCE_BUNDLE.md regenerated.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
