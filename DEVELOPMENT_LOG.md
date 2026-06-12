@@ -3481,10 +3481,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon CO: list insertion/removal transitions (Chat A)
+**What:** Three views gain animated entry/exit transitions for data list items. `MemoryView` fact rows: `.transition(.opacity.combined(with: .move(edge: .leading)))` on each `row(fact)` + `.animation(DS.Motion.smooth, value: facts)` on the VStack — fact deletions now slide out from the leading edge instead of vanishing. `KnowledgeView` doc rows: same treatment keyed on `docs.count` so doc additions/deletions fade+slide. `MarketsView` signal cards list: `.transition(.opacity+.move(edge: .leading))` on each card + `.animation(value: store.symbols.count)` on the signalList VStack. `MarketsView` heatmap tiles: `.transition(.scale(0.7)+.opacity)` on each tile + `.animation(value: store.symbols.count)` on the LazyVGrid so tiles scale in/out when the watchlist changes.
+**Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/MarketsView.swift`.
+**Commit:** `(next)`
+
 ## 2026-06-12 — marathon CN: final symbolEffect gaps + BottomShortcutBar Stop hint animation (Chat A)
 **What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.
 **Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
-**Commit:** `(next)`
+**Commit:** `153ff1d`
 
 ## 2026-06-12 — marathon CM: isolated entry/exit animations (Chat A)
 **What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.

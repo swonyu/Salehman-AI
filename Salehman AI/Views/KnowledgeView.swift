@@ -296,8 +296,12 @@ struct KnowledgeView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
                 } else {
                     VStack(spacing: 1) {
-                        ForEach(shown) { doc in docRow(doc) }
+                        ForEach(shown) { doc in
+                            docRow(doc)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
                     }
+                    .animation(DS.Motion.smooth, value: docs.count)
                     .background(
                         ZStack {
                             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)

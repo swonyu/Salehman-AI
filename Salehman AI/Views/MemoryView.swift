@@ -88,8 +88,10 @@ struct MemoryView: View {
                                         .offset(y: appeared ? 0 : 10)
                                         .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.040),
                                                    value: appeared)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
                                 }
                             }
+                            .animation(DS.Motion.smooth, value: facts)
                             .background(
                                 ZStack {
                                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)

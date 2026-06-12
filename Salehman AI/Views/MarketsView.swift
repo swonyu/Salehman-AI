@@ -397,8 +397,10 @@ struct MarketsView: View {
                         .help(sym.market)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))")
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
+                .animation(DS.Motion.smooth, value: store.symbols.count)
             }
         }
     }
@@ -433,9 +435,12 @@ struct MarketsView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Sort watchlist")
                 }
-                ForEach(sort.apply(store.symbols)) { signalCard($0) }
+                ForEach(sort.apply(store.symbols)) { signalCard($0)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
             }
         }
+        .animation(DS.Motion.smooth, value: store.symbols.count)
     }
 
     private func signalCard(_ sym: StockSageSymbol) -> some View {
