@@ -2670,6 +2670,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
+### 2026-06-13 — Marathon DV: CodeView TPS displays — activate contentTransition with animation
+
+**What changed:**
+- `Views/CodeView.swift` — streaming TPS badge: added `.animation(DS.Motion.smooth, value: progress.streamingAnswer.count)` alongside the existing `.contentTransition(.numericText())` so the live tok/s figure actually animates as new content streams (`.contentTransition` alone without `.animation(value:)` has no animation context in a `TimelineView` — it never fires).
+- `Views/CodeView.swift` — post-run stats badge: added `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: stats.tps)` on the Ollama stats TPS display so the number crossfades when a new generation completes and stats refresh.
+
+**Files:** `Views/CodeView.swift`
+
+**Why:** The `TimelineView` periodic re-render doesn't provide a SwiftUI animation transaction — `.contentTransition(.numericText())` without a paired `.animation(value:)` modifier is a no-op. The value change on `progress.streamingAnswer.count` is the correct proxy value for when the TPS reading actually changes.
+
+**Result:** All TPS displays in the Code tab now animate their numeric content when the value changes, consistent with the rest of the app.
+
+---
 ### 2026-06-13 — Marathon DU: CodeView search counter + file count numericText transitions
 
 **What changed:**

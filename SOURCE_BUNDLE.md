@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:23 +03 · Swift files: 150 · Swift LOC: 33829_
+_Generated: 2026-06-13 00:25 +03 · Swift files: 150 · Swift LOC: 33832_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14772,7 +14772,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2598 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2601 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16542,6 +16542,7 @@ struct CodeView: View {
                                 Text(String(format: "≈%.0f tok/s",
                                             Double(progress.streamingAnswer.count) / 4 / secs))
                                     .contentTransition(.numericText())
+                                    .animation(DS.Motion.smooth, value: progress.streamingAnswer.count)
                             }
                         }
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -16710,6 +16711,8 @@ struct CodeView: View {
                         Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
                         Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
                             .font(.system(size: 9.5, weight: .medium))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: stats.tps)
                     }
                     .foregroundStyle(.secondary.opacity(0.62))
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -36397,7 +36400,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3789 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3802 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39068,6 +39071,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
 
 **Result:** All state transitions in both views are now smooth and tokenized.
+
+---
+### 2026-06-13 — Marathon DV: CodeView TPS displays — activate contentTransition with animation
+
+**What changed:**
+- `Views/CodeView.swift` — streaming TPS badge: added `.animation(DS.Motion.smooth, value: progress.streamingAnswer.count)` alongside the existing `.contentTransition(.numericText())` so the live tok/s figure actually animates as new content streams (`.contentTransition` alone without `.animation(value:)` has no animation context in a `TimelineView` — it never fires).
+- `Views/CodeView.swift` — post-run stats badge: added `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: stats.tps)` on the Ollama stats TPS display so the number crossfades when a new generation completes and stats refresh.
+
+**Files:** `Views/CodeView.swift`
+
+**Why:** The `TimelineView` periodic re-render doesn't provide a SwiftUI animation transaction — `.contentTransition(.numericText())` without a paired `.animation(value:)` modifier is a no-op. The value change on `progress.streamingAnswer.count` is the correct proxy value for when the TPS reading actually changes.
+
+**Result:** All TPS displays in the Code tab now animate their numeric content when the value changes, consistent with the rest of the app.
 
 ---
 ### 2026-06-13 — Marathon DU: CodeView search counter + file count numericText transitions

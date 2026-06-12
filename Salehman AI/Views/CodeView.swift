@@ -1766,6 +1766,7 @@ struct CodeView: View {
                                 Text(String(format: "≈%.0f tok/s",
                                             Double(progress.streamingAnswer.count) / 4 / secs))
                                     .contentTransition(.numericText())
+                                    .animation(DS.Motion.smooth, value: progress.streamingAnswer.count)
                             }
                         }
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -1934,6 +1935,8 @@ struct CodeView: View {
                         Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
                         Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
                             .font(.system(size: 9.5, weight: .medium))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: stats.tps)
                     }
                     .foregroundStyle(.secondary.opacity(0.62))
                     .padding(.horizontal, 10).padding(.vertical, 4)
