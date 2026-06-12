@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 01:08 +03 · Swift files: 150 · Swift LOC: 33939_
+_Generated: 2026-06-13 01:10 +03 · Swift files: 150 · Swift LOC: 33943_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20585,7 +20585,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (174 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (178 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20695,6 +20695,7 @@ struct FileTreeRow: View {
     var body: some View {
         if node.isDir {
             let isOpen = expanded.contains(node.id)
+            VStack(spacing: 0) {
             Button {
                 if isOpen { expanded.remove(node.id) } else { expanded.insert(node.id) }
             } label: {
@@ -20718,8 +20719,11 @@ struct FileTreeRow: View {
             if isOpen {
                 ForEach(node.children) { child in
                     FileTreeRow(node: child, depth: depth + 1, expanded: $expanded, ws: ws, onSelect: onSelect)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            }
+            .animation(DS.Motion.smooth, value: isOpen)
         } else if let url = node.url {
             let isSel = ws.selectedFile == url
             let changed = ws.changedFiles.contains(url)
@@ -36507,7 +36511,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3956 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3968 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39419,6 +39423,18 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Files:** `Salehman AI/Views/ContentView.swift`, `Salehman AI/Views/CodeView.swift`
 
 **Why:** Systematic animation gap sweep — every `if/else` branch that inserts/removes a view needs a `.transition` declaration AND a parent `.animation(value:)` driver. Without both, SwiftUI falls back to no animation. These were the remaining gaps in the Chat and Code tabs that made state changes feel abrupt.
+
+**Result:** Zero Swift compilation errors.
+
+---
+## 2026-06-13 — Marathon EF: FileTree directory expand/collapse animation
+
+**What changed:**
+- `FileTree.swift` — `FileTreeRow` (directory branch): wrapped the directory header Button and its `if isOpen { ForEach(node.children) }` block in a `VStack(spacing: 0)`. Added `.transition(.opacity.combined(with: .move(edge: .top)))` to each `FileTreeRow` child + `.animation(DS.Motion.smooth, value: isOpen)` on the wrapper VStack. Directory children now fade+slide in/out when a folder is opened/closed in the code tab file tree.
+
+**Files:** `Salehman AI/Views/FileTree.swift`
+
+**Why:** The `ForEach` children were inside an `if isOpen {}` block with no parent `.animation(value:)` context and no `.transition` on the rows — a classic "orphaned ForEach" gap. Without the VStack wrapper carrying the animation context, SwiftUI had no way to animate the insertion/removal of child rows.
 
 **Result:** Zero Swift compilation errors.
 

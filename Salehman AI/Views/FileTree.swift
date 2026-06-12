@@ -106,6 +106,7 @@ struct FileTreeRow: View {
     var body: some View {
         if node.isDir {
             let isOpen = expanded.contains(node.id)
+            VStack(spacing: 0) {
             Button {
                 if isOpen { expanded.remove(node.id) } else { expanded.insert(node.id) }
             } label: {
@@ -129,8 +130,11 @@ struct FileTreeRow: View {
             if isOpen {
                 ForEach(node.children) { child in
                     FileTreeRow(node: child, depth: depth + 1, expanded: $expanded, ws: ws, onSelect: onSelect)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            }
+            .animation(DS.Motion.smooth, value: isOpen)
         } else if let url = node.url {
             let isSel = ws.selectedFile == url
             let changed = ws.changedFiles.contains(url)
