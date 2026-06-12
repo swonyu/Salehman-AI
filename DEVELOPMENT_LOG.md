@@ -3006,6 +3006,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Result:** Zero Swift compiler errors. LuxPressStyle is now a proper DS component.
 
 ---
+## 2026-06-13 — Marathon EO: top-lit gradient strokes on brainGridCell + SuperGrokBadge
+
+**What changed:**
+- `SettingsView.swift` `brainGridCell`: flat ternary stroke (`accent.opacity(0.5)` / `white.opacity(0.08)`) upgraded to ternary `LinearGradient` — selected: `[accent@0.70, accent@0.20, top→bottom]`; unselected: `[white@0.12, white@0.04, top→bottom]`. Top-lit illumination now consistent with Eyebrow + card borders across all views.
+- `DesignSystem.swift` `SuperGrokBadge`: flat `superGrok.opacity(0.4)` Capsule border → top-lit gradient `[superGrok@0.70, superGrok@0.15, top→bottom]`. `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` — press physics now standard.
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** Every Capsule and RoundedRectangle border in the app has been top-lit (Eyebrow EM, key badges EI, user bubbles EJ); the brain grid cells and the SuperGrok badge were the two remaining flat strokes. Unifying them completes the "light comes from above" depth language across all interactive controls.
+
+**Result:** Zero Swift compiler errors.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

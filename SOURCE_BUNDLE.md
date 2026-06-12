@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:05 +03 · Swift files: 150 · Swift LOC: 34034_
+_Generated: 2026-06-13 02:10 +03 · Swift files: 150 · Swift LOC: 34043_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (424 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (427 lines) =====
 ```swift
 import SwiftUI
 
@@ -2517,9 +2517,12 @@ struct SuperGrokBadge: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(DS.Palette.superGrokSoft, in: Capsule())
-            .overlay(Capsule().stroke(DS.Palette.superGrok.opacity(0.4), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [DS.Palette.superGrok.opacity(0.70),
+                                        DS.Palette.superGrok.opacity(0.15)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LuxPressStyle())
     }
 }
 
@@ -24571,7 +24574,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (2079 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (2085 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25331,7 +25334,13 @@ struct SettingsView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(selected ? DS.Palette.accent.opacity(0.5) : Color.white.opacity(0.08),
+                    .stroke(selected
+                        ? LinearGradient(colors: [DS.Palette.accent.opacity(0.70),
+                                                  DS.Palette.accent.opacity(0.20)],
+                                         startPoint: .top, endPoint: .bottom)
+                        : LinearGradient(colors: [Color.white.opacity(0.12),
+                                                  Color.white.opacity(0.04)],
+                                         startPoint: .top, endPoint: .bottom),
                             lineWidth: 1)
             )
             .contentShape(Rectangle())
@@ -36602,7 +36611,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4049 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4062 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39609,6 +39618,19 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/CodeView.swift`
 
 **Result:** Zero Swift compiler errors. LuxPressStyle is now a proper DS component.
+
+---
+## 2026-06-13 — Marathon EO: top-lit gradient strokes on brainGridCell + SuperGrokBadge
+
+**What changed:**
+- `SettingsView.swift` `brainGridCell`: flat ternary stroke (`accent.opacity(0.5)` / `white.opacity(0.08)`) upgraded to ternary `LinearGradient` — selected: `[accent@0.70, accent@0.20, top→bottom]`; unselected: `[white@0.12, white@0.04, top→bottom]`. Top-lit illumination now consistent with Eyebrow + card borders across all views.
+- `DesignSystem.swift` `SuperGrokBadge`: flat `superGrok.opacity(0.4)` Capsule border → top-lit gradient `[superGrok@0.70, superGrok@0.15, top→bottom]`. `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` — press physics now standard.
+
+**Files:** `Salehman AI/Views/SettingsView.swift`, `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** Every Capsule and RoundedRectangle border in the app has been top-lit (Eyebrow EM, key badges EI, user bubbles EJ); the brain grid cells and the SuperGrok badge were the two remaining flat strokes. Unifying them completes the "light comes from above" depth language across all interactive controls.
+
+**Result:** Zero Swift compiler errors.
 
 ---
 ## Standing notes / known issues

@@ -756,7 +756,13 @@ struct SettingsView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(selected ? DS.Palette.accent.opacity(0.5) : Color.white.opacity(0.08),
+                    .stroke(selected
+                        ? LinearGradient(colors: [DS.Palette.accent.opacity(0.70),
+                                                  DS.Palette.accent.opacity(0.20)],
+                                         startPoint: .top, endPoint: .bottom)
+                        : LinearGradient(colors: [Color.white.opacity(0.12),
+                                                  Color.white.opacity(0.04)],
+                                         startPoint: .top, endPoint: .bottom),
                             lineWidth: 1)
             )
             .contentShape(Rectangle())

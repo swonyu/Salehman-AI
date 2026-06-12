@@ -380,9 +380,12 @@ struct SuperGrokBadge: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(DS.Palette.superGrokSoft, in: Capsule())
-            .overlay(Capsule().stroke(DS.Palette.superGrok.opacity(0.4), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [DS.Palette.superGrok.opacity(0.70),
+                                        DS.Palette.superGrok.opacity(0.15)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LuxPressStyle())
     }
 }
 
