@@ -76,7 +76,7 @@ enum LocalLLM {
         case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
             return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
-            return "Salehman runs on-device. Start Ollama with `ollama serve` and make sure the model is pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
+            return "No model is reachable right now. For Salehman: run `ollama serve` and pull the model with `ollama pull \(AppSettings.customModelNameCurrent)`. For a cloud GPU, switch to the vLLM brain in Settings → Brain and paste your RunPod (or local) endpoint URL."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
@@ -556,12 +556,12 @@ enum LocalLLM {
             case .ollama:  return "Ollama selected · not running"
             case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
-                // Cloud-first: the quickest fix is a free cloud key; on-device
-                // (MLX standalone / Ollama) still works for offline use.
+                // Local-first: MLX (on-device) → Ollama. No third-party cloud.
+                // For a cloud GPU, the user switches to the vLLM brain instead.
                 if MLXSalehmanEngine.isPackageLinked {
-                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, download the standalone engine, or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\", or load the MLX engine"
                 } else {
-                    return "Salehman selected · add a free cloud key (NVIDIA/Groq/…) in Settings, or pull \"\(AppSettings.customModelNameCurrent)\""
+                    return "Salehman selected · run `ollama serve` + pull \"\(AppSettings.customModelNameCurrent)\" (or switch to vLLM for RunPod)"
                 }
             case .unslothStudio:
                 // Different failure mode from the cloud brains — no key, just a
@@ -1390,9 +1390,8 @@ enum LocalLLM {
                                               cachePrefix: cachePrefix) { return reply }
             return offMessage
         case .salehman:
-            // Salehman — CLOUD-FIRST via the shared engine (REAL DeepSeek V4 free via
-            // NVIDIA → free frontier/120B tiers → local
-            // MLX/Ollama floor). Exactly the engine the leader uses. No further fallback.
+            // Salehman — LOCAL-FIRST: MLX (on-device) → Ollama (custom model).
+            // No external cloud. Mirrors SalehmanEngine exactly.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
