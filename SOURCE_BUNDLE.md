@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 07:19 +03 · Swift files: 150 · Swift LOC: 31810_
+_Generated: 2026-06-12 07:33 +03 · Swift files: 150 · Swift LOC: 31877_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13389,7 +13389,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (383 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (393 lines) =====
 ```swift
 import SwiftUI
 
@@ -13419,6 +13419,7 @@ struct AgentsView: View {
     // discarding the current iteration's work mid-run.
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
+    @State private var hoveredRunID: UUID?
 
     var body: some View {
         ZStack {
@@ -13603,6 +13604,7 @@ struct AgentsView: View {
             }
             VStack(spacing: 1) {
                 ForEach(runHistory) { entry in
+                    let entryHovered = hoveredRunID == entry.id
                     HStack(spacing: 10) {
                         Text("#\(entry.iteration)")
                             .font(.system(size: 10, weight: .bold).monospacedDigit())
@@ -13610,7 +13612,7 @@ struct AgentsView: View {
                             .frame(minWidth: 28, alignment: .trailing)
                         Text(entry.preview)
                             .font(.caption2)
-                            .foregroundStyle(DS.Palette.textSecondary)
+                            .foregroundStyle(entryHovered ? .white.opacity(0.9) : DS.Palette.textSecondary)
                             .lineLimit(2)
                         Spacer(minLength: 4)
                         Text(entry.timestamp, style: .time)
@@ -13618,6 +13620,14 @@ struct AgentsView: View {
                             .foregroundStyle(Color.secondary.opacity(0.5))
                     }
                     .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
+                    .background(entryHovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
+                    .contentShape(Rectangle())
+                    .onHover { over in
+                        withAnimation(DS.Motion.smooth) {
+                            if over { hoveredRunID = entry.id }
+                            else if hoveredRunID == entry.id { hoveredRunID = nil }
+                        }
+                    }
                 }
             }
             .background(DS.Palette.codeSurfaceSide,
@@ -13812,7 +13822,7 @@ struct BackgroundView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/BottomShortcutBar.swift (55 lines) =====
+===== FILE: Salehman AI/Views/BottomShortcutBar.swift (64 lines) =====
 ```swift
 import SwiftUI
 
@@ -13823,6 +13833,7 @@ import SwiftUI
 /// the content above it.
 struct BottomShortcutBar: View {
     @ObservedObject private var app = AppState.shared
+    @State private var hoveredHintID: UUID?
 
     private struct Hint: Identifiable {
         let id = UUID()
@@ -13844,19 +13855,27 @@ struct BottomShortcutBar: View {
     var body: some View {
         HStack(spacing: DS.Space.md) {
             ForEach(hints) { hint in
+                let hinted = hoveredHintID == hint.id
                 Button { hint.run() } label: {
                     HStack(spacing: 5) {
                         Text(hint.keys)
                             .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.white.opacity(hinted ? 1.0 : 0.85))
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                            .background(Color.white.opacity(hinted ? 0.14 : 0.08),
+                                        in: RoundedRectangle(cornerRadius: 4))
                         Text(hint.label)
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(hinted ? Color.white.opacity(0.7) : Color.secondary)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .onHover { over in
+                    withAnimation(DS.Motion.press) {
+                        hoveredHintID = over ? hint.id : (hoveredHintID == hint.id ? nil : hoveredHintID)
+                    }
+                }
                 .help("\(hint.label) (\(hint.keys))")
                 .accessibilityLabel("\(hint.label), \(hint.keys)")
             }
@@ -19864,7 +19883,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (160 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (167 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -19969,6 +19988,7 @@ struct FileTreeRow: View {
     @Binding var expanded: Set<String>
     @ObservedObject var ws: CodeWorkspace
     let onSelect: (URL) -> Void
+    @State private var hovering = false
 
     var body: some View {
         if node.isDir {
@@ -19982,11 +20002,13 @@ struct FileTreeRow: View {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
                     Text(node.name)
-                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.8))
+                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(hovering ? 1.0 : 0.8))
                         .lineLimit(1).truncationMode(.middle)
                 }
+                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .accessibilityLabel("\(node.name) folder, \(isOpen ? "expanded" : "collapsed")")
 
             if isOpen {
@@ -20004,14 +20026,18 @@ struct FileTreeRow: View {
                         .font(.system(size: 10)).foregroundStyle(changed ? DS.Palette.accent : icon.tint).frame(width: 9)
                     Text(node.name)
                         .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(isSel ? .white : Color.white.opacity(0.72))
+                        .foregroundStyle(isSel ? .white : Color.white.opacity(hovering ? 0.92 : 0.72))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
                 }
-                .background(isSel ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(
+                    isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
             }
             .buttonStyle(.plain)
+            .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .contextMenu { fileActionsMenu(url) }
         }
     }
@@ -21240,7 +21266,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (529 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (570 lines) =====
 ```swift
 import SwiftUI
 
@@ -21265,6 +21291,11 @@ struct MarketsView: View {
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
+    // Hover states — one per interactive surface type.
+    @State private var hoveredSignalID: UUID?
+    @State private var hoveredPositionID: UUID?
+    @State private var hoveredAlertSymbol: String?
+    @State private var hoveredHeatID: UUID?
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -21384,7 +21415,8 @@ struct MarketsView: View {
     }
 
     private func signalAlertRow(_ s: StockSageSignal) -> some View {
-        HStack(spacing: 10) {
+        let hovered = hoveredAlertSymbol == s.symbol
+        return HStack(spacing: 10) {
             Text(s.symbol).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 8)
@@ -21394,6 +21426,14 @@ struct MarketsView: View {
                 .background(recColor(s.recommendation), in: Capsule())
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredAlertSymbol = s.symbol }
+                else if hoveredAlertSymbol == s.symbol { hoveredAlertSymbol = nil }
+            }
+        }
     }
 
     private func toggleMonitoring(_ on: Bool) {
@@ -21502,6 +21542,7 @@ struct MarketsView: View {
         let value = (price ?? p.costBasis) * p.shares
         let pl = value - p.totalCost
         let up = pl >= 0
+        let hovered = hoveredPositionID == p.id
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(p.symbol).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -21518,11 +21559,20 @@ struct MarketsView: View {
                 }
             }
             Button { portfolio.remove(p.id) } label: {
-                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "trash").font(.system(size: 12))
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)
             }
             .buttonStyle(.plain).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredPositionID = p.id }
+                else if hoveredPositionID == p.id { hoveredPositionID = nil }
+            }
+        }
     }
 
     private func numString(_ d: Double) -> String {
@@ -21539,6 +21589,7 @@ struct MarketsView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                     ForEach(store.symbols) { sym in
                         let change = sym.latest?.changePercent ?? 0
+                        let heatHovered = hoveredHeatID == sym.id
                         VStack(spacing: 3) {
                             Text(sym.symbol)
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -21552,7 +21603,15 @@ struct MarketsView: View {
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .stroke(Color.white.opacity(heatHovered ? 0.22 : 0.08), lineWidth: 1))
+                        .scaleEffect(heatHovered ? 1.04 : 1.0)
+                        .animation(DS.Motion.press, value: heatHovered)
+                        .onHover { over in
+                            withAnimation(DS.Motion.press) {
+                                if over { hoveredHeatID = sym.id }
+                                else if hoveredHeatID == sym.id { hoveredHeatID = nil }
+                            }
+                        }
                         .help(sym.market)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))")
@@ -21601,6 +21660,7 @@ struct MarketsView: View {
         let signal = StockSageSignalEngine.generateSignal(for: sym)
         let change = sym.latest?.changePercent ?? 0
         let up = change >= 0
+        let hovered = hoveredSignalID == sym.id
         return HStack(spacing: DS.Space.md) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(sym.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -21636,7 +21696,14 @@ struct MarketsView: View {
         .padding(DS.Space.md)
         .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
+        .contentShape(Rectangle())
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredSignalID = sym.id }
+                else if hoveredSignalID == sym.id { hoveredSignalID = nil }
+            }
+        }
         .help(signal?.reason ?? "")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(sym.symbol), \(sym.market), \(String(format: "%.2f", sym.latest?.price ?? 0)), \(String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")")

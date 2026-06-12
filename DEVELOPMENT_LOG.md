@@ -1649,6 +1649,22 @@ display only — audit gate unchanged. **Verified by marker:** `** BUILD SUCCEED
 **Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
 
 ---
+## 2026-06-12 — Marathon hover pass: MarketsView, AgentsView, FileTree, BottomShortcutBar
+
+**What:** Completed the UI hover polish sweep across all remaining surfaces that had interactive rows/cards without hover feedback (commit fb9d3ed).
+
+- **MarketsView**: all four interactive surfaces now have hover — `signalCard` gets accent border tint; `positionRow` gets bg tint + danger-tinted trash icon; `signalAlertRow` gets bg tint; heatmap tiles get `scaleEffect(1.04)` + brightened border.
+- **AgentsView run-log rows**: `hoveredRunID` state added; rows get `accent.opacity(0.06)` bg tint + text brighten on hover.
+- **FileTree**: `FileTreeRow` owns its own `@State private var hovering`; both folder and file rows get `0.04` white bg tint + text brightness lift; selected-file background (`0.08`) still wins over hover.
+- **BottomShortcutBar**: hint pills now brighten key badge (`0.08→0.14`) and label text on hover.
+- **ContentView**: `nonisolated` annotation added to `ArchivedChat.init` (Swift 6 concurrency fix).
+- **ChatTabUITests**: `DispatchQueue.main.sync` wrap on `terminate()` to prevent teardown-launch races.
+
+**Files:** `Views/MarketsView.swift`, `Views/AgentsView.swift`, `Views/FileTree.swift`, `Views/BottomShortcutBar.swift`, `Views/ContentView.swift`, `Salehman AIUITests/ChatTabUITests.swift`
+
+**Result:** `** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **` (full Salehman AITests suite).
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
