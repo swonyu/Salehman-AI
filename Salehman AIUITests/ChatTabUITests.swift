@@ -17,8 +17,11 @@ nonisolated final class ChatTabUITests: XCTestCase {
 
     // Terminate the app after every test so the next test's app.launch()
     // gets a clean slate without racing against a half-alive previous instance.
+    // DispatchQueue.main.sync ensures the @MainActor-isolated terminate() runs
+    // synchronously before tearDown returns — preventing async-dispatch races
+    // where the previous app is still alive when the next test's launch() fires.
     override func tearDownWithError() throws {
-        XCUIApplication().terminate()
+        DispatchQueue.main.sync { XCUIApplication().terminate() }
     }
 
     @MainActor
@@ -27,6 +30,9 @@ nonisolated final class ChatTabUITests: XCTestCase {
         // Prevent draft restoration so the composer starts empty in every test.
         app.launchArguments.append("--uitesting")
         app.launch()
+        // Wait for any window element before sending ⌘2 — guarantees the app is
+        // past its launch ramp and the key event lands on the correct target.
+        _ = app.windows.firstMatch.waitForExistence(timeout: 10)
         // ⌘2 = Chat (the View-menu tab map). The composer is the stable anchor
         // that exists in BOTH the empty state and a populated transcript.
         app.typeKey("2", modifierFlags: .command)

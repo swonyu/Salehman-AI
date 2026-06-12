@@ -7,6 +7,7 @@ import SwiftUI
 /// the content above it.
 struct BottomShortcutBar: View {
     @ObservedObject private var app = AppState.shared
+    @State private var hoveredHintID: UUID?
 
     private struct Hint: Identifiable {
         let id = UUID()
@@ -28,19 +29,27 @@ struct BottomShortcutBar: View {
     var body: some View {
         HStack(spacing: DS.Space.md) {
             ForEach(hints) { hint in
+                let hinted = hoveredHintID == hint.id
                 Button { hint.run() } label: {
                     HStack(spacing: 5) {
                         Text(hint.keys)
                             .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.white.opacity(hinted ? 1.0 : 0.85))
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                            .background(Color.white.opacity(hinted ? 0.14 : 0.08),
+                                        in: RoundedRectangle(cornerRadius: 4))
                         Text(hint.label)
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(hinted ? Color.white.opacity(0.7) : Color.secondary)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .onHover { over in
+                    withAnimation(DS.Motion.press) {
+                        hoveredHintID = over ? hint.id : (hoveredHintID == hint.id ? nil : hoveredHintID)
+                    }
+                }
                 .help("\(hint.label) (\(hint.keys))")
                 .accessibilityLabel("\(hint.label), \(hint.keys)")
             }

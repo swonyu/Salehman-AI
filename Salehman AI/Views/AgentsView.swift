@@ -26,6 +26,7 @@ struct AgentsView: View {
     // discarding the current iteration's work mid-run.
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
+    @State private var hoveredRunID: UUID?
 
     var body: some View {
         ZStack {
@@ -210,6 +211,7 @@ struct AgentsView: View {
             }
             VStack(spacing: 1) {
                 ForEach(runHistory) { entry in
+                    let entryHovered = hoveredRunID == entry.id
                     HStack(spacing: 10) {
                         Text("#\(entry.iteration)")
                             .font(.system(size: 10, weight: .bold).monospacedDigit())
@@ -217,7 +219,7 @@ struct AgentsView: View {
                             .frame(minWidth: 28, alignment: .trailing)
                         Text(entry.preview)
                             .font(.caption2)
-                            .foregroundStyle(DS.Palette.textSecondary)
+                            .foregroundStyle(entryHovered ? .white.opacity(0.9) : DS.Palette.textSecondary)
                             .lineLimit(2)
                         Spacer(minLength: 4)
                         Text(entry.timestamp, style: .time)
@@ -225,6 +227,14 @@ struct AgentsView: View {
                             .foregroundStyle(Color.secondary.opacity(0.5))
                     }
                     .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
+                    .background(entryHovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
+                    .contentShape(Rectangle())
+                    .onHover { over in
+                        withAnimation(DS.Motion.smooth) {
+                            if over { hoveredRunID = entry.id }
+                            else if hoveredRunID == entry.id { hoveredRunID = nil }
+                        }
+                    }
                 }
             }
             .background(DS.Palette.codeSurfaceSide,

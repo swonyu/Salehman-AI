@@ -1648,7 +1648,7 @@ enum ChatStore {
         let messageCount: Int
         let preview: String  // first non-empty line of the first AI reply
 
-        init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
+        nonisolated init(id: URL, title: String, date: Date, messageCount: Int, preview: String = "") {
             self.id = id; self.title = title; self.date = date
             self.messageCount = messageCount; self.preview = preview
         }
