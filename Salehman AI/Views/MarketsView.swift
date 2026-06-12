@@ -468,12 +468,17 @@ struct MarketsView: View {
                 Spacer()
                 Button { Task { await generateBriefing() } } label: {
                     HStack(spacing: 6) {
-                        if loadingBriefing { ProgressView().controlSize(.small) }
+                        if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
                         else { Image(systemName: "sparkles") }
                         Text(loadingBriefing ? "Generating…" : "Generate")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(loadingBriefing)
             }
             Text(briefing.isEmpty ? StockSageBriefingService.deterministicSummary(for: store.symbols) : briefing)

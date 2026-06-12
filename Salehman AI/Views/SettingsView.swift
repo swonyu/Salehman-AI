@@ -256,10 +256,15 @@ struct SettingsView: View {
                             Text("Recommended for your Mac: \(MachineInfo.recommendedMode.title)")
                                 .font(.caption).foregroundStyle(.white.opacity(0.9))
                             Spacer()
-                            Button("Use") { settings.applyRecommendedMode() }
-                                .font(.caption.weight(.semibold))
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
+                            Button { settings.applyRecommendedMode() } label: {
+                                Text("Use")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(DS.Palette.accent, in: Capsule())
+                                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                            }
+                            .buttonStyle(LuxPressStyle())
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
 
@@ -599,12 +604,15 @@ struct SettingsView: View {
         } else {
             switch mlxState {
             case .unavailable:
-                Button("Download Model") {
-                    Task { await MLXSalehmanEngine.shared.downloadAndLoad() }
+                Button { Task { await MLXSalehmanEngine.shared.downloadAndLoad() } } label: {
+                    Text("Download Model")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DS.Palette.accent)
-                .controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .accessibilityLabel("Download standalone Salehman model")
 
             case .downloading(let p):
@@ -1330,9 +1338,15 @@ struct SettingsView: View {
                     .font(.caption.weight(.semibold)).buttonStyle(.bordered)
                     .controlSize(.small).tint(.red)
                 } else {
-                    Button("Sign in with GitHub") { showCopilotSignIn = true }
-                        .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button { showCopilotSignIn = true } label: {
+                        Text("Sign in with GitHub")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(DS.Palette.accent, in: Capsule())
+                            .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                    }
+                    .buttonStyle(LuxPressStyle())
                 }
             }
             if copilotAuthed {

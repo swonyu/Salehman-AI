@@ -1069,7 +1069,7 @@ struct CodeView: View {
                     // read edge-to-edge on a wide window — cap and center.
                     .frame(maxWidth: 780)
                     .frame(maxWidth: .infinity)
-                    .animation(.easeOut(duration: 0.15), value: messages.count)
+                    .animation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.15), value: messages.count)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
@@ -2435,7 +2435,7 @@ struct PulsingDot: View {
         Circle().fill(DS.Palette.accent)
             .frame(width: 7, height: 7)
             .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
+            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
             .accessibilityHidden(true)
     }
 }

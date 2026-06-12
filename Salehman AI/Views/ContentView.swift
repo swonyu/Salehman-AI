@@ -248,7 +248,7 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
                     unrestrictedPulse = true
                 }
             } else {
@@ -2531,7 +2531,7 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
             } else {
                 pulse = false
             }

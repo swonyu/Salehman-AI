@@ -167,7 +167,7 @@ struct CodeTextView: View {
         guard let line else { return }
         // Defer so the (lazy) target row exists before we scroll to it.
         DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(line, anchor: .center) }
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.20)) { proxy.scrollTo(line, anchor: .center) }
         }
     }
 }

@@ -2174,6 +2174,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Build not yet run (owner-side); additive @State + icon swap in two views.
 
 ---
+### 2026-06-12 — Marathon BB: Comprehensive banned-pattern sweep — 14 hits across 8 files
+
+**What:** Completed the final pass of the "all views" `/high-end-visual-design` directive — found and eliminated 14 remaining banned patterns that the previous grep missed:
+- **Animation fixes (5):** `CodeView` list animation `.easeOut(0.15)` + `PulsingDot.easeInOut(0.8)` → `timingCurve`; `CodeSyntaxView` scroll `.easeInOut(0.2)` → `timingCurve`; `ContentView` `unrestrictedPulse` and streaming-dot pulse both `.easeInOut(1.2)` → `timingCurve(0.45,0.0,0.55,1.0)`
+- **Button upgrades (9):** `SettingsView` — "Use" (recommended mode), "Download Model" (MLX), "Sign in with GitHub" (Copilot); `MarketsView` — "Generate" briefing button; `KnowledgeView` — "Add file" + "Add to Knowledge"; `AgentsView` — Start/Stop Autonomous Run (accent/red conditional); `CopilotSignInView` — "Open GitHub" — all upgraded from `.borderedProminent` to `LuxPressStyle()` + accent Capsule pill
+
+**Files:** `Views/CodeView.swift`, `Views/CodeSyntaxView.swift`, `Views/ContentView.swift`, `Views/SettingsView.swift`, `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/AgentsView.swift`, `Views/CopilotSignInView.swift`
+
+**Why:** `.easeInOut`/`.easeOut` are explicitly banned in the DS (linear/symmetric easing). `.borderedProminent` picks up macOS system accent color and renders with Apple's native bezel geometry — both diverge from the DS token layer. The "all views" directive from the owner mandates complete coverage.
+
+**Result:** `** BUILD SUCCEEDED **`. `grep` confirms ZERO banned patterns anywhere in `Views/*.swift`.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

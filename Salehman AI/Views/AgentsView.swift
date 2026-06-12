@@ -105,9 +105,13 @@ struct AgentsView: View {
                           ? "Stop (iteration \(iterationCount))"
                           : "Start Autonomous Run",
                           systemImage: isRunningAutonomous ? "stop.fill" : "play.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(isRunningAutonomous ? Color.red.opacity(0.85) : DS.Palette.accent, in: Capsule())
+                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.28), radius: 6, y: 2)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(isRunningAutonomous ? .red : DS.Palette.accent)
+                .buttonStyle(LuxPressStyle())
                 .confirmationDialog("Stop the autonomous run?",
                                     isPresented: $showStopConfirm,
                                     titleVisibility: .visible) {

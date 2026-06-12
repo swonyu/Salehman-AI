@@ -93,11 +93,16 @@ struct KnowledgeView: View {
                     .accessibilityLabel("Paste text").disabled(ingesting)
                 Button(action: addFile) {
                     HStack(spacing: 6) {
-                        if ingesting { ProgressView().controlSize(.small) } else { Image(systemName: "plus") }
+                        if ingesting { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "plus") }
                         Text(ingesting ? "Reading…" : "Add file")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(DS.Palette.accent, in: Capsule())
+                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(.borderedProminent).tint(DS.Palette.accent).controlSize(.small)
+                .buttonStyle(LuxPressStyle())
                 .disabled(ingesting)
             }
         }
@@ -361,9 +366,16 @@ struct KnowledgeView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { showPaste = false }.buttonStyle(.plain).foregroundStyle(.secondary)
-                Button("Add to Knowledge", action: addPastedText)
-                    .buttonStyle(.borderedProminent).tint(DS.Palette.accent)
-                    .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(action: addPastedText) {
+                    Text("Add to Knowledge")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(DS.Palette.accent, in: Capsule())
+                        .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
+                }
+                .buttonStyle(LuxPressStyle())
+                .disabled(pasteBody.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(DS.Space.xl)
