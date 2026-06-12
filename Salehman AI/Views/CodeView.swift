@@ -825,6 +825,8 @@ struct CodeView: View {
                         // Quiet plain count (chrome diet — no badge box)
                         Text("\(ws.files.count) files")
                             .font(.system(size: 9.5)).foregroundStyle(.secondary.opacity(0.8))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: ws.files.count)
                     }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 6)
@@ -1166,8 +1168,11 @@ struct CodeView: View {
                 Text("\(min(convoMatchIndex, convoMatches.count - 1) + 1)/\(convoMatches.count)")
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: convoMatchIndex)
             } else if convoQuery.count >= 2 {
                 Text("0 results").font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)

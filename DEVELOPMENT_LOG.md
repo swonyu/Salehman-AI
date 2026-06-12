@@ -2670,6 +2670,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
+### 2026-06-13 — Marathon DU: CodeView search counter + file count numericText transitions
+
+**What changed:**
+- `Views/CodeView.swift` — conversation search bar: added `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: convoMatchIndex)` on the `X/Y` match counter so it animates as the user navigates matches; added `.transition(.opacity)` on the "0 results" Text so it crossfades when no matches are found vs some matches.
+- `Views/CodeView.swift` — file tree header: added `.contentTransition(.numericText()).animation(DS.Motion.smooth, value: ws.files.count)` on the file count badge so it animates when files are loaded or the project changes.
+
+**Files:** `Views/CodeView.swift`
+
+**Why:** The conversation search counter jumped instantly when navigating between search results (⌘F). The file tree's "N files" badge also appeared/changed silently. The file-search counter and mission progress counters already had these transitions; these two were the missing symmetry.
+
+**Result:** All numeric counters in CodeView now use numericText transitions consistently.
+
+---
 ### 2026-06-13 — Marathon DT: MarketsView portfolio position row live-price transitions
 
 **What changed:**
