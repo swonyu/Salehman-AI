@@ -159,6 +159,8 @@ struct AgentsView: View {
                              ? "Stop  ·  iteration \(iterationCount)"
                              : "Start Autonomous Run")
                             .font(.system(size: 13, weight: .semibold))
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 9)
@@ -187,6 +189,7 @@ struct AgentsView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .padding(.top, 4)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
             }
 

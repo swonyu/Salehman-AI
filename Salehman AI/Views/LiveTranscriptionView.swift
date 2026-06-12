@@ -138,8 +138,10 @@ struct LiveTranscriptionView: View {
                     }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
+                .transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))
             }
         }
+        .animation(DS.Motion.smooth, value: live.isRunning)
     }
 
     private var permissionBanner: some View {

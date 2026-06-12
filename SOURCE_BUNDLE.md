@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-12 23:26 +03 · Swift files: 150 · Swift LOC: 33682_
+_Generated: 2026-06-12 23:28 +03 · Swift files: 150 · Swift LOC: 33687_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (527 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (530 lines) =====
 ```swift
 import SwiftUI
 
@@ -13595,6 +13595,8 @@ struct AgentsView: View {
                              ? "Stop  ·  iteration \(iterationCount)"
                              : "Start Autonomous Run")
                             .font(.system(size: 13, weight: .semibold))
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 9)
@@ -13623,6 +13625,7 @@ struct AgentsView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .padding(.top, 4)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
             }
 
@@ -21313,7 +21316,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (322 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (324 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21455,8 +21458,10 @@ struct LiveTranscriptionView: View {
                     }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
+                .transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))
             }
         }
+        .animation(DS.Motion.smooth, value: live.isRunning)
     }
 
     private var permissionBanner: some View {
@@ -36250,7 +36255,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3572 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3577 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39734,10 +39739,15 @@ permission classifier blocked the first attempt.
 **Files:** `Views/ContentView.swift`.
 **Commit:** `2a52aee`
 
+## 2026-06-12 — marathon DE: LiveTranscriptionView LIVE badge + AgentsView label transitions (Chat A)
+**What:** Three remaining unanimated moments. (1) `LiveTranscriptionView` LIVE recording badge: `.transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))` on the HStack + `.animation(DS.Motion.smooth, value: live.isRunning)` on the controls bar — badge scales in from the right when recording starts and fades out on stop. (2) `AgentsView` autonomous-run button label text (`"Stop · iteration N"` / `"Start Autonomous Run"`): `.contentTransition(.opacity)` + `.animation(.smooth, value: isRunningAutonomous)` — label crossfades instead of snapping when run starts/stops. (3) `AgentsView` latest-result preview text: `.transition(.opacity.combined(with: .offset(y: -4)))` — preview slides down from above when the first agent result arrives.
+**Files:** `Views/LiveTranscriptionView.swift`, `Views/AgentsView.swift`.
+**Commit:** TBD
+
 ## 2026-06-12 — marathon DD: KnowledgeView document-detail panel animations (Chat A)
 **What:** Four unanimated moments in the KnowledgeView document-detail sheet now animate. (1) `if loading { spinner } else { Text(summary) }`: `.transition(.opacity)` on both branches + `.animation(DS.Motion.smooth, value: loading)` on the VStack. (2) `if !answer.isEmpty { ... }`: parent VStack gains `.animation(DS.Motion.smooth, value: answer.isEmpty)` so the answer section fades in when the AI reply arrives. (3) "Save to Notes" button label: `Label(answerSaved ? "Saved!" : "Save to Notes", ...)` gets `.contentTransition(.symbolEffect(.replace))` + `.animation(.smooth, value: answerSaved)` on the Button. (4) Ask-button send-icon spinner: `Group { if asking { ProgressView } else { Image } }.transition(.opacity)` + `.animation(.smooth, value: asking)` — the arrow crossfades to a spinner while the on-device model answers.
 **Files:** `Views/KnowledgeView.swift`.
-**Commit:** TBD
+**Commit:** `a9a5549`
 
 ## 2026-06-12 — marathon DC: MemoryView + CommandPalette empty-state transitions (Chat A)
 **What:** Two "no results" moments now animate instead of snapping. (1) `MemoryView` search no-match: wrapped `if shown.isEmpty { Text } else { ScrollView }` in a `Group { }` — each branch gets `.transition(.opacity)` and the Group carries `.animation(DS.Motion.smooth, value: shown.isEmpty)`. Also added `.transition(.opacity)` to `emptyState` + `.animation(.smooth, value: facts.isEmpty)` on the outer VStack for when all memories are cleared. (2) `CommandPalette` "No matching commands" text: `.transition(.opacity)` so it crossfades in as the filter goes empty — the containing LazyVStack already had the needed `.animation(.smooth, value: filtered.count)`.
