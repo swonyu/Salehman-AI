@@ -3475,3 +3475,8 @@ permission classifier blocked the first attempt.
 **What:** `ActivityStepRow` (CodeView.swift): left accent bar now slides in from leading edge with `.transition(.move(edge: .leading).combined(with: .opacity))` when status → running; container gets `.animation(DS.Motion.smooth, value: step.status)` so the background highlight ripples in/out on each step state change. `MarketsView.emptyState`: upgraded from plain Text to PhaseAnimator([0.10, 0.18, 0.10]) ambient glow + chart icon, matching the empty-state treatment in ChatHistoryView, KnowledgeView, and TodayView.
 **Files:** `Views/CodeView.swift`, `Views/MarketsView.swift`.
 **Commit:** `c63d421`
+
+## 2026-06-12 — marathon CL: AgentRow + AgentRunView micro-animations (Chat A)
+**What:** `AgentRow` (ContentView.swift): `.animation(DS.Motion.smooth, value: step.status)` on the HStack — animates the `0.55 → 1.0` opacity transition when a step activates (pending→running). `AgentRunView` counter: `"\(doneCount)/\(steps.count)"` Text gets `.contentTransition(.numericText()) + .animation(DS.Motion.smooth, value: doneCount)` — digits roll as each step completes.
+**Files:** `Views/ContentView.swift`.
+**Commit:** `2a52aee`
