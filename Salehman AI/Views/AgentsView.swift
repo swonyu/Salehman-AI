@@ -54,6 +54,7 @@ struct AgentsView: View {
                             .offset(y: appeared ? 0 : 12)
                             .animation(DS.Motion.entrance.delay(0.14), value: appeared)
                     }
+                    .animation(DS.Motion.smooth, value: runHistory.isEmpty)
                     .padding(DS.Space.xl)
                 }
             }
@@ -309,7 +310,7 @@ struct AgentsView: View {
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                     .foregroundStyle(DS.Palette.accent)
                 Spacer()
-                Button("Clear") { runHistory.removeAll() }
+                Button("Clear") { withAnimation(DS.Motion.smooth) { runHistory.removeAll() } }
                     .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
             }
             VStack(spacing: 1) {
@@ -393,11 +394,13 @@ struct AgentsView: View {
                 if Task.isCancelled { break }
 
                 await MainActor.run {
-                    lastResultPreview = result
-                    runHistory.insert(
-                        RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
-                        at: 0
-                    )
+                    withAnimation(DS.Motion.smooth) {
+                        lastResultPreview = result
+                        runHistory.insert(
+                            RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
+                            at: 0
+                        )
+                    }
                 }
 
                 if result.contains("AUTONOMOUS_DONE") { break }

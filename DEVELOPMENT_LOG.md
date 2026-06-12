@@ -2657,6 +2657,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Result:** Hover and keyboard-navigation highlights in all three command dropdowns now crossfade with the magnetic spring.
 
 ---
+### 2026-06-13 — Marathon DO: CopilotSignInView transitions + AgentsView run-history animation
+
+**What changed:**
+- `Views/CopilotSignInView.swift`: added `.transition(.opacity.combined(with: .offset(y: -4)))` on the device-code VStack so it fades in when the GitHub device code arrives; added `.transition(.opacity)` on the `ProgressView`; added `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` on the status Text; added `.animation(DS.Motion.smooth, value: working)` on the status HStack; added `.animation(DS.Motion.smooth, value: device != nil)` on the root VStack.
+- `Views/AgentsView.swift`: added `.animation(DS.Motion.smooth, value: runHistory.isEmpty)` on the scroll VStack so the run-history section fades in on first autonomous run entry; wrapped `runHistory.insert()` in `withAnimation(DS.Motion.smooth)` inside `MainActor.run` (was bare — state mutations inside async dispatches have no animation context); wrapped `runHistory.removeAll()` in `withAnimation(DS.Motion.smooth)` on the "Clear" button.
+
+**Files:** `Views/CopilotSignInView.swift`, `Views/AgentsView.swift`
+
+**Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
+
+**Result:** All state transitions in both views are now smooth and tokenized.
+
+---
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

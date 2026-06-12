@@ -72,17 +72,25 @@ struct CopilotSignInView: View {
                     .controlSize(.small)
                 }
                 .padding(.vertical, 4)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
 
             HStack(spacing: 8) {
-                if working { ProgressView().controlSize(.small) }
+                if working {
+                    ProgressView().controlSize(.small)
+                        .transition(.opacity)
+                }
                 Text(status).font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: status)
             }
+            .animation(DS.Motion.smooth, value: working)
 
             Button("Cancel") { pollTask?.cancel(); dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
+        .animation(DS.Motion.smooth, value: device != nil)
         .padding(24)
         .frame(width: 380)
         .opacity(appeared ? 1 : 0)

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 00:00 +03 · Swift files: 150 · Swift LOC: 33775_
+_Generated: 2026-06-13 00:06 +03 · Swift files: 150 · Swift LOC: 33786_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13432,7 +13432,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (534 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (537 lines) =====
 ```swift
 import SwiftUI
 
@@ -13490,6 +13490,7 @@ struct AgentsView: View {
                             .offset(y: appeared ? 0 : 12)
                             .animation(DS.Motion.entrance.delay(0.14), value: appeared)
                     }
+                    .animation(DS.Motion.smooth, value: runHistory.isEmpty)
                     .padding(DS.Space.xl)
                 }
             }
@@ -13745,7 +13746,7 @@ struct AgentsView: View {
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                     .foregroundStyle(DS.Palette.accent)
                 Spacer()
-                Button("Clear") { runHistory.removeAll() }
+                Button("Clear") { withAnimation(DS.Motion.smooth) { runHistory.removeAll() } }
                     .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
             }
             VStack(spacing: 1) {
@@ -13829,11 +13830,13 @@ struct AgentsView: View {
                 if Task.isCancelled { break }
 
                 await MainActor.run {
-                    lastResultPreview = result
-                    runHistory.insert(
-                        RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
-                        at: 0
-                    )
+                    withAnimation(DS.Motion.smooth) {
+                        lastResultPreview = result
+                        runHistory.insert(
+                            RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
+                            at: 0
+                        )
+                    }
                 }
 
                 if result.contains("AUTONOMOUS_DONE") { break }
@@ -20397,7 +20400,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (119 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (127 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20473,17 +20476,25 @@ struct CopilotSignInView: View {
                     .controlSize(.small)
                 }
                 .padding(.vertical, 4)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
 
             HStack(spacing: 8) {
-                if working { ProgressView().controlSize(.small) }
+                if working {
+                    ProgressView().controlSize(.small)
+                        .transition(.opacity)
+                }
                 Text(status).font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: status)
             }
+            .animation(DS.Motion.smooth, value: working)
 
             Button("Cancel") { pollTask?.cancel(); dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
+        .animation(DS.Motion.smooth, value: device != nil)
         .padding(24)
         .frame(width: 380)
         .opacity(appeared ? 1 : 0)
@@ -36343,7 +36354,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (3700 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (3713 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39001,6 +39012,19 @@ Intentional destructive `.tint(.red)` on Clear buttons left intact (HIG standard
 **Why:** All three slash/palette dropdowns had raw state mutations in their `onHover` closures (no `withAnimation`) and no per-row `.animation` keyed to the selection state. Hover transitions snapped instantly; keyboard navigation through the ⌘K palette or `/` slash menus flicked the highlight without interpolation.
 
 **Result:** Hover and keyboard-navigation highlights in all three command dropdowns now crossfade with the magnetic spring.
+
+---
+### 2026-06-13 — Marathon DO: CopilotSignInView transitions + AgentsView run-history animation
+
+**What changed:**
+- `Views/CopilotSignInView.swift`: added `.transition(.opacity.combined(with: .offset(y: -4)))` on the device-code VStack so it fades in when the GitHub device code arrives; added `.transition(.opacity)` on the `ProgressView`; added `.contentTransition(.opacity)` + `.animation(DS.Motion.smooth, value: status)` on the status Text; added `.animation(DS.Motion.smooth, value: working)` on the status HStack; added `.animation(DS.Motion.smooth, value: device != nil)` on the root VStack.
+- `Views/AgentsView.swift`: added `.animation(DS.Motion.smooth, value: runHistory.isEmpty)` on the scroll VStack so the run-history section fades in on first autonomous run entry; wrapped `runHistory.insert()` in `withAnimation(DS.Motion.smooth)` inside `MainActor.run` (was bare — state mutations inside async dispatches have no animation context); wrapped `runHistory.removeAll()` in `withAnimation(DS.Motion.smooth)` on the "Clear" button.
+
+**Files:** `Views/CopilotSignInView.swift`, `Views/AgentsView.swift`
+
+**Why:** CopilotSignInView's device code section appeared instantly when the GitHub request completed; the ProgressView and status text swapped without transitions. AgentsView's run-history section snapped into view on the first autonomous run because the mutation was inside `MainActor.run { }` without `withAnimation` — Swift concurrency dispatches don't inherit animation context.
+
+**Result:** All state transitions in both views are now smooth and tokenized.
 
 ---
 ## Standing notes / known issues
