@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 06:36 +03 · Swift files: 158 · Swift LOC: 36016_
+_Generated: 2026-06-13 06:39 +03 · Swift files: 159 · Swift LOC: 36246_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -30838,6 +30838,240 @@ struct EnsembleRoutingTests {
 }
 ```
 
+===== FILE: Salehman AITests/FileTreeTests.swift (230 lines) =====
+```swift
+import Testing
+import Foundation
+import SwiftUI
+@testable import Salehman_AI
+
+// MARK: - FileKind.icon(for:) — extension → symbol mapping
+//
+// A silent regression here (e.g., dropping a `case "swift":` or transposing
+// extensions) makes the wrong SF Symbol appear in the Code-tab file tree
+// without any build error. These tests pin the symbol string for every
+// recognised extension family and verify the fallback.
+
+struct FileKindIconTests {
+
+    private func symbol(for ext: String) -> String {
+        FileKind.icon(for: URL(fileURLWithPath: "file.\(ext)")).symbol
+    }
+
+    @Test func swiftFiles() {
+        #expect(symbol(for: "swift") == "swift")
+    }
+
+    @Test func pythonFiles() {
+        #expect(symbol(for: "py") == "chevron.left.forwardslash.chevron.right")
+    }
+
+    @Test func javascriptFamily() {
+        for ext in ["js", "jsx", "mjs", "cjs"] {
+            #expect(symbol(for: ext) == "curlybraces",
+                    "\(ext) must use the curlybraces symbol")
+        }
+    }
+
+    @Test func typescriptFamily() {
+        #expect(symbol(for: "ts") == "curlybraces")
+        #expect(symbol(for: "tsx") == "curlybraces")
+    }
+
+    @Test func jsonFiles() {
+        #expect(symbol(for: "json") == "curlybraces")
+    }
+
+    @Test func configFiles() {
+        for ext in ["yml", "yaml", "toml"] {
+            #expect(symbol(for: ext) == "curlybraces",
+                    "\(ext) must use the curlybraces symbol")
+        }
+    }
+
+    @Test func documentFiles() {
+        for ext in ["md", "markdown", "txt", "rst"] {
+            #expect(symbol(for: ext) == "doc.text",
+                    "\(ext) must use the doc.text symbol")
+        }
+    }
+
+    @Test func webAndStyleFiles() {
+        for ext in ["html", "xml", "css", "scss"] {
+            #expect(symbol(for: ext) == "chevron.left.forwardslash.chevron.right",
+                    "\(ext) must use the angle-bracket symbol")
+        }
+    }
+
+    @Test func shellFiles() {
+        for ext in ["sh", "bash", "zsh"] {
+            #expect(symbol(for: ext) == "terminal",
+                    "\(ext) must use the terminal symbol")
+        }
+    }
+
+    @Test func cFamilyFiles() {
+        for ext in ["c", "cpp", "cc", "h", "hpp", "m", "mm"] {
+            #expect(symbol(for: ext) == "chevron.left.forwardslash.chevron.right",
+                    "\(ext) must use the angle-bracket symbol")
+        }
+    }
+
+    @Test func otherCompiledLanguages() {
+        for ext in ["rs", "go", "rb", "java", "kt"] {
+            #expect(symbol(for: ext) == "chevron.left.forwardslash.chevron.right",
+                    "\(ext) must use the angle-bracket symbol")
+        }
+    }
+
+    @Test func imageAndPDFFiles() {
+        for ext in ["png", "jpg", "jpeg", "gif", "heic", "svg", "webp", "pdf"] {
+            #expect(symbol(for: ext) == "photo",
+                    "\(ext) must use the photo symbol")
+        }
+    }
+
+    @Test func unknownExtensionFallsBackToDoc() {
+        #expect(symbol(for: "xyz") == "doc",
+                "unrecognised extension must fall back to the generic doc symbol")
+        #expect(symbol(for: "weirdformat") == "doc")
+        // Extensionless files are also unknown.
+        let noExt = FileKind.icon(for: URL(fileURLWithPath: "/no/extension")).symbol
+        #expect(noExt == "doc", "file with no extension must use the doc fallback")
+    }
+
+    @Test func extensionMatchIsCaseInsensitive() {
+        // The switch branches on `.lowercased()`, so uppercase extensions must
+        // resolve to the same symbol as the lowercase form.
+        #expect(symbol(for: "SWIFT") == symbol(for: "swift"))
+        #expect(symbol(for: "MD") == symbol(for: "md"))
+        #expect(symbol(for: "JS") == symbol(for: "js"))
+    }
+}
+
+// MARK: - FileTreeBuilder.build(files:root:) — hierarchy construction
+//
+// The Code-tab file sidebar depends on this to turn a flat `[URL]` into a
+// sorted tree. Key invariants:
+//   1. Directories come before files at every level.
+//   2. Names are sorted case-insensitively within each tier.
+//   3. Files outside `root` fall back to a flat root-level FileNode.
+//   4. Empty input yields an empty tree.
+
+struct FileTreeBuilderTests {
+
+    private func root() -> URL {
+        URL(fileURLWithPath: "/project")
+    }
+
+    private func file(_ rel: String) -> URL {
+        root().appendingPathComponent(rel)
+    }
+
+    @Test func emptyInputProducesEmptyTree() {
+        let nodes = FileTreeBuilder.build(files: [], root: root())
+        #expect(nodes.isEmpty, "empty file list must produce an empty tree")
+    }
+
+    @Test func singleFileAtRoot() {
+        let nodes = FileTreeBuilder.build(files: [file("main.swift")], root: root())
+        #expect(nodes.count == 1)
+        guard let n = nodes.first else { Issue.record("Expected one node"); return }
+        #expect(n.name == "main.swift")
+        #expect(n.url == file("main.swift"))
+        #expect(n.children.isEmpty, "a plain file must have no children")
+        #expect(!n.isDir, "a plain file must not be a directory")
+    }
+
+    @Test func nestedFileCreatesIntermediateDirectory() {
+        let nodes = FileTreeBuilder.build(files: [file("Sources/App.swift")], root: root())
+        // Top level should be a "Sources" directory node, not the file itself.
+        #expect(nodes.count == 1)
+        guard let dir = nodes.first else { Issue.record("Expected Sources dir"); return }
+        #expect(dir.name == "Sources")
+        #expect(dir.isDir, "an intermediate path component must produce a directory node")
+        #expect(dir.url == nil)
+        // The child should be the file.
+        #expect(dir.children.count == 1)
+        #expect(dir.children.first?.name == "App.swift")
+        #expect(dir.children.first?.isDir == false)
+    }
+
+    @Test func directoriesBeforeFilesAtSameLevel() {
+        let nodes = FileTreeBuilder.build(files: [
+            file("main.swift"),         // file at root
+            file("Sources/App.swift"),  // directory at root
+        ], root: root())
+        // "Sources" (dir) must come before "main.swift" (file).
+        #expect(nodes.count == 2)
+        #expect(nodes[0].name == "Sources",
+                "directory 'Sources' must precede file 'main.swift'")
+        #expect(nodes[1].name == "main.swift")
+    }
+
+    @Test func filesSortedCaseInsensitiveWithinDirectory() {
+        let nodes = FileTreeBuilder.build(files: [
+            file("Zebra.swift"),
+            file("apple.swift"),
+            file("Mango.swift"),
+        ], root: root())
+        // Case-insensitive alphabetical: apple, Mango, Zebra.
+        let names = nodes.map(\.name)
+        #expect(names == ["apple.swift", "Mango.swift", "Zebra.swift"],
+                "files must be sorted case-insensitively: got \(names)")
+    }
+
+    @Test func directoriesSortedCaseInsensitively() {
+        let nodes = FileTreeBuilder.build(files: [
+            file("zeta/a.swift"),
+            file("Alpha/b.swift"),
+            file("mango/c.swift"),
+        ], root: root())
+        let names = nodes.filter(\.isDir).map(\.name)
+        #expect(names == ["Alpha", "mango", "zeta"],
+                "directories must sort case-insensitively: got \(names)")
+    }
+
+    @Test func fileOutsideRootFallsBackToLastPathComponent() {
+        // A URL that doesn't share the root prefix is handled gracefully
+        // by using its lastPathComponent as the relative path.
+        let outsideFile = URL(fileURLWithPath: "/other/repo/file.swift")
+        let nodes = FileTreeBuilder.build(files: [outsideFile], root: root())
+        // It should appear as a flat root-level node named "file.swift".
+        #expect(nodes.count == 1)
+        #expect(nodes.first?.name == "file.swift",
+                "file outside root must fall back to lastPathComponent")
+    }
+
+    @Test func deeplyNestedHierarchy() {
+        let nodes = FileTreeBuilder.build(files: [
+            file("a/b/c/deep.swift"),
+            file("a/b/shallow.swift"),
+        ], root: root())
+        // Root should have one directory "a".
+        #expect(nodes.count == 1)
+        guard let a = nodes.first, a.name == "a" else {
+            Issue.record("Expected top-level 'a' dir"); return
+        }
+        // "a" should have one child "b".
+        #expect(a.children.count == 1)
+        guard let b = a.children.first, b.name == "b" else {
+            Issue.record("Expected 'b' dir inside 'a'"); return
+        }
+        // "b" should have "c" (dir) then "shallow.swift" (file) — dirs first.
+        #expect(b.children.count == 2)
+        #expect(b.children[0].name == "c", "dir 'c' must come before file")
+        #expect(b.children[1].name == "shallow.swift")
+        // "c" should contain "deep.swift".
+        guard let c = b.children.first, c.isDir else {
+            Issue.record("Expected 'c' dir"); return
+        }
+        #expect(c.children.count == 1)
+        #expect(c.children.first?.name == "deep.swift")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/FourteenBReadinessTests.swift (116 lines) =====
 ```swift
 import Testing
@@ -38616,7 +38850,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4894 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4899 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43496,6 +43730,11 @@ permission classifier blocked the first attempt.
 **What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.
 **Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
 **Commit:** `153ff1d`
+
+## 2026-06-13 — marathon EOT: test coverage — FileKind.icon + FileTreeBuilder.build (Chat A)
+**What:** `FileKind.icon(for:)` and `FileTreeBuilder.build(files:root:)` had zero coverage. Added `FileTreeTests.swift` (new file, 22 tests across two structs). `FileKindIconTests` (14 tests): pins the SF Symbol string for every extension family (swift, py, js/jsx/mjs/cjs, ts/tsx, json, yml/yaml/toml, md/markdown/txt/rst, html/xml/css/scss, sh/bash/zsh, C family, Rust/Go/Ruby/Java/Kotlin, image/PDF), verifies the "doc" fallback for unknown extensions, and confirms the `.lowercased()` guard makes matches case-insensitive. `FileTreeBuilderTests` (8 tests): empty→[], single file at root with correct URL and no-dir flag, nested file creates intermediate dir node with nil URL, directories-before-files ordering, case-insensitive sorting for both files and directories, out-of-root file fallback to lastPathComponent, and a deeply-nested 3-level hierarchy end-to-end.
+**Files:** `Salehman AITests/FileTreeTests.swift` (new, 22 tests).
+**Result:** 22 new tests; SOURCE_BUNDLE.md regenerated.
 
 ## 2026-06-13 — marathon EOS: test coverage — GrokWatchTool.parse log-parser (Chat A)
 **What:** Unlocked `GrokWatchTool.parse` for testing by removing its `private` modifier (access unchanged at the Swift level — it stays module-internal). Added `GrokWatchToolTests.swift` (new file, 13 tests across 5 assertion categories) to pin all five parsing behaviors: (1) task extraction from the `task: '...'` header with escaped-quote unescaping and 180-char truncation, (2) session-ID from filename, turn counting, and elapsed-time extraction from `[HH:MM:SS|XmYYs]` timestamp prefix, (3) CMD/output pair collection with bridge-line filtering (`[`, `→`, `✓`, "sending output back" filtered out) and 120-char output truncation, (4) DONE detection from `[[DONE]]` and `TASK_COMPLETED_SUCCESSFULLY` tokens, and (5) 6-entry ring buffer eviction (cmd_1/cmd_2 dropped when 8 turns accumulate).

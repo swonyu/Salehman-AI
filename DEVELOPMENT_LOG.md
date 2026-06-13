@@ -4878,6 +4878,11 @@ permission classifier blocked the first attempt.
 **Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
 **Commit:** `153ff1d`
 
+## 2026-06-13 — marathon EOT: test coverage — FileKind.icon + FileTreeBuilder.build (Chat A)
+**What:** `FileKind.icon(for:)` and `FileTreeBuilder.build(files:root:)` had zero coverage. Added `FileTreeTests.swift` (new file, 22 tests across two structs). `FileKindIconTests` (14 tests): pins the SF Symbol string for every extension family (swift, py, js/jsx/mjs/cjs, ts/tsx, json, yml/yaml/toml, md/markdown/txt/rst, html/xml/css/scss, sh/bash/zsh, C family, Rust/Go/Ruby/Java/Kotlin, image/PDF), verifies the "doc" fallback for unknown extensions, and confirms the `.lowercased()` guard makes matches case-insensitive. `FileTreeBuilderTests` (8 tests): empty→[], single file at root with correct URL and no-dir flag, nested file creates intermediate dir node with nil URL, directories-before-files ordering, case-insensitive sorting for both files and directories, out-of-root file fallback to lastPathComponent, and a deeply-nested 3-level hierarchy end-to-end.
+**Files:** `Salehman AITests/FileTreeTests.swift` (new, 22 tests).
+**Result:** 22 new tests; SOURCE_BUNDLE.md regenerated.
+
 ## 2026-06-13 — marathon EOS: test coverage — GrokWatchTool.parse log-parser (Chat A)
 **What:** Unlocked `GrokWatchTool.parse` for testing by removing its `private` modifier (access unchanged at the Swift level — it stays module-internal). Added `GrokWatchToolTests.swift` (new file, 13 tests across 5 assertion categories) to pin all five parsing behaviors: (1) task extraction from the `task: '...'` header with escaped-quote unescaping and 180-char truncation, (2) session-ID from filename, turn counting, and elapsed-time extraction from `[HH:MM:SS|XmYYs]` timestamp prefix, (3) CMD/output pair collection with bridge-line filtering (`[`, `→`, `✓`, "sending output back" filtered out) and 120-char output truncation, (4) DONE detection from `[[DONE]]` and `TASK_COMPLETED_SUCCESSFULLY` tokens, and (5) 6-entry ring buffer eviction (cmd_1/cmd_2 dropped when 8 turns accumulate).
 **Files:** `Salehman AI/Tools/GrokWatchTool.swift` (private→internal on parse), `Salehman AITests/GrokWatchToolTests.swift` (new, 13 tests).
