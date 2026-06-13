@@ -3633,6 +3633,24 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOK: MissionMemory.buildContext — context assembly + exclusion invariants
+
+**What:** Created new `Salehman AITests/MissionMemoryTests.swift` (+80 lines, 6 tests):
+- `contextAlwaysContainsMissionCriteriaAndRisks` — mission plan fields always appear
+- `toolResultsSectionAbsentWhenEmpty` — no "=== Tool Results ===" header when list empty
+- `toolResultsSectionPresentWhenNonEmpty` — header + tool name + summary appear
+- `ownOutputIsExcludedFromContext` — agent never receives its own prior output (circular-reasoning guard)
+- `agentOutputsTruncatedAtMaxPerOutput` — 2000-char output cut to 800 (default); full string absent
+- `outcomeDoesNotAffectBuildContext` — outcome metadata is Orchestrator-only, never in agent context
+
+**Why:** `MissionMemory` had ZERO test coverage. The exclusion filter `agentOutputs.filter { $0.name != agentName }` is a correctness invariant — without it, an agent reviewing its own half-baked output would corrupt subsequent rounds. The truncation cap prevents any one verbose agent from flooding the entire team's context window.
+
+**Files:** `Salehman AITests/MissionMemoryTests.swift` (new)
+
+**Result:** APIs verified via grep — `buildContext` (MissionMemory.swift:36), `recordAgentOutput` (:23), `recordToolResult` (:27), `recordOutcome` (:32), `Outcome.init` (:7), `MissionPlan.init` (MissionPlan.swift:9).
+
+---
+
 ## 2026-06-13 — EOJ: Effort.refineRounds + approxRefineCalls (pinned-Salehman-brain path)
 
 **What:** Added 3 tests to `Salehman AITests/EffortTests.swift` (+30 lines):
