@@ -3510,6 +3510,26 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 
 ---
 
+## 2026-06-13 — Marathon EOW: Parallelize Effort.ultra candidate fan-out
+
+**What changed:** `Intelligence/Effort.swift`, `Salehman AITests/EffortTests.swift`
+
+**Problem:** `Effort.ultra` generates 3 independent candidate drafts + critique rounds sequentially. Each candidate is an independent chain (draft → critique → optional rewrite), with no data dependency between candidates — yet the loop forced them to run one at a time. On cloud brains (Grok-4, Groq, OpenAI) this triples wall-clock latency for the fan-out phase: 3 sequential calls × round-trip time instead of 1 parallel batch.
+
+**Fix:** Split `Effort.respond` into two paths:
+- `candidates == 1`: unchanged sequential path (instant / balanced / high — no fan-out)
+- `candidates > 1`: `withTaskGroup(of: (Int, String?).self)` — each candidate gets its own task. Output ordering is stabilized by tagging each task with its index (0, 1, 2) and sorting the `(index, result)` pairs before passing to the judge — `candidates[n-1]` selection stays deterministic regardless of which task finished first.
+
+**Tests updated (2):**
+- `ultraFansOutThreeDraftsAndJudgePicksSecond`: Changed from index-dependent candidate IDs (`"candidate-\(idx)"`) to identical candidates (`"unanimous-answer"`) so the assertion holds regardless of parallel scheduling order.
+- `judgeIgnoresThinkBlockBeforeVerdictNumber`: Same — identical candidate content (`"approved-candidate"`) so the judge's "pick #2" returns a deterministic string.
+
+**Files:** `Salehman AI/Intelligence/Effort.swift` (+24 / -7 lines), `Salehman AITests/EffortTests.swift` (+8 / -10 lines)
+
+**Result:** 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

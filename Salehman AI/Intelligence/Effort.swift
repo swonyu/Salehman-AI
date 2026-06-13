@@ -104,14 +104,39 @@ extension Effort {
         let wanted = max(1, candidates)
 
         // 1. Generate candidate drafts and self-critique each.
-        var refined: [String] = []
-        for _ in 0..<wanted {
+        // When multiple candidates are requested (ultra), run them in parallel:
+        // each candidate's draft + critique rounds are independent, so they
+        // can race. On cloud brains this cuts wall-clock by ~wanted×; on a
+        // local Ollama server the requests queue inside Ollama and behaviour
+        // is equivalent to sequential. Output ordering is stabilized by
+        // tagging each task with its index and sorting before the judge sees
+        // the list — `candidates[n-1]` selection stays deterministic.
+        let refined: [String]
+        if wanted == 1 {
             let draft = await generate(question)
             let outcome = await SelfCritique.refine(
                 question: question, draft: draft,
                 maxRounds: critiqueRounds, generate: generate)
             let ans = outcome.answer.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !ans.isEmpty { refined.append(ans) }
+            refined = ans.isEmpty ? [] : [ans]
+        } else {
+            refined = await withTaskGroup(of: (Int, String?).self) { group in
+                for i in 0..<wanted {
+                    group.addTask {
+                        let draft = await generate(question)
+                        let outcome = await SelfCritique.refine(
+                            question: question, draft: draft,
+                            maxRounds: critiqueRounds, generate: generate)
+                        let ans = outcome.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return (i, ans.isEmpty ? nil : ans)
+                    }
+                }
+                var pairs: [(Int, String)] = []
+                for await (i, r) in group {
+                    if let r { pairs.append((i, r)) }
+                }
+                return pairs.sorted { $0.0 < $1.0 }.map { $0.1 }
+            }
         }
 
         guard !refined.isEmpty else {

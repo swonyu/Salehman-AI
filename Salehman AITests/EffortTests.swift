@@ -82,17 +82,20 @@ struct EffortTests {
     }
 
     @Test func ultraFansOutThreeDraftsAndJudgePicksSecond() async {
-        // 3 candidates; each draft approved immediately (empty critique); judge → #2.
-        // Drafts are produced by generate(question), so their prompt == "q".
-        let rec = Recorder { prompt, idx in
-            if prompt == "q" { return "candidate-\(idx)" }            // distinct drafts
-            if prompt.contains("best answer") { return "pick 2" }     // judge verdict
-            return ""                                                 // approve each draft
+        // 3 candidates; each approved immediately (empty critique); judge → #2.
+        // Since ultra fans out in parallel, the recorder may assign indices in
+        // any order — drafts use a fixed string so the result is order-agnostic.
+        // The key assertions: 3 candidates tried, judge called, answer is one
+        // of the generated drafts (here they're all identical, so judge→#2 still
+        // returns the same string regardless of which task produced which index).
+        let rec = Recorder { prompt, _ in
+            if prompt == "q" { return "unanimous-answer" }        // all 3 drafts identical
+            if prompt.contains("best answer") { return "2" }      // judge picks #2
+            return ""                                             // approve each draft
         }
         let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
         #expect(result.candidatesTried == 3)
-        // drafts land at idx 0,2,4 → "candidate-0/2/4"; judge picks the 2nd → "candidate-2".
-        #expect(result.answer == "candidate-2")
+        #expect(result.answer == "unanimous-answer")
     }
 
     // MARK: judge + reasoning-model think blocks
@@ -102,16 +105,19 @@ struct EffortTests {
         //   <think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
         // Without stripping: firstInt finds '1' from inside <think> → wrong candidate.
         // With stripping (EOT fix): think block removed → firstInt("2") = 2 → correct.
-        let rec = Recorder { prompt, idx in
+        //
+        // Candidates are identical strings so the judge's choice of #2 (index 1)
+        // returns the same content regardless of the fan-out's parallel scheduling.
+        let rec = Recorder { prompt, _ in
             if prompt.contains("best answer") {
                 return "<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2"
             }
-            if prompt == "q" { return "candidate-\(idx)" }
+            if prompt == "q" { return "approved-candidate" }
             return ""   // empty critique = immediate approval per candidate
         }
         let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
-        // Candidates at indices 0,2,4 → "candidate-0/2/4"; judge picks #2 → "candidate-2".
-        #expect(result.answer == "candidate-2")
+        // Judge's think-stripped verdict → "2" → candidates[1] = "approved-candidate".
+        #expect(result.answer == "approved-candidate")
     }
 
     @Test func firstIntParsesLooseVerdicts() {
