@@ -5021,6 +5021,40 @@ redirect if desired; continuing the forever-loop as instructed.
 
 ---
 
+## 2026-06-14 — EOBX: ApprovalCard + MessageBubble audited complete — 🔴 POLISH SATURATION
+
+Last un-audited components, both already far above the bar — no change:
+- **ApprovalCard:** double-bezel modal (`DS.Bezel` shell+core), labelled monospaced command box,
+  Cancel/Run/Always with custom styles + keyboard shortcuts (`.cancelAction`/`.defaultAction`) +
+  `accessibilityHint`s, `.isModal` trait, scrim tap-to-cancel, mass-settle entrance. Masterclass.
+- **MessageBubble:** Equatable-gated body re-eval (documented perf optimization), QA-aware blur entry,
+  comprehensive context menu (copy/pin/edit/quote/read-aloud/regenerate/save-note/rate), actions
+  "ALWAYS MOUNTED for keyboard/VoiceOver", offMessage→unavailable substitution. Production-grade.
+
+**🔴 POLISH SATURATION reached.** Every view, sheet, and component in the app has now been audited.
+The last 7 audits (TodayView, ShortcutsView, BottomShortcutBar, TabSwitcherBar, CodeBlock, ApprovalCard,
+MessageBubble) found ZERO genuine gaps. The high-end visual + a11y + macOS-27 marathon (EOBE–EOBX) is
+COMPLETE.
+
+**Deeper-dimension rotation — honest findings:**
+- (a) **Dynamic Type:** the app uses fixed `.font(.system(size:))` throughout — a DELIBERATE choice for
+  the premium dense layout (macOS de-emphasizes Dynamic Type). Wholesale `@ScaledMetric`/relative-font
+  conversion is a major effort + real design-risk to the tuned layouts → **flagged for owner decision,
+  NOT auto-applied** (would be churn + regression risk).
+- (b) RTL: chat + transcript already do per-line Arabic detection. (c) Contrast: WCAG-AA documented in
+  multiple spots (live partials 0.66, tab pills 0.70). (d) VoiceOver: traits/labels thorough (FileTree
+  selected-trait added EOBV). (e) Reduce-Motion: complete (EOBO). (f) Keyboard: shortcuts + arrow-nav
+  present. (g) Empty states: now uniform (CommandPalette EOBU was the last).
+
+**Owner decision point:** continued forever-looping will be predominantly audit-only (occasional
+deep-dimension nit at most). Genuinely higher-value next directions if the owner wants them: the
+optional ⌘K Liquid-Glass palette experiment, feature work, test coverage, or performance profiling.
+Re-arming the loop as instructed regardless.
+
+**Files:** none (audit only — no source change this firing).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
