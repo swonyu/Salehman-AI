@@ -270,4 +270,87 @@ struct CloudModelCurrentFallbackTests {
         }
         #expect(v == CerebrasClient.defaultModel)
     }
+
+    // OpenAI was the last cloud provider missing from this test grid.
+    // allModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "o4-mini"].
+    @Test func unknownOpenAIModelFallsBackToDefault() {
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: "gpt-99-turbo") {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == OpenAIClient.defaultModel)
+    }
+    @Test func nilOpenAIModelKeyFallsBackToDefault() {
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: nil) {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == OpenAIClient.defaultModel)
+    }
+    @Test func knownOpenAIModelIsReturnedAsIs() {
+        let model = "gpt-4o"
+        precondition(OpenAIClient.allModels.contains(model))
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: model) {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == model)
+    }
+}
+
+// MARK: - AppSettings.boolDefaultTrue — default-ON contract
+//
+// `boolDefaultTrue` is the semantic primitive that makes `salehmanLeaderEnabled`,
+// `autoContinueEnabled`, and `webAccess` all default to ON out of the box.
+// `UserDefaults.bool(forKey:)` returns `false` for absent keys — the same
+// value as an explicit false, so the two states are indistinguishable.
+// `boolDefaultTrue` fixes this by checking `object(forKey:) == nil`.
+// A future refactor that drops this helper and calls `bool(forKey:)` directly
+// would silently flip all three features from ON to OFF. These tests make that
+// regression immediately visible.
+
+struct BoolDefaultTrueTests {
+
+    private let key = "__test_boolDefaultTrue__"
+
+    private func withTransientBool(_ value: Bool?, _ body: () -> Void) {
+        let prior = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: key) }
+            else         { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        if let value { UserDefaults.standard.set(value, forKey: key) }
+        else         { UserDefaults.standard.removeObject(forKey: key) }
+        body()
+    }
+
+    @Test func absentKeyReturnsTrue() {
+        // The critical invariant: a key never written must default to true.
+        // `UserDefaults.bool(forKey:)` would silently return false here.
+        withTransientBool(nil) {
+            #expect(AppSettings.boolDefaultTrue(key) == true)
+        }
+    }
+
+    @Test func explicitFalseReturnsFalse() {
+        withTransientBool(false) {
+            #expect(AppSettings.boolDefaultTrue(key) == false)
+        }
+    }
+
+    @Test func explicitTrueReturnsTrue() {
+        withTransientBool(true) {
+            #expect(AppSettings.boolDefaultTrue(key) == true)
+        }
+    }
+
+    @Test func distinguishesMissingFromExplicitFalse() {
+        // Absent and explicit-false produce different outputs — that semantic
+        // distinction is the only reason this helper exists.
+        withTransientBool(false) {
+            #expect(AppSettings.boolDefaultTrue(key) == false,
+                    "explicit false must be honoured, not conflated with absent")
+        }
+        withTransientBool(nil) {
+            #expect(AppSettings.boolDefaultTrue(key) == true,
+                    "absent key must default to true, not false")
+        }
+    }
 }

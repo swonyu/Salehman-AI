@@ -3633,6 +3633,20 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOI: openAIModelCurrent fallback + boolDefaultTrue default-ON contract tests
+
+**What:** Added 7 tests across two new structs in `Salehman AITests/FreeCloudBrainsTests.swift` (+75 lines):
+- `CloudModelCurrentFallbackTests` extended with 3 OpenAI tests: unknown model → fallback to `OpenAIClient.defaultModel`, nil key → fallback, known valid model ("gpt-4o") returned as-is
+- New `BoolDefaultTrueTests` struct (4 tests): absent key → true; explicit false → false; explicit true → true; `distinguishesMissingFromExplicitFalse` — exercises both outcomes in sequence to prove the absent-vs-false semantic distinction is real
+
+**Why:** `openAIModelCurrent` was the only cloud provider missing from the fallback grid (Gemini/Groq/Mistral/Cerebras were already covered). `boolDefaultTrue` drives the default-ON contract for `salehmanLeaderEnabled`, `autoContinueEnabled`, and `webAccess` — a future refactor replacing it with `bool(forKey:)` would silently flip all three features from ON to OFF with no existing test tripping.
+
+**Files:** `Salehman AITests/FreeCloudBrainsTests.swift`
+
+**Result:** API signatures verified via grep — `openAIModelCurrent` (AppSettings.swift:304), `boolDefaultTrue` (AppSettings.swift:459), `OpenAIClient.defaultModel` (OpenAIClient.swift:10), `OpenAIClient.allModels` (OpenAIClient.swift:11). DerivedData sandbox block is the standing pre-existing false positive.
+
+---
+
 ## 2026-06-13 — EOH: AgentRegistry dispatch contract tests
 
 **What:** Added `AgentRegistryTests` struct to `Salehman AITests/AgentFilterTests.swift` (+40 lines, 3 tests):

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:40 +03 · Swift files: 152 · Swift LOC: 34753_
+_Generated: 2026-06-13 05:47 +03 · Swift files: 152 · Swift LOC: 34836_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -30773,7 +30773,7 @@ struct ApplyUnrestrictedTests {
 }
 ```
 
-===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (273 lines) =====
+===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (356 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -31046,6 +31046,89 @@ struct CloudModelCurrentFallbackTests {
             AppSettings.cerebrasModelCurrent
         }
         #expect(v == CerebrasClient.defaultModel)
+    }
+
+    // OpenAI was the last cloud provider missing from this test grid.
+    // allModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "o4-mini"].
+    @Test func unknownOpenAIModelFallsBackToDefault() {
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: "gpt-99-turbo") {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == OpenAIClient.defaultModel)
+    }
+    @Test func nilOpenAIModelKeyFallsBackToDefault() {
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: nil) {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == OpenAIClient.defaultModel)
+    }
+    @Test func knownOpenAIModelIsReturnedAsIs() {
+        let model = "gpt-4o"
+        precondition(OpenAIClient.allModels.contains(model))
+        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: model) {
+            AppSettings.openAIModelCurrent
+        }
+        #expect(v == model)
+    }
+}
+
+// MARK: - AppSettings.boolDefaultTrue — default-ON contract
+//
+// `boolDefaultTrue` is the semantic primitive that makes `salehmanLeaderEnabled`,
+// `autoContinueEnabled`, and `webAccess` all default to ON out of the box.
+// `UserDefaults.bool(forKey:)` returns `false` for absent keys — the same
+// value as an explicit false, so the two states are indistinguishable.
+// `boolDefaultTrue` fixes this by checking `object(forKey:) == nil`.
+// A future refactor that drops this helper and calls `bool(forKey:)` directly
+// would silently flip all three features from ON to OFF. These tests make that
+// regression immediately visible.
+
+struct BoolDefaultTrueTests {
+
+    private let key = "__test_boolDefaultTrue__"
+
+    private func withTransientBool(_ value: Bool?, _ body: () -> Void) {
+        let prior = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: key) }
+            else         { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        if let value { UserDefaults.standard.set(value, forKey: key) }
+        else         { UserDefaults.standard.removeObject(forKey: key) }
+        body()
+    }
+
+    @Test func absentKeyReturnsTrue() {
+        // The critical invariant: a key never written must default to true.
+        // `UserDefaults.bool(forKey:)` would silently return false here.
+        withTransientBool(nil) {
+            #expect(AppSettings.boolDefaultTrue(key) == true)
+        }
+    }
+
+    @Test func explicitFalseReturnsFalse() {
+        withTransientBool(false) {
+            #expect(AppSettings.boolDefaultTrue(key) == false)
+        }
+    }
+
+    @Test func explicitTrueReturnsTrue() {
+        withTransientBool(true) {
+            #expect(AppSettings.boolDefaultTrue(key) == true)
+        }
+    }
+
+    @Test func distinguishesMissingFromExplicitFalse() {
+        // Absent and explicit-false produce different outputs — that semantic
+        // distinction is the only reason this helper exists.
+        withTransientBool(false) {
+            #expect(AppSettings.boolDefaultTrue(key) == false,
+                    "explicit false must be honoured, not conflated with absent")
+        }
+        withTransientBool(nil) {
+            #expect(AppSettings.boolDefaultTrue(key) == true,
+                    "absent key must default to true, not false")
+        }
     }
 }
 ```
@@ -37329,7 +37412,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4756 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4770 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40962,6 +41045,20 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
 
 **Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
+
+---
+
+## 2026-06-13 — EOI: openAIModelCurrent fallback + boolDefaultTrue default-ON contract tests
+
+**What:** Added 7 tests across two new structs in `Salehman AITests/FreeCloudBrainsTests.swift` (+75 lines):
+- `CloudModelCurrentFallbackTests` extended with 3 OpenAI tests: unknown model → fallback to `OpenAIClient.defaultModel`, nil key → fallback, known valid model ("gpt-4o") returned as-is
+- New `BoolDefaultTrueTests` struct (4 tests): absent key → true; explicit false → false; explicit true → true; `distinguishesMissingFromExplicitFalse` — exercises both outcomes in sequence to prove the absent-vs-false semantic distinction is real
+
+**Why:** `openAIModelCurrent` was the only cloud provider missing from the fallback grid (Gemini/Groq/Mistral/Cerebras were already covered). `boolDefaultTrue` drives the default-ON contract for `salehmanLeaderEnabled`, `autoContinueEnabled`, and `webAccess` — a future refactor replacing it with `bool(forKey:)` would silently flip all three features from ON to OFF with no existing test tripping.
+
+**Files:** `Salehman AITests/FreeCloudBrainsTests.swift`
+
+**Result:** API signatures verified via grep — `openAIModelCurrent` (AppSettings.swift:304), `boolDefaultTrue` (AppSettings.swift:459), `OpenAIClient.defaultModel` (OpenAIClient.swift:10), `OpenAIClient.allModels` (OpenAIClient.swift:11). DerivedData sandbox block is the standing pre-existing false positive.
 
 ---
 
