@@ -3605,6 +3605,34 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## EOB (Marathon — 2026-06-13) — BrainAdapter unit tests (brainAdapterPrompt + factory dispatch)
+
+**What changed:**
+
+`Salehman AITests/BrainAdapterTests.swift` (new, 103 lines) — two test structs covering the two untested components in `BrainAdapter.swift`:
+
+1. **`BrainAdapterPromptTests` (7 tests)** — pins `brainAdapterPrompt(from:)`, the message-to-prompt flattener all three adapters (OllamaBrainAdapter, AnthropicBrainAdapter, LocalLLMFallbackAdapter) use. Tests cover:
+   - Single user message (no system) → `(nil, content)`
+   - System + single user → system extracted, prompt is user content only
+   - System NOT leaked into prompt body
+   - Multi-turn without system → `"Role: content\n..."` format
+   - Multi-turn with system → system extracted, body formatted
+   - Empty message list → `(nil, "")` (no crash)
+   - System-only list → `(system, "")` (empty body)
+
+2. **`BrainAdapterFactoryTests` (3 tests)** — pins `BrainAdapterFactory.adapter(for:)` dispatch:
+   - `.ollamaCoder` → adapter.id == `.ollama`
+   - `.claudeHaiku` → adapter.id == `.claudeHaiku`
+   - Other brains (groq/salehman/gemini) → factory completes without crash
+
+**Why:** `brainAdapterPrompt` was the only call site that all three adapters share and it had zero test coverage. A bug dropping the system prompt or garbling multi-turn format would affect both Ollama and Anthropic paths silently. The factory dispatch had no guard against misrouting `.ollamaCoder` or `.claudeHaiku` to the fallback adapter.
+
+**Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
+
+**Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

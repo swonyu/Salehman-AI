@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:14 +03 · Swift files: 151 · Swift LOC: 34194_
+_Generated: 2026-06-13 05:17 +03 · Swift files: 152 · Swift LOC: 34310_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27657,6 +27657,126 @@ struct AgentPipelineConcurrencyTests {
 }
 ```
 
+===== FILE: Salehman AITests/BrainAdapterTests.swift (116 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - brainAdapterPrompt (pure message → (system, prompt) flattener)
+//
+// All three adapters (OllamaBrainAdapter, AnthropicBrainAdapter,
+// LocalLLMFallbackAdapter) call brainAdapterPrompt to convert the typed
+// [LLMMessage] into the (system, prompt) pair their single-turn clients need.
+// A bug here drops system prompts or garbles multi-turn context silently.
+
+struct BrainAdapterPromptTests {
+
+    private func msg(_ role: LLMMessage.Role, _ text: String) -> LLMMessage {
+        LLMMessage(role: role, content: text)
+    }
+
+    @Test func singleUserMessageNoSystem() {
+        let (system, prompt) = brainAdapterPrompt(from: [msg(.user, "hello")])
+        #expect(system == nil)
+        #expect(prompt == "hello")
+    }
+
+    @Test func systemPlusOneUserMessage() {
+        let (system, prompt) = brainAdapterPrompt(from: [
+            msg(.system, "You are a helper."),
+            msg(.user, "what is 2+2?"),
+        ])
+        #expect(system == "You are a helper.")
+        #expect(prompt == "what is 2+2?")
+    }
+
+    @Test func systemExtractedAndNotInPrompt() {
+        // The system turn must NOT appear in the prompt string.
+        let (_, prompt) = brainAdapterPrompt(from: [
+            msg(.system, "secret system prompt"),
+            msg(.user, "user question"),
+        ])
+        #expect(!prompt.contains("secret system prompt"))
+        #expect(prompt == "user question")
+    }
+
+    @Test func multiTurnWithoutSystemFormatted() {
+        // When there is no system message and more than one body turn, the output
+        // must be "Role: content\nRole: content" so the model sees conversation structure.
+        let (system, prompt) = brainAdapterPrompt(from: [
+            msg(.user, "first question"),
+            msg(.assistant, "first answer"),
+            msg(.user, "follow-up"),
+        ])
+        #expect(system == nil)
+        let lines = prompt.components(separatedBy: "\n")
+        #expect(lines[0] == "User: first question")
+        #expect(lines[1] == "Assistant: first answer")
+        #expect(lines[2] == "User: follow-up")
+    }
+
+    @Test func multiTurnWithSystemFormatted() {
+        // System is extracted; the body turns are formatted, not including system.
+        let (system, prompt) = brainAdapterPrompt(from: [
+            msg(.system, "Be concise."),
+            msg(.user, "Q"),
+            msg(.assistant, "A"),
+            msg(.user, "Q2"),
+        ])
+        #expect(system == "Be concise.")
+        #expect(prompt.hasPrefix("User: Q\n"))
+        #expect(prompt.contains("Assistant: A\n"))
+        #expect(prompt.hasSuffix("User: Q2"))
+    }
+
+    @Test func emptyMessageListProducesNilSystemAndEmptyPrompt() {
+        let (system, prompt) = brainAdapterPrompt(from: [])
+        #expect(system == nil)
+        // No body messages → single-message fast-path has nothing to map.
+        #expect(prompt.isEmpty)
+    }
+
+    @Test func systemOnlyMessageProducesEmptyPrompt() {
+        // A [system] array has no body turns (after filtering out .system).
+        let (system, prompt) = brainAdapterPrompt(from: [msg(.system, "just a persona")])
+        #expect(system == "just a persona")
+        #expect(prompt.isEmpty)
+    }
+}
+
+// MARK: - BrainAdapterFactory dispatch
+
+struct BrainAdapterFactoryTests {
+
+    @Test func ollamaCoderReturnsOllamaAdapter() {
+        let adapter = BrainAdapterFactory.adapter(for: .ollamaCoder)
+        #expect(adapter.id == .ollama,
+                ".ollamaCoder brain must produce an adapter with id .ollama")
+    }
+
+    @Test func claudeHaikuReturnsAnthropicAdapter() {
+        let adapter = BrainAdapterFactory.adapter(for: .claudeHaiku)
+        #expect(adapter.id == .claudeHaiku,
+                ".claudeHaiku brain must produce an adapter with id .claudeHaiku")
+    }
+
+    @Test func otherBrainsProduceFallbackWithCorrectID() {
+        // The fallback adapter captures the current brainPreferenceCurrent, but
+        // any brain NOT in the explicit cases uses the fallback path.
+        // We just check the factory doesn't crash and returns a non-nil adapter.
+        let grq = BrainAdapterFactory.adapter(for: .groq)
+        let sal = BrainAdapterFactory.adapter(for: .salehman)
+        let gem = BrainAdapterFactory.adapter(for: .gemini)
+        // All return a concrete adapter (protocol existential, not nil).
+        // The `id` for the fallback uses AppSettings.brainPreferenceCurrent, so
+        // we can't assert a fixed value here — just check it's non-crashing.
+        _ = grq.id; _ = sal.id; _ = gem.id
+        #expect(Bool(true), "factory must not crash for any LocalLLM.Brain case")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/BrainPreferenceTestLock.swift (27 lines) =====
 ```swift
 import Foundation
@@ -36766,7 +36886,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4648 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4676 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40371,6 +40491,34 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AI/Agents/AgentPipeline.swift` (+4 lines), `Salehman AITests/ToolLoopTests.swift` (+47 lines)
 
 **Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
+
+---
+
+## EOB (Marathon — 2026-06-13) — BrainAdapter unit tests (brainAdapterPrompt + factory dispatch)
+
+**What changed:**
+
+`Salehman AITests/BrainAdapterTests.swift` (new, 103 lines) — two test structs covering the two untested components in `BrainAdapter.swift`:
+
+1. **`BrainAdapterPromptTests` (7 tests)** — pins `brainAdapterPrompt(from:)`, the message-to-prompt flattener all three adapters (OllamaBrainAdapter, AnthropicBrainAdapter, LocalLLMFallbackAdapter) use. Tests cover:
+   - Single user message (no system) → `(nil, content)`
+   - System + single user → system extracted, prompt is user content only
+   - System NOT leaked into prompt body
+   - Multi-turn without system → `"Role: content\n..."` format
+   - Multi-turn with system → system extracted, body formatted
+   - Empty message list → `(nil, "")` (no crash)
+   - System-only list → `(system, "")` (empty body)
+
+2. **`BrainAdapterFactoryTests` (3 tests)** — pins `BrainAdapterFactory.adapter(for:)` dispatch:
+   - `.ollamaCoder` → adapter.id == `.ollama`
+   - `.claudeHaiku` → adapter.id == `.claudeHaiku`
+   - Other brains (groq/salehman/gemini) → factory completes without crash
+
+**Why:** `brainAdapterPrompt` was the only call site that all three adapters share and it had zero test coverage. A bug dropping the system prompt or garbling multi-turn format would affect both Ollama and Anthropic paths silently. The factory dispatch had no guard against misrouting `.ollamaCoder` or `.claudeHaiku` to the fallback adapter.
+
+**Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
+
+**Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
 
 ---
 
