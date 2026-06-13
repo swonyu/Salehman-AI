@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:36 +03 · Swift files: 160 · Swift LOC: 37023_
+_Generated: 2026-06-13 22:45 +03 · Swift files: 160 · Swift LOC: 37039_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -18009,7 +18009,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2873 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2889 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18105,6 +18105,7 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Composer parity with the Code tab (owner: "same colors"): drop-target
     // state for the signature ring, and which local model serves `.salehman`
     // when no cloud is configured (the "· salehman14b" badge).
@@ -18264,8 +18265,14 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
-                    unrestrictedPulse = true
+                // Reduce Motion: skip the repeatForever halo pulse — the static accent
+                // halo + dot + "UNRESTRICTED" label still signal the mode.
+                if reduceMotion {
+                    unrestrictedPulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
+                        unrestrictedPulse = true
+                    }
                 }
             } else {
                 unrestrictedPulse = false
@@ -20552,6 +20559,7 @@ struct CachedImage: View {
 
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animating = false
     // After ~5s of pre-stream silence the local model is probably loading into
     // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
@@ -20572,9 +20580,10 @@ struct TypingIndicator: View {
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
                         .animation(
-                            .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
-                                .repeatForever()
-                                .delay(Double(i) * 0.2),
+                            reduceMotion ? nil
+                                : .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
+                                    .repeatForever()
+                                    .delay(Double(i) * 0.2),
                             value: animating)
                 }
             }
@@ -20604,6 +20613,7 @@ private struct BrainStatusDot: View {
     let isRunning: Bool
     let color: Color
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let active = isRunning ? DS.Palette.accent : color
@@ -20624,7 +20634,13 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                // Reduce Motion: static "running" halo (larger + brighter) without the
+                // repeatForever pulse — running is still signalled by size + opacity.
+                if reduceMotion {
+                    pulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                }
             } else {
                 pulse = false
             }
@@ -39631,7 +39647,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5918 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5947 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44437,6 +44453,35 @@ env until now). Added `@Environment(\.accessibilityReduceMotion)` to both CodeVi
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**; 3
 `if reduceMotion` gates present.
+
+---
+
+## 2026-06-13 — EOBO: ContentView Reduce-Motion gates — app-wide a11y pass COMPLETE (phase-2 slice 2/2)
+
+Gated ContentView's 3 `repeatForever` loops (the last EOBC-queued gaps; ContentView had no `reduceMotion`
+env, Chat B's lane — additive a11y only, non-conflicting). Added `@Environment(\.accessibilityReduceMotion)`
+to ContentView, `TypingIndicator`, and `BrainStatusDot`; each gate skips STARTING the loop under Reduce
+Motion (guarding the `withAnimation`/`.animation` call) with a static, signal-preserving fallback:
+- **Unrestricted-Mode header halo** (~254): static accent halo (scale 1.0, opacity 0.4) — mode still
+  shown by the solid dot + "UNRESTRICTED" label.
+- **TypingIndicator dots** (~2563): `.animation(nil)` under Reduce Motion → three solid static dots,
+  still a clear "working" indicator.
+- **BrainStatusDot halo** (~2614): static larger/brighter halo (scale 1.0, opacity 0.9 while running) —
+  "thinking" still signalled by size + opacity. (Already battery-gated to run only while generating.)
+
+**🏁 App-wide Reduce-Motion pass COMPLETE.** Every continuous/looping animation in the app now has a
+static, geometry-preserving fallback under `accessibilityReduceMotion`: empty-state breathing glows,
+always-on status pulses, brand-tile bounce-ins (EOAX–EOBC), the Voice orb (EOBK), CodeView's glows +
+`PulsingDot` (EOBN), and ContentView's three `repeatForever` loops (this entry). `.symbolEffect(.pulse)`
+sites already respect the setting automatically.
+
+**Files:** `Views/ContentView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**Loop wind-down:** both /loop goals are met — (1) the 8-view high-end visual list (EOBE–EOBM) and
+(2) the app-wide Reduce-Motion a11y pass (EOBN–EOBO) — plus the EOBD build-warning/flag-parity fix and
+the EOBH macOS-27 real-build verification. Stopping here; re-invoke /loop with a new directive for more.
 
 ---
 

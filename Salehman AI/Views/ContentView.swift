@@ -92,6 +92,7 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Composer parity with the Code tab (owner: "same colors"): drop-target
     // state for the signature ring, and which local model serves `.salehman`
     // when no cloud is configured (the "· salehman14b" badge).
@@ -251,8 +252,14 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
-                    unrestrictedPulse = true
+                // Reduce Motion: skip the repeatForever halo pulse — the static accent
+                // halo + dot + "UNRESTRICTED" label still signal the mode.
+                if reduceMotion {
+                    unrestrictedPulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
+                        unrestrictedPulse = true
+                    }
                 }
             } else {
                 unrestrictedPulse = false
@@ -2539,6 +2546,7 @@ struct CachedImage: View {
 
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animating = false
     // After ~5s of pre-stream silence the local model is probably loading into
     // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
@@ -2559,9 +2567,10 @@ struct TypingIndicator: View {
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
                         .animation(
-                            .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
-                                .repeatForever()
-                                .delay(Double(i) * 0.2),
+                            reduceMotion ? nil
+                                : .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
+                                    .repeatForever()
+                                    .delay(Double(i) * 0.2),
                             value: animating)
                 }
             }
@@ -2591,6 +2600,7 @@ private struct BrainStatusDot: View {
     let isRunning: Bool
     let color: Color
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let active = isRunning ? DS.Palette.accent : color
@@ -2611,7 +2621,13 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                // Reduce Motion: static "running" halo (larger + brighter) without the
+                // repeatForever pulse — running is still signalled by size + opacity.
+                if reduceMotion {
+                    pulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                }
             } else {
                 pulse = false
             }

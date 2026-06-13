@@ -4806,6 +4806,35 @@ env until now). Added `@Environment(\.accessibilityReduceMotion)` to both CodeVi
 
 ---
 
+## 2026-06-13 — EOBO: ContentView Reduce-Motion gates — app-wide a11y pass COMPLETE (phase-2 slice 2/2)
+
+Gated ContentView's 3 `repeatForever` loops (the last EOBC-queued gaps; ContentView had no `reduceMotion`
+env, Chat B's lane — additive a11y only, non-conflicting). Added `@Environment(\.accessibilityReduceMotion)`
+to ContentView, `TypingIndicator`, and `BrainStatusDot`; each gate skips STARTING the loop under Reduce
+Motion (guarding the `withAnimation`/`.animation` call) with a static, signal-preserving fallback:
+- **Unrestricted-Mode header halo** (~254): static accent halo (scale 1.0, opacity 0.4) — mode still
+  shown by the solid dot + "UNRESTRICTED" label.
+- **TypingIndicator dots** (~2563): `.animation(nil)` under Reduce Motion → three solid static dots,
+  still a clear "working" indicator.
+- **BrainStatusDot halo** (~2614): static larger/brighter halo (scale 1.0, opacity 0.9 while running) —
+  "thinking" still signalled by size + opacity. (Already battery-gated to run only while generating.)
+
+**🏁 App-wide Reduce-Motion pass COMPLETE.** Every continuous/looping animation in the app now has a
+static, geometry-preserving fallback under `accessibilityReduceMotion`: empty-state breathing glows,
+always-on status pulses, brand-tile bounce-ins (EOAX–EOBC), the Voice orb (EOBK), CodeView's glows +
+`PulsingDot` (EOBN), and ContentView's three `repeatForever` loops (this entry). `.symbolEffect(.pulse)`
+sites already respect the setting automatically.
+
+**Files:** `Views/ContentView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**Loop wind-down:** both /loop goals are met — (1) the 8-view high-end visual list (EOBE–EOBM) and
+(2) the app-wide Reduce-Motion a11y pass (EOBN–EOBO) — plus the EOBD build-warning/flag-parity fix and
+the EOBH macOS-27 real-build verification. Stopping here; re-invoke /loop with a new directive for more.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
