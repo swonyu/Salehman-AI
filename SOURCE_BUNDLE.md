@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 00:31 +03 · Swift files: 160 · Swift LOC: 37082_
+_Generated: 2026-06-14 01:11 +03 · Swift files: 160 · Swift LOC: 37090_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17787,7 +17787,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (218 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (226 lines) =====
 ```swift
 import SwiftUI
 
@@ -17960,10 +17960,18 @@ struct CommandPalette: View {
                             }
                         }
                         if filtered.isEmpty {
-                            Text("No matching commands")
-                                .font(.system(size: 13)).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity).padding(.vertical, 28)
-                                .transition(.opacity)
+                            VStack(spacing: 10) {
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                                Text("No matching commands")
+                                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 26)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         }
                     }
                     .animation(DS.Motion.smooth, value: filtered.count)
@@ -39774,7 +39782,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6080 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6096 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44742,6 +44750,22 @@ permission banner.) 0 `.bordered` left in the file.
 
 Stopping the loop here (both the design list and the a11y/macOS-27 work are complete). Re-run `/loop`
 with a new directive for deeper passes (e.g. the ⌘K-palette glass experiment, or Chat/Code micro-polish).
+
+---
+
+## 2026-06-14 — EOBU: CommandPalette premium empty state (continued non-stop polish)
+
+Owner re-armed the loop "polish everything, non-stop, ≤5-min breaks." Continuing genuine gap-finding on
+the components not yet *deeply* audited. ⌘K palette: well-built (Spotlight-style bare search, full
+keyboard nav with a dimensional esc badge, accent icon wells, hover/selected states, staggered entrance,
+auto-scroll-to-selected). One genuine gap: the "No matching commands" state was bare text → upgraded to
+the app-wide icon-in-soft-circle + text pattern, so every empty state in the app is now uniform. (The
+search field correctly has no boxed focus glow — it's the always-focused palette input, the Spotlight
+idiom.)
+
+**Files:** `Views/CommandPalette.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 
 ---
 

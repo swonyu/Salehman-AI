@@ -4968,6 +4968,22 @@ with a new directive for deeper passes (e.g. the ⌘K-palette glass experiment, 
 
 ---
 
+## 2026-06-14 — EOBU: CommandPalette premium empty state (continued non-stop polish)
+
+Owner re-armed the loop "polish everything, non-stop, ≤5-min breaks." Continuing genuine gap-finding on
+the components not yet *deeply* audited. ⌘K palette: well-built (Spotlight-style bare search, full
+keyboard nav with a dimensional esc badge, accent icon wells, hover/selected states, staggered entrance,
+auto-scroll-to-selected). One genuine gap: the "No matching commands" state was bare text → upgraded to
+the app-wide icon-in-soft-circle + text pattern, so every empty state in the app is now uniform. (The
+search field correctly has no boxed focus glow — it's the always-focused palette input, the Spotlight
+idiom.)
+
+**Files:** `Views/CommandPalette.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

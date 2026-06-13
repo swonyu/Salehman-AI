@@ -169,10 +169,18 @@ struct CommandPalette: View {
                             }
                         }
                         if filtered.isEmpty {
-                            Text("No matching commands")
-                                .font(.system(size: 13)).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity).padding(.vertical, 28)
-                                .transition(.opacity)
+                            VStack(spacing: 10) {
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                                Text("No matching commands")
+                                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 26)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         }
                     }
                     .animation(DS.Motion.smooth, value: filtered.count)
