@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:06 +03 · Swift files: 160 · Swift LOC: 36979_
+_Generated: 2026-06-13 22:13 +03 · Swift files: 160 · Swift LOC: 36988_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27578,7 +27578,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (218 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (227 lines) =====
 ```swift
 import SwiftUI
 
@@ -27722,15 +27722,24 @@ struct VoiceModeView: View {
 
             // Inner orb — PhaseAnimator pulses at phase-aware speed:
             // listening is snappier (0.70s), speaking is more measured (1.10s).
-            PhaseAnimator([false, true]) { pulsing in
+            // Reduce Motion: static orb (no pulse loop) — phase stays fully legible
+            // via the orb's color, the glyph swap, and the phase label, so nothing
+            // is lost. Completes the app-wide Reduce-Motion pass (EOBC missed this one).
+            if reduceMotion {
                 Circle()
                     .fill(phaseColor.opacity(0.28))
                     .frame(width: 124, height: 124)
-                    .scaleEffect(animate ? (pulsing ? 1.10 : 1.0) : 1.0)
-            } animation: { pulsing in
-                guard animate else { return .smooth }
-                let dur: Double = session.phase == .listening ? 0.70 : 1.10
-                return .timingCurve(0.45, 0.0, 0.55, 1.0, duration: pulsing ? dur : dur * 1.15)
+            } else {
+                PhaseAnimator([false, true]) { pulsing in
+                    Circle()
+                        .fill(phaseColor.opacity(0.28))
+                        .frame(width: 124, height: 124)
+                        .scaleEffect(animate ? (pulsing ? 1.10 : 1.0) : 1.0)
+                } animation: { pulsing in
+                    guard animate else { return .smooth }
+                    let dur: Double = session.phase == .listening ? 0.70 : 1.10
+                    return .timingCurve(0.45, 0.0, 0.55, 1.0, duration: pulsing ? dur : dur * 1.15)
+                }
             }
 
             Image(systemName: session.phase == .speaking ? "speaker.wave.2.fill" : "mic.fill")
@@ -39587,7 +39596,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5838 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5853 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44313,6 +44322,21 @@ Cross-lane note: additive cosmetic only (a border stroke), non-conflicting with 
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**;
 stroke overlay present on exactly 5 fields.
+
+---
+
+## 2026-06-13 — EOBK: VoiceModeView Reduce-Motion gate on the orb (loop slice 6/8)
+
+VoiceModeView is clean and well-composed, but a high-end pass found a real accessibility gap the EOBC
+Reduce-Motion audit MISSED: the central pulsing orb (`PhaseAnimator` scale loop — the app's most
+prominent continuous animation) had NO `reduceMotion` guard, even though the header brand-tile bounce
+did. Gated it: `if reduceMotion { static orb } else { PhaseAnimator }`. Phase stays fully legible via
+the orb's color, the mic/speaker/stop glyph swap, and the phase label — no information is lost. A
+genuine extension of the app-wide Reduce-Motion pass (EOAX–EOBC), not churn.
+
+**Files:** `Views/VoiceModeView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 
 ---
 

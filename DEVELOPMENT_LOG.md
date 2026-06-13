@@ -4726,6 +4726,21 @@ stroke overlay present on exactly 5 fields.
 
 ---
 
+## 2026-06-13 — EOBK: VoiceModeView Reduce-Motion gate on the orb (loop slice 6/8)
+
+VoiceModeView is clean and well-composed, but a high-end pass found a real accessibility gap the EOBC
+Reduce-Motion audit MISSED: the central pulsing orb (`PhaseAnimator` scale loop — the app's most
+prominent continuous animation) had NO `reduceMotion` guard, even though the header brand-tile bounce
+did. Gated it: `if reduceMotion { static orb } else { PhaseAnimator }`. Phase stays fully legible via
+the orb's color, the mic/speaker/stop glyph swap, and the phase label — no information is lost. A
+genuine extension of the app-wide Reduce-Motion pass (EOAX–EOBC), not churn.
+
+**Files:** `Views/VoiceModeView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
