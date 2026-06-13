@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:17 +03 · Swift files: 152 · Swift LOC: 34310_
+_Generated: 2026-06-13 05:29 +03 · Swift files: 152 · Swift LOC: 34430_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -30480,7 +30480,7 @@ struct FreeAutoCooldownTests {
 }
 ```
 
-===== FILE: Salehman AITests/FreeAutoTests.swift (120 lines) =====
+===== FILE: Salehman AITests/FreeAutoTests.swift (240 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30600,6 +30600,126 @@ struct FreeAutoRoutingTests {
         #expect(!BrainPreference.freeAuto.title.isEmpty)
         #expect(!BrainPreference.freeAuto.subtitle.isEmpty)
         #expect(!BrainPreference.freeAuto.icon.isEmpty)
+    }
+}
+
+// MARK: - LocalLLM.freeCoderModel priority selection
+//
+// `generateFreeCoding` uses `freeCoderModel` to pick the strongest coding
+// model from a provider's catalogue before racing it. The priority list is
+// ["codestral", "coder", "deepseek", "code", "gpt-oss", "glm"] — MARKER
+// priority, not list-position priority. A "codestral" model beats a "gpt-oss"
+// model even if "gpt-oss" appears first in the array. Bugs here quietly route
+// coding races to a weaker general model with no visible error.
+
+struct FreeCoderModelTests {
+
+    @Test func codestralBeatsAllOtherMarkersRegardlessOfArrayPosition() {
+        // "gpt-oss" has lower priority than "codestral" even when listed first.
+        let m = LocalLLM.freeCoderModel(
+            ["gpt-oss-120b", "deepseek-r1:7b", "mistral/codestral-latest"],
+            default: "fallback"
+        )
+        #expect(m == "mistral/codestral-latest")
+    }
+
+    @Test func coderBeatsDeepSeek() {
+        let m = LocalLLM.freeCoderModel(
+            ["deepseek-v4-flash", "qwen2.5-coder:7b"],
+            default: "fallback"
+        )
+        #expect(m == "qwen2.5-coder:7b")
+    }
+
+    @Test func deepSeekBeatsGptOss() {
+        let m = LocalLLM.freeCoderModel(
+            ["gpt-oss-120b", "deepseek-v4-flash"],
+            default: "fallback"
+        )
+        #expect(m == "deepseek-v4-flash")
+    }
+
+    @Test func gptOssBeatsGlm() {
+        let m = LocalLLM.freeCoderModel(
+            ["zai-glm-4.7", "gpt-oss-120b"],
+            default: "fallback"
+        )
+        #expect(m == "gpt-oss-120b")
+    }
+
+    @Test func fallsBackToDefaultWhenNoMarkerMatches() {
+        let m = LocalLLM.freeCoderModel(
+            ["llama-3.3-70b-versatile", "mixtral-8x7b-instruct"],
+            default: "default-model"
+        )
+        #expect(m == "default-model")
+    }
+
+    @Test func emptyModelListReturnsDefault() {
+        let m = LocalLLM.freeCoderModel([], default: "safe-default")
+        #expect(m == "safe-default")
+    }
+
+    @Test func matchIsCaseInsensitive() {
+        // Provider catalogues sometimes capitalise: "Codestral-Mamba", "DeepSeek-Coder".
+        let m = LocalLLM.freeCoderModel(
+            ["Mistral/Codestral-Mamba-v0.1"],
+            default: "fallback"
+        )
+        #expect(m == "Mistral/Codestral-Mamba-v0.1")
+    }
+
+    @Test func firstArrayEntryWinsWithinSameMarker() {
+        // Two models both contain "coder" — the first in the array wins.
+        let m = LocalLLM.freeCoderModel(
+            ["qwen2.5-coder:7b", "qwen2.5-coder:32b"],
+            default: "fallback"
+        )
+        #expect(m == "qwen2.5-coder:7b")
+    }
+}
+
+// MARK: - LocalLLM.applyUnrestricted toggle
+//
+// `applyUnrestricted` is the single gate that decides whether the
+// unrestrictedAddendum is appended to any system prompt passed through it.
+// Both `cloudSystemPrompt` and `freeCodingSystem` flow through this gate.
+// A wrong toggle silently either over-restricts the assistant or leaks the
+// unrestricted addendum into every prompt regardless of user preference.
+
+struct ApplyUnrestrictedTests {
+
+    private func withUnrestrictedFlag(_ enabled: Bool, _ body: () -> Void) {
+        let key = AppSettings.Keys.unrestrictedTools
+        let prior = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: key) }
+            else         { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        UserDefaults.standard.set(enabled, forKey: key)
+        body()
+    }
+
+    @Test func baseUnchangedWhenDisabled() {
+        withUnrestrictedFlag(false) {
+            let result = LocalLLM.applyUnrestricted("BASE_PROMPT")
+            #expect(result == "BASE_PROMPT")
+        }
+    }
+
+    @Test func addendumAppendedWhenEnabled() {
+        withUnrestrictedFlag(true) {
+            let result = LocalLLM.applyUnrestricted("BASE_PROMPT")
+            #expect(result.hasPrefix("BASE_PROMPT\n"))
+            #expect(result.contains(LocalLLM.unrestrictedAddendum))
+        }
+    }
+
+    @Test func addendumContainsOwnerDirective() {
+        // Sanity guard: the addendum must be non-trivial. If someone replaces it
+        // with an empty string, the toggle effectively does nothing.
+        #expect(!LocalLLM.unrestrictedAddendum.isEmpty)
+        #expect(LocalLLM.unrestrictedAddendum.count > 20)
     }
 }
 ```
@@ -36886,7 +37006,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4676 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4690 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40519,6 +40639,20 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
 
 **Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
+
+---
+
+## 2026-06-13 — EOC: freeCoderModel priority tests + applyUnrestricted toggle tests
+
+**What:** Added two test structs to `Salehman AITests/FreeAutoTests.swift` (+90 lines):
+- `FreeCoderModelTests` (8 tests) — covers the priority-marker selection logic: codestral > coder > deepseek > code > gpt-oss > glm, case-insensitive matching, empty-list fallback, and the subtle "marker priority beats array-position" rule.
+- `ApplyUnrestrictedTests` (3 tests) — pins the flag-off (base unchanged) and flag-on (addendum appended) branches of the single system-prompt gate, plus a non-empty addendum guard.
+
+**Why:** `freeCoderModel` selects the strongest coding model for every FreeCoding race — a wrong pick silently routes to a weaker general model. `applyUnrestricted` is the sole gate that decides whether the owner's unrestricted addendum reaches every system prompt; both branches were untested.
+
+**Files:** `Salehman AITests/FreeAutoTests.swift`
+
+**Result:** API signatures verified via grep; patterns identical to existing test structs in the same file.
 
 ---
 

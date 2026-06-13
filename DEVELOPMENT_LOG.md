@@ -3633,6 +3633,20 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOC: freeCoderModel priority tests + applyUnrestricted toggle tests
+
+**What:** Added two test structs to `Salehman AITests/FreeAutoTests.swift` (+90 lines):
+- `FreeCoderModelTests` (8 tests) — covers the priority-marker selection logic: codestral > coder > deepseek > code > gpt-oss > glm, case-insensitive matching, empty-list fallback, and the subtle "marker priority beats array-position" rule.
+- `ApplyUnrestrictedTests` (3 tests) — pins the flag-off (base unchanged) and flag-on (addendum appended) branches of the single system-prompt gate, plus a non-empty addendum guard.
+
+**Why:** `freeCoderModel` selects the strongest coding model for every FreeCoding race — a wrong pick silently routes to a weaker general model. `applyUnrestricted` is the sole gate that decides whether the owner's unrestricted addendum reaches every system prompt; both branches were untested.
+
+**Files:** `Salehman AITests/FreeAutoTests.swift`
+
+**Result:** API signatures verified via grep; patterns identical to existing test structs in the same file.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
