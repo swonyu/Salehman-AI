@@ -5122,6 +5122,22 @@ and clear on Esc (`onKeyPress(.escape)` in Knowledge/Memory/Scratchpad/Agents/Li
 
 ---
 
+## 2026-06-14 — EOCC: empty / error / loading-state audit (dimension g) — no gap
+
+- **EMPTY:** uniform across the app (icon-in-soft-circle + text; CommandPalette was the last, EOBU).
+- **LOADING:** `ProgressView` affordances on every async surface — Knowledge (×4: ingest/ask/summarize),
+  Settings (×5: brain tests), Markets (×2), Code (×2), Agents, Scratchpad, ChatHistory, Copilot,
+  ContentView — each wired to its in-flight flag (`ingesting`/`asking`/`working`/`checkingAlerts`/…).
+- **ERROR:** surfaced, not silent or bare — Markets `monitorError` (warningSoft), LiveTranscription
+  status Label + accent permission banner, Knowledge/Scratchpad on-device-unavailable fallback
+  messages, Copilot "Couldn't reach GitHub" status, chat bubbles' offMessage→unavailable substitution.
+  All styled to the app's status/caption convention. **No gap** (view layer; logic-layer error handling
+  is out of visual-polish scope).
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
