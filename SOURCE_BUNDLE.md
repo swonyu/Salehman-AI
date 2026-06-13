@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:28 +03 · Swift files: 160 · Swift LOC: 36995_
+_Generated: 2026-06-13 22:36 +03 · Swift files: 160 · Swift LOC: 37023_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15092,7 +15092,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2663 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2691 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15626,6 +15626,7 @@ struct CodeView: View {
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
@@ -16001,16 +16002,25 @@ struct CodeView: View {
     private var emptyTreeHint: some View {
         VStack(spacing: 11) {
             ZStack {
-                PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.12))
                         .frame(width: 56, height: 56)
                         .blur(radius: 14)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.08
-                        ? .spring(duration: 2.2, bounce: 0.05)
-                        : .easeOut(duration: 2.0)
+                } else {
+                    PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 56, height: 56)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.08
+                            ? .spring(duration: 2.2, bounce: 0.05)
+                            : .easeOut(duration: 2.0)
+                    }
                 }
                 Image(systemName: "folder.badge.plus")
                     .font(.system(size: 23, weight: .light))
@@ -17209,16 +17219,25 @@ struct CodeView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     ZStack {
-                        PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no breathing loop).
                             Circle()
-                                .fill(Color.white.opacity(opacity))
+                                .fill(Color.white.opacity(0.10))
                                 .frame(width: 72, height: 72)
                                 .blur(radius: 18)
                                 .allowsHitTesting(false)
-                        } animation: { opacity in
-                            opacity > 0.07
-                                ? .spring(duration: 2.4, bounce: 0.04)
-                                : .easeOut(duration: 2.2)
+                        } else {
+                            PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                                Circle()
+                                    .fill(Color.white.opacity(opacity))
+                                    .frame(width: 72, height: 72)
+                                    .blur(radius: 18)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.07
+                                    ? .spring(duration: 2.4, bounce: 0.04)
+                                    : .easeOut(duration: 2.2)
+                            }
                         }
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 22, weight: .light))
@@ -17646,17 +17665,26 @@ struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
-/// PhaseAnimator cycles 0.35↔1.0 opacity continuously — no @State needed.
+/// Streaming "active" dot. PhaseAnimator pulses 0.35↔1.0 opacity; under Reduce
+/// Motion it renders as a solid dot (presence + accent color still signal activity).
 struct PulsingDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        PhaseAnimator([0.35, 1.0]) { opacity in
-            Circle().fill(DS.Palette.accent)
-                .frame(width: 7, height: 7)
-                .opacity(opacity)
-        } animation: { opacity in
-            opacity > 0.5
-                ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
-                : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+        Group {
+            if reduceMotion {
+                Circle().fill(DS.Palette.accent)
+                    .frame(width: 7, height: 7)
+            } else {
+                PhaseAnimator([0.35, 1.0]) { opacity in
+                    Circle().fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
+                        .opacity(opacity)
+                } animation: { opacity in
+                    opacity > 0.5
+                        ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
+                        : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+                }
+            }
         }
         .accessibilityHidden(true)
     }
@@ -39603,7 +39631,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5901 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5918 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44392,6 +44420,23 @@ and the hero CTA's kinetic tension. Discipline held throughout: no manufactured 
 surfaces — each slice fixed only genuine gaps and documented what was left intentionally alone.
 **Next phase:** finish the EOBC-queued Reduce-Motion gaps in CodeView + ContentView (the one block of
 concretely-documented pending a11y work) to complete the app-wide Reduce-Motion pass.
+
+---
+
+## 2026-06-13 — EOBN: CodeView Reduce-Motion gates (phase-2 slice 1/2)
+
+Completed the CodeView half of the EOBC-queued Reduce-Motion gaps (the file had no `reduceMotion`
+env until now). Added `@Environment(\.accessibilityReduceMotion)` to both CodeView and the standalone
+`PulsingDot`, gating all 3 continuous loops with static, geometry-preserving fallbacks:
+- `emptyTreeHint` breathing glow (~908): static halo at 0.12 opacity (same 56pt frame + blur 14).
+- `inspectorPane` breathing glow (~2116): static halo at 0.10 opacity (same 72pt frame + blur 18).
+- `PulsingDot` (~2554, shown while streaming): solid accent dot, no opacity pulse — presence + color
+  still signal "active", and it's already `accessibilityHidden`.
+
+**Files:** `Views/CodeView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**; 3
+`if reduceMotion` gates present.
 
 ---
 

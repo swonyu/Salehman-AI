@@ -530,6 +530,7 @@ struct CodeView: View {
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
@@ -905,16 +906,25 @@ struct CodeView: View {
     private var emptyTreeHint: some View {
         VStack(spacing: 11) {
             ZStack {
-                PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.12))
                         .frame(width: 56, height: 56)
                         .blur(radius: 14)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.08
-                        ? .spring(duration: 2.2, bounce: 0.05)
-                        : .easeOut(duration: 2.0)
+                } else {
+                    PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 56, height: 56)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.08
+                            ? .spring(duration: 2.2, bounce: 0.05)
+                            : .easeOut(duration: 2.0)
+                    }
                 }
                 Image(systemName: "folder.badge.plus")
                     .font(.system(size: 23, weight: .light))
@@ -2113,16 +2123,25 @@ struct CodeView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
                     ZStack {
-                        PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no breathing loop).
                             Circle()
-                                .fill(Color.white.opacity(opacity))
+                                .fill(Color.white.opacity(0.10))
                                 .frame(width: 72, height: 72)
                                 .blur(radius: 18)
                                 .allowsHitTesting(false)
-                        } animation: { opacity in
-                            opacity > 0.07
-                                ? .spring(duration: 2.4, bounce: 0.04)
-                                : .easeOut(duration: 2.2)
+                        } else {
+                            PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                                Circle()
+                                    .fill(Color.white.opacity(opacity))
+                                    .frame(width: 72, height: 72)
+                                    .blur(radius: 18)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.07
+                                    ? .spring(duration: 2.4, bounce: 0.04)
+                                    : .easeOut(duration: 2.2)
+                            }
                         }
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 22, weight: .light))
@@ -2550,17 +2569,26 @@ struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
-/// PhaseAnimator cycles 0.35↔1.0 opacity continuously — no @State needed.
+/// Streaming "active" dot. PhaseAnimator pulses 0.35↔1.0 opacity; under Reduce
+/// Motion it renders as a solid dot (presence + accent color still signal activity).
 struct PulsingDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        PhaseAnimator([0.35, 1.0]) { opacity in
-            Circle().fill(DS.Palette.accent)
-                .frame(width: 7, height: 7)
-                .opacity(opacity)
-        } animation: { opacity in
-            opacity > 0.5
-                ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
-                : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+        Group {
+            if reduceMotion {
+                Circle().fill(DS.Palette.accent)
+                    .frame(width: 7, height: 7)
+            } else {
+                PhaseAnimator([0.35, 1.0]) { opacity in
+                    Circle().fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
+                        .opacity(opacity)
+                } animation: { opacity in
+                    opacity > 0.5
+                        ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
+                        : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+                }
+            }
         }
         .accessibilityHidden(true)
     }

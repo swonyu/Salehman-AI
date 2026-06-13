@@ -4789,6 +4789,23 @@ concretely-documented pending a11y work) to complete the app-wide Reduce-Motion 
 
 ---
 
+## 2026-06-13 — EOBN: CodeView Reduce-Motion gates (phase-2 slice 1/2)
+
+Completed the CodeView half of the EOBC-queued Reduce-Motion gaps (the file had no `reduceMotion`
+env until now). Added `@Environment(\.accessibilityReduceMotion)` to both CodeView and the standalone
+`PulsingDot`, gating all 3 continuous loops with static, geometry-preserving fallbacks:
+- `emptyTreeHint` breathing glow (~908): static halo at 0.12 opacity (same 56pt frame + blur 14).
+- `inspectorPane` breathing glow (~2116): static halo at 0.10 opacity (same 72pt frame + blur 18).
+- `PulsingDot` (~2554, shown while streaming): solid accent dot, no opacity pulse — presence + color
+  still signal "active", and it's already `accessibilityHidden`.
+
+**Files:** `Views/CodeView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**; 3
+`if reduceMotion` gates present.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
