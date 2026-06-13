@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 02:16 +03 · Swift files: 160 · Swift LOC: 37109_
+_Generated: 2026-06-14 02:38 +03 · Swift files: 160 · Swift LOC: 37110_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25279,7 +25279,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1519 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1520 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25400,8 +25400,9 @@ struct SettingsView: View {
 
                     section("Brain", "Which model answers. Tap a cell to pin one; hover for details. The dot is green when that brain is reachable, orange when not.") {
                         activeBrainStatusRow
-                        // Compact 3-column adaptive grid — 13 brains drop from a
-                        // long scroll into ~5 short rows. Cell padding lives in
+                        // Compact 3-column adaptive grid over the SELECTABLE brains
+                        // (paid providers hidden — see `selectableCases`), kept
+                        // glanceable in a couple of short rows. Cell padding lives in
                         // `brainGridCell`; outer padding here keeps the grid off
                         // the section card's edges.
                         LazyVGrid(
@@ -25752,10 +25753,10 @@ struct SettingsView: View {
     }
 
     /// Compact selectable cell for the Brain picker grid. Replaces the old
-    /// full-width `brainRow` — with 13 brains in the list, a vertical stack
-    /// forced a long scroll. A 3-column adaptive grid drops that to ~5 rows
-    /// while keeping every brain glanceable. The full subtitle text moves to
-    /// a `.help(...)` tooltip so detail isn't lost, just hidden until hover.
+    /// full-width `brainRow` — a 3-column adaptive grid keeps the selectable
+    /// brains glanceable without a long scroll (the list was much longer before
+    /// paid providers were hidden — see `selectableCases`). The full subtitle
+    /// text moves to a `.help(...)` tooltip so detail isn't lost, just on hover.
     // MARK: - MLX standalone engine row
     //
     // The "Salehman alone" path. Lives at the top of the Salehman engine section
@@ -39801,7 +39802,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6279 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6340 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44968,6 +44969,67 @@ were all already at the bar. The app is exhaustively polished; a 2nd rotation wi
 no-gap — owner redirect to higher-value work strongly recommended (see below / response).
 
 **Files:** `DesignSystem/DesignSystem.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`.
+
+---
+
+## 2026-06-14 — EOCE: microcopy / typo audit (rotation 2, angle h) — no gap
+
+Swept ~200 user-facing strings (titles, button labels, placeholders, empty states, hints, errors,
+help). The copy is professional, consistent, on-brand (Saleh woven in: "What are we building, Saleh?",
+"built by Saleh"), and TYPO-FREE (the typo-pattern grep returned only param-name false positives). Tone
+is consistent — calm, privacy-forward, honest (e.g. the "educational, not financial advice" market
+disclaimer; "Sample data — no live feed connected yet"). The one help/a11y-label difference on the Code
+inspector toggle ("activity / files panel" tooltip vs "activity and files panel" VoiceOver) is a
+DELIBERATE spoken-vs-visual distinction ("and" reads better aloud than "/"), not a bug. **No gap.**
+
+**Files:** none (audit only — no source change).
+
+**↪︎ Redirect still recommended:** the app is exhaustively polished (rotation 1 found 2 fixes; this is
+rotation 2). Higher-value next: ⌘K Liquid-Glass palette experiment · feature work · test coverage ·
+perf profiling · chat/code MarkdownText RTL.
+
+---
+
+## 2026-06-14 — EOCF: magic-numbers → DS-tokens audit (rotation 2, angle i) — no gap (deliberate)
+
+Counted cornerRadius literals in Views: 6(×9), 4(×8), 14(×6), 11(×6), 5/18/10/7/22/15/13/12. Checked
+whether any are clear token-duplicates worth tokenizing — they are NOT, they're SEMANTICALLY LOCAL:
+- `cornerRadius: 6` (most common) is used for kbd key badges (Shortcuts), file-row hover bg (FileTree),
+  small inline wells (Code) — NONE are the 24–28pt icon-well that `DS.Radius.well` (=6) documents, so
+  tokenizing would be semantically MISLEADING, not clarifying.
+- `4, 5, 7, 11, 13, 15` match NO DS token (deliberate one-off micro-tuning).
+- Where a literal's value coincides with a token (6=well, 14=card, 10=icon, 12=chip, 22=bezel), context
+  differs enough that the literal is the honest local choice; DS tokens are already used for the
+  canonical card/field/modal/bezel surfaces.
+Per the directive's own guidance (leave deliberate one-offs; don't churn), and since tokenizing has ZERO
+user-facing impact (pure code-style), this is a no-churn **no gap**.
+
+**Files:** none (audit only — no source change).
+
+**↪︎ Redirect still recommended** — rotation 1: 2 fixes; rotation 2: 0 so far. App exhaustively polished.
+
+---
+
+## 2026-06-14 — EOCG: stale-comment audit (rotation 2, angle j) — fixed "13 brains" drift
+
+GENUINE find. The Brain picker grid iterates `BrainPreference.selectableCases` — now just 3 (Salehman,
+Auto, Unsloth Studio) after the 2026-06-12 paid-provider purge (DeepSeek/Copilot/cloud all removed). But
+two SettingsView comments still claimed "13 brains" dropping into "~5 short rows" — factually wrong (the
+inline comment at the `ForEach` already correctly notes "paid providers hidden," so the surrounding ones
+were leftover). Corrected both to describe the current selectable-brains grid. (The "15 agents" comment
+in CodeView is about the separate agent pipeline — untouched by the provider purge — left as-is.)
+
+Already fixed two other stale comments earlier this session as I touched the code (`runLocalTool` doc
+EOBD, `PulsingDot` doc EOBN); comment hygiene is otherwise excellent (the many "was/used-to" comments
+are accurate design-history rationale, not staleness).
+
+**Files:** `Views/SettingsView.swift` (comments only).
+
+**Verify:** `swiftc -typecheck` (full isolation flags) → 0/0; 0 "13 brains" refs remain.
+
+**↪︎ Redirect:** rotation 2 now has 1 fix (this stale comment) — still strongly recommend the owner
+redirect (⌘K glass / features / tests / perf / MarkdownText RTL); the loop's yield is now sparse
+comment-drift.
 
 ---
 

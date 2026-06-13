@@ -117,8 +117,9 @@ struct SettingsView: View {
 
                     section("Brain", "Which model answers. Tap a cell to pin one; hover for details. The dot is green when that brain is reachable, orange when not.") {
                         activeBrainStatusRow
-                        // Compact 3-column adaptive grid — 13 brains drop from a
-                        // long scroll into ~5 short rows. Cell padding lives in
+                        // Compact 3-column adaptive grid over the SELECTABLE brains
+                        // (paid providers hidden — see `selectableCases`), kept
+                        // glanceable in a couple of short rows. Cell padding lives in
                         // `brainGridCell`; outer padding here keeps the grid off
                         // the section card's edges.
                         LazyVGrid(
@@ -469,10 +470,10 @@ struct SettingsView: View {
     }
 
     /// Compact selectable cell for the Brain picker grid. Replaces the old
-    /// full-width `brainRow` — with 13 brains in the list, a vertical stack
-    /// forced a long scroll. A 3-column adaptive grid drops that to ~5 rows
-    /// while keeping every brain glanceable. The full subtitle text moves to
-    /// a `.help(...)` tooltip so detail isn't lost, just hidden until hover.
+    /// full-width `brainRow` — a 3-column adaptive grid keeps the selectable
+    /// brains glanceable without a long scroll (the list was much longer before
+    /// paid providers were hidden — see `selectableCases`). The full subtitle
+    /// text moves to a `.help(...)` tooltip so detail isn't lost, just on hover.
     // MARK: - MLX standalone engine row
     //
     // The "Salehman alone" path. Lives at the top of the Salehman engine section

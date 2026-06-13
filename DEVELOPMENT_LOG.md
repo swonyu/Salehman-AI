@@ -5205,6 +5205,29 @@ user-facing impact (pure code-style), this is a no-churn **no gap**.
 
 ---
 
+## 2026-06-14 — EOCG: stale-comment audit (rotation 2, angle j) — fixed "13 brains" drift
+
+GENUINE find. The Brain picker grid iterates `BrainPreference.selectableCases` — now just 3 (Salehman,
+Auto, Unsloth Studio) after the 2026-06-12 paid-provider purge (DeepSeek/Copilot/cloud all removed). But
+two SettingsView comments still claimed "13 brains" dropping into "~5 short rows" — factually wrong (the
+inline comment at the `ForEach` already correctly notes "paid providers hidden," so the surrounding ones
+were leftover). Corrected both to describe the current selectable-brains grid. (The "15 agents" comment
+in CodeView is about the separate agent pipeline — untouched by the provider purge — left as-is.)
+
+Already fixed two other stale comments earlier this session as I touched the code (`runLocalTool` doc
+EOBD, `PulsingDot` doc EOBN); comment hygiene is otherwise excellent (the many "was/used-to" comments
+are accurate design-history rationale, not staleness).
+
+**Files:** `Views/SettingsView.swift` (comments only).
+
+**Verify:** `swiftc -typecheck` (full isolation flags) → 0/0; 0 "13 brains" refs remain.
+
+**↪︎ Redirect:** rotation 2 now has 1 fix (this stale comment) — still strongly recommend the owner
+redirect (⌘K glass / features / tests / perf / MarkdownText RTL); the loop's yield is now sparse
+comment-drift.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
