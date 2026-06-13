@@ -5185,6 +5185,26 @@ perf profiling · chat/code MarkdownText RTL.
 
 ---
 
+## 2026-06-14 — EOCF: magic-numbers → DS-tokens audit (rotation 2, angle i) — no gap (deliberate)
+
+Counted cornerRadius literals in Views: 6(×9), 4(×8), 14(×6), 11(×6), 5/18/10/7/22/15/13/12. Checked
+whether any are clear token-duplicates worth tokenizing — they are NOT, they're SEMANTICALLY LOCAL:
+- `cornerRadius: 6` (most common) is used for kbd key badges (Shortcuts), file-row hover bg (FileTree),
+  small inline wells (Code) — NONE are the 24–28pt icon-well that `DS.Radius.well` (=6) documents, so
+  tokenizing would be semantically MISLEADING, not clarifying.
+- `4, 5, 7, 11, 13, 15` match NO DS token (deliberate one-off micro-tuning).
+- Where a literal's value coincides with a token (6=well, 14=card, 10=icon, 12=chip, 22=bezel), context
+  differs enough that the literal is the honest local choice; DS tokens are already used for the
+  canonical card/field/modal/bezel surfaces.
+Per the directive's own guidance (leave deliberate one-offs; don't churn), and since tokenizing has ZERO
+user-facing impact (pure code-style), this is a no-churn **no gap**.
+
+**Files:** none (audit only — no source change).
+
+**↪︎ Redirect still recommended** — rotation 1: 2 fixes; rotation 2: 0 so far. App exhaustively polished.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
