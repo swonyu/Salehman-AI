@@ -221,6 +221,9 @@ struct ChatHistoryView: View {
                         .lineLimit(1)
                 }
             }
+            // Read the title + meta + preview as ONE VoiceOver element (not three
+            // swipes); the Restore/Export/Delete buttons stay separate siblings.
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
                 .buttonStyle(PressableStyle())

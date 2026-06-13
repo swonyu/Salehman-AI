@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 14:48 +03 · Swift files: 160 · Swift LOC: 36685_
+_Generated: 2026-06-13 15:23 +03 · Swift files: 160 · Swift LOC: 36693_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13634,7 +13634,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (563 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (568 lines) =====
 ```swift
 import SwiftUI
 
@@ -14178,6 +14178,11 @@ private struct AgentCard: View {
         .shadow(color: DS.Palette.accent.opacity(isActive ? 0.14 : 0.0), radius: 12, y: 5)
         .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
         .animation(DS.Motion.smooth, value: isActive)
+        // One VoiceOver element per card; expose the running state, which is
+        // otherwise conveyed ONLY by the pulsing dot vs. arrow (invisible to VO).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spec.name), \(spec.role)")
+        .accessibilityValue(isActive ? "Running" : "Idle")
     }
 }
 
@@ -14343,7 +14348,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (263 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (266 lines) =====
 ```swift
 import SwiftUI
 
@@ -14568,6 +14573,9 @@ struct ChatHistoryView: View {
                         .lineLimit(1)
                 }
             }
+            // Read the title + meta + preview as ONE VoiceOver element (not three
+            // swipes); the Restore/Export/Delete buttons stay separate siblings.
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
                 .buttonStyle(PressableStyle())
@@ -39293,7 +39301,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5463 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5484 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43662,6 +43670,27 @@ rotor navigation, so the trait there is marginal.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Also re-ran
 the full app+tests checkpoint this round: both 0/0 (no regression from EOAR/EOAS/EOAT).
+
+---
+
+## 2026-06-13 — EOAV: VoiceOver row/card grouping + expose visual-only agent status
+
+**What changed:**
+- **ChatHistoryView row:** the bare title + date·count·age + preview `VStack` (3 separate Texts,
+  read as 3 swipes) now `.accessibilityElement(children: .combine)` → one element. The
+  Restore/Export/Delete buttons are siblings, so they stay individually actionable.
+- **AgentCard:** `.accessibilityElement(children: .ignore)` + explicit
+  `.accessibilityLabel("\(name), \(role)")` + `.accessibilityValue(isActive ? "Running" : "Idle")`.
+  This also closes a real gap — the running state was conveyed ONLY by the pulsing dot vs. arrow
+  (invisible to VoiceOver); the value now announces it.
+
+**Why:** rows already inside a `Button` (StatTile, ActionTile, KnowledgeView doc tile) auto-combine
+their label, so they were left alone; the two targets are the bare/display rows that read as
+multiple swipes. Pure accessibility semantics — zero visual change, safe without a pixel render.
+
+**Files:** `Views/ChatHistoryView.swift`, `Views/AgentsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 
 ---
 

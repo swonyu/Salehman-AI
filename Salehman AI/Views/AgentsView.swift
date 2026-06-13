@@ -540,6 +540,11 @@ private struct AgentCard: View {
         .shadow(color: DS.Palette.accent.opacity(isActive ? 0.14 : 0.0), radius: 12, y: 5)
         .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
         .animation(DS.Motion.smooth, value: isActive)
+        // One VoiceOver element per card; expose the running state, which is
+        // otherwise conveyed ONLY by the pulsing dot vs. arrow (invisible to VO).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spec.name), \(spec.role)")
+        .accessibilityValue(isActive ? "Running" : "Idle")
     }
 }
 

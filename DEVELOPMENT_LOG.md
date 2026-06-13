@@ -4369,6 +4369,27 @@ the full app+tests checkpoint this round: both 0/0 (no regression from EOAR/EOAS
 
 ---
 
+## 2026-06-13 — EOAV: VoiceOver row/card grouping + expose visual-only agent status
+
+**What changed:**
+- **ChatHistoryView row:** the bare title + date·count·age + preview `VStack` (3 separate Texts,
+  read as 3 swipes) now `.accessibilityElement(children: .combine)` → one element. The
+  Restore/Export/Delete buttons are siblings, so they stay individually actionable.
+- **AgentCard:** `.accessibilityElement(children: .ignore)` + explicit
+  `.accessibilityLabel("\(name), \(role)")` + `.accessibilityValue(isActive ? "Running" : "Idle")`.
+  This also closes a real gap — the running state was conveyed ONLY by the pulsing dot vs. arrow
+  (invisible to VoiceOver); the value now announces it.
+
+**Why:** rows already inside a `Button` (StatTile, ActionTile, KnowledgeView doc tile) auto-combine
+their label, so they were left alone; the two targets are the bare/display rows that read as
+multiple swipes. Pure accessibility semantics — zero visual change, safe without a pixel render.
+
+**Files:** `Views/ChatHistoryView.swift`, `Views/AgentsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
