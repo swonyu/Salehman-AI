@@ -198,5 +198,10 @@ struct AboutView: View {
                 else if hoveredCap == cap.id { hoveredCap = nil }
             }
         }
+        // One VoiceOver element per capability (the icon is decorative) — matches
+        // AgentCard's row-grouping so the list reads as coherent items, not as
+        // separate title/body fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(cap.title). \(cap.body)")
     }
 }

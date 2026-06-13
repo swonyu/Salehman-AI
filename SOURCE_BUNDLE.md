@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:13 +03 · Swift files: 160 · Swift LOC: 36988_
+_Generated: 2026-06-13 22:20 +03 · Swift files: 160 · Swift LOC: 36993_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13436,7 +13436,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (202 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (207 lines) =====
 ```swift
 import SwiftUI
 
@@ -13638,6 +13638,11 @@ struct AboutView: View {
                 else if hoveredCap == cap.id { hoveredCap = nil }
             }
         }
+        // One VoiceOver element per capability (the icon is decorative) — matches
+        // AgentCard's row-grouping so the list reads as coherent items, not as
+        // separate title/body fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(cap.title). \(cap.body)")
     }
 }
 ```
@@ -39596,7 +39601,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5853 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5873 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44335,6 +44340,26 @@ the orb's color, the mic/speaker/stop glyph swap, and the phase label — no inf
 genuine extension of the app-wide Reduce-Motion pass (EOAX–EOBC), not churn.
 
 **Files:** `Views/VoiceModeView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
+## 2026-06-13 — EOBL: AboutView VoiceOver row-grouping (loop slice 7/8)
+
+AboutView audited as one of the most complete views — gated brand-tile bounce, `Eyebrow`, ambient
+glow, magnetic capability rows, staggered entrance, Info.plist-driven version. Its one-shot entrance
+fades are correctly NOT reduceMotion-gated (app convention: gate continuous loops + scale-bounces,
+keep subtle one-shot fades — so gating them would be the inconsistency). The one genuine gap: the
+capability rows had **no per-row VoiceOver grouping**, unlike `AgentCard`'s `.accessibilityElement(
+children: .ignore)` + combined label, so VoiceOver read each row's title and body as disconnected
+fragments. Added the grouping to match AgentCard (the SF Symbol icon is decorative → label is
+"title. body").
+
+No other change — manufacturing visual churn on an already-polished sheet would violate the ultracode
+anti-churn discipline.
+
+**Files:** `Views/AboutView.swift`.
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 

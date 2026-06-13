@@ -4741,6 +4741,26 @@ genuine extension of the app-wide Reduce-Motion pass (EOAX–EOBC), not churn.
 
 ---
 
+## 2026-06-13 — EOBL: AboutView VoiceOver row-grouping (loop slice 7/8)
+
+AboutView audited as one of the most complete views — gated brand-tile bounce, `Eyebrow`, ambient
+glow, magnetic capability rows, staggered entrance, Info.plist-driven version. Its one-shot entrance
+fades are correctly NOT reduceMotion-gated (app convention: gate continuous loops + scale-bounces,
+keep subtle one-shot fades — so gating them would be the inconsistency). The one genuine gap: the
+capability rows had **no per-row VoiceOver grouping**, unlike `AgentCard`'s `.accessibilityElement(
+children: .ignore)` + combined label, so VoiceOver read each row's title and body as disconnected
+fragments. Added the grouping to match AgentCard (the SF Symbol icon is decorative → label is
+"title. body").
+
+No other change — manufacturing visual churn on an already-polished sheet would violate the ultracode
+anti-churn discipline.
+
+**Files:** `Views/AboutView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
