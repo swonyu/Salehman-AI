@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 07:21 +03 · Swift files: 160 · Swift LOC: 36621_
+_Generated: 2026-06-13 07:45 +03 · Swift files: 160 · Swift LOC: 36631_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23294,7 +23294,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (372 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (382 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23357,6 +23357,16 @@ struct MemoryView: View {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
             DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
+
+            // Ambient brand glow — soft atmospheric depth behind the brain icon,
+            // consistent with the other sheets (AboutView, OnboardingView). Fixed
+            // non-scrolling element so the blur lives on the compositor, no repaints.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.12))
+                .frame(width: 200, height: 200)
+                .blur(radius: 70)
+                .offset(x: -80, y: -200)
+                .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
@@ -23635,7 +23645,7 @@ struct MemoryView: View {
                 Button("Add", action: addFact)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .transition(.opacity)
             }
         }
@@ -39229,7 +39239,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4961 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4974 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43127,6 +43137,19 @@ Visual design marathon — final polish pass on ScratchpadView row actions.
 **Files:** `Salehman AI/Views/ScratchpadView.swift`  
 **Why:** `editButton`/`deleteButton` were shared helpers with no hover-awareness, so pencil and trash stayed neutral gray regardless of row highlight state. MemoryView rows had already set the pattern (danger-tinted trash, accent-tinted pencil on hover) — this brings ScratchpadView to parity. The `hovered: Bool = false` default makes the upgrade zero blast-radius.  
 **Result:** All 4 row call sites confirmed via grep (`editButton(hovered:hovered)` × 2, `deleteButton(hovered:hovered)` × 2, helpers at lines 485/493). SourceKit "Cannot find 'DS' in scope" diagnostics are the known module-resolution false positives.
+
+---
+
+### 2026-06-13 — EOZ: MemoryView atmospheric depth + Add button press feel
+Visual design marathon — second polish pass on MemoryView.
+
+**Changes:**
+- Added ambient brand glow (`Circle`, `DS.Palette.accent.opacity(0.12)`, `blur(radius:70)`, `offset(x:-80,y:-200)`, `allowsHitTesting(false)`) inside the root `ZStack`, between the `codeSurface` background and the content `VStack`. Brings atmospheric depth consistent with `AboutView` and `OnboardingView` (both sheets use the same technique). Non-scrolling fixed element — blur stays on GPU compositor, no per-frame repaints.
+- `addFactRow` "Add" text button: changed from `.buttonStyle(.plain)` to `.buttonStyle(LuxPressStyle())` for physical press feel, matching ScratchpadView's add button (improved in EOY).
+
+**Files:** `Salehman AI/Views/MemoryView.swift`  
+**Why:** MemoryView was the only sheet view using the flat `codeSurface` with no ambient glow, unlike `AboutView`/`OnboardingView` which both carry a subtle accent orb for depth. The "Add" button inconsistency was spotted while aligning with ScratchpadView's EOY improvements.  
+**Result:** Glow circle confirmed at line 67, `allowsHitTesting(false)` at line 71, `LuxPressStyle()` at line 350. SourceKit "Cannot find DS in scope" diagnostics are the known module-resolution false positives.
 
 ---
 

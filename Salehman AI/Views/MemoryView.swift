@@ -60,6 +60,16 @@ struct MemoryView: View {
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
             DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
 
+            // Ambient brand glow — soft atmospheric depth behind the brain icon,
+            // consistent with the other sheets (AboutView, OnboardingView). Fixed
+            // non-scrolling element so the blur lives on the compositor, no repaints.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.12))
+                .frame(width: 200, height: 200)
+                .blur(radius: 70)
+                .offset(x: -80, y: -200)
+                .allowsHitTesting(false)
+
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
 
@@ -337,7 +347,7 @@ struct MemoryView: View {
                 Button("Add", action: addFact)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .transition(.opacity)
             }
         }

@@ -3898,6 +3898,19 @@ Visual design marathon — final polish pass on ScratchpadView row actions.
 
 ---
 
+### 2026-06-13 — EOZ: MemoryView atmospheric depth + Add button press feel
+Visual design marathon — second polish pass on MemoryView.
+
+**Changes:**
+- Added ambient brand glow (`Circle`, `DS.Palette.accent.opacity(0.12)`, `blur(radius:70)`, `offset(x:-80,y:-200)`, `allowsHitTesting(false)`) inside the root `ZStack`, between the `codeSurface` background and the content `VStack`. Brings atmospheric depth consistent with `AboutView` and `OnboardingView` (both sheets use the same technique). Non-scrolling fixed element — blur stays on GPU compositor, no per-frame repaints.
+- `addFactRow` "Add" text button: changed from `.buttonStyle(.plain)` to `.buttonStyle(LuxPressStyle())` for physical press feel, matching ScratchpadView's add button (improved in EOY).
+
+**Files:** `Salehman AI/Views/MemoryView.swift`  
+**Why:** MemoryView was the only sheet view using the flat `codeSurface` with no ambient glow, unlike `AboutView`/`OnboardingView` which both carry a subtle accent orb for depth. The "Add" button inconsistency was spotted while aligning with ScratchpadView's EOY improvements.  
+**Result:** Glow circle confirmed at line 67, `allowsHitTesting(false)` at line 71, `LuxPressStyle()` at line 350. SourceKit "Cannot find DS in scope" diagnostics are the known module-resolution false positives.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
