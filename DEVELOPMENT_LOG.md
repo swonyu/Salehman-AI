@@ -3240,6 +3240,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+## 2026-06-13 — Marathon EFG: CodeView recent-project pills gradient stroke
+
+**What changed:** Upgraded the "recent projects" pill buttons in CodeView's welcome landing surface from flat `white@0.10` stroke → top-lit gradient `[white@0.18, white@0.05]`. These are interactive `Button` elements that tap to open a recent project — every other interactive Capsule in that same welcome surface already had gradient strokes (example suggestion pills `[white@0.22, white@0.05]`, eyebrow Capsule `[white@0.22, white@0.06]`, brain picker `[white@0.16, white@0.04]`). Confirmed: CodeMessageRow user bubble (`coreInnerHighlight` ✅), action pill (flat `white@0.09` — matches ContentView's action pill convention ✅), context/tok/s status badges (read-only, flat is correct ✅), "FILES & DIFFS" label (quiet secondary, flat is correct ✅).
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** Final interactive Capsule element in the app using a flat stroke — now consistent with all other tappable pills in the Code welcome state.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

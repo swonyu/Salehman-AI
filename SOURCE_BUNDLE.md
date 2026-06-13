@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:10 +03 · Swift files: 150 · Swift LOC: 34247_
+_Generated: 2026-06-13 03:14 +03 · Swift files: 150 · Swift LOC: 34249_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14879,7 +14879,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2657 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2659 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16244,7 +16244,9 @@ struct CodeView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Color.white.opacity(0.05), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                                .overlay(Capsule().stroke(
+                                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help(url.path)
@@ -36815,7 +36817,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4283 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4295 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40053,6 +40055,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/ContentView.swift`
 
 **Why:** The chat welcome state was the only surface using a flat badge stroke — inconsistency visible at first-launch or new-chat. The terminal command block (`Color.black.opacity(0.4)` at `RoundedRectangle(cornerRadius: DS.Radius.chip)` in the run-command dialog) correctly stays flat — code/terminal display blocks are intentionally neutral.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFG: CodeView recent-project pills gradient stroke
+
+**What changed:** Upgraded the "recent projects" pill buttons in CodeView's welcome landing surface from flat `white@0.10` stroke → top-lit gradient `[white@0.18, white@0.05]`. These are interactive `Button` elements that tap to open a recent project — every other interactive Capsule in that same welcome surface already had gradient strokes (example suggestion pills `[white@0.22, white@0.05]`, eyebrow Capsule `[white@0.22, white@0.06]`, brain picker `[white@0.16, white@0.04]`). Confirmed: CodeMessageRow user bubble (`coreInnerHighlight` ✅), action pill (flat `white@0.09` — matches ContentView's action pill convention ✅), context/tok/s status badges (read-only, flat is correct ✅), "FILES & DIFFS" label (quiet secondary, flat is correct ✅).
+
+**Files:** `Salehman AI/Views/CodeView.swift`
+
+**Why:** Final interactive Capsule element in the app using a flat stroke — now consistent with all other tappable pills in the Code welcome state.
 
 **Result:** Build exit 0, 0 real Swift errors.
 

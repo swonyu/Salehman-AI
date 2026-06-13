@@ -1361,7 +1361,9 @@ struct CodeView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Color.white.opacity(0.05), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                                .overlay(Capsule().stroke(
+                                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help(url.path)
