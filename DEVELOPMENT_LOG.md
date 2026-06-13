@@ -4457,6 +4457,25 @@ priority).
 
 ---
 
+## 2026-06-13 — EOAZ: Reduce Motion slice 3 — brand-tile bounce-in goes static
+
+**What changed:** Gated the header brand-tile `KeyframeAnimator` scale bounce-in (compress →
+overshoot 1.18 → settle) on `accessibilityReduceMotion` in the three views that already had the
+environment value (MemoryView, KnowledgeView, ChatHistoryView): when Reduce Motion is on, the
+icon renders static at its settled scale (1.0) instead of bouncing in.
+
+**Why:** Apple's HIG explicitly lists scaling/bouncing among the motions Reduce Motion should
+calm — a bounce on the header icon every time a sheet opens is exactly that. Scoped to the views
+already carrying `reduceMotion` (no new plumbing); the remaining brand-tile bounces (AgentsView
+header, MarketsView, AboutView, ShortcutsView, etc.) need the `@Environment` added first — a
+follow-up. Geometry-preserving; behavior changes only when the OS setting is on.
+
+**Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/ChatHistoryView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

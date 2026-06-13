@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 16:32 +03 · Swift files: 160 · Swift LOC: 36766_
+_Generated: 2026-06-13 16:44 +03 · Swift files: 160 · Swift LOC: 36787_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14357,7 +14357,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (276 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (283 lines) =====
 ```swift
 import SwiftUI
 
@@ -14414,16 +14414,23 @@ struct ChatHistoryView: View {
                                 .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
                                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                         )
-                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
+                    if reduceMotion {
+                        // Reduce Motion: static icon (no scale bounce-in).
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
-                            .scaleEffect(scale)
-                    } keyframes: { _ in
-                        KeyframeTrack {
-                            LinearKeyframe(0.60, duration: 0.07)
-                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                    } else {
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                            }
                         }
                     }
                 }
@@ -21123,7 +21130,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (715 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (722 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21228,16 +21235,23 @@ struct KnowledgeView: View {
                                 lineWidth: 0.75
                             )
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -23405,7 +23419,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (398 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (405 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23572,16 +23586,23 @@ struct MemoryView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "brain.head.profile")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -39374,7 +39395,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5551 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5570 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43831,6 +43852,25 @@ setting is on.
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. One-shot
 KeyframeAnimator entrance bounces were left (they play once, not looping — lower motion-sensitivity
 priority).
+
+---
+
+## 2026-06-13 — EOAZ: Reduce Motion slice 3 — brand-tile bounce-in goes static
+
+**What changed:** Gated the header brand-tile `KeyframeAnimator` scale bounce-in (compress →
+overshoot 1.18 → settle) on `accessibilityReduceMotion` in the three views that already had the
+environment value (MemoryView, KnowledgeView, ChatHistoryView): when Reduce Motion is on, the
+icon renders static at its settled scale (1.0) instead of bouncing in.
+
+**Why:** Apple's HIG explicitly lists scaling/bouncing among the motions Reduce Motion should
+calm — a bounce on the header icon every time a sheet opens is exactly that. Scoped to the views
+already carrying `reduceMotion` (no new plumbing); the remaining brand-tile bounces (AgentsView
+header, MarketsView, AboutView, ShortcutsView, etc.) need the `@Environment` added first — a
+follow-up. Geometry-preserving; behavior changes only when the OS setting is on.
+
+**Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/ChatHistoryView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 
 ---
 
