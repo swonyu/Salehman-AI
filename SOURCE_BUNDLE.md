@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:25 +03 · Swift files: 150 · Swift LOC: 33788_
+_Generated: 2026-06-13 04:26 +03 · Swift files: 150 · Swift LOC: 33809_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2828,7 +2828,7 @@ extension SalehmanEngine {
 }
 ```
 
-===== FILE: Salehman AI/Intelligence/SelfCritique.swift (116 lines) =====
+===== FILE: Salehman AI/Intelligence/SelfCritique.swift (120 lines) =====
 ```swift
 import Foundation
 
@@ -2912,10 +2912,14 @@ enum SelfCritique {
     /// sentinel anywhere in the (case-insensitive) text -- small models tend to
     /// wrap it in prose ("I find NO_ISSUES here.") -- and treats an empty
     /// critique as "nothing to fix".
+    /// Strips reasoning-model think blocks first: a model that debates the token
+    /// inside <think> ("Should I say NO_ISSUES? No, there are real problems.")
+    /// would otherwise produce a false positive.
     nonisolated static func isApproved(_ critique: String) -> Bool {
-        let trimmed = critique.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return true }
-        return trimmed.uppercased().contains(approvedToken)
+        let stripped = AgentPipeline.stripNarration(critique)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if stripped.isEmpty { return true }
+        return stripped.uppercased().contains(approvedToken)
     }
 
     nonisolated static func critiquePrompt(question: String, answer: String) -> String {
@@ -32977,7 +32981,7 @@ struct SSRFGuardUnitTests {
 }
 ```
 
-===== FILE: Salehman AITests/SelfCritiqueTests.swift (96 lines) =====
+===== FILE: Salehman AITests/SelfCritiqueTests.swift (113 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -33073,6 +33077,23 @@ import Foundation
         #expect(SelfCritique.isApproved("no_issues") == true)   // case-insensitive
         #expect(SelfCritique.isApproved("") == true)            // empty = nothing to fix
         #expect(SelfCritique.isApproved("This is wrong.") == false)
+    }
+
+    @Test func thinkBlockContainingTokenDoesNotFalseApprove() {
+        // A reasoning model might debate the token inside <think>:
+        //   <think>Should I say NO_ISSUES? No, there are real problems.</think>Issue 1: …
+        // Without stripping: contains("NO_ISSUES") == true → wrong, draft approved early.
+        // With stripping (EOU fix): think block removed → "Issue 1: …" → correctly NOT approved.
+        let falseApproval = "<think>Should I say NO_ISSUES? No, there are real problems.</think>Issue 1: The draft lacks detail."
+        #expect(SelfCritique.isApproved(falseApproval) == false)
+    }
+
+    @Test func thinkBlockFollowedByTokenCorrectlyApproves() {
+        // A reasoning model that genuinely approves might emit:
+        //   <think>Reviewing the draft… it looks good.</think>NO_ISSUES
+        // After stripping: "NO_ISSUES" → correctly approved.
+        let correctApproval = "<think>Reviewing the draft… it looks good to me.</think>NO_ISSUES"
+        #expect(SelfCritique.isApproved(correctApproval) == true)
     }
 }
 ```
@@ -36356,7 +36377,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4509 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4527 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39822,6 +39843,24 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 **Files:** `Salehman AI/Intelligence/Effort.swift` (+3 / -1 lines), `Salehman AITests/EffortTests.swift` (+16 lines)
 
 **Result:** 0 real Swift errors. Bug was silent before (wrong candidate chosen, no crash).
+
+---
+
+## 2026-06-13 — Marathon EOU: fix SelfCritique.isApproved false-positive with reasoning models
+
+**What changed:** `Intelligence/SelfCritique.swift` + `Salehman AITests/SelfCritiqueTests.swift`
+
+**Bug:** `isApproved` checked `trimmed.uppercased().contains("NO_ISSUES")` on the raw critique text. A reasoning model that debates the approval token inside its think block — `<think>Should I say NO_ISSUES? No, there are real problems here.</think>Issue 1: The draft lacks detail.` — would trigger the `contains` match and falsely approve the draft, ending the self-critique loop prematurely. The user would receive an un-refined draft despite the model finding issues.
+
+**Fix:** Strip `AgentPipeline.stripNarration(critique)` before the `contains` check. Result: the think block is removed, leaving only the actual critique text — `"Issue 1: The draft lacks detail."` — which correctly doesn't match `NO_ISSUES`.
+
+**Tests added (2):**
+- `thinkBlockContainingTokenDoesNotFalseApprove` — think-debate pattern → NOT approved (prevents regression)
+- `thinkBlockFollowedByTokenCorrectlyApproves` — genuine approval after think block → correctly approved
+
+**Files:** `Salehman AI/Intelligence/SelfCritique.swift` (+4 / -2 lines), `Salehman AITests/SelfCritiqueTests.swift` (+18 lines)
+
+**Result:** 0 real Swift errors.
 
 ---
 

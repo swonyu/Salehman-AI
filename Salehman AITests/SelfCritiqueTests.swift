@@ -93,4 +93,21 @@ import Foundation
         #expect(SelfCritique.isApproved("") == true)            // empty = nothing to fix
         #expect(SelfCritique.isApproved("This is wrong.") == false)
     }
+
+    @Test func thinkBlockContainingTokenDoesNotFalseApprove() {
+        // A reasoning model might debate the token inside <think>:
+        //   <think>Should I say NO_ISSUES? No, there are real problems.</think>Issue 1: …
+        // Without stripping: contains("NO_ISSUES") == true → wrong, draft approved early.
+        // With stripping (EOU fix): think block removed → "Issue 1: …" → correctly NOT approved.
+        let falseApproval = "<think>Should I say NO_ISSUES? No, there are real problems.</think>Issue 1: The draft lacks detail."
+        #expect(SelfCritique.isApproved(falseApproval) == false)
+    }
+
+    @Test func thinkBlockFollowedByTokenCorrectlyApproves() {
+        // A reasoning model that genuinely approves might emit:
+        //   <think>Reviewing the draft… it looks good.</think>NO_ISSUES
+        // After stripping: "NO_ISSUES" → correctly approved.
+        let correctApproval = "<think>Reviewing the draft… it looks good to me.</think>NO_ISSUES"
+        #expect(SelfCritique.isApproved(correctApproval) == true)
+    }
 }

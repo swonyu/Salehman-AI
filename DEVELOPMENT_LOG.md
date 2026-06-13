@@ -3466,6 +3466,24 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 
 ---
 
+## 2026-06-13 — Marathon EOU: fix SelfCritique.isApproved false-positive with reasoning models
+
+**What changed:** `Intelligence/SelfCritique.swift` + `Salehman AITests/SelfCritiqueTests.swift`
+
+**Bug:** `isApproved` checked `trimmed.uppercased().contains("NO_ISSUES")` on the raw critique text. A reasoning model that debates the approval token inside its think block — `<think>Should I say NO_ISSUES? No, there are real problems here.</think>Issue 1: The draft lacks detail.` — would trigger the `contains` match and falsely approve the draft, ending the self-critique loop prematurely. The user would receive an un-refined draft despite the model finding issues.
+
+**Fix:** Strip `AgentPipeline.stripNarration(critique)` before the `contains` check. Result: the think block is removed, leaving only the actual critique text — `"Issue 1: The draft lacks detail."` — which correctly doesn't match `NO_ISSUES`.
+
+**Tests added (2):**
+- `thinkBlockContainingTokenDoesNotFalseApprove` — think-debate pattern → NOT approved (prevents regression)
+- `thinkBlockFollowedByTokenCorrectlyApproves` — genuine approval after think block → correctly approved
+
+**Files:** `Salehman AI/Intelligence/SelfCritique.swift` (+4 / -2 lines), `Salehman AITests/SelfCritiqueTests.swift` (+18 lines)
+
+**Result:** 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
