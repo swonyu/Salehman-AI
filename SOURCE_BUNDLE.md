@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:16 +03 · Swift files: 150 · Swift LOC: 33761_
+_Generated: 2026-06-13 04:22 +03 · Swift files: 150 · Swift LOC: 33766_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10204,7 +10204,7 @@ enum StockSageBriefingService {
         \(facts)
         """
         if let written = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) {
-            return written
+            return AgentPipeline.stripNarration(written)
         }
         return facts
     }
@@ -10470,7 +10470,7 @@ final class StockSagePortfolio: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageScreenAnalysis.swift (86 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageScreenAnalysis.swift (87 lines) =====
 ```swift
 import Foundation
 
@@ -10545,8 +10545,9 @@ final class StockSageScreenAnalysis {
         // so the follow-up must stay local even when the user pinned a cloud brain.
         // `generateOnDevice` runs only the local Ollama brain; on nil we say
         // so honestly rather than silently route to a cloud brain.
-        let reply = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        let rawReply = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
                 ?? "The on-device model isn't available right now to write a follow-up. Start Ollama (an on-device model), then ask again."
+        let reply = AgentPipeline.stripNarration(rawReply)
         remember("Assistant: \(reply.prefix(400))")
         return reply
     }
@@ -20993,7 +20994,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (697 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (700 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21518,7 +21519,8 @@ struct KnowledgeView: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 500))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }
@@ -21663,7 +21665,8 @@ private struct DocDetailSheet: View {
         DOCUMENT:
         \(text)
         """
-        summary = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        summary = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         loading = false
     }
 
@@ -21688,7 +21691,8 @@ private struct DocDetailSheet: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }
@@ -23930,7 +23934,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (666 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (667 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24552,7 +24556,8 @@ struct ScratchpadView: View {
         // On-device only: the scratchpad can hold private content, so Organize/
         // Summarize never leaves the Mac (mirrors the Knowledge vault) — returns a
         // clear message instead of silently routing to a pinned cloud brain.
-        aiResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        let rawResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        aiResult = rawResult.map { AgentPipeline.stripNarration($0) }
             ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
@@ -36329,7 +36334,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4473 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4489 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39759,6 +39764,22 @@ Mirror of Marathon EOQ applied to the OpenAI-compatible (Groq/Mistral/Cerebras/O
 **Why:** EOQ covered the Ollama loop. EOR covers the cloud loop. Together with EGM (user-facing reply) and EOP (MissionMemory + streaming display), all four `<think>` exposure paths are now eliminated.
 
 **Result:** 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EOS: strip `<think>` from all direct `generateOnDevice` call sites
+
+**What changed:** Four call sites that display `generateOnDevice` output directly without sanitization.
+
+After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces still bypassed `stripNarration`: Scratchpad organize/summarize, Knowledge vault RAG search, Knowledge document summarizer, Knowledge document Q&A, StockSage market briefing, and StockSage screen analysis follow-up. A reasoning model running locally via Ollama would have leaked raw `<think>…</think>` chain-of-thought into all six of these displays.
+
+**Files changed:**
+- `Salehman AI/Views/ScratchpadView.swift` — `organize()`: capture `rawResult`, then `.map { stripNarration($0) }`
+- `Salehman AI/Views/KnowledgeView.swift` — 3 sites (vault RAG answer, document summary, document Q&A): inline `.map { stripNarration($0) }` on the optional
+- `Salehman AI/StockSage/StockSageBriefingService.swift` — `aiWrittenSummary()`: strip the `written` result before returning
+- `Salehman AI/StockSage/StockSageScreenAnalysis.swift` — `followUp()`: capture `rawReply`, strip to `reply`
+
+**Result:** 0 real Swift errors. All `generateOnDevice` display paths now strip reasoning blocks.
 
 ---
 

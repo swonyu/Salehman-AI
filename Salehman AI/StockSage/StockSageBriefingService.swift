@@ -33,7 +33,7 @@ enum StockSageBriefingService {
         \(facts)
         """
         if let written = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) {
-            return written
+            return AgentPipeline.stripNarration(written)
         }
         return facts
     }

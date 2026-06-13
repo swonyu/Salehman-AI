@@ -3430,6 +3430,22 @@ Mirror of Marathon EOQ applied to the OpenAI-compatible (Groq/Mistral/Cerebras/O
 
 ---
 
+## 2026-06-13 — Marathon EOS: strip `<think>` from all direct `generateOnDevice` call sites
+
+**What changed:** Four call sites that display `generateOnDevice` output directly without sanitization.
+
+After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces still bypassed `stripNarration`: Scratchpad organize/summarize, Knowledge vault RAG search, Knowledge document summarizer, Knowledge document Q&A, StockSage market briefing, and StockSage screen analysis follow-up. A reasoning model running locally via Ollama would have leaked raw `<think>…</think>` chain-of-thought into all six of these displays.
+
+**Files changed:**
+- `Salehman AI/Views/ScratchpadView.swift` — `organize()`: capture `rawResult`, then `.map { stripNarration($0) }`
+- `Salehman AI/Views/KnowledgeView.swift` — 3 sites (vault RAG answer, document summary, document Q&A): inline `.map { stripNarration($0) }` on the optional
+- `Salehman AI/StockSage/StockSageBriefingService.swift` — `aiWrittenSummary()`: strip the `written` result before returning
+- `Salehman AI/StockSage/StockSageScreenAnalysis.swift` — `followUp()`: capture `rawReply`, strip to `reply`
+
+**Result:** 0 real Swift errors. All `generateOnDevice` display paths now strip reasoning blocks.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

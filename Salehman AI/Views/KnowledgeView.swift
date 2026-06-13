@@ -521,7 +521,8 @@ struct KnowledgeView: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 500))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }
@@ -666,7 +667,8 @@ private struct DocDetailSheet: View {
         DOCUMENT:
         \(text)
         """
-        summary = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        summary = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         loading = false
     }
 
@@ -691,7 +693,8 @@ private struct DocDetailSheet: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }

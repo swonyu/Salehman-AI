@@ -71,8 +71,9 @@ final class StockSageScreenAnalysis {
         // so the follow-up must stay local even when the user pinned a cloud brain.
         // `generateOnDevice` runs only the local Ollama brain; on nil we say
         // so honestly rather than silently route to a cloud brain.
-        let reply = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        let rawReply = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
                 ?? "The on-device model isn't available right now to write a follow-up. Start Ollama (an on-device model), then ask again."
+        let reply = AgentPipeline.stripNarration(rawReply)
         remember("Assistant: \(reply.prefix(400))")
         return reply
     }
