@@ -11,58 +11,16 @@ struct SettingsView: View {
     @State private var hasVision = false
     @State private var hasCoder = false
     @State private var showMemory = false
-    // Grok key entry state. `grokKeyDraft` only holds what the user is typing
-    // *right now* — once they hit Save it's written to Keychain and cleared.
-    // The literal key never lives in `@State` after Save.
-    @State private var anthropicKeyDraft: String = ""
+    // Cloud brain key-saved flags — only the boolean (not the draft) is needed;
+    // they feed brainReadiness which powers the green/orange dots in the Brain grid.
     @State private var anthropicKeySaved: Bool = AnthropicClient.isConfigured
-    // Same idle/"":OK/"msg":error tri-state convention as the other cloud
-    // brains. Lets the user run a live API check from Settings instead of
-    // discovering a 401 only after sending a chat message.
-    @State private var anthropicTesting: Bool = false
-    @State private var anthropicTestStatus: String? = nil
-
-    @State private var grokKeyDraft: String = ""
-    @State private var grokTestStatus: String? = nil  // nil = idle, "" = OK, "msg" = error
-    @State private var grokTesting: Bool = false
     @State private var grokKeySaved: Bool = GrokClient.hasKey()
-
-    // Four free cloud brains. Same idle/"":OK/"msg":error convention as Grok.
-    @State private var geminiKeyDraft: String = ""
-    @State private var geminiTestStatus: String? = nil
-    @State private var geminiTesting: Bool = false
     @State private var geminiKeySaved: Bool = GeminiClient.hasKey()
-
-    @State private var groqKeyDraft: String = ""
-    @State private var groqTestStatus: String? = nil
-    @State private var groqTesting: Bool = false
     @State private var groqKeySaved: Bool = GroqClient.shared.hasKey()
-
-    @State private var mistralKeyDraft: String = ""
-    @State private var mistralTestStatus: String? = nil
-    @State private var mistralTesting: Bool = false
     @State private var mistralKeySaved: Bool = MistralClient.shared.hasKey()
-
-    @State private var cerebrasKeyDraft: String = ""
-    @State private var cerebrasTestStatus: String? = nil
-    @State private var cerebrasTesting: Bool = false
     @State private var cerebrasKeySaved: Bool = CerebrasClient.shared.hasKey()
-
-    @State private var openAIKeyDraft: String = ""
-    @State private var openAITestStatus: String? = nil
-    @State private var openAITesting: Bool = false
     @State private var openAIKeySaved: Bool = OpenAIClient.hasKey()
-
-    @State private var openRouterKeyDraft: String = ""
-    @State private var openRouterTestStatus: String? = nil
-    @State private var openRouterTesting: Bool = false
     @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
-
-
-    // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
-    @State private var nvidiaKeyDraft: String = ""
-    @State private var nvidiaTestStatus: String? = nil
-    @State private var nvidiaTesting: Bool = false
     @State private var nvidiaKeySaved: Bool = NvidiaClient.shared.hasKey()
 
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
@@ -79,11 +37,8 @@ struct SettingsView: View {
     @State private var unslothStudioKeySaved: Bool = (KeychainStore.read(.unslothStudioAPIKey) != nil)
     @State private var unslothStudioKeyDraft: String = ""
 
-    // GitHub Copilot signs in via OAuth device-flow, not a pasted key.
+    // GitHub Copilot — boolean tracks auth state for the Brain grid readiness dot.
     @State private var copilotAuthed: Bool = CopilotClient.isAuthed()
-    @State private var showCopilotSignIn = false
-    @State private var copilotTesting = false
-    @State private var copilotWorking: Bool? = nil   // nil = untested, true/false = result
 
     // Live "is the *selected* brain actually answering" check (covers all
     // brains). The overlap rules (three triggers can race at the await; a
@@ -112,11 +67,6 @@ struct SettingsView: View {
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
-    // "minimize and stay minimized" intent. Default is collapsed: Settings opens
-    // clean; the count badge ("N/total set") in each header tells the user what
-    // they have configured without making them expand.
-    @AppStorage("settings.showFreeKeys") private var showFreeKeys: Bool = false
-    @AppStorage("settings.showPaidKeys") private var showPaidKeys: Bool = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var voices: [AVSpeechSynthesisVoice] {
@@ -318,9 +268,6 @@ struct SettingsView: View {
         .preferredColorScheme(.dark)
         .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .sheet(isPresented: $showMemory) { MemoryView() }
-        .sheet(isPresented: $showCopilotSignIn) {
-            CopilotSignInView { copilotAuthed = CopilotClient.isAuthed() }
-        }
         .task {
             // Re-poll Ollama + its models while Settings is open so the
             // picker rows ("Ready" / "Unavailable") stay in sync with the
@@ -846,9 +793,8 @@ struct SettingsView: View {
             Button {
                 Task {
                     unslothStudioTesting = true
-                    // Convention: testConnection returns nil on success, so we
-                    // store "" for OK and the raw message for failure — matches
-                    // every other cloudTestRow in this file.
+                    // Convention: testConnection returns nil on success,
+                    // "" for OK and raw message for failure.
                     unslothStudioTestStatus = (await UnslothStudio.testConnection()) ?? ""
                     unslothStudioTesting = false
                 }
@@ -1223,55 +1169,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: xAI Grok rows
-    //
-    // Three small rows make up the Grok config UI:
-    //   * grokKeyRow   — paste key into SecureField + Save (writes to Keychain).
-    //   * grokModelRow — picker between grok-4 and grok-4-heavy.
-    //   * grokTestRow  — "Test connection" button + status text.
-    //
-    // The literal key only lives in `grokKeyDraft` while the user is typing.
-    // After Save, the draft is cleared and the bytes live only in Keychain.
-
-    /// SecureField + Save/Clear. "Save" writes to Keychain and wipes the draft.
-    private var grokKeyRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("xAI API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(grokKeySaved ? "Saved in macOS Keychain · paste a new one to replace"
-                                  : "Get one at console.x.ai → API Keys")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            SecureField("xai-…", text: $grokKeyDraft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = grokKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                _ = KeychainStore.write(trimmed, to: .grokAPIKey)
-                grokKeyDraft = ""             // Wipe the in-memory copy immediately.
-                grokKeySaved = GrokClient.hasKey()
-                Task { await BrainStatus.shared.refresh() }   // Refresh header dot.
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(grokKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-            if grokKeySaved {
-                Button("Clear") {
-                    _ = KeychainStore.delete(.grokAPIKey)
-                    grokKeySaved = false
-                    grokTestStatus = nil
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .animation(DS.Motion.smooth, value: grokKeySaved)
-    }
-
     /// 14B-readiness status row under the custom-model-name field: is a model
     /// with the typed name (default "salehman") actually pulled in Ollama?
     /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
@@ -1364,122 +1261,6 @@ struct SettingsView: View {
             .labelsHidden().pickerStyle(.menu).frame(width: 150)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Picker between grok-4 (default) and grok-4-heavy.
-    private var grokModelRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("`grok-4` is the default; `grok-4-heavy` reasons deeper (slower / more $).")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Grok model", selection: $settings.grokModel) {
-                ForEach(GrokClient.allModels, id: \.self) { model in
-                    Text(model).tag(model)
-                }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 150)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Test-connection button. Hits the live API with a tiny prompt to verify
-    /// the saved key actually works (vs. a typo we silently 401 on later).
-    private var grokTestRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(grokTestStatus))
-                    .font(.caption2)
-                    .foregroundStyle(testStatusColor(grokTestStatus))
-                    .contentTransition(.opacity)
-                    .animation(DS.Motion.smooth, value: grokTestStatus)
-            }
-            Spacer()
-            Button {
-                grokTesting = true
-                grokTestStatus = nil
-                Task {
-                    let err = await GrokClient.testConnection()
-                    await MainActor.run {
-                        grokTestStatus = err ?? ""    // "" = success
-                        grokTesting = false
-                    }
-                }
-            } label: {
-                Group {
-                    if grokTesting { ProgressView().controlSize(.small) }
-                    else           { Text("Test") }
-                }
-                .transition(.opacity)
-                .animation(DS.Motion.smooth, value: grokTesting)
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(grokTesting || !grokKeySaved)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    // Grok used to carry its own `grokTestStatusText` / `grokTestStatusColor` —
-    // byte-identical to the shared `testStatusText(_:)` / `testStatusColor(_:)`
-    // helpers below. Deleted: the duplication was a maintenance hazard (a future
-    // color change would have drifted on Grok if you forgot the second site).
-    // Call sites switched to the shared `testStatusText(grokTestStatus)`.
-
-    /// GitHub Copilot OAuth device-flow sign-in + a live "is it working" check.
-    private var copilotRow: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Image(systemName: "person.2.badge.gearshape.fill")
-                    .foregroundStyle(.secondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("GitHub Copilot")
-                        .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                    Text(copilotAuthed ? "Signed in · token stored in macOS Keychain"
-                                       : "Requires an active Copilot subscription")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if copilotAuthed {
-                    Button("Sign out") {
-                        CopilotAuth.signOut()
-                        copilotAuthed = false
-                        copilotWorking = nil
-                    }
-                    .font(.caption.weight(.semibold)).buttonStyle(.bordered)
-                    .controlSize(.small).tint(.red)
-                    .transition(.opacity)
-                } else {
-                    Button { showCopilotSignIn = true } label: {
-                        Text("Sign in with GitHub")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(DS.Palette.accent, in: Capsule())
-                            .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
-                    }
-                    .buttonStyle(LuxPressStyle())
-                    .transition(.opacity)
-                }
-            }
-            .animation(DS.Motion.smooth, value: copilotAuthed)
-            if copilotAuthed {
-                HStack(spacing: 8) {
-                    workingBadge(testing: copilotTesting, working: copilotWorking)
-                    Spacer()
-                    Button("Test") { Task { await testCopilot() } }
-                        .font(.caption2.weight(.semibold)).buttonStyle(.bordered)
-                        .controlSize(.mini).disabled(copilotTesting)
-                }
-                .transition(.opacity.combined(with: .offset(y: -4)))
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .animation(DS.Motion.smooth, value: copilotAuthed)
     }
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
@@ -1577,392 +1358,6 @@ struct SettingsView: View {
             }
         }
         .animation(DS.Motion.smooth, value: testing)
-    }
-
-    /// Live ping for Copilot — does a one-token chat through the real path.
-    private func testCopilot() async {
-        copilotTesting = true
-        copilotWorking = nil
-        let ok = await CopilotClient.chat(prompt: "ping") != nil
-        copilotTesting = false
-        copilotWorking = ok
-    }
-
-    // (Deleted `grokTestStatusColor` — see note above grokTestStatusText.)
-
-    // MARK: Generic OpenAI-compatible cloud rows
-    //
-    // The three OpenAI-compatible brains (Groq, Mistral, Cerebras) share the
-    // exact same UI shape — key entry + model picker + test. These helpers
-    // take an `OpenAICompatibleClient` so each provider's Settings section is
-    // ~10 lines of call site instead of ~150 lines of copy-paste.
-
-    @ViewBuilder
-    private func cloudKeyRow(provider: OpenAICompatibleClient,
-                             keySaved: Binding<Bool>,
-                             draft: Binding<String>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(provider.displayName) API key")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(keySaved.wrappedValue
-                     ? "Saved in macOS Keychain · paste a new one to replace"
-                     : "Get one at \(provider.consoleURL)")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            Spacer()
-            SecureField("key…", text: draft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                // `cloudKeyRow` is only rendered for key-bearing providers, so
-                // `keychainAccount` is always non-nil in practice; we guard
-                // explicitly because the field is `Account?` to support the
-                // new no-auth local servers (Unsloth Studio).
-                guard let account = provider.keychainAccount else { return }
-                _ = KeychainStore.write(trimmed, to: account)
-                draft.wrappedValue = ""
-                keySaved.wrappedValue = provider.hasKey()
-                Task { await BrainStatus.shared.refresh() }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
-            if keySaved.wrappedValue {
-                Button("Clear") {
-                    // Same `Account?` unwrap as Save above — cloudKeyRow is
-                    // only used by key-bearing providers.
-                    guard let account = provider.keychainAccount else { return }
-                    _ = KeychainStore.delete(account)
-                    keySaved.wrappedValue = false
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .animation(DS.Motion.smooth, value: keySaved.wrappedValue)
-    }
-
-    @ViewBuilder
-    private func cloudModelRow(displayName: String,
-                               models: [String],
-                               selection: Binding<String>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(displayName) model")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("First in the list is the lightest; last is the heaviest.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("\(displayName) model", selection: selection) {
-                ForEach(models, id: \.self) { model in Text(model).tag(model) }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 200)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    @ViewBuilder
-    private func cloudTestRow(provider: OpenAICompatibleClient,
-                              keySaved: Binding<Bool>,
-                              testing: Binding<Bool>,
-                              status: Binding<String?>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(status.wrappedValue))
-                    .font(.caption2).foregroundStyle(testStatusColor(status.wrappedValue))
-                    .contentTransition(.opacity)
-                    .animation(DS.Motion.smooth, value: status.wrappedValue)
-            }
-            Spacer()
-            Button {
-                testing.wrappedValue = true
-                status.wrappedValue = nil
-                Task {
-                    let err = await provider.testConnection()
-                    await MainActor.run {
-                        status.wrappedValue = err ?? ""
-                        testing.wrappedValue = false
-                    }
-                }
-            } label: {
-                Group {
-                    if testing.wrappedValue { ProgressView().controlSize(.small) }
-                    else                    { Text("Test") }
-                }
-                .transition(.opacity)
-                .animation(DS.Motion.smooth, value: testing.wrappedValue)
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(testing.wrappedValue || !keySaved.wrappedValue)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    private func testStatusText(_ status: String?) -> String {
-        switch status {
-        case nil:           return "Tap Test after saving the key."
-        case .some(""):     return "Connected — your key works."
-        case .some(let m):  return m
-        }
-    }
-
-    private func testStatusColor(_ status: String?) -> Color {
-        switch status {
-        case nil:        return .secondary
-        // Desaturated soft tokens — full-saturation `.green`/`.orange` reads as
-        // alarming on the dark canvas (see DS.Palette docstring). One change
-        // here cascades to all seven cloud-provider test rows.
-        case .some(""):  return DS.Palette.successSoft
-        case .some(_):   return DS.Palette.warningSoft
-        }
-    }
-
-    // MARK: Google Gemini rows
-    //
-    // Gemini doesn't speak OpenAI's wire format, so it has its own client
-    // and its own row triplet. Same shape as the generic cloud rows above.
-
-    private var geminiKeyRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Gemini API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(geminiKeySaved
-                     ? "Saved in macOS Keychain · paste a new one to replace"
-                     : "Get one at aistudio.google.com → Get API key")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            SecureField("AIza…", text: $geminiKeyDraft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = geminiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                _ = KeychainStore.write(trimmed, to: .geminiAPIKey)
-                geminiKeyDraft = ""
-                geminiKeySaved = GeminiClient.hasKey()
-                Task { await BrainStatus.shared.refresh() }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(geminiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-            if geminiKeySaved {
-                Button("Clear") {
-                    _ = KeychainStore.delete(.geminiAPIKey)
-                    geminiKeySaved = false
-                    geminiTestStatus = nil
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .animation(DS.Motion.smooth, value: geminiKeySaved)
-    }
-
-    private var geminiModelRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Gemini model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("`gemini-2.0-flash` is the default; `gemini-1.5-pro` is deeper.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Gemini model", selection: $settings.geminiModel) {
-                ForEach(GeminiClient.allModels, id: \.self) { model in Text(model).tag(model) }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 200)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    private var geminiTestRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(geminiTestStatus))
-                    .font(.caption2).foregroundStyle(testStatusColor(geminiTestStatus))
-                    .contentTransition(.opacity)
-                    .animation(DS.Motion.smooth, value: geminiTestStatus)
-            }
-            Spacer()
-            Button {
-                geminiTesting = true
-                geminiTestStatus = nil
-                Task {
-                    let err = await GeminiClient.testConnection()
-                    await MainActor.run {
-                        geminiTestStatus = err ?? ""
-                        geminiTesting = false
-                    }
-                }
-            } label: {
-                Group {
-                    if geminiTesting { ProgressView().controlSize(.small) }
-                    else             { Text("Test") }
-                }
-                .transition(.opacity)
-                .animation(DS.Motion.smooth, value: geminiTesting)
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(geminiTesting || !geminiKeySaved)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.
-    /// Anthropic key entry — Keychain-backed Save/Clear/Test, same pattern
-    /// as the other cloud brains (the literal key only lives in
-    /// `anthropicKeyDraft` while the user is typing).
-    ///
-    /// The subtitle below the title shows the **prefix** of the saved key
-    /// (e.g. `sk-ant-api03…`) so the user can verify *which* key family is
-    /// stored without ever revealing the full string. The most common cause
-    /// of "but my key is valid" 401s against Anthropic is a key from the
-    /// wrong service silently saved (the SecureField masks input); the
-    /// prefix display flags that immediately.
-    private var claudeKeyRow: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Anthropic API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                    Text(anthropicSubtitle)
-                        .font(.caption2)
-                        .foregroundStyle(anthropicSubtitleColor)
-                }
-                Spacer()
-                SecureField("sk-ant-…", text: $anthropicKeyDraft)
-                    .textFieldStyle(.plain).frame(width: 130)
-                    .multilineTextAlignment(.trailing).foregroundStyle(.white)
-                Button("Save") {
-                    let trimmed = anthropicKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    _ = KeychainStore.write(trimmed, to: .anthropicAPIKey)
-                    anthropicKeyDraft = ""
-                    anthropicKeySaved = AnthropicClient.isConfigured
-                    anthropicTestStatus = nil   // reset the test indicator
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small)
-                .disabled(anthropicKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                if anthropicKeySaved {
-                    Button {
-                        anthropicTesting = true
-                        anthropicTestStatus = nil
-                        Task {
-                            let err = await Self.runAnthropicTest()
-                            await MainActor.run {
-                                anthropicTestStatus = err ?? ""
-                                anthropicTesting = false
-                            }
-                        }
-                    } label: {
-                        Group {
-                            if anthropicTesting { ProgressView().controlSize(.small) }
-                            else                { Text("Test") }
-                        }
-                        .transition(.opacity)
-                        .animation(DS.Motion.smooth, value: anthropicTesting)
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
-                    .disabled(anthropicTesting)
-                    .transition(.opacity)
-
-                    Button("Clear") {
-                        _ = KeychainStore.delete(.anthropicAPIKey)
-                        anthropicKeySaved = false
-                        anthropicTestStatus = nil
-                        Task { await BrainStatus.shared.refresh() }
-                    }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.red)
-                    .transition(.opacity)
-                }
-            }
-
-            // Test-result line. Only visible after the user runs Test. The
-            // verbatim message (when error) is what Anthropic returned — same
-            // text the chat shows, but you see it here before paying for a
-            // full chat round-trip.
-            if anthropicKeySaved, let status = anthropicTestStatus {
-                HStack {
-                    Spacer().frame(width: 22)
-                    Text(status.isEmpty
-                         ? "Connected — Anthropic accepted the saved key."
-                         : status)
-                        .font(.caption2)
-                        .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                    Spacer()
-                }
-                .padding(.top, 4)
-                .transition(.opacity.combined(with: .offset(y: -4)))
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .animation(DS.Motion.smooth, value: anthropicKeySaved)
-        .animation(DS.Motion.smooth, value: anthropicTestStatus == nil)
-    }
-
-    /// Single Keychain read shared by the subtitle text + color, so a body
-    /// recompute does ONE Keychain round-trip instead of two. Returns nil
-    /// when no key is saved (the subtitle/color fall back to the "not
-    /// configured" presentation). Never exposes the full key — callers only
-    /// read the prefix and the `sk-ant-` family check.
-    private var savedAnthropicKey: String? {
-        anthropicKeySaved ? KeychainStore.read(.anthropicAPIKey) : nil
-    }
-
-    /// Subtitle for the key row — the masking rule is pure in
-    /// `AnthropicKeyPresentation` (SettingsBrainReadiness.swift): echoes the
-    /// 12-char family prefix only when the key IS `sk-ant-…`; a misfiled
-    /// wrong-service key (whose first chars carry secret bytes) masks to
-    /// `sk-…`. No-leak property pinned by SettingsBrainReadyTests.
-    private var anthropicSubtitle: String {
-        AnthropicKeyPresentation.subtitle(savedKey: savedAnthropicKey)
-    }
-
-    /// Orange when the prefix doesn't look like an Anthropic key, secondary
-    /// otherwise. Drives attention to the "saved the wrong key" failure mode.
-    private var anthropicSubtitleColor: Color {
-        AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
-            ? DS.Palette.warningSoft : .secondary
-    }
-
-    /// Hit Anthropic with a one-token prompt and surface the actual error.
-    /// Returns `nil` for "OK", or a human-readable error string. Static
-    /// because the test logic is pure side-effect (network + Keychain
-    /// reads) and doesn't touch the view's `@State`.
-    private static func runAnthropicTest() async -> String? {
-        guard KeychainStore.read(.anthropicAPIKey) != nil else {
-            return "No Anthropic key saved. Paste one and tap Save."
-        }
-        let reply = await AnthropicClient.chat(prompt: "ping", system: nil)
-        guard let reply else {
-            return "Couldn't reach Anthropic. Check your network and try again."
-        }
-        // If the reply is a `[Claude Haiku error …]` formatted string, the
-        // key reached Anthropic but was rejected — surface their message
-        // verbatim so the user knows exactly what to fix.
-        if reply.hasPrefix("[Claude Haiku error") || reply.hasPrefix("[Claude Haiku request") {
-            return reply
-        }
-        return nil   // got a real assistant reply → success
     }
 
     private func toggle(_ title: String, _ subtitle: String, _ icon: String, _ binding: Binding<Bool>) -> some View {

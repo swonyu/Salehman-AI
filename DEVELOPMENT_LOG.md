@@ -3346,6 +3346,32 @@ UX and a context-poisoning risk when that text ends up stored in ConversationSto
 
 ---
 
+## 2026-06-13 — Marathon EON: SettingsView dead-code purge
+
+**What changed:** Removed ~400 lines of dead code left behind when cloud API key
+management sections were stripped on 2026-06-12 per owner directive ("i just want
+salehman alone"). Specifically removed:
+
+- `grokKeyRow`, `grokModelRow`, `grokTestRow` private vars
+- `copilotRow` private var (Copilot OAuth UI)
+- `cloudKeyRow`, `cloudModelRow`, `cloudTestRow` generic functions
+- `geminiKeyRow`, `geminiModelRow`, `geminiTestRow` private vars
+- `claudeKeyRow`, `savedAnthropicKey`, `anthropicSubtitle`, `anthropicSubtitleColor`, `runAnthropicTest` (Anthropic cloud rows)
+- Dead `@State` vars: `*Draft`, `*Testing`, `*TestStatus` for all 9 cloud providers; `showCopilotSignIn`, `copilotTesting`, `copilotWorking`
+- Dead `@AppStorage` vars: `showFreeKeys`, `showPaidKeys`
+- Dead `.sheet(isPresented: $showCopilotSignIn)` view modifier
+- Stale comments referencing removed constructs
+
+**Kept:** All `*Saved` booleans (`grokKeySaved`, `geminiKeySaved`, etc.) and
+`copilotAuthed` — these feed `brainReadiness` which powers the green/orange dots
+in the Brain grid. Unsloth/VLLM rows and state vars also kept (still rendered).
+
+**Files:** `Salehman AI/Views/SettingsView.swift`
+
+**Result:** 0 real Swift errors; file reduced from ~2100 lines to ~1650 lines.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
