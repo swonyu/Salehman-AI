@@ -2070,7 +2070,12 @@ enum ChatSearch {
 }
 
 // MARK: - Message Bubble
-struct MessageBubble: View, Equatable {
+// `@MainActor Equatable` (isolated conformance): MessageBubble is a SwiftUI View,
+// so it's main-actor-isolated, and `==` reads its isolated stored properties.
+// SwiftUI's `.equatable()` diffing always runs on the main actor, so pinning the
+// conformance to @MainActor is sound and resolves the Swift 6 #ConformanceIsolation
+// error (a plain nonisolated `==` couldn't read the isolated `message`/`highlight`).
+struct MessageBubble: View, @MainActor Equatable {
     /// Equality gates body re-evaluation (used via `.equatable()` at the
     /// transcript call site): ContentView's body re-runs on EVERY keystroke /
     /// hover flip, handing each bubble fresh closures — reflection-based

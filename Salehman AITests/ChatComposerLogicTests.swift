@@ -161,42 +161,11 @@ struct ChatArchiveTitleTests {
     }
 }
 
-// MARK: - Attachment.merged — the multi-attachment collapse contract
-//
-// The send pipeline stays single-attachment by design; the composer merges.
-// What MUST hold: singles pass through untouched (vision path depends on
-// fileURL/isImage), multi-merges carry every file's name + content.
-
-struct AttachmentMergeTests {
-
-    @Test func emptyListMergesToNil() {
-        #expect(Attachment.merged([]) == nil)
-    }
-
-    @Test func singlePassesThroughWithVisionFieldsIntact() {
-        let one = Attachment(name: "shot.png", kind: "image", icon: "photo",
-                             extractedText: "a screenshot",
-                             fileURL: URL(fileURLWithPath: "/tmp/shot.png"), isImage: true)
-        let merged = Attachment.merged([one])
-        #expect(merged?.id == one.id)
-        #expect(merged?.isImage == true)
-        #expect(merged?.fileURL != nil)
-    }
-
-    @Test func multiMergeCarriesEveryNameAndBody() {
-        let a = Attachment(name: "a.txt", kind: "file", icon: "doc.text", extractedText: "alpha")
-        let b = Attachment(name: "b.pdf", kind: "PDF", icon: "doc.richtext", extractedText: "bravo")
-        let merged = Attachment.merged([a, b])
-        #expect(merged?.name == "a.txt, b.pdf")
-        #expect(merged?.kind == "files")
-        #expect(merged?.extractedText.contains("alpha") == true)
-        #expect(merged?.extractedText.contains("bravo") == true)
-        #expect(merged?.extractedText.contains("a.txt") == true)
-        // Text-only by design: a merged attachment must never claim vision.
-        #expect(merged?.isImage == false)
-        #expect(merged?.fileURL == nil)
-    }
-}
+// Note: the `Attachment.merged` contract is covered comprehensively in the
+// dedicated `AttachmentMergeTests.swift` (6 tests). An earlier 3-test copy lived
+// here too; it was removed (duplicate `struct AttachmentMergeTests` → invalid
+// redeclaration) once the build could compile again. The single-item `.id`
+// pass-through assertion it carried was folded into the dedicated file.
 
 struct ChatGreetingBucketTests {
 

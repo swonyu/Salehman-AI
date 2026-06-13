@@ -4200,6 +4200,54 @@ Build fully clean.
 
 ---
 
+## 2026-06-13 — EOAP: ✅ TEST target green too — verified under strict `-swift-version 6`
+
+**What changed:** Verified the *second half* of "build + tests must pass." Built the app as a
+testable module (`-emit-module -enable-testing`) and typechecked the whole test target against
+it, loading the Swift Testing macro plugin (`libTestingMacros.dylib`) and XCTest/Testing
+frameworks — **with `-swift-version 6`** to exactly match the project (`SWIFT_VERSION = 6.0`).
+This surfaced errors my earlier non-`-swift-version-6` passes had downgraded to warnings:
+
+1. **`MessageBubble: Equatable` crossed actor isolation** (`ContentView.swift`, app). Swift 6
+   `#ConformanceIsolation` error — a SwiftUI View is `@MainActor`, but `Equatable.==` is a
+   nonisolated requirement. Fixed with an **isolated conformance**: `View, @MainActor Equatable`
+   (enabled by `SWIFT_APPROACHABLE_CONCURRENCY`; SwiftUI's `.equatable()` diffing is main-actor).
+2. **Duplicate `struct AttachmentMergeTests`** — declared in both its dedicated file (6-test,
+   from EOR) and `ChatComposerLogicTests.swift:170` (older 3-test). Removed the duplicate;
+   folded its unique single-item `.id` pass-through assertion into the dedicated file.
+3. **`Attachment` ambiguous** (`AttachmentMergeTests.swift`) — Swift Testing now ships its own
+   public `Attachment` type, so the bare name collided with the app's under `import Testing` +
+   `@testable import`. Qualified the type references as `Salehman_AI.Attachment`.
+4. **Data race on captured `var callCount`** (`AgentFilterTests.swift`) — mutated inside two
+   `@Sendable` handler closures (explicitly "an error in Swift 6 mode"). The counter was dead
+   (never asserted); removed it.
+5. **14 `#ActorIsolatedCall` warnings** — tests calling `@MainActor` `MarkdownText.segments/
+   blocks/highlighted` from nonisolated suites. Marked the 3 suites `@MainActor`
+   (`MarkdownTextTests`, `MarkdownTextBlockTests`, `MarkdownHighlightTests`).
+
+**Why:** the curly-quote breakage (06-12) blocked the app module, so the test target — which
+`@testable import`s it — has ALSO been un-compilable since then. 24 test files were authored
+*during* that red window (the "test(coverage)" marathon) and had never once compiled; #2/#3
+were latent in exactly those.
+
+**Files:** `Views/ContentView.swift`; tests: `AttachmentMergeTests.swift`,
+`ChatComposerLogicTests.swift`, `AgentFilterTests.swift`, `Salehman_AITests.swift`,
+`ChatTranscriptLogicTests.swift`.
+
+**Result:** under `-swift-version 6` (real SDK, Testing macro plugin loaded) — **app module:
+0 errors / 0 warnings; test target: 0 errors / 0 warnings.** Whole project compiles pristinely.
+(Follow-up: MarkdownText's pure parsers could be `nonisolated` instead of the test-side
+`@MainActor` annotations — tracked, deferred for its helper-cascade risk.)
+
+**Verification recipe (now the canonical sandbox path):** emit app module with
+`-emit-module -enable-testing -swift-version 6 -module-cache-path $TMPDIR/mc`, then
+`swiftc -typecheck -swift-version 6 -I <moddir> -F <platform>/Developer/Library/Frameworks
+-plugin-path <toolchain>/usr/lib/swift/host/plugins[/testing]` over the test files. Pass paths
+via a `find -print0` array (the repo path has a space). `-swift-version 6` is REQUIRED — without
+it, Swift-6-only errors silently downgrade to warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -23,12 +23,14 @@ import Foundation
 
 struct AttachmentMergeTests {
 
+    // `Attachment` is qualified: Swift Testing also exports a public `Attachment`
+    // type, so the bare name is ambiguous once both modules are imported.
     private func makeAttachment(name: String, kind: String = "file",
                                 text: String = "content",
                                 url: URL? = nil,
-                                isImage: Bool = false) -> Attachment {
-        var a = Attachment(name: name, kind: kind, icon: "doc",
-                           extractedText: text)
+                                isImage: Bool = false) -> Salehman_AI.Attachment {
+        var a = Salehman_AI.Attachment(name: name, kind: kind, icon: "doc",
+                                       extractedText: text)
         a.fileURL  = url
         a.isImage  = isImage
         return a
@@ -49,6 +51,8 @@ struct AttachmentMergeTests {
                                text: "OCR text here", url: url, isImage: true)
         let result = Attachment.merged([a])
         guard let r = result else { Issue.record("merged([a]) must not be nil"); return }
+        // Identity pass-through: the same attachment comes back, same id.
+        #expect(r.id == a.id,                "single item: id must be preserved (identity pass-through)")
         // Name, kind, extractedText must be verbatim — this is a pure pass-through.
         #expect(r.name == "photo.png",       "single item: name must be preserved")
         #expect(r.kind == "image",           "single item: kind must be preserved")

@@ -428,6 +428,8 @@ struct ChatSearchTests {
 
 // MARK: - Find-in-conversation: highlight attribute overlay
 
+// @MainActor: MarkdownText.highlighted(_:query:) is main-actor-isolated (View type).
+@MainActor
 struct MarkdownHighlightTests {
 
     /// The matched substrings, lowercased, in document order.

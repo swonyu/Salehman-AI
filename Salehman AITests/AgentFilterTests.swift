@@ -69,15 +69,12 @@ struct AgentRegistryTests {
         // registerDefaultsOnce(). The guard is: handlers[name] == nil → register.
         // A second call with the SAME name must be a no-op.
         let name = "__test_overwrite_guard__"
-        var callCount = 0
-        AgentRegistry.register(name: name) { _ in
-            callCount += 1
-            return "first"
-        }
-        AgentRegistry.register(name: name) { _ in
-            callCount += 1
-            return "second"
-        }
+        // The handler bodies are intentionally trivial — this test asserts the
+        // registry's first-write-wins guard via `handler(for:)`, not by invoking
+        // the closures (they're @Sendable and stored for concurrent dispatch, so
+        // a captured mutable counter here would be a data race in Swift 6 mode).
+        AgentRegistry.register(name: name) { _ in "first" }
+        AgentRegistry.register(name: name) { _ in "second" }
         // If the second registration overwrote the first, calling the handler
         // would return "second". We can't call the handler directly (it's async),
         // but we CAN verify that the same handler slot is returned both times.
