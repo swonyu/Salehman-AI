@@ -3633,6 +3633,30 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EON: MediaTranscribe.detect + Transcriber.canHandle — media routing tests
+
+**What:** Created `Salehman AITests/MediaDetectTests.swift` (+120 lines, 14 tests across two structs):
+
+`TranscriberCanHandleTests` (4 tests):
+- Audio extensions (m4a, mp3, wav, aiff, aif, caf, aac, flac) return true
+- Video extensions (mp4, mov, m4v, avi, mkv) return true
+- Unknown extensions (pdf, txt, jpg, etc.) return false
+- `audioExts` and `videoExts` are mutually exclusive (no extension in both)
+
+`MediaDetectTests` (10 tests):
+- YouTube variants: `youtube.com/watch`, `youtu.be/`, `youtube.com/shorts`, `m.youtube.com/watch` → `.youtube`
+- Remote media: `.mp3` and `.mp4` HTTPS URLs → `.remoteMedia`
+- Non-media URL → nil; plain text with spaces → nil; empty string → nil
+- Strings > 2048 chars → nil (before any URL parsing); exactly 2048 → also nil (strict `<`)
+
+**Why:** Zero prior test coverage. `detect` is the entry point for every media paste — a wrong URL-pattern match or missing extension would silently route audio to the wrong handler. The mutually-exclusive-sets test pins a correctness invariant about `Transcriber`'s two extension sets.
+
+**Files:** `Salehman AITests/MediaDetectTests.swift` (new)
+
+**Result:** APIs confirmed — `canHandle` (Transcriber.swift:10), `audioExts` (:7), `videoExts` (:8), `detect` (MediaTranscribe.swift:24), `Source` enum (:16).
+
+---
+
 ## 2026-06-13 — EOL: SalehmanPersona — identity + language + provider-negation tests
 
 **What:** Created `Salehman AITests/SalehmanPersonaTests.swift` (+110 lines, 10 tests across two structs):
