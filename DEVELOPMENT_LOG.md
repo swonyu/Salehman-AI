@@ -5266,6 +5266,24 @@ The app's motion already follows the skill: custom `.timingCurve`/spring everywh
 
 ---
 
+## 2026-06-14 — EOCJ: hardcoded off-token color audit (rotation 3, angle m) — no gap
+
+Grepped all named-color uses (`Color.red/.blue/.green/…` + shorthand) in Views. Every one is deliberate
+/ semantic (the directive's own exclusions):
+- FileTree file-type icon colors + CodeSyntax highlight colors (deliberate, excluded).
+- CodeSyntaxView `Color.yellow.opacity(…)` ×2 — SEARCH-MATCH highlighting; yellow is the universal
+  find-highlight convention (crimson accent would be semantically wrong). Correct.
+- SettingsView `.tint(.red)` ×3 — DESTRUCTIVE (delete-key) bordered buttons; `.red` is the system
+  destructive semantic AND equals `DS.Palette.danger`'s value, on the stock settings buttons (left
+  conventional per EOBJ). Leave.
+- ContentView `.foregroundStyle(.green)` — a SUCCESS checkmark (semantic success). Per directive, leave
+  (could be `DS.Palette.successSoft` for brand-softness, but that's a deliberate-vs-token judgment).
+No off-brand hardcoded chrome color that should be a DS token. Color discipline is thorough. **No gap.**
+
+**Files:** none (audit only — no source change). ↪︎ Redirect still strongly recommended.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
