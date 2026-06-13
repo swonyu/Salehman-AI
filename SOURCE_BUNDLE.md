@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 21:49 +03 · Swift files: 160 · Swift LOC: 36964_
+_Generated: 2026-06-13 21:56 +03 · Swift files: 160 · Swift LOC: 36974_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24276,7 +24276,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (695 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (705 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24497,7 +24497,8 @@ struct ScratchpadView: View {
 
     private var searchRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").font(.system(size: 12))
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .focused($searchFocused)
@@ -24520,9 +24521,18 @@ struct ScratchpadView: View {
     }
 
     private var noMatch: some View {
-        Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 16)
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 26)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 
     private var tasksList: some View {
@@ -39572,7 +39582,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5799 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5816 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44259,6 +44269,23 @@ list window (the Scratchpad/notes window) rather than the tabbed dashboard, and 
 window wasn't worth the budget — the main UI was confirmed rendering at relaunch.
 
 **Files:** docs only (DEVELOPMENT_LOG + standing note). No code change this firing.
+
+---
+
+## 2026-06-13 — EOBI: ScratchpadView high-end visual pass (loop slice 4/8)
+
+ScratchpadView was among the most polished views (animated empty states with radial-gradient
+glyphs, drag-reorder lists, inline edit, focus glows, magnetic rows). Two genuine gaps — no churn:
+
+1. **`noMatch` filter empty state:** bare centered text → icon-in-soft-circle + text. This computed
+   property is shared by BOTH the Tasks and Notes lists, so one fix improves two surfaces.
+2. **Search field icon didn't brighten on focus:** the `magnifyingglass` now tints accent when the
+   search field is focused, matching MemoryView (EOBG).
+
+**Files:** `Views/ScratchpadView.swift`.
+
+**Verify:** switched to `swiftc -typecheck` (per the EOBH lesson — it runs the function-body
+diagnostics `-emit-module` skips), full isolation flags, all 97 sources → **0 errors / 0 warnings**.
 
 ---
 

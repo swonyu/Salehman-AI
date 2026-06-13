@@ -217,7 +217,8 @@ struct ScratchpadView: View {
 
     private var searchRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").font(.system(size: 12))
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .focused($searchFocused)
@@ -240,9 +241,18 @@ struct ScratchpadView: View {
     }
 
     private var noMatch: some View {
-        Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 16)
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 26)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 
     private var tasksList: some View {

@@ -4687,6 +4687,23 @@ window wasn't worth the budget — the main UI was confirmed rendering at relaun
 
 ---
 
+## 2026-06-13 — EOBI: ScratchpadView high-end visual pass (loop slice 4/8)
+
+ScratchpadView was among the most polished views (animated empty states with radial-gradient
+glyphs, drag-reorder lists, inline edit, focus glows, magnetic rows). Two genuine gaps — no churn:
+
+1. **`noMatch` filter empty state:** bare centered text → icon-in-soft-circle + text. This computed
+   property is shared by BOTH the Tasks and Notes lists, so one fix improves two surfaces.
+2. **Search field icon didn't brighten on focus:** the `magnifyingglass` now tints accent when the
+   search field is focused, matching MemoryView (EOBG).
+
+**Files:** `Views/ScratchpadView.swift`.
+
+**Verify:** switched to `swiftc -typecheck` (per the EOBH lesson — it runs the function-body
+diagnostics `-emit-module` skips), full isolation flags, all 97 sources → **0 errors / 0 warnings**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
