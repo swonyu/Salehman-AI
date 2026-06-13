@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:14 +03 · Swift files: 150 · Swift LOC: 34249_
+_Generated: 2026-06-13 03:19 +03 · Swift files: 150 · Swift LOC: 34251_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14879,7 +14879,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2659 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2661 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15907,6 +15907,8 @@ struct CodeView: View {
                         Text("ctx \(min(contextPct, 100))%")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: contextPct)
                             .padding(.horizontal, 7).padding(.vertical, 2.5)
                             .background(Color.white.opacity(0.05), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
@@ -36817,7 +36819,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4295 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4307 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40067,6 +40069,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/CodeView.swift`
 
 **Why:** Final interactive Capsule element in the app using a flat stroke — now consistent with all other tappable pills in the Code welcome state.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFH: CodeView ctx% badge — numericText transition
+
+**What:** Added `contentTransition(.numericText())` and `.animation(DS.Motion.smooth, value: contextPct)` to CodeView's context-meter badge (`ctx N%`, line 1024). The adjacent `tok/s` badge already had both modifiers (line 1038); the `ctx %` display was the only remaining dynamic numeric Text in the header area without the transition, producing an inconsistent flat-swap when the context percentage changed mid-conversation.
+
+**Files:** `Salehman AI/Views/CodeView.swift` (+2 lines at ctx% Text)
+
+**Why:** Internal consistency — both badges in the same HStack now counter-roll their digits identically. `.numericText()` on an embedded integer string (`"ctx \(pct)%"`) animates the numeric fragment independently, giving the same haptic digit-tick feel as tok/s without any extra state.
 
 **Result:** Build exit 0, 0 real Swift errors.
 

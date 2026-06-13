@@ -3252,6 +3252,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+## 2026-06-13 — Marathon EFH: CodeView ctx% badge — numericText transition
+
+**What:** Added `contentTransition(.numericText())` and `.animation(DS.Motion.smooth, value: contextPct)` to CodeView's context-meter badge (`ctx N%`, line 1024). The adjacent `tok/s` badge already had both modifiers (line 1038); the `ctx %` display was the only remaining dynamic numeric Text in the header area without the transition, producing an inconsistent flat-swap when the context percentage changed mid-conversation.
+
+**Files:** `Salehman AI/Views/CodeView.swift` (+2 lines at ctx% Text)
+
+**Why:** Internal consistency — both badges in the same HStack now counter-roll their digits identically. `.numericText()` on an embedded integer string (`"ctx \(pct)%"`) animates the numeric fragment independently, giving the same haptic digit-tick feel as tok/s without any extra state.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

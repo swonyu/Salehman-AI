@@ -1024,6 +1024,8 @@ struct CodeView: View {
                         Text("ctx \(min(contextPct, 100))%")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: contextPct)
                             .padding(.horizontal, 7).padding(.vertical, 2.5)
                             .background(Color.white.opacity(0.05), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
