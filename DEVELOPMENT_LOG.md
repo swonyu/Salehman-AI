@@ -4158,6 +4158,20 @@ lexical/syntactic errors, which `-parse` fully covers.)
   recommended for parity with the other 6 cloud brains.
 - **Two-session coordination** lives in `COORDINATION.md` — read it before editing
   a file the other session owns.
+- **🟥 Build verification in the sandbox (2026-06-13):** `xcodebuild` CANNOT compile
+  here — it dies before compilation on `couldn't create cache file
+  '/var/folders/.../T/xcrun_db-…' (errno=Operation not permitted)` + SimService
+  crashes. So a "build green" claim from xcodebuild is **unverifiable** and once
+  masked a real RED for a full day. Verify syntax with `swiftc -parse "<file>"`
+  (lexical only — the `Cannot find 'DS'` errors it/`-typecheck` show in single-file
+  mode are cross-module false positives, NOT real). Whole-tree sweep, count only
+  source-located errors: `find "Salehman AI" -name '*.swift' -not -path '*/.*' |
+  while read f; do swiftc -parse "$f" 2>&1 | grep -E "\.swift:[0-9]+:[0-9]+: error:"; done`.
+- **Smart/curly-quote hazard (recurring):** some editor/tool turns `"` into `“ ”`.
+  Broke the build 06-12→06-13 (curly used as a string DELIMITER, even on an SF
+  Symbol name). Convention: **straight outer, curly inner** — `Text("No X match
+  “\(q)”.")`. Curly INNER quotes are valid literal chars and read as premium
+  typography; curly OUTER delimiters do not compile.
 [2026-06-09 23:37] Read SOURCE_BUNDLE.md and CODEBASE_REVIEW.md. Identified brainReady switch in SettingsView.swift (8+ cases causing Keychain calls per review P2). Ready for refactor steps (1) BrainAdapter in LocalLLM, (3) extract brainReady.
 
 [2026-06-10] tools/grok_terminal_bridge.py — background-mode injection rewrite

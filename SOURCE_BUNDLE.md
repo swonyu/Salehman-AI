@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 11:41 +03 · Swift files: 160 · Swift LOC: 36669_
+_Generated: 2026-06-13 11:42 +03 · Swift files: 160 · Swift LOC: 36669_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -39277,7 +39277,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5210 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5224 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43438,6 +43438,20 @@ lexical/syntactic errors, which `-parse` fully covers.)
   recommended for parity with the other 6 cloud brains.
 - **Two-session coordination** lives in `COORDINATION.md` — read it before editing
   a file the other session owns.
+- **🟥 Build verification in the sandbox (2026-06-13):** `xcodebuild` CANNOT compile
+  here — it dies before compilation on `couldn't create cache file
+  '/var/folders/.../T/xcrun_db-…' (errno=Operation not permitted)` + SimService
+  crashes. So a "build green" claim from xcodebuild is **unverifiable** and once
+  masked a real RED for a full day. Verify syntax with `swiftc -parse "<file>"`
+  (lexical only — the `Cannot find 'DS'` errors it/`-typecheck` show in single-file
+  mode are cross-module false positives, NOT real). Whole-tree sweep, count only
+  source-located errors: `find "Salehman AI" -name '*.swift' -not -path '*/.*' |
+  while read f; do swiftc -parse "$f" 2>&1 | grep -E "\.swift:[0-9]+:[0-9]+: error:"; done`.
+- **Smart/curly-quote hazard (recurring):** some editor/tool turns `"` into `“ ”`.
+  Broke the build 06-12→06-13 (curly used as a string DELIMITER, even on an SF
+  Symbol name). Convention: **straight outer, curly inner** — `Text("No X match
+  “\(q)”.")`. Curly INNER quotes are valid literal chars and read as premium
+  typography; curly OUTER delimiters do not compile.
 [2026-06-09 23:37] Read SOURCE_BUNDLE.md and CODEBASE_REVIEW.md. Identified brainReady switch in SettingsView.swift (8+ cases causing Keychain calls per review P2). Ready for refactor steps (1) BrainAdapter in LocalLLM, (3) extract brainReady.
 
 [2026-06-10] tools/grok_terminal_bridge.py — background-mode injection rewrite
