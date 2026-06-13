@@ -3633,6 +3633,32 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOL: SalehmanPersona — identity + language + provider-negation tests
+
+**What:** Created `Salehman AITests/SalehmanPersonaTests.swift` (+110 lines, 10 tests across two structs):
+
+`SalehmanPersonaContentTests` (7 tests):
+- `promptIsNonTrivial` — > 500 chars guard against accidental deletion
+- `identifiesAsSalehmanCreatedBySaleh` — "Salehman AI" and "Saleh" present
+- `containsProviderNegationInstruction` — NEVER/do-not-say instruction present; Groq, Cerebras, OpenRouter named in the list
+- `containsLanguageMirrorRule` — "SAME language" present (prevents English-only replies to Arabic input)
+- `containsNoMetaNarrationDirective` — "meta-narration" present (prevents reasoning scaffolding in output)
+- `doesNotContainTemplatePlaceholders` — no `{{`, `%@`, or `\(` artifacts
+- `promptEndsWithMeaningfulContent` — ends with "show them why" (truncation guard)
+
+`ActiveSystemPromptTests` (3 tests):
+- `equalsBaseWhenUnrestrictedOff` — `activeSystemPrompt == systemPrompt` in normal mode
+- `prependsBaseWhenUnrestrictedOn` — starts with base + addendum appended
+- `isComputedNotCached` — toggling unrestricted mid-test changes the value (no caching)
+
+**Why:** `SalehmanPersona.systemPrompt` is the brand layer for EVERY engine. A future edit accidentally naming a provider, removing the language-mirror rule, or losing the no-meta-narration directive would ship silently. Zero prior test coverage.
+
+**Files:** `Salehman AITests/SalehmanPersonaTests.swift` (new)
+
+**Result:** APIs confirmed — `systemPrompt` (SalehmanPersona.swift:17), `activeSystemPrompt` (:125). SourceKit false positive.
+
+---
+
 ## 2026-06-13 — EOK: MissionMemory.buildContext — context assembly + exclusion invariants
 
 **What:** Created new `Salehman AITests/MissionMemoryTests.swift` (+80 lines, 6 tests):
