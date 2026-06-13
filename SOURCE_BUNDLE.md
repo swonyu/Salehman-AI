@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 08:56 +03 · Swift files: 160 · Swift LOC: 36655_
+_Generated: 2026-06-13 09:00 +03 · Swift files: 160 · Swift LOC: 36655_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14565,9 +14565,9 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.accent.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Export this conversation as Markdown")
             .accessibilityLabel("Export \(item.title)")
             Button {
@@ -14576,9 +14576,9 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.danger.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Delete this archived conversation")
             .accessibilityLabel("Delete \(item.title)")
         }
@@ -39263,7 +39263,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5006 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5023 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43206,6 +43206,23 @@ Visual design marathon — highest-traffic surfaces upgraded to match the DS she
 **Files:** `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/BottomShortcutBar.swift`  
 **Why:** CommandPalette is the most-used interactive surface (every ⌘K interaction) but had 0 premium design hits — flat bgTop, no glow, no shell entrance. All other sheets were upgraded in prior sessions. BottomShortcutBar hint buttons are clickable actions with hover state but no press feel.  
 **Result:** Shell entrance at line 187, `DS.Gradient.bgVertical` at line 193, `LuxPressStyle` in BottomShortcutBar line 82. SourceKit "Cannot find AppState in scope" are known false positives.
+
+---
+
+### 2026-06-13 — EOAC: ChatHistoryView hover-aware export/delete row buttons
+Final marathon gap-close across Chat A lane views.
+
+**Gap:** `ChatHistoryView` row buttons (export and trash) used `.buttonStyle(.plain)` with static `.secondary` foreground — icons stayed neutral gray even when the row was hovered. `hov` was already computed at line 195 (`let hov = hoveredRow == item.id`) but was unused by the icon buttons.
+
+**Fix:**
+- Export icon: `.foregroundStyle(hov ? DS.Palette.accent.opacity(0.7) : .secondary)` + `.buttonStyle(LuxPressStyle())`
+- Delete icon: `.foregroundStyle(hov ? DS.Palette.danger.opacity(0.7) : .secondary)` + `.buttonStyle(LuxPressStyle())`
+
+**Final sweep result:** All remaining Chat A lane `.buttonStyle(.plain)` verified as correct (clear-search utility icons, custom-scale tile buttons with own hover effects). Marathon coverage complete: AgentsView, KnowledgeView, MemoryView, ScratchpadView, SettingsView, VoiceModeView, AboutView, OnboardingView, TodayView, ShortcutsView, MarketsView, CommandPalette, BottomShortcutBar, LiveTranscriptionView, ChatHistoryView, CodeView, TabSwitcherBar.
+
+**Files:** `Salehman AI/Views/ChatHistoryView.swift`  
+**Why:** One export + one delete icon per conversation row (10–20 rows) — staying gray while the row highlights created an inconsistency; icons appeared non-interactive.  
+**Result:** Lines 236 (`accent.opacity(0.7)` on hover), 238 (`LuxPressStyle()`), 247 (`danger.opacity(0.7)` on hover), 249 (`LuxPressStyle()`).
 
 ---
 

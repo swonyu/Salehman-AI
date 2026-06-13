@@ -3943,6 +3943,23 @@ Visual design marathon — highest-traffic surfaces upgraded to match the DS she
 
 ---
 
+### 2026-06-13 — EOAC: ChatHistoryView hover-aware export/delete row buttons
+Final marathon gap-close across Chat A lane views.
+
+**Gap:** `ChatHistoryView` row buttons (export and trash) used `.buttonStyle(.plain)` with static `.secondary` foreground — icons stayed neutral gray even when the row was hovered. `hov` was already computed at line 195 (`let hov = hoveredRow == item.id`) but was unused by the icon buttons.
+
+**Fix:**
+- Export icon: `.foregroundStyle(hov ? DS.Palette.accent.opacity(0.7) : .secondary)` + `.buttonStyle(LuxPressStyle())`
+- Delete icon: `.foregroundStyle(hov ? DS.Palette.danger.opacity(0.7) : .secondary)` + `.buttonStyle(LuxPressStyle())`
+
+**Final sweep result:** All remaining Chat A lane `.buttonStyle(.plain)` verified as correct (clear-search utility icons, custom-scale tile buttons with own hover effects). Marathon coverage complete: AgentsView, KnowledgeView, MemoryView, ScratchpadView, SettingsView, VoiceModeView, AboutView, OnboardingView, TodayView, ShortcutsView, MarketsView, CommandPalette, BottomShortcutBar, LiveTranscriptionView, ChatHistoryView, CodeView, TabSwitcherBar.
+
+**Files:** `Salehman AI/Views/ChatHistoryView.swift`  
+**Why:** One export + one delete icon per conversation row (10–20 rows) — staying gray while the row highlights created an inconsistency; icons appeared non-interactive.  
+**Result:** Lines 236 (`accent.opacity(0.7)` on hover), 238 (`LuxPressStyle()`), 247 (`danger.opacity(0.7)` on hover), 249 (`LuxPressStyle()`).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

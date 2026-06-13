@@ -233,9 +233,9 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.accent.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Export this conversation as Markdown")
             .accessibilityLabel("Export \(item.title)")
             Button {
@@ -244,9 +244,9 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.danger.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Delete this archived conversation")
             .accessibilityLabel("Delete \(item.title)")
         }
