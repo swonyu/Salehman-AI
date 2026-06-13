@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 12:02 +03 · Swift files: 160 · Swift LOC: 36670_
+_Generated: 2026-06-13 12:04 +03 · Swift files: 160 · Swift LOC: 36675_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8727,7 +8727,7 @@ enum VLLM {
 }
 ```
 
-===== FILE: Salehman AI/Media/LiveTranscriber.swift (383 lines) =====
+===== FILE: Salehman AI/Media/LiveTranscriber.swift (388 lines) =====
 ```swift
 import Foundation
 import ScreenCaptureKit
@@ -8771,7 +8771,12 @@ struct TranscriptLine: Identifiable, Equatable {
 /// Lightweight: audio-only (no video frames processed), buffers go straight to the
 /// recognizer with no manual resampling. Bilingual "Auto" runs English + Arabic and
 /// keeps the stronger hypothesis. Recognizers auto-restart per segment.
-final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput {
+// `@unchecked Sendable`: a queue-confined singleton — all mutable state is
+// `nonisolated(unsafe)` and touched only on `queue`, with @Published updates
+// hopped to main via `DispatchQueue.main.async`. The thread-safety is manual
+// and real; this makes that contract explicit so cross-thread `self` captures
+// (the SCStream delegate callbacks → main hops) are sound, not just silenced.
+final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput, @unchecked Sendable {
     static let shared = LiveTranscriber()
 
     @Published var isRunning = false
@@ -39278,7 +39283,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5261 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5277 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43462,6 +43467,22 @@ ShortcutsView, TodayView, VoiceModeView).
 green for the first time since 06-12. Remaining: **5 Sendable-capture WARNINGS** in
 LiveTranscriber (`DispatchQueue.main.async { self.… }`) — non-blocking (no warnings-as-errors);
 tracked as a follow-up to avoid bundling a concurrency-contract change into the green-up.
+
+---
+
+## 2026-06-13 — EOAO: build now WARNING-clean too — LiveTranscriber `@unchecked Sendable`
+
+**What changed:** Resolved the 5 remaining Sendable-capture warnings (EOAN) by marking
+`LiveTranscriber` `@unchecked Sendable`. It's a queue-confined singleton — all mutable state
+is `nonisolated(unsafe)` and touched only on `queue`, with @Published updates hopped to main
+via `DispatchQueue.main.async`. The annotation makes that already-real thread-safety contract
+explicit (zero runtime behavior change), so the SCStream-delegate→main `self` captures are
+sound rather than merely silenced.
+
+**Files:** `Media/LiveTranscriber.swift`
+
+**Result:** whole-module `swiftc -typecheck` (Swift 6, real SDK) → **0 errors, 0 warnings**.
+Build fully clean.
 
 ---
 

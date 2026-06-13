@@ -40,7 +40,12 @@ struct TranscriptLine: Identifiable, Equatable {
 /// Lightweight: audio-only (no video frames processed), buffers go straight to the
 /// recognizer with no manual resampling. Bilingual "Auto" runs English + Arabic and
 /// keeps the stronger hypothesis. Recognizers auto-restart per segment.
-final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput {
+// `@unchecked Sendable`: a queue-confined singleton — all mutable state is
+// `nonisolated(unsafe)` and touched only on `queue`, with @Published updates
+// hopped to main via `DispatchQueue.main.async`. The thread-safety is manual
+// and real; this makes that contract explicit so cross-thread `self` captures
+// (the SCStream delegate callbacks → main hops) are sound, not just silenced.
+final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput, @unchecked Sendable {
     static let shared = LiveTranscriber()
 
     @Published var isRunning = false

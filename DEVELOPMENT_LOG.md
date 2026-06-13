@@ -4184,6 +4184,22 @@ tracked as a follow-up to avoid bundling a concurrency-contract change into the 
 
 ---
 
+## 2026-06-13 — EOAO: build now WARNING-clean too — LiveTranscriber `@unchecked Sendable`
+
+**What changed:** Resolved the 5 remaining Sendable-capture warnings (EOAN) by marking
+`LiveTranscriber` `@unchecked Sendable`. It's a queue-confined singleton — all mutable state
+is `nonisolated(unsafe)` and touched only on `queue`, with @Published updates hopped to main
+via `DispatchQueue.main.async`. The annotation makes that already-real thread-safety contract
+explicit (zero runtime behavior change), so the SCStream-delegate→main `self` captures are
+sound rather than merely silenced.
+
+**Files:** `Media/LiveTranscriber.swift`
+
+**Result:** whole-module `swiftc -typecheck` (Swift 6, real SDK) → **0 errors, 0 warnings**.
+Build fully clean.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
