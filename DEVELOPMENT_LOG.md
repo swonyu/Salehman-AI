@@ -3810,6 +3810,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+## 2026-06-13 — EOO: KnowledgeStore MMR + chunkSimilarity tests
+
+**What changed:** Added 11 new tests to `KnowledgeRAGTests.swift` covering the two previously-zero-coverage pure static helpers: `chunkSimilarity` (5 tests) and `mmr` (6 tests).
+
+`chunkSimilarity` tests pin: Jaccard=1.0 for identical text (no vector), Jaccard=0.0 for disjoint text, cosine=1.0 for identical unit vectors, cosine=0.0 for orthogonal vectors, and the BOTH-or-neither guard (one nil vector → falls to Jaccard, not partial cosine).
+
+`mmr` tests pin: empty pool → [], k=0 → [], k > pool returns all, lambda=1.0 → pure relevance order, and the diversity-penalty invariant: after nearDupA (score=0.9) is picked, nearDupB (Jaccard=1.0 with A, score=0.8) gets MMR=0.26 while a distinct chunk (score=0.5) gets MMR=0.35 — the distinct chunk wins despite lower raw relevance.
+
+**Files:** `Salehman AITests/KnowledgeRAGTests.swift`
+
+**Result:** API signatures confirmed via grep against `KnowledgeStore.swift`. All 11 tests are deterministic pure-function assertions with no store mutation; they co-exist safely inside the existing `@Suite(.serialized)` wrapper.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

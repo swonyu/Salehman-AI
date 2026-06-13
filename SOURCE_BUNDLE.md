@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:59 +03 · Swift files: 155 · Swift LOC: 35229_
+_Generated: 2026-06-13 06:06 +03 · Swift files: 155 · Swift LOC: 35343_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -31518,7 +31518,7 @@ struct GrokModelCurrentTests {
 }
 ```
 
-===== FILE: Salehman AITests/KnowledgeRAGTests.swift (138 lines) =====
+===== FILE: Salehman AITests/KnowledgeRAGTests.swift (252 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -31656,6 +31656,120 @@ struct KnowledgeRAGTests {
         withTempVault {
             #expect(KnowledgeStore.shared.search(query: "anything") == [])
         }
+    }
+
+    // MARK: chunkSimilarity + mmr (pure — no store mutation)
+    //
+    // chunkSimilarity drives the novelty-penalty inside mmr: chunks that are
+    // near-duplicates (high similarity to already-picked results) lose their
+    // MMR value so a less-relevant but novel chunk can win instead.
+    //
+    // Two similarity paths:
+    //   • Both chunks have a vector → cosine similarity (clamped ≥ 0)
+    //   • Either chunk lacks a vector → Jaccard over word sets (words ≥ 3 chars)
+
+    private func makeChunk(_ text: String, vector: [Float]? = nil) -> KnowledgeChunk {
+        KnowledgeChunk(docID: UUID(), docName: "d", ordinal: 0, text: text, vector: vector)
+    }
+
+    // MARK: chunkSimilarity
+
+    @Test func chunkSimilarityIdenticalTextNoVectorIsOne() {
+        let a = makeChunk("the quick brown fox")
+        let b = makeChunk("the quick brown fox")
+        #expect(KnowledgeStore.chunkSimilarity(a, b) == 1.0,
+                "identical text with no vectors must return Jaccard=1.0")
+    }
+
+    @Test func chunkSimilarityDisjointTextIsZero() {
+        let a = makeChunk("alpha beta gamma delta")
+        let b = makeChunk("epsilon zeta theta iota")
+        #expect(KnowledgeStore.chunkSimilarity(a, b) == 0.0,
+                "fully disjoint word sets must return Jaccard=0.0")
+    }
+
+    @Test func chunkSimilarityVectorPathUsesCosineClamped() {
+        // Identical unit vectors → cosine=1.0 → max(0, 1.0) = 1.0
+        let a = makeChunk("x", vector: [1.0, 0.0])
+        let b = makeChunk("x", vector: [1.0, 0.0])
+        #expect(KnowledgeStore.chunkSimilarity(a, b) == 1.0,
+                "identical vectors must return 1.0 via cosine path")
+    }
+
+    @Test func chunkSimilarityOrthogonalVectorsIsZero() {
+        // cosine([1,0],[0,1]) = 0.0 → max(0, 0) = 0.0
+        let a = makeChunk("x", vector: [1.0, 0.0])
+        let b = makeChunk("x", vector: [0.0, 1.0])
+        #expect(KnowledgeStore.chunkSimilarity(a, b) == 0.0,
+                "orthogonal vectors must return 0.0 (cosine clamped at zero)")
+    }
+
+    @Test func chunkSimilarityMixedVectorNilFallsToJaccard() {
+        // Only `b` has a vector → `if let va = a.vector, let vb = b.vector` guard fails.
+        // Falls to Jaccard; identical text → Jaccard=1.0. Pins the BOTH-or-neither
+        // requirement for the vector path.
+        let a = makeChunk("same text for both chunks", vector: nil)
+        let b = makeChunk("same text for both chunks", vector: [1.0, 0.0])
+        #expect(KnowledgeStore.chunkSimilarity(a, b) == 1.0,
+                "when only one chunk has a vector, must fall back to Jaccard (not use partial cosine)")
+    }
+
+    // MARK: mmr
+
+    @Test func mmrEmptyPoolReturnsEmpty() {
+        #expect(KnowledgeStore.mmr([], k: 5).isEmpty,
+                "mmr over empty pool must return []")
+    }
+
+    @Test func mmrKZeroReturnsEmpty() {
+        let c = makeChunk("some content here")
+        #expect(KnowledgeStore.mmr([(c, 0.9)], k: 0).isEmpty,
+                "mmr with k=0 must return []")
+    }
+
+    @Test func mmrKGreaterThanPoolReturnsAll() {
+        // The while loop drains the entire pool before k is reached.
+        let chunks = (1...3).map { makeChunk("chunk item number \($0)") }
+        let scored = chunks.map { ($0, 0.5) }
+        let result = KnowledgeStore.mmr(scored, k: 10)
+        #expect(result.count == 3,
+                "when k exceeds pool size, mmr must return all items; got \(result.count)")
+    }
+
+    @Test func mmrLambda1PicksInPureScoreOrder() {
+        // lambda=1.0 → MMR = 1.0×score − 0.0×maxSim = score.
+        // Novelty penalty vanishes; selection order equals descending relevance.
+        let low  = makeChunk("low relevance content word")
+        let mid  = makeChunk("mid relevance content word")
+        let high = makeChunk("high relevance content word")
+        let scored: [(KnowledgeChunk, Double)] = [(low, 0.3), (high, 0.9), (mid, 0.6)]
+        let result = KnowledgeStore.mmr(scored, k: 3, lambda: 1.0)
+        #expect(result.count == 3)
+        #expect(result[0].1 == 0.9, "lambda=1.0: first pick must be highest score (0.9)")
+        #expect(result[1].1 == 0.6, "lambda=1.0: second pick must be middle score (0.6)")
+        #expect(result[2].1 == 0.3, "lambda=1.0: third pick must be lowest score (0.3)")
+    }
+
+    @Test func mmrDiversityPenaltySurpassesNearDuplicate() {
+        // After nearDupA (score=0.9) is picked first:
+        //   nearDupB  (Jaccard=1.0 with A): MMR = 0.7×0.8 − 0.3×1.0 = 0.56 − 0.30 = 0.26
+        //   distinct  (Jaccard=0.0 with A): MMR = 0.7×0.5 − 0.3×0.0 = 0.35 − 0.00 = 0.35 ← wins
+        //
+        // lambda=0.7 is the default, so this also exercises the defaulted argument.
+        let nearDupA = makeChunk("machine learning neural network deep learning transformer")
+        let nearDupB = makeChunk("machine learning neural network deep learning transformer")
+        let distinct = makeChunk("apple pie recipe butter sugar bake flour pastry")
+        let scored: [(KnowledgeChunk, Double)] = [
+            (nearDupA, 0.9),
+            (nearDupB, 0.8),
+            (distinct, 0.5)
+        ]
+        let result = KnowledgeStore.mmr(scored, k: 2)
+        #expect(result.count == 2)
+        #expect(result[0].1 == 0.9,
+                "first pick must be the highest-scoring item (nearDupA, score=0.9)")
+        #expect(result[1].1 == 0.5,
+                "second pick must be 'distinct' (score=0.5), not near-dup (score=0.8) — diversity penalty wins")
     }
 }
 ```
@@ -37817,7 +37931,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4853 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4867 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -41627,6 +41741,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 **Files:** `Salehman AITests/FreeAutoTests.swift`
 
 **Result:** API signatures verified via grep; patterns identical to existing test structs in the same file.
+
+---
+
+## 2026-06-13 — EOO: KnowledgeStore MMR + chunkSimilarity tests
+
+**What changed:** Added 11 new tests to `KnowledgeRAGTests.swift` covering the two previously-zero-coverage pure static helpers: `chunkSimilarity` (5 tests) and `mmr` (6 tests).
+
+`chunkSimilarity` tests pin: Jaccard=1.0 for identical text (no vector), Jaccard=0.0 for disjoint text, cosine=1.0 for identical unit vectors, cosine=0.0 for orthogonal vectors, and the BOTH-or-neither guard (one nil vector → falls to Jaccard, not partial cosine).
+
+`mmr` tests pin: empty pool → [], k=0 → [], k > pool returns all, lambda=1.0 → pure relevance order, and the diversity-penalty invariant: after nearDupA (score=0.9) is picked, nearDupB (Jaccard=1.0 with A, score=0.8) gets MMR=0.26 while a distinct chunk (score=0.5) gets MMR=0.35 — the distinct chunk wins despite lower raw relevance.
+
+**Files:** `Salehman AITests/KnowledgeRAGTests.swift`
+
+**Result:** API signatures confirmed via grep against `KnowledgeStore.swift`. All 11 tests are deterministic pure-function assertions with no store mutation; they co-exist safely inside the existing `@Suite(.serialized)` wrapper.
 
 ---
 
