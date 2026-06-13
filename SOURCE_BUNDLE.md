@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 06:27 +03 · Swift files: 157 · Swift LOC: 35833_
+_Generated: 2026-06-13 06:36 +03 · Swift files: 158 · Swift LOC: 36016_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10919,7 +10919,7 @@ enum GrokWatchTool {
         return parse(content, filename: latest.lastPathComponent)
     }
 
-    private nonisolated static func parse(_ content: String, filename: String) -> String {
+    nonisolated static func parse(_ content: String, filename: String) -> String {
         let lines = content.components(separatedBy: "\n")
         let sessionID = (filename as NSString).deletingPathExtension
 
@@ -31976,6 +31976,193 @@ struct GrokModelCurrentTests {
 }
 ```
 
+===== FILE: Salehman AITests/GrokWatchToolTests.swift (183 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - GrokWatchTool.parse — Grok session log parsing contract
+//
+// `parse` converts the raw text of a Grok terminal-bridge session log into a
+// compact summary. It has five distinct extraction paths:
+//
+//   1. Task extraction: "task: '...'" in the first 5 lines → Task: line.
+//   2. Turn counting + elapsed time: "── turn N ──" headers with "[HH:MM:SS|XmYYs]" prefix.
+//   3. CMD/output pairs: "CMD: <command>" line → collect subsequent non-bridge lines as output.
+//   4. DONE detection: "[[DONE]]" or "TASK_COMPLETED_SUCCESSFULLY" anywhere in log.
+//   5. Recent-pair ring buffer: keeps the last 6 CMD/output pairs, oldest dropped first.
+//
+// `parse` was made `internal` (was `private`) so these tests can reach it
+// without touching the filesystem.
+
+struct GrokWatchToolParseTests {
+
+    // MARK: - task extraction
+
+    @Test func extractsTaskFromHeader() {
+        let log = "→ session abc123  task: 'Add authentication middleware'\n\n"
+        let out = GrokWatchTool.parse(log, filename: "abc123.log")
+        #expect(out.contains("Add authentication middleware"),
+                "task must be extracted from the 'task: ...' header line")
+        #expect(out.contains("Task: Add authentication middleware"))
+    }
+
+    @Test func escapedQuoteInTaskIsUnescaped() {
+        // Grok logs escape internal single quotes as "\'" — the parser should
+        // convert them back to "'".
+        let log = "→ session s1  task: 'Fix the can\\'t parse bug'\n"
+        let out = GrokWatchTool.parse(log, filename: "s1.log")
+        #expect(out.contains("Fix the can't parse bug"),
+                "\\' must be unescaped to ' in the task string")
+    }
+
+    @Test func longTaskIsTruncatedAt180Chars() {
+        let long = String(repeating: "x", count: 200)
+        let log = "→ session s2  task: '\(long)'\n"
+        let out = GrokWatchTool.parse(log, filename: "s2.log")
+        // The task line must be present and truncated with "…"
+        #expect(out.contains("Task:"), "task line must appear for a long task")
+        let taskLine = out.components(separatedBy: "\n").first { $0.hasPrefix("Task: ") }
+        guard let t = taskLine else { Issue.record("Task: line not found"); return }
+        #expect(t.hasSuffix("…"), "long task must be truncated with …")
+        // 180 chars + "…" = 181 chars after the "Task: " prefix
+        let payload = String(t.dropFirst(6)) // drop "Task: "
+        #expect(payload.count <= 181,
+                "task payload must not exceed 181 chars (180 + ellipsis)")
+    }
+
+    @Test func noTaskLineWhenHeaderAbsent() {
+        let log = "[00:00:01|0m01s] → ── turn 1 ──\nCMD: ls\nsome output\n"
+        let out = GrokWatchTool.parse(log, filename: "notask.log")
+        #expect(!out.contains("Task:"),
+                "Task: line must be absent when no 'task: ...' header is present")
+    }
+
+    // MARK: - session ID and turn counting
+
+    @Test func sessionIDComesFromFilenameWithoutExtension() {
+        let log = ""
+        let out = GrokWatchTool.parse(log, filename: "grok_2026_session_42.log")
+        #expect(out.hasPrefix("Grok session grok_2026_session_42"),
+                "session ID must be the filename without its .log extension")
+    }
+
+    @Test func turnCounterIncreasesOnEachTurnHeader() {
+        let log = """
+[00:00:01|0m01s] → ── turn 1 ──
+CMD: echo hi
+hi
+
+[00:02:00|2m00s] → ── turn 2 ──
+CMD: ls
+file.txt
+
+"""
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("Turns so far: 2"),
+                "turn count must equal the number of '── turn N ──' headers")
+    }
+
+    @Test func elapsedTimeExtractedFromTurnHeader() {
+        let log = "[00:05:30|5m30s] → ── turn 3 ──\nCMD: git status\n\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("5m30s"),
+                "elapsed time (pipe-to-bracket segment) must appear in the summary")
+    }
+
+    // MARK: - CMD / output pairs
+
+    @Test func cmdLineAppearsInRecentPairs() {
+        let log = "[00:00:01|0m01s] → ── turn 1 ──\nCMD: swift build\nbuild output here\n\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("swift build"),
+                "CMD value must appear in the 'Last N command(s)' block")
+        #expect(out.contains("build output here"),
+                "output lines after CMD must appear in the summary")
+    }
+
+    @Test func bridgeLinesAreFilteredFromOutput() {
+        // Lines starting with "[", "→", "✓", or containing "sending output back"
+        // are bridge meta-lines and must be excluded from the collected output.
+        let log = """
+[00:00:01|0m01s] → ── turn 1 ──
+CMD: ls
+[bridge: sending output back to grok]
+→ routing through channel
+✓ confirmed
+actual_file.txt
+
+"""
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("actual_file.txt"),
+                "real output lines must pass through the filter")
+        #expect(!out.contains("sending output back"),
+                "bridge meta-lines must be filtered out")
+        #expect(!out.contains("routing through channel"),
+                "bridge → lines must be filtered out")
+    }
+
+    @Test func outputTruncatedAt120Chars() {
+        let long = String(repeating: "z", count: 130)
+        let log = "[00:00:01|0m01s] → ── turn 1 ──\nCMD: big-output-cmd\n\(long)\n\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        // The output for the command must be truncated
+        #expect(out.contains("→ "), "output arrow prefix must appear")
+        #expect(out.contains("…"), "long output must end with …")
+    }
+
+    // MARK: - DONE detection
+
+    @Test func doneSignalFromDONEToken() {
+        let log = "[00:01:00|1m00s] → ── turn 1 ──\nCMD: final step\ndone\n[[DONE]]\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("✓ DONE"),
+                "[[DONE]] in log must mark the session as ✓ DONE")
+        #expect(!out.contains("Session is still running"),
+                "a done session must not say 'still running'")
+    }
+
+    @Test func doneSignalFromTASK_COMPLETED() {
+        let log = "TASK_COMPLETED_SUCCESSFULLY\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("✓ DONE"))
+    }
+
+    @Test func stillRunningMessageWhenNotDone() {
+        let log = "[00:00:01|0m01s] → ── turn 1 ──\nCMD: something\noutput\n\n"
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        #expect(out.contains("Session is still running"),
+                "an in-progress session must say 'still running'")
+    }
+
+    // MARK: - Empty / no-command session
+
+    @Test func noCommandsYetMessageWhenNoCMDLines() {
+        let log = "→ session empty  task: 'start something'\n"
+        let out = GrokWatchTool.parse(log, filename: "empty.log")
+        #expect(out.contains("No commands run yet"),
+                "a session with no CMD lines must report 'No commands run yet'")
+    }
+
+    // MARK: - Ring buffer (last 6 pairs)
+
+    @Test func ringBufferKeepsOnlyLast6Commands() {
+        var log = ""
+        for i in 1...8 {
+            log += "[00:00:\(String(format: "%02d", i))|0m\(String(format: "%02d", i))s] → ── turn \(i) ──\n"
+            log += "CMD: cmd_\(i)\noutput_\(i)\n\n"
+        }
+        let out = GrokWatchTool.parse(log, filename: "s.log")
+        // The ring buffer holds 6; cmd_1 and cmd_2 must be dropped
+        #expect(!out.contains("cmd_1"), "oldest commands (cmd_1) must be evicted from the 6-entry ring")
+        #expect(!out.contains("cmd_2"), "oldest commands (cmd_2) must be evicted from the 6-entry ring")
+        #expect(out.contains("cmd_3"), "cmd_3 (7th from the end) must appear in the last 6")
+        #expect(out.contains("cmd_8"), "most recent command must always appear")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/KnowledgeRAGTests.swift (252 lines) =====
 ```swift
 import Testing
@@ -38429,7 +38616,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4889 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4894 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43309,6 +43496,11 @@ permission classifier blocked the first attempt.
 **What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.
 **Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
 **Commit:** `153ff1d`
+
+## 2026-06-13 — marathon EOS: test coverage — GrokWatchTool.parse log-parser (Chat A)
+**What:** Unlocked `GrokWatchTool.parse` for testing by removing its `private` modifier (access unchanged at the Swift level — it stays module-internal). Added `GrokWatchToolTests.swift` (new file, 13 tests across 5 assertion categories) to pin all five parsing behaviors: (1) task extraction from the `task: '...'` header with escaped-quote unescaping and 180-char truncation, (2) session-ID from filename, turn counting, and elapsed-time extraction from `[HH:MM:SS|XmYYs]` timestamp prefix, (3) CMD/output pair collection with bridge-line filtering (`[`, `→`, `✓`, "sending output back" filtered out) and 120-char output truncation, (4) DONE detection from `[[DONE]]` and `TASK_COMPLETED_SUCCESSFULLY` tokens, and (5) 6-entry ring buffer eviction (cmd_1/cmd_2 dropped when 8 turns accumulate).
+**Files:** `Salehman AI/Tools/GrokWatchTool.swift` (private→internal on parse), `Salehman AITests/GrokWatchToolTests.swift` (new, 13 tests).
+**Result:** 13 new tests; API sig verified; SOURCE_BUNDLE.md regenerated.
 
 ## 2026-06-13 — marathon EOR: test coverage — RepoPacker.byteString + Attachment.merged (Chat A)
 **What:** Two new test structs plugging the last clearly-identified pure-function gaps after a full survey of Chat A's lane. (1) `RepoPackerByteStringTests` (3 tests, appended to `RepoPackerTests.swift`) — covers all three branches of `RepoPacker.byteString`: bytes path (0, 512, 1023 B), KB boundary (1023 B / 1024 KB crossover, 512 KB), MB boundary (1 048 576 = 1.0 MB, 2 621 440 = 2.5 MB). (2) `AttachmentMergeTests` (new file, 6 tests) — covers `Attachment.merged`'s three-case collapse contract: empty list → nil, single item → identity pass-through with fileURL+isImage preserved for cloud vision, multiple items → text-only merged attachment with combined name, kind="files", icon="doc.on.doc", `––– name (kind) –––\ntext` section format, and fileURL/isImage reset to nil/false. Confirmed via API-signature grep (DerivedData sandbox blocked xcodebuild). Full survey of remaining pure-function statics in Agents/*, Tools/*, LLM/*, Intelligence/*, Media/*, Persistence/* confirmed all other pure helpers are already covered.

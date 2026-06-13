@@ -34,7 +34,7 @@ enum GrokWatchTool {
         return parse(content, filename: latest.lastPathComponent)
     }
 
-    private nonisolated static func parse(_ content: String, filename: String) -> String {
+    nonisolated static func parse(_ content: String, filename: String) -> String {
         let lines = content.components(separatedBy: "\n")
         let sessionID = (filename as NSString).deletingPathExtension
 
