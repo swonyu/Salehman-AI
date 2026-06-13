@@ -3841,6 +3841,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+## 2026-06-13 — marathon EOV: test coverage — OllamaClient.Generation.tuned tagged+uppercase paths (Chat A)
+
+**What changed:** Added 2 new tests to `Salehman AITests/FourteenBReadinessTests.swift`:
+
+- `tunedKnobsWorkWithTaggedModelNames` — exercises the **tag-stripping path** in `tuned(for:)`. When the custom model key is `"salehman14b"`, calling `tuned(for: "salehman14b:latest")` must still return warm knobs (`keepAlive == "5m"`, `numCtx == 4096`) because `"salehman14b:latest" != custom` so the `model == custom` branch misses, but `components(separatedBy: ":").first` strips `":latest"` → base is `"salehman14b"` → prefix check hits. Also asserts a non-salehman tagged model (`"qwen2.5-coder:7b-instruct"`) still falls to `.default`.
+
+- `tunedKnobsAreCaseInsensitiveForSalehmanPrefix` — pins the **`.lowercased()` guard**: `"SALEHMAN14B"` and `"SALEHMAN14B:latest"` must both return warm knobs, confirming the two transforms (tag-strip + case-fold) compose correctly.
+
+**Files:** `Salehman AITests/FourteenBReadinessTests.swift`  
+**Why:** Prior 3 tests only used bare lowercase names (`"salehman14b"`, `"salehman"`). The `components(separatedBy:":")` code path was dead to tests — a refactor could delete it silently. Now pinned.  
+**Result:** 5 tuned-knobs tests total. API signatures confirmed via grep (`OllamaClient.swift:128`, `OllamaClient.defaultNumCtx:109`, `AppSettings.Keys.customModel:220`). SourceKit "No such module 'Testing'" on line 1 is the known pre-existing false positive.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 06:51 +03 · Swift files: 160 · Swift LOC: 36470_
+_Generated: 2026-06-13 07:00 +03 · Swift files: 160 · Swift LOC: 36508_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -31300,7 +31300,7 @@ struct FileTreeBuilderTests {
 }
 ```
 
-===== FILE: Salehman AITests/FourteenBReadinessTests.swift (116 lines) =====
+===== FILE: Salehman AITests/FourteenBReadinessTests.swift (154 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -31363,6 +31363,44 @@ struct FourteenBReadinessTests {
             UserDefaults.standard.removeObject(forKey: AppSettings.Keys.customModel)
             #expect(OllamaClient.Generation.tuned(for: "salehman").keepAlive == "5m")
             #expect(OllamaClient.Generation.tuned(for: "anything-else").keepAlive == "30s")
+        }
+    }
+
+    @Test func tunedKnobsWorkWithTaggedModelNames() {
+        withSavedModelKey {
+            // Ollama appends ":latest" (or a quant tag like ":q4_K_M") at pull time.
+            // The custom key stores the bare name "salehman14b", so
+            // "salehman14b:latest" != custom and the prefix-check is the only
+            // path that can match. This pins the components(separatedBy:":").first
+            // tag-strip that feeds the prefix check.
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let tagged = OllamaClient.Generation.tuned(for: "salehman14b:latest")
+            #expect(tagged.keepAlive == "5m",
+                    "'salehman14b:latest' must get warm keep-alive via tag-stripping prefix check")
+            #expect(tagged.numCtx == 4096)
+
+            // A non-salehman tagged model must still fall through to .default.
+            let other = OllamaClient.Generation.tuned(for: "qwen2.5-coder:7b-instruct")
+            #expect(other.keepAlive == "30s",
+                    "non-salehman tagged model must not get warm knobs")
+        }
+    }
+
+    @Test func tunedKnobsAreCaseInsensitiveForSalehmanPrefix() {
+        withSavedModelKey {
+            // Ollama model names are case-insensitive in practice; the prefix check
+            // uses .lowercased() so "SALEHMAN14B" or "Salehman" still match.
+            UserDefaults.standard.removeObject(forKey: AppSettings.Keys.customModel)
+            let uppercase = OllamaClient.Generation.tuned(for: "SALEHMAN14B")
+            #expect(uppercase.keepAlive == "5m",
+                    "uppercase SALEHMAN prefix must get warm knobs via lowercased()")
+            #expect(uppercase.numCtx == 4096)
+
+            // Uppercase + colon tag — both transforms must compose correctly.
+            let upperTagged = OllamaClient.Generation.tuned(for: "SALEHMAN14B:latest")
+            #expect(upperTagged.keepAlive == "5m",
+                    "uppercase + tagged must get warm knobs")
+            #expect(upperTagged.numCtx == 4096)
         }
     }
 
@@ -39078,7 +39116,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4904 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4918 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -42919,6 +42957,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 **Files:** `Salehman AITests/AgentPipelineHelpersTests.swift` (new)
 
 **Result:** All 6 function signatures confirmed via grep. All Brain enum cases verified. Pure deterministic assertions with no model calls.
+
+---
+
+## 2026-06-13 — marathon EOV: test coverage — OllamaClient.Generation.tuned tagged+uppercase paths (Chat A)
+
+**What changed:** Added 2 new tests to `Salehman AITests/FourteenBReadinessTests.swift`:
+
+- `tunedKnobsWorkWithTaggedModelNames` — exercises the **tag-stripping path** in `tuned(for:)`. When the custom model key is `"salehman14b"`, calling `tuned(for: "salehman14b:latest")` must still return warm knobs (`keepAlive == "5m"`, `numCtx == 4096`) because `"salehman14b:latest" != custom` so the `model == custom` branch misses, but `components(separatedBy: ":").first` strips `":latest"` → base is `"salehman14b"` → prefix check hits. Also asserts a non-salehman tagged model (`"qwen2.5-coder:7b-instruct"`) still falls to `.default`.
+
+- `tunedKnobsAreCaseInsensitiveForSalehmanPrefix` — pins the **`.lowercased()` guard**: `"SALEHMAN14B"` and `"SALEHMAN14B:latest"` must both return warm knobs, confirming the two transforms (tag-strip + case-fold) compose correctly.
+
+**Files:** `Salehman AITests/FourteenBReadinessTests.swift`  
+**Why:** Prior 3 tests only used bare lowercase names (`"salehman14b"`, `"salehman"`). The `components(separatedBy:":")` code path was dead to tests — a refactor could delete it silently. Now pinned.  
+**Result:** 5 tuned-knobs tests total. API signatures confirmed via grep (`OllamaClient.swift:128`, `OllamaClient.defaultNumCtx:109`, `AppSettings.Keys.customModel:220`). SourceKit "No such module 'Testing'" on line 1 is the known pre-existing false positive.
 
 ---
 
