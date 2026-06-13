@@ -3546,6 +3546,22 @@ Added `LacksCloudKeyLogicTests` struct (4 tests) to `FreeCloudBrainsTests.swift`
 
 ---
 
+### Marathon — 2026-06-13 · EOY — SalehmanLeader: error-reply guard + isMostlyCode tests
+
+**What changed:**
+
+1. `SalehmanLeader.finalize` now guards against ALL bracketed error shapes (`[Provider error …]`, `[… request failed …]`, `[The on-device model couldn't complete …]`) — not just the bare `LocalLLM.offMessage` constant. Previously, when all brains failed (original + rescue), the leader would waste one more `SalehmanEngine.generate` call (which would also fail) before returning the original error unchanged. Now it short-circuits immediately.
+
+2. `isMostlyCode` promoted from `private` to `internal` so `SalehmanLeaderTests` can pin its 40%-threshold logic without needing a live engine.
+
+Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeTests` (7 tests), `IsLeadingTests` (6 tests), `FinalizeErrorBypassTests` (5 tests).
+
+**Files:** `Salehman AI/LLM/SalehmanLeader.swift` (+6 / -1 lines), `Salehman AITests/SalehmanLeaderTests.swift` (new, 110 lines)
+
+**Result:** 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

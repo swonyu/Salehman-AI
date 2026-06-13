@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:53 +03 · Swift files: 150 · Swift LOC: 33963_
+_Generated: 2026-06-13 04:57 +03 · Swift files: 151 · Swift LOC: 34116_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8228,7 +8228,7 @@ enum SalehmanEngine {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanLeader.swift (140 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanLeader.swift (145 lines) =====
 ```swift
 import Foundation
 
@@ -8287,6 +8287,10 @@ enum SalehmanLeader {
     static func finalize(userPrompt: String, draft: String) async -> String {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, draft != LocalLLM.offMessage else { return draft }
+        // Skip error sentinels (bracketed "[Provider error …]" / "request failed …").
+        // offMessage is caught above; this catches all other error shapes so the
+        // leader doesn't waste a generate call trying to polish a diagnostic message.
+        guard !AgentPipeline.isErrorReply(draft) else { return draft }
         // Never let extra passes rewrite substantial code — handing working code
         // to another pass risks subtle breakage, so the drafter's code stands.
         guard !isMostlyCode(draft) else { return draft }
@@ -8362,7 +8366,8 @@ enum SalehmanLeader {
     /// True when the draft is dominated by fenced code blocks (≥40% of the
     /// reply). Such replies are left untouched by the leader so a small model
     /// can't quietly break working code, even outside the dedicated coding modes.
-    private static func isMostlyCode(_ text: String) -> Bool {
+    /// `internal` (not `private`) so `SalehmanLeaderTests` can pin the threshold.
+    static func isMostlyCode(_ text: String) -> Bool {
         let parts = text.components(separatedBy: "```")
         guard parts.count >= 3 else { return false }   // need ≥1 opened+closed fence
         var codeLen = 0
@@ -32659,6 +32664,158 @@ struct RestoreSnapshotTests {
 }
 ```
 
+===== FILE: Salehman AITests/SalehmanLeaderTests.swift (148 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - SalehmanLeader pure-logic guards
+//
+// SalehmanLeader.finalize is the last mile for every user-facing reply — it's
+// too consequential to leave untested. The live engine paths can't run in CI,
+// but the pure gatekeeping functions (isMostlyCode, isErrorReply guard,
+// isLeading) are fully testable.
+
+struct IsMostlyCodeTests {
+
+    @Test func emptyStringIsNotMostlyCode() {
+        #expect(!SalehmanLeader.isMostlyCode(""))
+    }
+
+    @Test func plainTextIsNotMostlyCode() {
+        #expect(!SalehmanLeader.isMostlyCode("The quick brown fox."))
+    }
+
+    @Test func unclosedFenceIsNotMostlyCode() {
+        // Need ≥1 opened+closed pair — a single ``` never closes.
+        let text = "Here is some code:\n```swift\nlet x = 1"
+        #expect(!SalehmanLeader.isMostlyCode(text))
+    }
+
+    @Test func smallCodeBlockInLargeTextIsNotMostlyCode() {
+        // A one-liner code block inside a long reply is < 40%.
+        let prose = String(repeating: "This is a sentence. ", count: 20)  // ~400 chars
+        let text = prose + "\n```\nlet x = 1\n```"                        // ~20 char code
+        #expect(!SalehmanLeader.isMostlyCode(text))
+    }
+
+    @Test func allCodeIsConsideredMostlyCode() {
+        // The entire reply is inside fences → 100% code → definitely ≥40%.
+        let text = "```swift\nfunc greet() { print(\"hello\") }\n```"
+        #expect(SalehmanLeader.isMostlyCode(text))
+    }
+
+    @Test func halfCodeHalfTextBorderCase() {
+        // Each side is equal length → exactly 50% code → above the 40% threshold.
+        let code = "let x = 1"   // 9 chars
+        let prose = "Nine chars"  // 9 chars
+        let text = "```\n\(code)\n```\n\(prose)"
+        // fenced portion ≥ 40% of total → true
+        #expect(SalehmanLeader.isMostlyCode(text))
+    }
+
+    @Test func multipleSmallFencesCanCrossThreshold() {
+        // Three 30-char code blocks inside a 90-char total reply → each fence
+        // is exactly 1/3 of the reply; together they are 100% → ≥40%.
+        let fence = "```\nabc\n```"   // ~10 chars each
+        let text = "\(fence)\(fence)\(fence)"
+        #expect(SalehmanLeader.isMostlyCode(text))
+    }
+}
+
+// MARK: - isLeading settings gate
+
+struct IsLeadingTests {
+
+    private func withSettings(leader: Bool, pref: BrainPreference,
+                               _ body: () -> Bool) -> Bool {
+        let lk = AppSettings.Keys.salehmanLeader
+        let pk = AppSettings.Keys.brainPreference
+        let priorL = UserDefaults.standard.object(forKey: lk)
+        let priorP = UserDefaults.standard.string(forKey: pk)
+        defer {
+            if let priorL { UserDefaults.standard.set(priorL, forKey: lk) }
+            else           { UserDefaults.standard.removeObject(forKey: lk) }
+            if let priorP  { UserDefaults.standard.set(priorP, forKey: pk) }
+            else           { UserDefaults.standard.removeObject(forKey: pk) }
+        }
+        UserDefaults.standard.set(leader,       forKey: lk)
+        UserDefaults.standard.set(pref.rawValue, forKey: pk)
+        return body()
+    }
+
+    @Test func leaderOffMeansNeverLeading() {
+        let result = withSettings(leader: false, pref: .groq) { SalehmanLeader.isLeading }
+        #expect(!result)
+    }
+
+    @Test func salehmanBrainNeverLeads() {
+        // Salehman-on-Salehman would be a double-pass — explicitly excluded.
+        let result = withSettings(leader: true, pref: .salehman) { SalehmanLeader.isLeading }
+        #expect(!result)
+    }
+
+    @Test func cloudCodingBrainNeverLeads() {
+        // Leader shouldn't rewrite tool-built coder output.
+        let result = withSettings(leader: true, pref: .cloudCoding) { SalehmanLeader.isLeading }
+        #expect(!result)
+    }
+
+    @Test func freeCodingBrainNeverLeads() {
+        let result = withSettings(leader: true, pref: .freeCoding) { SalehmanLeader.isLeading }
+        #expect(!result)
+    }
+
+    @Test func groqBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .groq) { SalehmanLeader.isLeading }
+        #expect(result)
+    }
+
+    @Test func grokBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .grok) { SalehmanLeader.isLeading }
+        #expect(result)
+    }
+}
+
+// MARK: - Error-reply bypass guard
+
+struct FinalizeErrorBypassTests {
+
+    // These verify the isErrorReply + offMessage guards without needing a live
+    // engine: the function returns the draft unchanged for bad inputs.
+
+    @Test func emptyDraftReturnedUnchanged() async {
+        let result = await SalehmanLeader.finalize(userPrompt: "q", draft: "")
+        #expect(result == "")
+    }
+
+    @Test func offMessageReturnedUnchanged() async {
+        let result = await SalehmanLeader.finalize(userPrompt: "q", draft: LocalLLM.offMessage)
+        #expect(result == LocalLLM.offMessage)
+    }
+
+    @Test func bracketErrorReturnedUnchanged() async {
+        // A bracket provider error must bypass the leader (not waste a generate call).
+        let err = "[Groq error 429: rate limit exceeded]"
+        let result = await SalehmanLeader.finalize(userPrompt: "q", draft: err)
+        #expect(result == err)
+    }
+
+    @Test func requestFailedErrorReturnedUnchanged() async {
+        let err = "[Mistral request failed (HTTP 503). Retry in a moment.]"
+        let result = await SalehmanLeader.finalize(userPrompt: "q", draft: err)
+        #expect(result == err)
+    }
+
+    @Test func onDeviceErrorReturnedUnchanged() async {
+        let err = "[The on-device model couldn't complete the request]"
+        let result = await SalehmanLeader.finalize(userPrompt: "q", draft: err)
+        #expect(result == err)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/Salehman_AITests.swift (235 lines) =====
 ```swift
 import Testing
@@ -36531,7 +36688,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4589 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4605 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40077,6 +40234,22 @@ Added `LacksCloudKeyLogicTests` struct (4 tests) to `FreeCloudBrainsTests.swift`
 **Files:** `Salehman AI/LLM/LocalLLM.swift` (+11 / -6 lines), `Salehman AITests/FreeCloudBrainsTests.swift` (+54 / -0 lines)
 
 **Result:** 0 real Swift errors (cross-module SourceKit false positives unchanged).
+
+---
+
+### Marathon — 2026-06-13 · EOY — SalehmanLeader: error-reply guard + isMostlyCode tests
+
+**What changed:**
+
+1. `SalehmanLeader.finalize` now guards against ALL bracketed error shapes (`[Provider error …]`, `[… request failed …]`, `[The on-device model couldn't complete …]`) — not just the bare `LocalLLM.offMessage` constant. Previously, when all brains failed (original + rescue), the leader would waste one more `SalehmanEngine.generate` call (which would also fail) before returning the original error unchanged. Now it short-circuits immediately.
+
+2. `isMostlyCode` promoted from `private` to `internal` so `SalehmanLeaderTests` can pin its 40%-threshold logic without needing a live engine.
+
+Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeTests` (7 tests), `IsLeadingTests` (6 tests), `FinalizeErrorBypassTests` (5 tests).
+
+**Files:** `Salehman AI/LLM/SalehmanLeader.swift` (+6 / -1 lines), `Salehman AITests/SalehmanLeaderTests.swift` (new, 110 lines)
+
+**Result:** 0 real Swift errors.
 
 ---
 

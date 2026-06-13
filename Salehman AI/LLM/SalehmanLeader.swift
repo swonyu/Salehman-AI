@@ -55,6 +55,10 @@ enum SalehmanLeader {
     static func finalize(userPrompt: String, draft: String) async -> String {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, draft != LocalLLM.offMessage else { return draft }
+        // Skip error sentinels (bracketed "[Provider error …]" / "request failed …").
+        // offMessage is caught above; this catches all other error shapes so the
+        // leader doesn't waste a generate call trying to polish a diagnostic message.
+        guard !AgentPipeline.isErrorReply(draft) else { return draft }
         // Never let extra passes rewrite substantial code — handing working code
         // to another pass risks subtle breakage, so the drafter's code stands.
         guard !isMostlyCode(draft) else { return draft }
@@ -130,7 +134,8 @@ enum SalehmanLeader {
     /// True when the draft is dominated by fenced code blocks (≥40% of the
     /// reply). Such replies are left untouched by the leader so a small model
     /// can't quietly break working code, even outside the dedicated coding modes.
-    private static func isMostlyCode(_ text: String) -> Bool {
+    /// `internal` (not `private`) so `SalehmanLeaderTests` can pin the threshold.
+    static func isMostlyCode(_ text: String) -> Bool {
         let parts = text.components(separatedBy: "```")
         guard parts.count >= 3 else { return false }   // need ≥1 opened+closed fence
         var codeLen = 0
