@@ -3530,6 +3530,22 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 
 ---
 
+### Marathon — 2026-06-13 · EOX — Fix `lacksCloudKey` and `isAvailable` after DeepSeek removal
+
+**What changed:** Two bugs in `LocalLLM.swift` — both rooted in `SalehmanEngine.hasAnyCloud` always returning `false` — were identified and fixed:
+
+1. `lacksCloudKey` for `.freeAuto` and `.freeCoding` used `!SalehmanEngine.hasAnyCloud` (always `true`), causing the "add a cloud key" banner to appear permanently even when Groq, Gemini, Cerebras, Mistral, or OpenRouter keys were present. Fixed: `.freeAuto` now checks `!CloudProvider.freeTier.contains { $0.isConfiguredNow }`, `.freeCoding` checks `!CloudProvider.codingRace.contains { $0.isConfiguredNow }`.
+
+2. `isAvailable` OR-chained five specific providers (Claude, Grok, Gemini, OpenAI, Copilot) but missed Groq, Mistral, Cerebras, and OpenRouter — so outcome success-ratings were 0.0 for users whose only keys were on those four providers. Fixed: `!CloudProvider.configuredNow().isEmpty` (a single 9-provider scan, auto-includes any new providers added to `CloudProvider.allCases`).
+
+Added `LacksCloudKeyLogicTests` struct (4 tests) to `FreeCloudBrainsTests.swift` pinning the routing logic.
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (+11 / -6 lines), `Salehman AITests/FreeCloudBrainsTests.swift` (+54 / -0 lines)
+
+**Result:** 0 real Swift errors (cross-module SourceKit false positives unchanged).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

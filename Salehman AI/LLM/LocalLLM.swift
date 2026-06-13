@@ -15,13 +15,13 @@ enum LocalLLM {
     // AgentPipeline tasks, the Ollama-fallback path) can probe brain
     // availability without hopping to the main actor. The underlying APIs are
     // thread-safe — there's no shared mutable state behind any of them.
-    /// True when *some* brain can answer: a local Ollama model, an on-device MLX
-    /// Salehman engine, or any configured cloud key. Used by the pipeline to rate
-    /// an outcome. (Formerly gated on Apple Intelligence availability.)
+    /// True when *some* cloud brain can answer. Used by the pipeline to rate an
+    /// outcome — if any of the 9 providers has a key, we can reach a brain.
+    /// (Ollama availability requires an async HTTP probe so it can't be checked
+    /// here; the pipeline only calls this after already getting a non-empty
+    /// answer, which implies a brain was reachable.)
     nonisolated static var isAvailable: Bool {
-        SalehmanEngine.hasAnyCloud
-            || OpenAIClient.hasKey() || AnthropicClient.isConfigured || GrokClient.hasKey()
-            || GeminiClient.hasKey() || CopilotClient.isAuthed()
+        !CloudProvider.configuredNow().isEmpty
     }
 
     /// **Sentinel** returned by the chat pipeline when no brain can answer.
@@ -97,8 +97,14 @@ enum LocalLLM {
         switch AppSettings.brainPreferenceCurrent {
         case .salehman:
             return false   // local-only by design; no cloud key needed or used
-        case .freeAuto, .freeCoding:
-            return !SalehmanEngine.hasAnyCloud
+        case .freeAuto:
+            // Show the banner when none of the free-tier providers (Groq, Cerebras,
+            // Gemini, Mistral, OpenRouter) are configured. freeAuto has an Ollama
+            // backstop, so this is informational — "you're on the slow path".
+            return !CloudProvider.freeTier.contains { $0.isConfiguredNow }
+        case .freeCoding:
+            // The free coding loop runs OpenRouter/Groq/Cerebras/Mistral.
+            return !CloudProvider.codingRace.contains { $0.isConfiguredNow }
         case .cloudCoding:
             // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
             // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the

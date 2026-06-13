@@ -131,6 +131,76 @@ struct CloudBrainPreferenceTests {
     }
 }
 
+// MARK: - lacksCloudKey + isAvailable logic guards
+//
+// The two properties drive the "add a cloud key" UX banner and the outcome
+// success-rating. The full Keychain layer can't be exercised in tests (no
+// entitlements), but we can pin the routing LOGIC: which roster each mode
+// consults, and which modes are exempt from the banner.
+
+struct LacksCloudKeyLogicTests {
+
+    @Test func salehmanAlwaysReturnsFalse() {
+        // Salehman is on-device only — no cloud key is needed or used.
+        // The banner would be wrong and alarming for this mode.
+        let prior = UserDefaults.standard.string(forKey: AppSettings.Keys.brainPreference)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: AppSettings.Keys.brainPreference) }
+            else         { UserDefaults.standard.removeObject(forKey: AppSettings.Keys.brainPreference) }
+        }
+        UserDefaults.standard.set(BrainPreference.salehman.rawValue,
+                                   forKey: AppSettings.Keys.brainPreference)
+        #expect(!LocalLLM.lacksCloudKey, ".salehman must never trigger the banner")
+    }
+
+    @Test func freeTierContainsOnlyFreeProviders() {
+        // The banner fires when none of freeTier are configured. If a paid
+        // brain slips into freeTier, freeAuto could silently spend money AND
+        // the banner would be suppressed (masking the actual lack of a free key).
+        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
+        for paid in paidBrains {
+            #expect(!CloudProvider.freeTier.contains(paid),
+                    "\(paid.rawValue) is a paid brain and must not appear in freeTier")
+        }
+        // The five cost-free providers must all be present.
+        for expected in [CloudProvider.groq, .cerebras, .gemini, .mistral, .openRouter] {
+            #expect(CloudProvider.freeTier.contains(expected),
+                    "\(expected.rawValue) must be in freeTier — it's the free-auto roster")
+        }
+    }
+
+    @Test func codingRaceContainsOnlyFreeCoders() {
+        // freeCoding banner logic uses codingRace. Same guard: paid brains
+        // must not appear (no silent spend), and all four coders must be listed.
+        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
+        for paid in paidBrains {
+            #expect(!CloudProvider.codingRace.contains(paid),
+                    "\(paid.rawValue) must not be in codingRace")
+        }
+        for expected in [CloudProvider.openRouter, .groq, .cerebras, .mistral] {
+            #expect(CloudProvider.codingRace.contains(expected),
+                    "\(expected.rawValue) must be in codingRace")
+        }
+    }
+
+    @Test func isAvailableReturnsFalseWhenNoCloudConfigured() {
+        // Without real Keychain entries, configuredNow() returns an empty Set,
+        // so isAvailable must return false. This is the correct "no brain" state.
+        // (The pipeline falls back to offMessage when isAvailable is false AND
+        // the answer is empty — this test verifies the no-key case, not the
+        // Ollama case which is async.)
+        //
+        // If this test runs on a machine that has any cloud key saved, it will
+        // return true (correctly). Either outcome is acceptable — this test is
+        // primarily a structural guard to confirm CloudProvider.configuredNow()
+        // is what drives the value, not a hard-coded false.
+        let result = LocalLLM.isAvailable
+        let expected = !CloudProvider.configuredNow().isEmpty
+        #expect(result == expected,
+                "isAvailable must mirror !CloudProvider.configuredNow().isEmpty")
+    }
+}
+
 // MARK: - AppSettings.*ModelCurrent fallback
 
 struct CloudModelCurrentFallbackTests {

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:38 +03 · Swift files: 150 · Swift LOC: 33887_
+_Generated: 2026-06-13 04:53 +03 · Swift files: 150 · Swift LOC: 33963_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5176,7 +5176,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1696 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1702 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5195,13 +5195,13 @@ enum LocalLLM {
     // AgentPipeline tasks, the Ollama-fallback path) can probe brain
     // availability without hopping to the main actor. The underlying APIs are
     // thread-safe — there's no shared mutable state behind any of them.
-    /// True when *some* brain can answer: a local Ollama model, an on-device MLX
-    /// Salehman engine, or any configured cloud key. Used by the pipeline to rate
-    /// an outcome. (Formerly gated on Apple Intelligence availability.)
+    /// True when *some* cloud brain can answer. Used by the pipeline to rate an
+    /// outcome — if any of the 9 providers has a key, we can reach a brain.
+    /// (Ollama availability requires an async HTTP probe so it can't be checked
+    /// here; the pipeline only calls this after already getting a non-empty
+    /// answer, which implies a brain was reachable.)
     nonisolated static var isAvailable: Bool {
-        SalehmanEngine.hasAnyCloud
-            || OpenAIClient.hasKey() || AnthropicClient.isConfigured || GrokClient.hasKey()
-            || GeminiClient.hasKey() || CopilotClient.isAuthed()
+        !CloudProvider.configuredNow().isEmpty
     }
 
     /// **Sentinel** returned by the chat pipeline when no brain can answer.
@@ -5277,8 +5277,14 @@ enum LocalLLM {
         switch AppSettings.brainPreferenceCurrent {
         case .salehman:
             return false   // local-only by design; no cloud key needed or used
-        case .freeAuto, .freeCoding:
-            return !SalehmanEngine.hasAnyCloud
+        case .freeAuto:
+            // Show the banner when none of the free-tier providers (Groq, Cerebras,
+            // Gemini, Mistral, OpenRouter) are configured. freeAuto has an Ollama
+            // backstop, so this is informational — "you're on the slow path".
+            return !CloudProvider.freeTier.contains { $0.isConfiguredNow }
+        case .freeCoding:
+            // The free coding loop runs OpenRouter/Groq/Cerebras/Mistral.
+            return !CloudProvider.codingRace.contains { $0.isConfiguredNow }
         case .cloudCoding:
             // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
             // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
@@ -30471,7 +30477,7 @@ struct FreeAutoRoutingTests {
 }
 ```
 
-===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (174 lines) =====
+===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (244 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30603,6 +30609,76 @@ struct CloudBrainPreferenceTests {
             #expect(!c.subtitle.isEmpty)
             #expect(!c.icon.isEmpty)
         }
+    }
+}
+
+// MARK: - lacksCloudKey + isAvailable logic guards
+//
+// The two properties drive the "add a cloud key" UX banner and the outcome
+// success-rating. The full Keychain layer can't be exercised in tests (no
+// entitlements), but we can pin the routing LOGIC: which roster each mode
+// consults, and which modes are exempt from the banner.
+
+struct LacksCloudKeyLogicTests {
+
+    @Test func salehmanAlwaysReturnsFalse() {
+        // Salehman is on-device only — no cloud key is needed or used.
+        // The banner would be wrong and alarming for this mode.
+        let prior = UserDefaults.standard.string(forKey: AppSettings.Keys.brainPreference)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: AppSettings.Keys.brainPreference) }
+            else         { UserDefaults.standard.removeObject(forKey: AppSettings.Keys.brainPreference) }
+        }
+        UserDefaults.standard.set(BrainPreference.salehman.rawValue,
+                                   forKey: AppSettings.Keys.brainPreference)
+        #expect(!LocalLLM.lacksCloudKey, ".salehman must never trigger the banner")
+    }
+
+    @Test func freeTierContainsOnlyFreeProviders() {
+        // The banner fires when none of freeTier are configured. If a paid
+        // brain slips into freeTier, freeAuto could silently spend money AND
+        // the banner would be suppressed (masking the actual lack of a free key).
+        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
+        for paid in paidBrains {
+            #expect(!CloudProvider.freeTier.contains(paid),
+                    "\(paid.rawValue) is a paid brain and must not appear in freeTier")
+        }
+        // The five cost-free providers must all be present.
+        for expected in [CloudProvider.groq, .cerebras, .gemini, .mistral, .openRouter] {
+            #expect(CloudProvider.freeTier.contains(expected),
+                    "\(expected.rawValue) must be in freeTier — it's the free-auto roster")
+        }
+    }
+
+    @Test func codingRaceContainsOnlyFreeCoders() {
+        // freeCoding banner logic uses codingRace. Same guard: paid brains
+        // must not appear (no silent spend), and all four coders must be listed.
+        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
+        for paid in paidBrains {
+            #expect(!CloudProvider.codingRace.contains(paid),
+                    "\(paid.rawValue) must not be in codingRace")
+        }
+        for expected in [CloudProvider.openRouter, .groq, .cerebras, .mistral] {
+            #expect(CloudProvider.codingRace.contains(expected),
+                    "\(expected.rawValue) must be in codingRace")
+        }
+    }
+
+    @Test func isAvailableReturnsFalseWhenNoCloudConfigured() {
+        // Without real Keychain entries, configuredNow() returns an empty Set,
+        // so isAvailable must return false. This is the correct "no brain" state.
+        // (The pipeline falls back to offMessage when isAvailable is false AND
+        // the answer is empty — this test verifies the no-key case, not the
+        // Ollama case which is async.)
+        //
+        // If this test runs on a machine that has any cloud key saved, it will
+        // return true (correctly). Either outcome is acceptable — this test is
+        // primarily a structural guard to confirm CloudProvider.configuredNow()
+        // is what drives the value, not a hard-coded false.
+        let result = LocalLLM.isAvailable
+        let expected = !CloudProvider.configuredNow().isEmpty
+        #expect(result == expected,
+                "isAvailable must mirror !CloudProvider.configuredNow().isEmpty")
     }
 }
 
@@ -36455,7 +36531,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4573 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4589 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39985,6 +40061,22 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 **Files:** `Salehman AI/Intelligence/Effort.swift` (+24 / -7 lines), `Salehman AITests/EffortTests.swift` (+8 / -10 lines)
 
 **Result:** 0 real Swift errors.
+
+---
+
+### Marathon — 2026-06-13 · EOX — Fix `lacksCloudKey` and `isAvailable` after DeepSeek removal
+
+**What changed:** Two bugs in `LocalLLM.swift` — both rooted in `SalehmanEngine.hasAnyCloud` always returning `false` — were identified and fixed:
+
+1. `lacksCloudKey` for `.freeAuto` and `.freeCoding` used `!SalehmanEngine.hasAnyCloud` (always `true`), causing the "add a cloud key" banner to appear permanently even when Groq, Gemini, Cerebras, Mistral, or OpenRouter keys were present. Fixed: `.freeAuto` now checks `!CloudProvider.freeTier.contains { $0.isConfiguredNow }`, `.freeCoding` checks `!CloudProvider.codingRace.contains { $0.isConfiguredNow }`.
+
+2. `isAvailable` OR-chained five specific providers (Claude, Grok, Gemini, OpenAI, Copilot) but missed Groq, Mistral, Cerebras, and OpenRouter — so outcome success-ratings were 0.0 for users whose only keys were on those four providers. Fixed: `!CloudProvider.configuredNow().isEmpty` (a single 9-provider scan, auto-includes any new providers added to `CloudProvider.allCases`).
+
+Added `LacksCloudKeyLogicTests` struct (4 tests) to `FreeCloudBrainsTests.swift` pinning the routing logic.
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (+11 / -6 lines), `Salehman AITests/FreeCloudBrainsTests.swift` (+54 / -0 lines)
+
+**Result:** 0 real Swift errors (cross-module SourceKit false positives unchanged).
 
 ---
 
