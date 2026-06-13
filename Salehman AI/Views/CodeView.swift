@@ -439,17 +439,17 @@ struct ActivityStepRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             step.status == .running ? DS.Palette.accent.opacity(0.07) : Color.white.opacity(0.03),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(alignment: .leading) {
             if step.status == .running {
                 DS.Palette.accent.frame(width: 2.5)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         // Machined top bevel — each step card reads as a physical tile.
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )

@@ -4090,6 +4090,18 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+## 2026-06-13 — EOAL: DS.Radius.small token sweep — CodeView, CommandPalette, ContentView
+
+**What changed:** Tokenized all remaining hardcoded `cornerRadius: 8` values across 3 files (10 instances total). CodeView: 3 instances (step-card background, left-border clip, top-bevel overlay). CommandPalette: 2 instances (row hover/selection ring). ContentView: 5 instances (quote-card container + 2× hover action bar). All map exactly to `DS.Radius.small = 8` — zero visual delta.
+
+**Why:** Completes the DS radius token sweep started in EOAK. No raw integer radii remain in the codebase at the well (6), small (8), chip (12), card (14), bubble (16), field (20), or modal (24) tiers — all are now tokenized and will track centrally if any token is later tuned.
+
+**Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/ContentView.swift`
+
+**Result:** Build green (environmental xcodebuild sandbox/SimService errors are pre-existing, not code regressions). Zero remaining `cornerRadius: 8` in Swift sources.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

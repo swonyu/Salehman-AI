@@ -140,10 +140,10 @@ struct CommandPalette: View {
                                     (hoveredID == cmd.id || isSelected)
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 8)
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.small)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: DS.Radius.small)
                                         .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())

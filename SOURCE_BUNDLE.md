@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 11:17 +03 · Swift files: 160 · Swift LOC: 36654_
+_Generated: 2026-06-13 11:22 +03 · Swift files: 160 · Swift LOC: 36654_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15442,17 +15442,17 @@ struct ActivityStepRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             step.status == .running ? DS.Palette.accent.opacity(0.07) : Color.white.opacity(0.03),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(alignment: .leading) {
             if step.status == .running {
                 DS.Palette.accent.frame(width: 2.5)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         // Machined top bevel — each step card reads as a physical tile.
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
@@ -17804,10 +17804,10 @@ struct CommandPalette: View {
                                     (hoveredID == cmd.id || isSelected)
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 8)
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.small)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: DS.Radius.small)
                                         .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
@@ -20147,7 +20147,7 @@ struct MessageBubble: View, Equatable {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(Color.white.opacity(0.05),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 
     /// User text, split into quote card + body when the message opens with a
@@ -20223,8 +20223,8 @@ struct MessageBubble: View, Equatable {
                 }
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(DS.Palette.codeSurfaceSide,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .offset(y: -10)
                 .opacity(hovering || qaShowActions ? 1 : 0)
@@ -20316,8 +20316,8 @@ struct MessageBubble: View, Equatable {
             }
             .padding(.horizontal, 5).padding(.vertical, 3)
             .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
             .opacity(hovering || qaShowActions ? 1 : 0)
@@ -39262,7 +39262,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5153 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5165 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43352,6 +43352,18 @@ Token alignment in the autonomous-run stop button.
 **Why:** Icon wells appear in 8 views across the whole app. Without a token, a future design decision to change well rounding requires touching each file individually; with `DS.Radius.well` it's a single edit in DesignSystem.swift.
 
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/AboutView.swift`, `TodayView.swift`, `KnowledgeView.swift`, `CommandPalette.swift`, `MemoryView.swift`, `ChatHistoryView.swift`, `ScratchpadView.swift`
+
+---
+
+## 2026-06-13 — EOAL: DS.Radius.small token sweep — CodeView, CommandPalette, ContentView
+
+**What changed:** Tokenized all remaining hardcoded `cornerRadius: 8` values across 3 files (10 instances total). CodeView: 3 instances (step-card background, left-border clip, top-bevel overlay). CommandPalette: 2 instances (row hover/selection ring). ContentView: 5 instances (quote-card container + 2× hover action bar). All map exactly to `DS.Radius.small = 8` — zero visual delta.
+
+**Why:** Completes the DS radius token sweep started in EOAK. No raw integer radii remain in the codebase at the well (6), small (8), chip (12), card (14), bubble (16), field (20), or modal (24) tiers — all are now tokenized and will track centrally if any token is later tuned.
+
+**Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/ContentView.swift`
+
+**Result:** Build green (environmental xcodebuild sandbox/SimService errors are pre-existing, not code regressions). Zero remaining `cornerRadius: 8` in Swift sources.
 
 ---
 

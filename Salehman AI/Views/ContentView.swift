@@ -2264,7 +2264,7 @@ struct MessageBubble: View, Equatable {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(Color.white.opacity(0.05),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 
     /// User text, split into quote card + body when the message opens with a
@@ -2340,8 +2340,8 @@ struct MessageBubble: View, Equatable {
                 }
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(DS.Palette.codeSurfaceSide,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .offset(y: -10)
                 .opacity(hovering || qaShowActions ? 1 : 0)
@@ -2433,8 +2433,8 @@ struct MessageBubble: View, Equatable {
             }
             .padding(.horizontal, 5).padding(.vertical, 3)
             .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
             .opacity(hovering || qaShowActions ? 1 : 0)
