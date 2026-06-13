@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 17:09 +03 · Swift files: 160 · Swift LOC: 36876_
+_Generated: 2026-06-13 17:15 +03 · Swift files: 160 · Swift LOC: 36903_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20830,7 +20830,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (135 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (144 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20852,16 +20852,25 @@ struct CopilotSignInView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.11))
                         .frame(width: 72, height: 72)
                         .blur(radius: 16)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.11
-                        ? .spring(duration: 2.4, bounce: 0.06)
-                        : .easeOut(duration: 2.0)
+                } else {
+                    PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 72, height: 72)
+                            .blur(radius: 16)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.11
+                            ? .spring(duration: 2.4, bounce: 0.06)
+                            : .easeOut(duration: 2.0)
+                    }
                 }
                 if reduceMotion {
                     // Reduce Motion: static icon (no scale bounce-in).
@@ -22694,7 +22703,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (760 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (769 lines) =====
 ```swift
 import SwiftUI
 
@@ -23363,16 +23372,25 @@ struct MarketsView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             ZStack {
-                PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.14))
                         .frame(width: 52, height: 52)
                         .blur(radius: 14)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.14
-                        ? .spring(duration: 2.2, bounce: 0.06)
-                        : .easeOut(duration: 1.8)
+                } else {
+                    PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 52, height: 52)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.14
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                 }
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.system(size: 22, weight: .light))
@@ -24197,7 +24215,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (686 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (695 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24760,16 +24778,25 @@ struct ScratchpadView: View {
     private func emptyState(_ text: String, _ icon: String) -> some View {
         VStack(spacing: 12) {
             ZStack {
-                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.18))
                         .frame(width: 100)
                         .blur(radius: 28)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.18
-                        ? .spring(duration: 2.2, bounce: 0.06)
-                        : .easeOut(duration: 1.8)
+                } else {
+                    PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 100)
+                            .blur(radius: 28)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.18
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                 }
                 Image(systemName: icon)
                     .font(.system(size: 30, weight: .light))
@@ -39484,7 +39511,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5621 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5649 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44011,6 +44038,34 @@ warnings**. Reduce Motion is now fully covered app-wide.
 launch, LaunchServices error -10810) are both sandbox-blocked. The only built `.app` is a stale
 06-12 binary (predates this whole session). To see current work: build+run in Xcode (⌘R) — it now
 compiles (was red 06-12→06-13; fixed in EOAM–EOAP).
+
+---
+
+## 2026-06-13 — EOBC: 6-agent a11y/consistency audit + 3 more Reduce-Motion gaps fixed
+
+**6-agent parallel audit (read-only, second use of the ≤6-agent grant):** split all view files
+into 6 groups; each agent reviewed for 4 high-confidence gap classes (icon-only buttons w/o
+label·help, unlabeled labelsHidden controls, color-only status, ungated continuous motion).
+
+**Result — a11y is solid:** categories 1–3 came back CLEAN app-wide across ContentView, CodeView,
+SettingsView, and every other view (dozens of call sites validated). The EOAS–EOAW a11y work holds.
+
+**Correction:** the audit proved my EOBB "Reduce Motion COMPLETE" claim was PREMATURE — it found
+**more ungated continuous loops** I'd missed. Fixed this slice (3 that already had `reduceMotion`,
+same empty-state-glow gate pattern):
+- `MarketsView` emptyState halo, `ScratchpadView` emptyState halo, `CopilotSignInView` hero glow.
+
+**Still queued (need `@Environment` added + nuanced handling) — Reduce Motion is NOT yet complete:**
+- `CodeView`: emptyTreeHint glow (908), inspectorPane glow (2116), `PulsingDot` (2556, used while
+  streaming) — no `reduceMotion` in the file yet.
+- `ContentView`: Unrestricted-Mode header pulse (254, `.repeatForever`), `BrainStatusDot` halo
+  (2614, `.repeatForever`), `TypingIndicator` dots (2563, `.repeatForever`) — these are
+  `withAnimation(…repeatForever…)` loops, gated by guarding the `withAnimation` call, not the
+  PhaseAnimator swap.
+
+**Files:** `Views/MarketsView.swift`, `Views/ScratchpadView.swift`, `Views/CopilotSignInView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 
 ---
 

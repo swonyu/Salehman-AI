@@ -18,16 +18,25 @@ struct CopilotSignInView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.11))
                         .frame(width: 72, height: 72)
                         .blur(radius: 16)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.11
-                        ? .spring(duration: 2.4, bounce: 0.06)
-                        : .easeOut(duration: 2.0)
+                } else {
+                    PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 72, height: 72)
+                            .blur(radius: 16)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.11
+                            ? .spring(duration: 2.4, bounce: 0.06)
+                            : .easeOut(duration: 2.0)
+                    }
                 }
                 if reduceMotion {
                     // Reduce Motion: static icon (no scale bounce-in).

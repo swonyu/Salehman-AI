@@ -4527,6 +4527,34 @@ compiles (was red 06-12→06-13; fixed in EOAM–EOAP).
 
 ---
 
+## 2026-06-13 — EOBC: 6-agent a11y/consistency audit + 3 more Reduce-Motion gaps fixed
+
+**6-agent parallel audit (read-only, second use of the ≤6-agent grant):** split all view files
+into 6 groups; each agent reviewed for 4 high-confidence gap classes (icon-only buttons w/o
+label·help, unlabeled labelsHidden controls, color-only status, ungated continuous motion).
+
+**Result — a11y is solid:** categories 1–3 came back CLEAN app-wide across ContentView, CodeView,
+SettingsView, and every other view (dozens of call sites validated). The EOAS–EOAW a11y work holds.
+
+**Correction:** the audit proved my EOBB "Reduce Motion COMPLETE" claim was PREMATURE — it found
+**more ungated continuous loops** I'd missed. Fixed this slice (3 that already had `reduceMotion`,
+same empty-state-glow gate pattern):
+- `MarketsView` emptyState halo, `ScratchpadView` emptyState halo, `CopilotSignInView` hero glow.
+
+**Still queued (need `@Environment` added + nuanced handling) — Reduce Motion is NOT yet complete:**
+- `CodeView`: emptyTreeHint glow (908), inspectorPane glow (2116), `PulsingDot` (2556, used while
+  streaming) — no `reduceMotion` in the file yet.
+- `ContentView`: Unrestricted-Mode header pulse (254, `.repeatForever`), `BrainStatusDot` halo
+  (2614, `.repeatForever`), `TypingIndicator` dots (2563, `.repeatForever`) — these are
+  `withAnimation(…repeatForever…)` loops, gated by guarding the `withAnimation` call, not the
+  PhaseAnimator swap.
+
+**Files:** `Views/MarketsView.swift`, `Views/ScratchpadView.swift`, `Views/CopilotSignInView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

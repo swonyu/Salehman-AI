@@ -665,16 +665,25 @@ struct MarketsView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             ZStack {
-                PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.14))
                         .frame(width: 52, height: 52)
                         .blur(radius: 14)
                         .allowsHitTesting(false)
-                } animation: { opacity in
-                    opacity > 0.14
-                        ? .spring(duration: 2.2, bounce: 0.06)
-                        : .easeOut(duration: 1.8)
+                } else {
+                    PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 52, height: 52)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.14
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                 }
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.system(size: 22, weight: .light))
