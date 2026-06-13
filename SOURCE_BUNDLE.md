@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 10:49 +03 · Swift files: 160 · Swift LOC: 36653_
+_Generated: 2026-06-13 11:13 +03 · Swift files: 160 · Swift LOC: 36653_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20766,7 +20766,7 @@ struct CopilotSignInView: View {
     @State private var status = "Requesting a device code from GitHub…"
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
-    @State private var appeared = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         VStack(spacing: 16) {
@@ -39261,7 +39261,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5115 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5131 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43313,6 +43313,22 @@ Token alignment in the autonomous-run stop button.
 
 **Files:** `Salehman AI/Views/VoiceModeView.swift`  
 **Why:** Every other sheet in the app (CommandPalette, ChatHistoryView, OnboardingView, AboutView) uses the standard opacity/offset entrance. VoiceModeView was the only sheet missing it. The `appeared` state was already wired for the `KeyframeAnimator` trigger — adding entrance animation reused the existing state without a new variable.
+
+---
+
+### 2026-06-13 — EOAJ: CopilotSignInView QA pre-settlement + full-codebase audit complete
+
+**What changed:**  
+- `CopilotSignInView.swift` line 15: `@State private var appeared = false` → `= ProcessInfo.processInfo.arguments.contains("--qa")` — adds QA pre-settlement so offscreen ImageRenderer snapshots capture the settled frame (consistent with all other sheets that use `appeared`)
+
+**Full Chat A lane view audit complete.** Every `.swift` view file checked:
+- `AboutView`, `AgentsView`, `BottomShortcutBar`, `ChatHistoryView`, `CodeView`, `CommandPalette`, `CopilotSignInView`, `KnowledgeView`, `LiveTranscriptionView`, `MarkdownText`, `MarketsView`, `MemoryView`, `OnboardingView`, `ScratchpadView`, `ShortcutsView`, `TabSwitcherBar`, `TodayView`, `VoiceModeView` — all at the DS premium bar (EOAB–EOAJ)
+- `BackgroundView` — performance-optimized shared layer, intentional neutral glow opacities, no changes
+- `ChatViewModel`, `MarketsStub`, `SettingsBrainReadiness`, `RootView` — pure logic / structural, no UI polish needed
+- `ContentView`, `SettingsView` — Chat B lane, not in scope
+
+**Files:** `Salehman AI/Views/CopilotSignInView.swift`  
+**Why:** All other animated sheets use the QA pre-settlement pattern; this one was added before the pattern was established across the app.
 
 ---
 

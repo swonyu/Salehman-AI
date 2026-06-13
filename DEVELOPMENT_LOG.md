@@ -4052,6 +4052,22 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+### 2026-06-13 — EOAJ: CopilotSignInView QA pre-settlement + full-codebase audit complete
+
+**What changed:**  
+- `CopilotSignInView.swift` line 15: `@State private var appeared = false` → `= ProcessInfo.processInfo.arguments.contains("--qa")` — adds QA pre-settlement so offscreen ImageRenderer snapshots capture the settled frame (consistent with all other sheets that use `appeared`)
+
+**Full Chat A lane view audit complete.** Every `.swift` view file checked:
+- `AboutView`, `AgentsView`, `BottomShortcutBar`, `ChatHistoryView`, `CodeView`, `CommandPalette`, `CopilotSignInView`, `KnowledgeView`, `LiveTranscriptionView`, `MarkdownText`, `MarketsView`, `MemoryView`, `OnboardingView`, `ScratchpadView`, `ShortcutsView`, `TabSwitcherBar`, `TodayView`, `VoiceModeView` — all at the DS premium bar (EOAB–EOAJ)
+- `BackgroundView` — performance-optimized shared layer, intentional neutral glow opacities, no changes
+- `ChatViewModel`, `MarketsStub`, `SettingsBrainReadiness`, `RootView` — pure logic / structural, no UI polish needed
+- `ContentView`, `SettingsView` — Chat B lane, not in scope
+
+**Files:** `Salehman AI/Views/CopilotSignInView.swift`  
+**Why:** All other animated sheets use the QA pre-settlement pattern; this one was added before the pattern was established across the app.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

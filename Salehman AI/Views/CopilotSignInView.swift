@@ -12,7 +12,7 @@ struct CopilotSignInView: View {
     @State private var status = "Requesting a device code from GitHub…"
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
-    @State private var appeared = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         VStack(spacing: 16) {
