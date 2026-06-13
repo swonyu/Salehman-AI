@@ -1272,13 +1272,16 @@ enum LocalLLM {
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before recording into context — same
+            // rationale as chatOllamaWithTools: keeps every round lean.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OpenAICompatibleClient.ToolCall(id: "recovered_0", name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
             // assistant message carry the `tool_calls` array so the following
@@ -1286,7 +1289,7 @@ enum LocalLLM {
             // when the model only called tools, which strict servers require.
             var assistantMsg: [String: Any] = [
                 "role": "assistant",
-                "content": turn.text.isEmpty ? NSNull() : turn.text,
+                "content": turnText.isEmpty ? NSNull() : turnText,
             ]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 let argsJSON = (try? JSONSerialization.data(withJSONObject: call.arguments))

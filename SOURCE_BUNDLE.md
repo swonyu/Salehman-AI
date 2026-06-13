@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:15 +03 · Swift files: 150 · Swift LOC: 33758_
+_Generated: 2026-06-13 04:16 +03 · Swift files: 150 · Swift LOC: 33761_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5128,7 +5128,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1697 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1700 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -6404,13 +6404,16 @@ enum LocalLLM {
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before recording into context — same
+            // rationale as chatOllamaWithTools: keeps every round lean.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OpenAICompatibleClient.ToolCall(id: "recovered_0", name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
             // assistant message carry the `tool_calls` array so the following
@@ -6418,7 +6421,7 @@ enum LocalLLM {
             // when the model only called tools, which strict servers require.
             var assistantMsg: [String: Any] = [
                 "role": "assistant",
-                "content": turn.text.isEmpty ? NSNull() : turn.text,
+                "content": turnText.isEmpty ? NSNull() : turnText,
             ]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 let argsJSON = (try? JSONSerialization.data(withJSONObject: call.arguments))
@@ -36326,7 +36329,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4457 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4473 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39740,6 +39743,22 @@ In the 8-round Ollama tool-calling loop, each turn's `turn.text` (which may cont
 **Why:** With EGM (user-facing reply), EOP (MissionMemory + streaming display) already shipping, this is the final exposure path for raw reasoning tokens — the per-round assistant message in the tool loop. All three strips together guarantee reasoning models never leak chain-of-thought anywhere.
 
 **Result:** 0 real Swift errors. Tool loop now stays lean across all 8 rounds regardless of reasoning model verbosity.
+
+---
+
+## 2026-06-13 — Marathon EOR: strip `<think>` from cloud tool-loop context history
+
+**What changed:** `LocalLLM.swift` — `chatOpenAICompatWithTools` cloud tool-loop.
+
+Mirror of Marathon EOQ applied to the OpenAI-compatible (Groq/Mistral/Cerebras/OpenRouter/Unsloth Studio/vLLM) tool-calling loop. Same vulnerability: `turn.text` (which may carry `<think>` reasoning blocks from cloud reasoning models) was stored verbatim into `lastAssistantText` and as the `"content"` field of the echoed assistant message, leaking chain-of-thought tokens across all 8 rounds.
+
+**Fix:** Strip via `AgentPipeline.stripNarration` before recording into context. Preserves the `NSNull()` `content` path — when a model only calls tools with no prose, stripping an already-empty string still correctly yields `NSNull()` (the OpenAI format requires `content: null`, not `""`, in that case).
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (1 hunk, +5 / -4 lines)
+
+**Why:** EOQ covered the Ollama loop. EOR covers the cloud loop. Together with EGM (user-facing reply) and EOP (MissionMemory + streaming display), all four `<think>` exposure paths are now eliminated.
+
+**Result:** 0 real Swift errors.
 
 ---
 

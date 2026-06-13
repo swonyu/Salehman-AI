@@ -3414,6 +3414,22 @@ In the 8-round Ollama tool-calling loop, each turn's `turn.text` (which may cont
 
 ---
 
+## 2026-06-13 — Marathon EOR: strip `<think>` from cloud tool-loop context history
+
+**What changed:** `LocalLLM.swift` — `chatOpenAICompatWithTools` cloud tool-loop.
+
+Mirror of Marathon EOQ applied to the OpenAI-compatible (Groq/Mistral/Cerebras/OpenRouter/Unsloth Studio/vLLM) tool-calling loop. Same vulnerability: `turn.text` (which may carry `<think>` reasoning blocks from cloud reasoning models) was stored verbatim into `lastAssistantText` and as the `"content"` field of the echoed assistant message, leaking chain-of-thought tokens across all 8 rounds.
+
+**Fix:** Strip via `AgentPipeline.stripNarration` before recording into context. Preserves the `NSNull()` `content` path — when a model only calls tools with no prose, stripping an already-empty string still correctly yields `NSNull()` (the OpenAI format requires `content: null`, not `""`, in that case).
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (1 hunk, +5 / -4 lines)
+
+**Why:** EOQ covered the Ollama loop. EOR covers the cloud loop. Together with EGM (user-facing reply) and EOP (MissionMemory + streaming display), all four `<think>` exposure paths are now eliminated.
+
+**Result:** 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
