@@ -5107,6 +5107,21 @@ AI-changed dot, pending-task + unread badges). **No gap.**
 
 ---
 
+## 2026-06-14 — EOCB: keyboard nav / focus-order audit (dimension f) — no gap
+
+All chrome sheets (CommandPalette, Shortcuts, About, Voice, Settings, Memory, LiveTranscription,
+ChatHistory) are presented via SwiftUI `.sheet` (`Salehman_AIApp` / ContentView) → macOS gives
+Escape-to-dismiss for free; the CommandPalette "esc" badge (shown in a daily-driver app) confirms it
+works in practice. The one custom overlay, ApprovalCard (ZStack scrim, not a sheet), correctly wires
+explicit `.keyboardShortcut(.cancelAction)` + `.defaultAction`. Onboarding CTA has `.defaultAction`;
+CommandPalette has ↑/↓ arrow-nav + onSubmit + autofocus; search/add fields autofocus where expected
+and clear on Esc (`onKeyPress(.escape)` in Knowledge/Memory/Scratchpad/Agents/LiveTranscription).
+**No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
