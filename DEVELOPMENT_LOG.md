@@ -4660,6 +4660,33 @@ visually confirm slices 1–3 on macOS 27 before continuing to ScratchpadView.
 
 ---
 
+## 2026-06-13 — EOBH: live visual sweep + real-build verification of EOBD (loop)
+
+Brought Xcode forward (click-tier) and ran the first FULL GUI rebuild of the session (`xcodebuild`
+is sandbox-blocked from Bash; the Xcode ▶ build is the canonical compile). Findings:
+
+- **EOBD confirmed on the real build:** the await-warning count dropped from 5; LiveTranscriber's 3
+  cleared outright. The app rebuilt and **relaunched cleanly on macOS 27** — the Today dashboard
+  rendered correctly (Good evening, Quick Actions, At-a-glance tiles).
+- **2 residual "No 'async' operations occur within 'await'" warnings in LocalLLM proved STALE:**
+  navigating to one, line 1179 reads `if let local = Self.runLocalTool(...)` with **no `await`** — a
+  warning about `await` on a line with no `await` is impossible for current source. They're stale
+  **SourceKit live-issues**: editing `LocalLLM.swift` via the CLI (outside Xcode) left SourceKit's
+  in-editor annotations pinned to the pre-edit lines. CLI confirms clean both ways: `-emit-module`
+  AND `-typecheck` (full isolation flags) → 0/0. Product → Clean Build Folder refreshes the
+  navigator; the build itself is clean.
+- **Methodology:** `swiftc -emit-module` UNDER-REPORTS body-level warnings (skips full function-body
+  diagnostics); `swiftc -typecheck` runs them and also showed 0 here — so the residual 2 are not a
+  CLI gap, they're stale editor state. See the new standing note.
+
+Per-tab polish screenshots (Agents/Knowledge) deferred: the app surfaced a secondary timestamped
+list window (the Scratchpad/notes window) rather than the tabbed dashboard, and chasing the right
+window wasn't worth the budget — the main UI was confirmed rendering at relaunch.
+
+**Files:** docs only (DEVELOPMENT_LOG + standing note). No code change this firing.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -4711,6 +4738,15 @@ visually confirm slices 1–3 on macOS 27 before continuing to ScratchpadView.
   Symbol name). Convention: **straight outer, curly inner** — `Text("No X match
   “\(q)”.")`. Curly INNER quotes are valid literal chars and read as premium
   typography; curly OUTER delimiters do not compile.
+- **Xcode "live issues" go STALE after EXTERNAL edits (2026-06-13, EOBH):** when a `.swift` file is
+  edited outside Xcode (CLI, the Edit tool, scripts), SourceKit's in-editor live-issue annotations
+  can persist, pinned to line NUMBERS whose CONTENT has changed — e.g. a "no async operations occur
+  within 'await'" warning lingering on a line where the `await` was already removed (the tell: a
+  warning that's impossible for the current source). The real build is unaffected (the compiler
+  reads disk). Authoritative signals: `swiftc -typecheck` (full isolation flags) + a clean Xcode
+  Build — NOT the lingering navigator count. Clear the ghosts with Product → Clean Build Folder.
+  Related: `swiftc -emit-module` under-reports body-level warnings (it skips function-body
+  diagnostics); use `-typecheck` when you need those.
 [2026-06-09 23:37] Read SOURCE_BUNDLE.md and CODEBASE_REVIEW.md. Identified brainReady switch in SettingsView.swift (8+ cases causing Keychain calls per review P2). Ready for refactor steps (1) BrainAdapter in LocalLLM, (3) extract brainReady.
 
 [2026-06-10] tools/grok_terminal_bridge.py — background-mode injection rewrite
