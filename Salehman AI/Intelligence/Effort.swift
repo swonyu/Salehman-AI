@@ -149,7 +149,10 @@ extension Effort {
         }
         prompt += "Reply with ONLY the number of the best answer (for example: 2)."
 
-        let verdict = await generate(prompt)
+        // Strip reasoning-model think blocks before scanning for a digit:
+        // a verdict like "<think>Answer 1 has 3 flaws</think>2" would otherwise
+        // return 1 (wrong) because firstInt finds the first digit in the whole string.
+        let verdict = AgentPipeline.stripNarration(await generate(prompt))
         if let n = firstInt(in: verdict), n >= 1, n <= candidates.count {
             return candidates[n - 1]
         }

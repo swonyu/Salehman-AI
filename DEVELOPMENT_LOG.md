@@ -3446,6 +3446,26 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 
 ---
 
+## 2026-06-13 — Marathon EOT: fix Effort.judge wrong-candidate bug with reasoning models
+
+**What changed:** `Intelligence/Effort.swift` + `Salehman AITests/EffortTests.swift`
+
+**Bug:** `Effort.judge` picked the best candidate by calling `firstInt(in: verdict)` on the raw model output. When a reasoning model (QwQ / DeepSeek-R1) emits:
+```
+<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
+```
+`firstInt` found the `1` from "Answer 1" inside the `<think>` block — and selected the WRONG candidate (index 0 = candidate #1 instead of candidate #2). This is a silent correctness bug: no crash, just wrong answer chosen.
+
+**Fix:** Apply `AgentPipeline.stripNarration(verdict)` before scanning for the integer. The think block is removed, leaving only `"2"`, so the correct candidate is selected.
+
+**Test added:** `judgeIgnoresThinkBlockBeforeVerdictNumber` — scripted generator returns a think-prefixed verdict; asserts `result.answer == "candidate-2"` (would fail without the fix).
+
+**Files:** `Salehman AI/Intelligence/Effort.swift` (+3 / -1 lines), `Salehman AITests/EffortTests.swift` (+16 lines)
+
+**Result:** 0 real Swift errors. Bug was silent before (wrong candidate chosen, no crash).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -95,6 +95,25 @@ struct EffortTests {
         #expect(result.answer == "candidate-2")
     }
 
+    // MARK: judge + reasoning-model think blocks
+
+    @Test func judgeIgnoresThinkBlockBeforeVerdictNumber() async {
+        // A reasoning model (QwQ / DeepSeek-R1) might emit:
+        //   <think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
+        // Without stripping: firstInt finds '1' from inside <think> → wrong candidate.
+        // With stripping (EOT fix): think block removed → firstInt("2") = 2 → correct.
+        let rec = Recorder { prompt, idx in
+            if prompt.contains("best answer") {
+                return "<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2"
+            }
+            if prompt == "q" { return "candidate-\(idx)" }
+            return ""   // empty critique = immediate approval per candidate
+        }
+        let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
+        // Candidates at indices 0,2,4 → "candidate-0/2/4"; judge picks #2 → "candidate-2".
+        #expect(result.answer == "candidate-2")
+    }
+
     @Test func firstIntParsesLooseVerdicts() {
         #expect(Effort.firstInt(in: "2") == 2)
         #expect(Effort.firstInt(in: "The best is #3.") == 3)

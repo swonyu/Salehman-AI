@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:22 +03 · Swift files: 150 · Swift LOC: 33766_
+_Generated: 2026-06-13 04:25 +03 · Swift files: 150 · Swift LOC: 33788_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2643,7 +2643,7 @@ struct DSSegmentPicker<T: Hashable>: View {
 
 ```
 
-===== FILE: Salehman AI/Intelligence/Effort.swift (178 lines) =====
+===== FILE: Salehman AI/Intelligence/Effort.swift (181 lines) =====
 ```swift
 import Foundation
 
@@ -2796,7 +2796,10 @@ extension Effort {
         }
         prompt += "Reply with ONLY the number of the best answer (for example: 2)."
 
-        let verdict = await generate(prompt)
+        // Strip reasoning-model think blocks before scanning for a digit:
+        // a verdict like "<think>Answer 1 has 3 flaws</think>2" would otherwise
+        // return 1 (wrong) because firstInt finds the first digit in the whole string.
+        let verdict = AgentPipeline.stripNarration(await generate(prompt))
         if let n = firstInt(in: verdict), n >= 1, n <= candidates.count {
             return candidates[n - 1]
         }
@@ -29816,7 +29819,7 @@ struct CodeGitStatusTests {
 }
 ```
 
-===== FILE: Salehman AITests/EffortTests.swift (103 lines) =====
+===== FILE: Salehman AITests/EffortTests.swift (122 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -29912,6 +29915,25 @@ struct EffortTests {
         let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
         #expect(result.candidatesTried == 3)
         // drafts land at idx 0,2,4 → "candidate-0/2/4"; judge picks the 2nd → "candidate-2".
+        #expect(result.answer == "candidate-2")
+    }
+
+    // MARK: judge + reasoning-model think blocks
+
+    @Test func judgeIgnoresThinkBlockBeforeVerdictNumber() async {
+        // A reasoning model (QwQ / DeepSeek-R1) might emit:
+        //   <think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
+        // Without stripping: firstInt finds '1' from inside <think> → wrong candidate.
+        // With stripping (EOT fix): think block removed → firstInt("2") = 2 → correct.
+        let rec = Recorder { prompt, idx in
+            if prompt.contains("best answer") {
+                return "<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2"
+            }
+            if prompt == "q" { return "candidate-\(idx)" }
+            return ""   // empty critique = immediate approval per candidate
+        }
+        let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
+        // Candidates at indices 0,2,4 → "candidate-0/2/4"; judge picks #2 → "candidate-2".
         #expect(result.answer == "candidate-2")
     }
 
@@ -36334,7 +36356,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4489 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4509 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39780,6 +39802,26 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 - `Salehman AI/StockSage/StockSageScreenAnalysis.swift` — `followUp()`: capture `rawReply`, strip to `reply`
 
 **Result:** 0 real Swift errors. All `generateOnDevice` display paths now strip reasoning blocks.
+
+---
+
+## 2026-06-13 — Marathon EOT: fix Effort.judge wrong-candidate bug with reasoning models
+
+**What changed:** `Intelligence/Effort.swift` + `Salehman AITests/EffortTests.swift`
+
+**Bug:** `Effort.judge` picked the best candidate by calling `firstInt(in: verdict)` on the raw model output. When a reasoning model (QwQ / DeepSeek-R1) emits:
+```
+<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
+```
+`firstInt` found the `1` from "Answer 1" inside the `<think>` block — and selected the WRONG candidate (index 0 = candidate #1 instead of candidate #2). This is a silent correctness bug: no crash, just wrong answer chosen.
+
+**Fix:** Apply `AgentPipeline.stripNarration(verdict)` before scanning for the integer. The think block is removed, leaving only `"2"`, so the correct candidate is selected.
+
+**Test added:** `judgeIgnoresThinkBlockBeforeVerdictNumber` — scripted generator returns a think-prefixed verdict; asserts `result.answer == "candidate-2"` (would fail without the fix).
+
+**Files:** `Salehman AI/Intelligence/Effort.swift` (+3 / -1 lines), `Salehman AITests/EffortTests.swift` (+16 lines)
+
+**Result:** 0 real Swift errors. Bug was silent before (wrong candidate chosen, no crash).
 
 ---
 
