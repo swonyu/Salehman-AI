@@ -4998,6 +4998,29 @@ VoiceOver traits). Minimal — leaves the existing synthesized name + "changed b
 
 ---
 
+## 2026-06-14 — EOBW: BottomShortcutBar + TabSwitcherBar + CodeBlock audited — at the bar, no change
+
+Non-stop loop, deeper sweep. Three more components audited for genuine gaps; ALL already at the
+high-end bar — no change (anti-churn):
+- **BottomShortcutBar:** dimensional key badges, hover states, `LuxPressStyle`, tab-contextual hints,
+  `.help` + `.accessibilityLabel` per hint. Complete.
+- **TabSwitcherBar:** sliding `matchedGeometryEffect` highlight, responsive label-collapse,
+  reduceMotion-gated market halo, full a11y (pill `.isSelected` + hint, market `accessibilityValue`,
+  pending-task/unread-dot labels, decorative divider hidden, documented WCAG-AA contrast). Masterclass.
+- **MarkdownText `CodeBlock`:** tinted language badge, copy button (`LuxPressStyle`, success-tint,
+  generous hit target + `contentShape`, `accessibilityLabel` + help), selectable syntax-highlighted
+  code, bezel container. Complete.
+
+**🟡 Saturation note (honest):** visual + a11y gaps are now rare — the last several audits (TodayView,
+ShortcutsView, and these three) found nothing real to fix. Remaining un-audited: chat `MessageBubble`
++ `ApprovalCard` (in ContentView). After those, the loop will be re-auditing already-complete surfaces
+across the deeper dimensions, where genuine fixes will be increasingly sparse. Flagged so the owner can
+redirect if desired; continuing the forever-loop as instructed.
+
+**Files:** none (audit only — no source change this firing).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
