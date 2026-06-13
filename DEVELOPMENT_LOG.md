@@ -5092,6 +5092,21 @@ All also reduceMotion-gated (EOBO). Perf was already a design concern (the Brain
 
 ---
 
+## 2026-06-14 — EOCA: VoiceOver labels/traits audit (dimension d) — no gap
+
+Swept all icon-only `Button`s app-wide: every one of the 13 inline `label: { Image(...) }` controls has
+an explicit `.accessibilityLabel` (and most also `.help`) — CodeView search/jump/attach/reload, Settings
+copy/recheck, LiveTranscription + Scratchpad clear/dismiss. The shared `CircleIconButton` component
+always supplies a label (explicit or `help` fallback). Selectable-state traits are present where needed:
+TabSwitcherBar pills `.isSelected` + hint, FileTree files `.isSelected` (EOBV) + folders announce
+expanded/collapsed, CommandPalette rows synthesize title+subtitle. Decorative elements are hidden
+(ApprovalCard terminal icon, TabSwitcherBar divider) and color-only states are labelled (FileTree
+AI-changed dot, pending-task + unread badges). **No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
