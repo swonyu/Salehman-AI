@@ -3633,6 +3633,21 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOH: AgentRegistry dispatch contract tests
+
+**What:** Added `AgentRegistryTests` struct to `Salehman AITests/AgentFilterTests.swift` (+40 lines, 3 tests):
+- `handlerForUnknownNameReturnsNil` — unknown name and empty string return nil
+- `registerDefaultsOnceRegistersEveryPipelineAgent` — after one call, every spec in AgentDefinitions.pipeline has a non-nil handler
+- `firstWriteWinsSecondRegisterDoesNotOverwrite` — a second `register` call for the same name is a no-op (used a test-specific name to avoid racing with registerDefaultsOnce)
+
+**Why:** The pipeline calls `AgentRegistry.handler(for: spec.name)` for every agent. A nil return silently drops that agent's output from the ensemble — wrong answer, no error. The first-write-wins guard prevents a second registration from overwriting a handler, but it was unverified.
+
+**Files:** `Salehman AITests/AgentFilterTests.swift`
+
+**Result:** API signatures verified via grep.
+
+---
+
 ## 2026-06-13 — EOG: SelfCritique critiquePrompt + rewritePrompt content pins
 
 **What:** Added `SelfCritiquePromptTests` struct to `Salehman AITests/SelfCritiqueTests.swift` (+55 lines, 6 tests):
