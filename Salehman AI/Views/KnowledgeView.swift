@@ -400,13 +400,13 @@ struct KnowledgeView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
+            .buttonStyle(LuxPressStyle()).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
+            .buttonStyle(LuxPressStyle()).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -638,7 +638,7 @@ private struct DocDetailSheet: View {
                     }
                     .transition(.opacity)
                 }
-                .buttonStyle(.plain).accessibilityLabel("Ask about this document")
+                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document")
                 .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }

@@ -4022,6 +4022,22 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+### 2026-06-13 — EOAH: LuxPressStyle adoption — KnowledgeView and MemoryView row actions
+
+**What changed:**  
+- `KnowledgeView.swift` line 403: "Open & summarize" whole-row content button `.plain` → `LuxPressStyle()` — the tile now physically clicks on tap  
+- `KnowledgeView.swift` line 409: doc row trash button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint  
+- `KnowledgeView.swift` line 641: "Ask about this document" send button `.plain` → `LuxPressStyle()` — accent-colored send arrow/progress icon  
+- `MemoryView.swift` line 313: memory row copy button `.plain` → `LuxPressStyle()` — accent-aware copy/checkmark toggle  
+- `MemoryView.swift` line 322: memory row forget button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint  
+
+**Pattern:** All 5 had hover-aware DS semantic color styling already wired up; the missing press style was the last gap between their visual state signaling and tactile feedback. Utility buttons (clear search, cancel, close) correctly remain `.plain`.
+
+**Files:** `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MemoryView.swift`  
+**Why:** Consistency with EOAC (ChatHistoryView) + EOAG (ScratchpadView, MarketsView, CodeView) — all row action buttons across the app now share a unified press-physics model.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

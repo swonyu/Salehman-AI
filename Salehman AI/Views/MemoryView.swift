@@ -310,7 +310,7 @@ struct MemoryView: View {
                 }
                 .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Copy")
             .accessibilityLabel("Copy memory")
             .animation(DS.Motion.smooth, value: copiedFact == fact)
@@ -319,7 +319,7 @@ struct MemoryView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Forget this")
             .accessibilityLabel("Forget this memory")
         }

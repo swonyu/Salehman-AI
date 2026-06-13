@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 10:45 +03 · Swift files: 160 · Swift LOC: 36651_
+_Generated: 2026-06-13 10:47 +03 · Swift files: 160 · Swift LOC: 36651_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21467,13 +21467,13 @@ struct KnowledgeView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
+            .buttonStyle(LuxPressStyle()).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
+            .buttonStyle(LuxPressStyle()).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -21705,7 +21705,7 @@ private struct DocDetailSheet: View {
                     }
                     .transition(.opacity)
                 }
-                .buttonStyle(.plain).accessibilityLabel("Ask about this document")
+                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document")
                 .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -23628,7 +23628,7 @@ struct MemoryView: View {
                 }
                 .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Copy")
             .accessibilityLabel("Copy memory")
             .animation(DS.Motion.smooth, value: copiedFact == fact)
@@ -23637,7 +23637,7 @@ struct MemoryView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Forget this")
             .accessibilityLabel("Forget this memory")
         }
@@ -39259,7 +39259,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5085 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5101 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43281,6 +43281,22 @@ Token alignment in the autonomous-run stop button.
 
 **Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/CodeView.swift`  
 **Why:** Row-action buttons (edit, delete, toggle, remove) already had hover-aware coloring signaling their intent; the missing LuxPress left them feeling flat compared to ChatHistoryView rows which were upgraded in EOAC.
+
+---
+
+### 2026-06-13 — EOAH: LuxPressStyle adoption — KnowledgeView and MemoryView row actions
+
+**What changed:**  
+- `KnowledgeView.swift` line 403: "Open & summarize" whole-row content button `.plain` → `LuxPressStyle()` — the tile now physically clicks on tap  
+- `KnowledgeView.swift` line 409: doc row trash button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint  
+- `KnowledgeView.swift` line 641: "Ask about this document" send button `.plain` → `LuxPressStyle()` — accent-colored send arrow/progress icon  
+- `MemoryView.swift` line 313: memory row copy button `.plain` → `LuxPressStyle()` — accent-aware copy/checkmark toggle  
+- `MemoryView.swift` line 322: memory row forget button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint  
+
+**Pattern:** All 5 had hover-aware DS semantic color styling already wired up; the missing press style was the last gap between their visual state signaling and tactile feedback. Utility buttons (clear search, cancel, close) correctly remain `.plain`.
+
+**Files:** `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MemoryView.swift`  
+**Why:** Consistency with EOAC (ChatHistoryView) + EOAG (ScratchpadView, MarketsView, CodeView) — all row action buttons across the app now share a unified press-physics model.
 
 ---
 
