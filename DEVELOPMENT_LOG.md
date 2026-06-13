@@ -4296,6 +4296,23 @@ measurement flagged it, fixed in the same slice.
   mode are cross-module false positives, NOT real). Whole-tree sweep, count only
   source-located errors: `find "Salehman AI" -name '*.swift' -not -path '*/.*' |
   while read f; do swiftc -parse "$f" 2>&1 | grep -E "\.swift:[0-9]+:[0-9]+: error:"; done`.
+- **Full Swift-6 verification recipe (2026-06-13):** to catch Swift-6-mode-only errors
+  (actor isolation, `#ConformanceIsolation`, captured-var races) you MUST pass
+  `-swift-version 6` — without it they silently downgrade to warnings. Emit the app as a
+  testable module (`swiftc -emit-module -module-name Salehman_AI -enable-testing -swift-version 6
+  -module-cache-path $TMPDIR/mc -o $MODDIR/Salehman_AI.swiftmodule <app files>`), then typecheck
+  the unit tests against it: `swiftc -typecheck -swift-version 6 -I $MODDIR -F
+  "$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks" -plugin-path
+  "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins[/testing]"
+  <test files>`. The `-plugin-path` is REQUIRED or every `@Test`/`#expect` reports
+  "TestingMacros plugin not found." Pass file lists via a `find -print0` array (repo path has a space).
+- **Verification blind spot — XCUITest `XCTAssert*`:** the recipe above CANNOT typecheck the
+  `Salehman AIUITests` target — `XCTAssertTrue/False/XCTFail` are macros needing Xcode's
+  XCUITest test-host linkage, so bare `swiftc` reports "cannot find 'XCTAssertTrue' in scope"
+  even for canonical code (proven with a minimal probe). UI tests are NOT in the canonical gate
+  (`-only-testing:"Salehman AITests"`) and don't `@testable`-import the app, so this is expected,
+  not a real error — don't chase it. The unit suite uses Swift Testing `#expect`, which DOES
+  resolve, so the actual test gate is fully verifiable.
 - **Smart/curly-quote hazard (recurring):** some editor/tool turns `"` into `“ ”`.
   Broke the build 06-12→06-13 (curly used as a string DELIMITER, even on an SF
   Symbol name). Convention: **straight outer, curly inner** — `Text("No X match
