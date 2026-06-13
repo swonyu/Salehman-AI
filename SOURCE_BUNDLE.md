@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:40 +03 · Swift files: 150 · Swift LOC: 34290_
+_Generated: 2026-06-13 03:47 +03 · Swift files: 150 · Swift LOC: 34351_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (809 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (828 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -339,8 +339,27 @@ enum AgentPipeline {
     /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
     /// Conservative: only fires when a non-empty answer follows the marker, so a normal
     /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    /// Also strips <think>…</think> / <thinking>…</thinking> reasoning blocks emitted
+    /// by QwQ, DeepSeek-R1, and similar reasoning-mode models served through Ollama.
     nonisolated static func stripNarration(_ text: String) -> String {
         var out = text
+        // 0) Reasoning-model think blocks: QwQ / DeepSeek-R1 / Qwen-thinking emit
+        //    <think>…</think> or <thinking>…</thinking> before the real answer.
+        //    Strip all closed blocks (while loop handles multiple), then handle an
+        //    unclosed opening tag (model cut off mid-reasoning).
+        let closedThink = #"(?si)<think(?:ing)?>\s*.*?\s*</think(?:ing)?>\s*"#
+        while let r = out.range(of: closedThink, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let after  = String(out[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            out = [before, after].filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        // Unclosed <think> (model cut off): only substitute when there is content
+        // before the tag (rare); otherwise leave the in-progress reasoning visible
+        // so the user can see the model was still thinking when it was cut off.
+        if let r = out.range(of: #"(?i)<think(?:ing)?>"#, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { out = before }
+        }
         // 1) Leading scaffold: keep only what follows the final "Response:" line.
         for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
             if let r = out.range(of: marker, options: .backwards) {
@@ -34697,7 +34716,7 @@ struct ToolPolicyTests {
 }
 ```
 
-===== FILE: Salehman AITests/TrivialMissionTests.swift (110 lines) =====
+===== FILE: Salehman AITests/TrivialMissionTests.swift (152 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -34807,6 +34826,48 @@ struct MissionComplexityTests {
 
     @Test func multiSentenceRequestIsHard() {
         #expect(AgentPipeline.complexity(of: "I need a plan. Cover edge cases too.") == .hard)
+    }
+}
+
+// MARK: - AgentPipeline.stripNarration — reasoning-model <think> block removal
+//
+// QwQ / DeepSeek-R1 / Qwen-thinking emit <think>…</think> before the real answer.
+// The function must strip those blocks cleanly so the user only sees the answer.
+
+struct StripNarrationThinkTests {
+
+    @Test func closedThinkTagStripped() {
+        let raw = "<think>\nsome chain of thought\n</think>\nThe actual answer."
+        #expect(AgentPipeline.stripNarration(raw) == "The actual answer.")
+    }
+
+    @Test func closedThinkingTagStripped() {
+        let raw = "<thinking>reasoning here</thinking>Result text."
+        #expect(AgentPipeline.stripNarration(raw) == "Result text.")
+    }
+
+    @Test func caseInsensitiveThinkTagStripped() {
+        let raw = "<Think>cot</Think>Answer."
+        #expect(AgentPipeline.stripNarration(raw) == "Answer.")
+    }
+
+    @Test func multipleThinkBlocksStripped() {
+        let raw = "<think>step 1</think>middle<think>step 2</think>Final."
+        #expect(AgentPipeline.stripNarration(raw) == "middle\nFinal.")
+    }
+
+    @Test func unclosedThinkWithNoPriorContentUnchanged() {
+        // Model was cut off mid-reasoning; no content before the tag → leave as-is
+        // (the safety guard ensures the original text is returned if too short).
+        let raw = "<think>\nhalf-baked chain of thought"
+        let result = AgentPipeline.stripNarration(raw)
+        // Must not be empty — either the original or the in-progress reasoning.
+        #expect(!result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    @Test func normalTextUnaffected() {
+        let raw = "Here is your answer with no think tags."
+        #expect(AgentPipeline.stripNarration(raw) == raw)
     }
 }
 ```
@@ -36858,7 +36919,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4360 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4389 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40173,6 +40234,35 @@ Two targeted functional improvements in one slice:
 2. **Farewell phrases in `isTrivialMission`** (`Salehman AI/Agents/AgentPipeline.swift`): "see you later", "see you soon", "catch you later", "have a good day", "talk to you later", "take care now", etc. are 3+ words, so they fell through the 1–2-word trivial guard and triggered the full pipeline (unnecessary latency). Added them to the explicit `greetings` Set. Added a `farewellsAreTrivial()` test in `TrivialMissionTests.swift`.
 
 **Files:** `Salehman AI/Persistence/Attachments.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AITests/TrivialMissionTests.swift`
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EGM: reasoning-model <think> block stripping
+
+**What:** Added `<think>…</think>` / `<thinking>…</thinking>` stripping to
+`AgentPipeline.stripNarration`. Reasoning-mode models (QwQ, DeepSeek-R1,
+Qwen-thinking, etc.) served through Ollama prefix their answers with multi-line
+chain-of-thought inside these XML tags; without stripping, users see raw
+internal reasoning instead of the final answer. All user-facing replies funnel
+through `stripNarration` (trivial path line 203 + normal path line 228), so one
+addition covers every brain and mode.
+
+**Files:**
+- `Salehman AI/Agents/AgentPipeline.swift` — prepended step 0 to `stripNarration`:
+  a `(?si)` regex `while` loop strips all closed `<think>…</think>` blocks,
+  keeping content sandwiched between multiple blocks; a second pass handles
+  unclosed opening tags (model cut off mid-reasoning) by substituting any
+  content that appeared before the tag (usually nothing → leave as-is so the
+  safety guard returns the original).
+- `Salehman AITests/TrivialMissionTests.swift` — new `StripNarrationThinkTests`
+  struct with 6 tests: closed `<think>`, `<thinking>`, case-insensitive `<Think>`,
+  multiple blocks, unclosed tag safety, and normal-text no-op.
+
+**Why:** QwQ:32b and similar models are popular Ollama choices. Without stripping,
+every response would begin with hundreds of tokens of internal monologue — a bad
+UX and a context-poisoning risk when that text ends up stored in ConversationStore.
 
 **Result:** Build exit 0, 0 real Swift errors.
 

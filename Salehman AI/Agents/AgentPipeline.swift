@@ -245,8 +245,27 @@ enum AgentPipeline {
     /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
     /// Conservative: only fires when a non-empty answer follows the marker, so a normal
     /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    /// Also strips <think>…</think> / <thinking>…</thinking> reasoning blocks emitted
+    /// by QwQ, DeepSeek-R1, and similar reasoning-mode models served through Ollama.
     nonisolated static func stripNarration(_ text: String) -> String {
         var out = text
+        // 0) Reasoning-model think blocks: QwQ / DeepSeek-R1 / Qwen-thinking emit
+        //    <think>…</think> or <thinking>…</thinking> before the real answer.
+        //    Strip all closed blocks (while loop handles multiple), then handle an
+        //    unclosed opening tag (model cut off mid-reasoning).
+        let closedThink = #"(?si)<think(?:ing)?>\s*.*?\s*</think(?:ing)?>\s*"#
+        while let r = out.range(of: closedThink, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let after  = String(out[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            out = [before, after].filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        // Unclosed <think> (model cut off): only substitute when there is content
+        // before the tag (rare); otherwise leave the in-progress reasoning visible
+        // so the user can see the model was still thinking when it was cut off.
+        if let r = out.range(of: #"(?i)<think(?:ing)?>"#, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { out = before }
+        }
         // 1) Leading scaffold: keep only what follows the final "Response:" line.
         for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
             if let r = out.range(of: marker, options: .backwards) {

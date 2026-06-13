@@ -108,3 +108,45 @@ struct MissionComplexityTests {
         #expect(AgentPipeline.complexity(of: "I need a plan. Cover edge cases too.") == .hard)
     }
 }
+
+// MARK: - AgentPipeline.stripNarration — reasoning-model <think> block removal
+//
+// QwQ / DeepSeek-R1 / Qwen-thinking emit <think>…</think> before the real answer.
+// The function must strip those blocks cleanly so the user only sees the answer.
+
+struct StripNarrationThinkTests {
+
+    @Test func closedThinkTagStripped() {
+        let raw = "<think>\nsome chain of thought\n</think>\nThe actual answer."
+        #expect(AgentPipeline.stripNarration(raw) == "The actual answer.")
+    }
+
+    @Test func closedThinkingTagStripped() {
+        let raw = "<thinking>reasoning here</thinking>Result text."
+        #expect(AgentPipeline.stripNarration(raw) == "Result text.")
+    }
+
+    @Test func caseInsensitiveThinkTagStripped() {
+        let raw = "<Think>cot</Think>Answer."
+        #expect(AgentPipeline.stripNarration(raw) == "Answer.")
+    }
+
+    @Test func multipleThinkBlocksStripped() {
+        let raw = "<think>step 1</think>middle<think>step 2</think>Final."
+        #expect(AgentPipeline.stripNarration(raw) == "middle\nFinal.")
+    }
+
+    @Test func unclosedThinkWithNoPriorContentUnchanged() {
+        // Model was cut off mid-reasoning; no content before the tag → leave as-is
+        // (the safety guard ensures the original text is returned if too short).
+        let raw = "<think>\nhalf-baked chain of thought"
+        let result = AgentPipeline.stripNarration(raw)
+        // Must not be empty — either the original or the in-progress reasoning.
+        #expect(!result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    @Test func normalTextUnaffected() {
+        let raw = "Here is your answer with no think tags."
+        #expect(AgentPipeline.stripNarration(raw) == raw)
+    }
+}

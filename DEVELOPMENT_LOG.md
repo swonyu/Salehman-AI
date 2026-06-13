@@ -3317,6 +3317,35 @@ Two targeted functional improvements in one slice:
 
 ---
 
+## 2026-06-13 — Marathon EGM: reasoning-model <think> block stripping
+
+**What:** Added `<think>…</think>` / `<thinking>…</thinking>` stripping to
+`AgentPipeline.stripNarration`. Reasoning-mode models (QwQ, DeepSeek-R1,
+Qwen-thinking, etc.) served through Ollama prefix their answers with multi-line
+chain-of-thought inside these XML tags; without stripping, users see raw
+internal reasoning instead of the final answer. All user-facing replies funnel
+through `stripNarration` (trivial path line 203 + normal path line 228), so one
+addition covers every brain and mode.
+
+**Files:**
+- `Salehman AI/Agents/AgentPipeline.swift` — prepended step 0 to `stripNarration`:
+  a `(?si)` regex `while` loop strips all closed `<think>…</think>` blocks,
+  keeping content sandwiched between multiple blocks; a second pass handles
+  unclosed opening tags (model cut off mid-reasoning) by substituting any
+  content that appeared before the tag (usually nothing → leave as-is so the
+  safety guard returns the original).
+- `Salehman AITests/TrivialMissionTests.swift` — new `StripNarrationThinkTests`
+  struct with 6 tests: closed `<think>`, `<thinking>`, case-insensitive `<Think>`,
+  multiple blocks, unclosed tag safety, and normal-text no-op.
+
+**Why:** QwQ:32b and similar models are popular Ollama choices. Without stripping,
+every response would begin with hundreds of tokens of internal monologue — a bad
+UX and a context-poisoning risk when that text ends up stored in ConversationStore.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
