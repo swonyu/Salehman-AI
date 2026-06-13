@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 10:07 +03 · Swift files: 160 · Swift LOC: 36651_
+_Generated: 2026-06-13 10:45 +03 · Swift files: 160 · Swift LOC: 36651_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15498,7 +15498,7 @@ struct ChangedFileRow: View {
                             .background(Color.white.opacity(0.07), in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .help("Revert this file to its pre-run state")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 } else if let stat {
@@ -22963,7 +22963,7 @@ struct MarketsView: View {
                 Image(systemName: "trash").font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)
             }
-            .buttonStyle(.plain).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
+            .buttonStyle(LuxPressStyle()).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -24344,7 +24344,7 @@ struct ScratchpadView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: t.done)
             }
-            .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
+            .buttonStyle(LuxPressStyle()).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
@@ -24512,7 +24512,7 @@ struct ScratchpadView: View {
             Image(systemName: "pencil").font(.system(size: 11))
                 .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
         }
-        .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
+        .buttonStyle(LuxPressStyle()).help("Edit").accessibilityLabel("Edit")
     }
 
     private func deleteButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -24520,7 +24520,7 @@ struct ScratchpadView: View {
             Image(systemName: "trash").font(.system(size: 12))
                 .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary)
         }
-        .buttonStyle(.plain).help("Delete").accessibilityLabel("Delete")
+        .buttonStyle(LuxPressStyle()).help("Delete").accessibilityLabel("Delete")
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
@@ -39259,7 +39259,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5069 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5085 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43265,6 +43265,22 @@ Token alignment in the autonomous-run stop button.
 
 **Files:** `Salehman AI/Views/AgentsView.swift`  
 **Why:** Consistency with every other danger-colored element in the app (all other views use `DS.Palette.danger`). If danger is ever recolored in the DS, this button now tracks automatically.
+
+---
+
+### 2026-06-13 — EOAG: LuxPressStyle adoption — ScratchpadView row actions, MarketsView trash, CodeView revert
+
+**What changed:**  
+- `ScratchpadView.swift` line 322: mark-done toggle `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` — the circular checkbox now physically presses (0.97 scale, lux curve)  
+- `ScratchpadView.swift` line 490: `editButton()` helper `.plain` → `LuxPressStyle()` — hover-aware pencil icon gets tactile feedback  
+- `ScratchpadView.swift` line 498: `deleteButton()` helper `.plain` → `LuxPressStyle()` — hover-aware trash icon matches the pattern from ChatHistoryView rows  
+- `MarketsView.swift` line 402: remove-holding trash button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint, now adds press physics  
+- `CodeView.swift` line 499: file-revert button `.plain` → `LuxPressStyle()` — small 18×18 icon well, LuxPress completes the haptic model  
+
+**Audit note:** CommandPalette row (line 151) intentionally stays `.plain` — action immediately dismisses the palette, so the 0.4s lux animation would be cut short, producing visible flicker. OnboardingView CTA stays `.plain` for the same reason (its own `ctaHover` scale would double-apply). Clear-search xmarks and close/dismiss sheet buttons correctly remain `.plain` (utility; no physical press semantics needed).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/CodeView.swift`  
+**Why:** Row-action buttons (edit, delete, toggle, remove) already had hover-aware coloring signaling their intent; the missing LuxPress left them feeling flat compared to ChatHistoryView rows which were upgraded in EOAC.
 
 ---
 

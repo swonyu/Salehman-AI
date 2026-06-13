@@ -496,7 +496,7 @@ struct ChangedFileRow: View {
                             .background(Color.white.opacity(0.07), in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .help("Revert this file to its pre-run state")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 } else if let stat {

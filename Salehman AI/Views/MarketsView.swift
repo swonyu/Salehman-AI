@@ -399,7 +399,7 @@ struct MarketsView: View {
                 Image(systemName: "trash").font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)
             }
-            .buttonStyle(.plain).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
+            .buttonStyle(LuxPressStyle()).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)

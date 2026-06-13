@@ -4006,6 +4006,22 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+### 2026-06-13 — EOAG: LuxPressStyle adoption — ScratchpadView row actions, MarketsView trash, CodeView revert
+
+**What changed:**  
+- `ScratchpadView.swift` line 322: mark-done toggle `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` — the circular checkbox now physically presses (0.97 scale, lux curve)  
+- `ScratchpadView.swift` line 490: `editButton()` helper `.plain` → `LuxPressStyle()` — hover-aware pencil icon gets tactile feedback  
+- `ScratchpadView.swift` line 498: `deleteButton()` helper `.plain` → `LuxPressStyle()` — hover-aware trash icon matches the pattern from ChatHistoryView rows  
+- `MarketsView.swift` line 402: remove-holding trash button `.plain` → `LuxPressStyle()` — already had `DS.Palette.danger` hover tint, now adds press physics  
+- `CodeView.swift` line 499: file-revert button `.plain` → `LuxPressStyle()` — small 18×18 icon well, LuxPress completes the haptic model  
+
+**Audit note:** CommandPalette row (line 151) intentionally stays `.plain` — action immediately dismisses the palette, so the 0.4s lux animation would be cut short, producing visible flicker. OnboardingView CTA stays `.plain` for the same reason (its own `ctaHover` scale would double-apply). Clear-search xmarks and close/dismiss sheet buttons correctly remain `.plain` (utility; no physical press semantics needed).
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`, `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/CodeView.swift`  
+**Why:** Row-action buttons (edit, delete, toggle, remove) already had hover-aware coloring signaling their intent; the missing LuxPress left them feeling flat compared to ChatHistoryView rows which were upgraded in EOAC.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

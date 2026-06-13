@@ -319,7 +319,7 @@ struct ScratchpadView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: t.done)
             }
-            .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
+            .buttonStyle(LuxPressStyle()).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
@@ -487,7 +487,7 @@ struct ScratchpadView: View {
             Image(systemName: "pencil").font(.system(size: 11))
                 .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
         }
-        .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
+        .buttonStyle(LuxPressStyle()).help("Edit").accessibilityLabel("Edit")
     }
 
     private func deleteButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -495,7 +495,7 @@ struct ScratchpadView: View {
             Image(systemName: "trash").font(.system(size: 12))
                 .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary)
         }
-        .buttonStyle(.plain).help("Delete").accessibilityLabel("Delete")
+        .buttonStyle(LuxPressStyle()).help("Delete").accessibilityLabel("Delete")
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
