@@ -89,14 +89,20 @@ struct MemoryView: View {
                     let shown = sort.apply(facts, filter: query)
                     Group {
                         if shown.isEmpty {
-                            VStack(spacing: 6) {
+                            VStack(spacing: 10) {
                                 Spacer()
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
                                 Text("No memories match “\(query)”.")
                                     .font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }
                             .frame(maxWidth: .infinity)
-                            .transition(.opacity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         } else {
                             ScrollView {
                             VStack(spacing: 1) {
@@ -254,7 +260,8 @@ struct MemoryView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .focused($searchFocused)
@@ -358,7 +365,8 @@ struct MemoryView: View {
 
     private var addFactRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+            Image(systemName: "plus.circle").font(.system(size: 13))
+                .foregroundStyle(addFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Add a memory…", text: $newFact)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))

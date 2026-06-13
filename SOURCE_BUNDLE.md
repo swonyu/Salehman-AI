@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 21:21 +03 · Swift files: 160 · Swift LOC: 36956_
+_Generated: 2026-06-13 21:30 +03 · Swift files: 160 · Swift LOC: 36964_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23529,7 +23529,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (405 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (413 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23622,14 +23622,20 @@ struct MemoryView: View {
                     let shown = sort.apply(facts, filter: query)
                     Group {
                         if shown.isEmpty {
-                            VStack(spacing: 6) {
+                            VStack(spacing: 10) {
                                 Spacer()
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
                                 Text("No memories match “\(query)”.")
                                     .font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }
                             .frame(maxWidth: .infinity)
-                            .transition(.opacity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         } else {
                             ScrollView {
                             VStack(spacing: 1) {
@@ -23787,7 +23793,8 @@ struct MemoryView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
                 .focused($searchFocused)
@@ -23891,7 +23898,8 @@ struct MemoryView: View {
 
     private var addFactRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+            Image(systemName: "plus.circle").font(.system(size: 13))
+                .foregroundStyle(addFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Add a memory…", text: $newFact)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -39564,7 +39572,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5741 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5763 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44202,6 +44210,28 @@ consistency gaps closed across the main view and its `DocDetailSheet`:
 `NonisolatedNonsendingByDefault`) over all 97 app sources → **0 errors / 0 warnings**.
 Live-screenshot sweep batched — planned right after the MemoryView slice (rebuild once, capture
 AgentsView + KnowledgeView + MemoryView together).
+
+---
+
+## 2026-06-13 — EOBG: MemoryView high-end visual pass (loop slice 3/8)
+
+MemoryView was the most complete of the loop's views so far (header tile + `Eyebrow`, ambient
+glow, animated empty state, focus glows on both fields, magnetic rows). Only two genuine gaps —
+fixed both; did NOT manufacture churn (ultracode anti-churn discipline):
+
+1. **Search no-match empty state:** bare centered text → icon-in-soft-circle + text, matching
+   EOBE/EOBF and the app's other empty states; scale+opacity transition.
+2. **Field icons didn't brighten on focus:** the search `magnifyingglass` and add-field
+   `plus.circle` now tint accent when their field is focused, matching KnowledgeView's ask field.
+
+Preserved the emerging focus hierarchy: primary inputs (ask/command) get the rich accent-stroke
+focus; search/filter fields keep the lighter glow-only — deliberately not flattened.
+
+**Files:** `Views/MemoryView.swift`.
+
+**Verify:** full-fidelity recipe → **0 errors / 0 warnings** over all 97 sources. Next loop firing
+is a batched live Xcode rebuild + screenshot sweep (AgentsView + KnowledgeView + MemoryView) to
+visually confirm slices 1–3 on macOS 27 before continuing to ScratchpadView.
 
 ---
 

@@ -4638,6 +4638,28 @@ AgentsView + KnowledgeView + MemoryView together).
 
 ---
 
+## 2026-06-13 — EOBG: MemoryView high-end visual pass (loop slice 3/8)
+
+MemoryView was the most complete of the loop's views so far (header tile + `Eyebrow`, ambient
+glow, animated empty state, focus glows on both fields, magnetic rows). Only two genuine gaps —
+fixed both; did NOT manufacture churn (ultracode anti-churn discipline):
+
+1. **Search no-match empty state:** bare centered text → icon-in-soft-circle + text, matching
+   EOBE/EOBF and the app's other empty states; scale+opacity transition.
+2. **Field icons didn't brighten on focus:** the search `magnifyingglass` and add-field
+   `plus.circle` now tint accent when their field is focused, matching KnowledgeView's ask field.
+
+Preserved the emerging focus hierarchy: primary inputs (ask/command) get the rich accent-stroke
+focus; search/filter fields keep the lighter glow-only — deliberately not flattened.
+
+**Files:** `Views/MemoryView.swift`.
+
+**Verify:** full-fidelity recipe → **0 errors / 0 warnings** over all 97 sources. Next loop firing
+is a batched live Xcode rebuild + screenshot sweep (AgentsView + KnowledgeView + MemoryView) to
+visually confirm slices 1–3 on macOS 27 before continuing to ScratchpadView.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
