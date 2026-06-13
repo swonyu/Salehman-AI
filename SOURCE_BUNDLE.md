@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:26 +03 · Swift files: 150 · Swift LOC: 33809_
+_Generated: 2026-06-13 04:33 +03 · Swift files: 150 · Swift LOC: 33856_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -3656,7 +3656,7 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainRouting.swift (340 lines) =====
+===== FILE: Salehman AI/LLM/BrainRouting.swift (341 lines) =====
 ```swift
 import Foundation
 
@@ -3810,7 +3810,8 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .cerebras:   return CerebrasClient.shared
         case .openAI:     return OpenAIClient.shared
         case .openRouter: return OpenRouterClient.shared
-        case .anthropic, .gemini, .copilot, .grok: return nil
+        case .grok:       return GrokClient.shared
+        case .anthropic, .gemini, .copilot: return nil
         }
     }
 }
@@ -4736,7 +4737,7 @@ enum GeminiClient {
 }
 ```
 
-===== FILE: Salehman AI/LLM/GrokClient.swift (253 lines) =====
+===== FILE: Salehman AI/LLM/GrokClient.swift (268 lines) =====
 ```swift
 import Foundation
 
@@ -4789,6 +4790,21 @@ enum GrokClient {
     nonisolated static let allModels: [String] = [defaultModel, grok3Model, grok3MiniModel, buildModel]
 
     nonisolated private static let base = "https://api.x.ai/v1"
+
+    /// Shared `OpenAICompatibleClient` instance — exposes Grok to the same
+    /// tool-loop path used by Groq / Mistral / Cerebras / OpenAI. xAI's
+    /// `/v1/chat/completions` endpoint is fully OpenAI wire-compatible, so
+    /// no custom networking code is needed: we just hand the existing client
+    /// our base URL and Keychain account. `BrainRouting.compatClient` returns
+    /// this so that pinned-Grok conversational turns run terminal / web tools.
+    nonisolated static let shared = OpenAICompatibleClient(
+        displayName: "xAI Grok",
+        baseURL: base,
+        defaultModel: defaultModel,
+        allModels: allModels,
+        keychainAccount: .grokAPIKey,
+        consoleURL: "https://console.x.ai"
+    )
 
     // MARK: - Reachability
 
@@ -5135,7 +5151,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1700 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1696 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -6779,26 +6795,22 @@ enum LocalLLM {
         }
     }
 
-    /// One pinned cloud brain's conversational execution. The five
-    /// OpenAI-compatible brains try the tool loop first (terminal / web),
-    /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
-    /// are plain chat only (no shared tool loop).
+    /// One pinned cloud brain's conversational execution. Six OpenAI-compatible
+    /// brains (including Grok — xAI's API is fully wire-compatible) try the
+    /// tool loop first (terminal / web), then fall back to plain chat.
+    /// Claude / Gemini / Copilot are plain chat only (bespoke wire formats).
     private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
         switch p {
         case .anthropic:
             // Claude Haiku (cloud), single-turn, no local tools.
             return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .grok:
-            return await GrokClient.chat(prompt: message,
-                                         system: Self.cloudSystemPrompt,
-                                         model: AppSettings.grokModelCurrent)
         case .gemini:
             return await GeminiClient.chat(prompt: message,
                                            system: Self.cloudSystemPrompt,
                                            model: AppSettings.geminiModelCurrent)
         case .copilot:
             return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .groq, .mistral, .cerebras, .openAI, .openRouter:
+        case .grok, .groq, .mistral, .cerebras, .openAI, .openRouter:
             guard let client = p.compatClient, let m = p.selectedModel else { return nil }
             if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
             return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
@@ -30771,7 +30783,7 @@ struct GeminiURLEncodingTests {
 }
 ```
 
-===== FILE: Salehman AITests/GrokTests.swift (151 lines) =====
+===== FILE: Salehman AITests/GrokTests.swift (186 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30890,6 +30902,41 @@ struct BrainPreferenceGrokTests {
         // The raw value is persisted in UserDefaults under `set_brainPreference`.
         // Renaming it would silently demote saved preferences back to `.auto`.
         #expect(BrainPreference.grok.rawValue == "grok")
+    }
+}
+
+// MARK: - GrokClient.shared (OpenAICompatibleClient) configuration
+
+struct GrokSharedClientTests {
+
+    @Test func sharedClientHasCorrectBaseURL() {
+        // xAI's Chat Completions endpoint is at api.x.ai/v1. If this changes,
+        // every GrokClient.shared tool-loop call (terminal / web) will 404.
+        #expect(GrokClient.shared.baseURL == "https://api.x.ai/v1")
+    }
+
+    @Test func sharedClientDefaultModelMatchesGrokClient() {
+        #expect(GrokClient.shared.defaultModel == GrokClient.defaultModel)
+    }
+
+    @Test func sharedClientAllModelsMatchGrokClient() {
+        #expect(GrokClient.shared.allModels == GrokClient.allModels)
+    }
+
+    @Test func sharedClientKeychainAccountIsGrokKey() {
+        // `shared` must read from the same Keychain slot as `GrokClient.chat` —
+        // mismatching accounts would make the tool loop prompt for a key even
+        // when the user already saved one via Settings.
+        #expect(GrokClient.shared.keychainAccount == .grokAPIKey)
+    }
+
+    @Test func compatClientReturnsSharedForGrok() {
+        // BrainRouting.compatClient drives the entire OpenAI-compat tool loop.
+        // `.grok` must no longer return nil — it must return GrokClient.shared
+        // so pinned-Grok turns can call terminal / web tools.
+        let client = CloudProvider.grok.compatClient
+        #expect(client != nil, "CloudProvider.grok.compatClient must not be nil after EOV fix")
+        #expect(client?.baseURL == GrokClient.shared.baseURL)
     }
 }
 
@@ -36377,7 +36424,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4527 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4553 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39861,6 +39908,32 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 **Files:** `Salehman AI/Intelligence/SelfCritique.swift` (+4 / -2 lines), `Salehman AITests/SelfCritiqueTests.swift` (+18 lines)
 
 **Result:** 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EOV: Wire Grok into the OpenAI-compat tool loop
+
+**What changed:** `LLM/GrokClient.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `Salehman AITests/GrokTests.swift`
+
+**Problem:** When the user pinned `BrainPreference.grok`, the conversational pipeline skipped the tool loop entirely — Grok could not run terminal commands or web searches mid-conversation. `BrainRouting.compatClient` returned `nil` for `.grok`, so `chatOpenAICompatWithTools` was never reached. This was despite xAI's API being fully OpenAI wire-compatible (`POST /v1/chat/completions` with standard function-calling JSON).
+
+**Root cause:** `GrokClient` predates `OpenAICompatibleClient`; it was written as a bespoke client before the shared compat layer existed. No one wired the two together when `OpenAICompatibleClient` was introduced.
+
+**Fix (3 files):**
+1. **`GrokClient.swift`** — Added `static let shared = OpenAICompatibleClient(displayName: "xAI Grok", baseURL: "https://api.x.ai/v1", ...)` so the xAI endpoint participates in the shared tool-loop infrastructure.
+2. **`BrainRouting.swift`** — `compatClient` now returns `GrokClient.shared` for `.grok` instead of `nil`.
+3. **`LocalLLM.cloudConversational`** — Merged `.grok` into the OpenAI-compat branch (`chatOpenAICompatWithTools` → plain-chat fallback), removing the now-redundant `GrokClient.chat` call. Comment updated to reflect six compat providers instead of five.
+
+**Tests added (5, in `GrokSharedClientTests`):**
+- `sharedClientHasCorrectBaseURL` — base URL must be `https://api.x.ai/v1`
+- `sharedClientDefaultModelMatchesGrokClient` — model parity with the bespoke client
+- `sharedClientAllModelsMatchGrokClient` — picker list parity
+- `sharedClientKeychainAccountIsGrokKey` — same Keychain slot so saved keys work
+- `compatClientReturnsSharedForGrok` — behavioral: `CloudProvider.grok.compatClient != nil`
+
+**Files:** `Salehman AI/LLM/GrokClient.swift` (+14 lines), `Salehman AI/LLM/BrainRouting.swift` (+1/-1 line), `Salehman AI/LLM/LocalLLM.swift` (+3/-8 lines), `Salehman AITests/GrokTests.swift` (+33 lines)
+
+**Result:** 0 real Swift errors (DerivedData sandbox restriction is a standing false positive).
 
 ---
 

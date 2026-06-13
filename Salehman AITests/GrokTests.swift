@@ -118,6 +118,41 @@ struct BrainPreferenceGrokTests {
     }
 }
 
+// MARK: - GrokClient.shared (OpenAICompatibleClient) configuration
+
+struct GrokSharedClientTests {
+
+    @Test func sharedClientHasCorrectBaseURL() {
+        // xAI's Chat Completions endpoint is at api.x.ai/v1. If this changes,
+        // every GrokClient.shared tool-loop call (terminal / web) will 404.
+        #expect(GrokClient.shared.baseURL == "https://api.x.ai/v1")
+    }
+
+    @Test func sharedClientDefaultModelMatchesGrokClient() {
+        #expect(GrokClient.shared.defaultModel == GrokClient.defaultModel)
+    }
+
+    @Test func sharedClientAllModelsMatchGrokClient() {
+        #expect(GrokClient.shared.allModels == GrokClient.allModels)
+    }
+
+    @Test func sharedClientKeychainAccountIsGrokKey() {
+        // `shared` must read from the same Keychain slot as `GrokClient.chat` —
+        // mismatching accounts would make the tool loop prompt for a key even
+        // when the user already saved one via Settings.
+        #expect(GrokClient.shared.keychainAccount == .grokAPIKey)
+    }
+
+    @Test func compatClientReturnsSharedForGrok() {
+        // BrainRouting.compatClient drives the entire OpenAI-compat tool loop.
+        // `.grok` must no longer return nil — it must return GrokClient.shared
+        // so pinned-Grok turns can call terminal / web tools.
+        let client = CloudProvider.grok.compatClient
+        #expect(client != nil, "CloudProvider.grok.compatClient must not be nil after EOV fix")
+        #expect(client?.baseURL == GrokClient.shared.baseURL)
+    }
+}
+
 // MARK: - AppSettings.grokModelCurrent fallback
 
 struct GrokModelCurrentTests {

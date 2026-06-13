@@ -50,6 +50,21 @@ enum GrokClient {
 
     nonisolated private static let base = "https://api.x.ai/v1"
 
+    /// Shared `OpenAICompatibleClient` instance — exposes Grok to the same
+    /// tool-loop path used by Groq / Mistral / Cerebras / OpenAI. xAI's
+    /// `/v1/chat/completions` endpoint is fully OpenAI wire-compatible, so
+    /// no custom networking code is needed: we just hand the existing client
+    /// our base URL and Keychain account. `BrainRouting.compatClient` returns
+    /// this so that pinned-Grok conversational turns run terminal / web tools.
+    nonisolated static let shared = OpenAICompatibleClient(
+        displayName: "xAI Grok",
+        baseURL: base,
+        defaultModel: defaultModel,
+        allModels: allModels,
+        keychainAccount: .grokAPIKey,
+        consoleURL: "https://console.x.ai"
+    )
+
     // MARK: - Reachability
 
     /// True iff the user has stored a Grok key. This is a cheap proxy for

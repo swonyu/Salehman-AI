@@ -1640,26 +1640,22 @@ enum LocalLLM {
         }
     }
 
-    /// One pinned cloud brain's conversational execution. The five
-    /// OpenAI-compatible brains try the tool loop first (terminal / web),
-    /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
-    /// are plain chat only (no shared tool loop).
+    /// One pinned cloud brain's conversational execution. Six OpenAI-compatible
+    /// brains (including Grok — xAI's API is fully wire-compatible) try the
+    /// tool loop first (terminal / web), then fall back to plain chat.
+    /// Claude / Gemini / Copilot are plain chat only (bespoke wire formats).
     private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
         switch p {
         case .anthropic:
             // Claude Haiku (cloud), single-turn, no local tools.
             return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .grok:
-            return await GrokClient.chat(prompt: message,
-                                         system: Self.cloudSystemPrompt,
-                                         model: AppSettings.grokModelCurrent)
         case .gemini:
             return await GeminiClient.chat(prompt: message,
                                            system: Self.cloudSystemPrompt,
                                            model: AppSettings.geminiModelCurrent)
         case .copilot:
             return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .groq, .mistral, .cerebras, .openAI, .openRouter:
+        case .grok, .groq, .mistral, .cerebras, .openAI, .openRouter:
             guard let client = p.compatClient, let m = p.selectedModel else { return nil }
             if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
             return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)

@@ -3484,6 +3484,32 @@ After the main-pipeline coverage (EGM/EOP/EOQ/EOR), four "last mile" surfaces st
 
 ---
 
+## 2026-06-13 — Marathon EOV: Wire Grok into the OpenAI-compat tool loop
+
+**What changed:** `LLM/GrokClient.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `Salehman AITests/GrokTests.swift`
+
+**Problem:** When the user pinned `BrainPreference.grok`, the conversational pipeline skipped the tool loop entirely — Grok could not run terminal commands or web searches mid-conversation. `BrainRouting.compatClient` returned `nil` for `.grok`, so `chatOpenAICompatWithTools` was never reached. This was despite xAI's API being fully OpenAI wire-compatible (`POST /v1/chat/completions` with standard function-calling JSON).
+
+**Root cause:** `GrokClient` predates `OpenAICompatibleClient`; it was written as a bespoke client before the shared compat layer existed. No one wired the two together when `OpenAICompatibleClient` was introduced.
+
+**Fix (3 files):**
+1. **`GrokClient.swift`** — Added `static let shared = OpenAICompatibleClient(displayName: "xAI Grok", baseURL: "https://api.x.ai/v1", ...)` so the xAI endpoint participates in the shared tool-loop infrastructure.
+2. **`BrainRouting.swift`** — `compatClient` now returns `GrokClient.shared` for `.grok` instead of `nil`.
+3. **`LocalLLM.cloudConversational`** — Merged `.grok` into the OpenAI-compat branch (`chatOpenAICompatWithTools` → plain-chat fallback), removing the now-redundant `GrokClient.chat` call. Comment updated to reflect six compat providers instead of five.
+
+**Tests added (5, in `GrokSharedClientTests`):**
+- `sharedClientHasCorrectBaseURL` — base URL must be `https://api.x.ai/v1`
+- `sharedClientDefaultModelMatchesGrokClient` — model parity with the bespoke client
+- `sharedClientAllModelsMatchGrokClient` — picker list parity
+- `sharedClientKeychainAccountIsGrokKey` — same Keychain slot so saved keys work
+- `compatClientReturnsSharedForGrok` — behavioral: `CloudProvider.grok.compatClient != nil`
+
+**Files:** `Salehman AI/LLM/GrokClient.swift` (+14 lines), `Salehman AI/LLM/BrainRouting.swift` (+1/-1 line), `Salehman AI/LLM/LocalLLM.swift` (+3/-8 lines), `Salehman AITests/GrokTests.swift` (+33 lines)
+
+**Result:** 0 real Swift errors (DerivedData sandbox restriction is a standing false positive).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

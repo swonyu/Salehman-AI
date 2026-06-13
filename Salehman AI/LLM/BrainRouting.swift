@@ -150,7 +150,8 @@ nonisolated enum CloudProvider: String, CaseIterable, Sendable {
         case .cerebras:   return CerebrasClient.shared
         case .openAI:     return OpenAIClient.shared
         case .openRouter: return OpenRouterClient.shared
-        case .anthropic, .gemini, .copilot, .grok: return nil
+        case .grok:       return GrokClient.shared
+        case .anthropic, .gemini, .copilot: return nil
         }
     }
 }
