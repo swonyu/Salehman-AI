@@ -26,7 +26,9 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -191,7 +193,7 @@ struct MarketsView: View {
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if alertSignals.isEmpty {
-                Text(“No strong signals right now — mostly Hold. Tap “Check now” to scan again.”)
+                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                     .transition(.opacity)

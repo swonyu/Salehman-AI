@@ -17,7 +17,10 @@ struct TodayView: View {
     /// knowledge count so the Today dashboard shows live usage.
     @State private var todayChats = 0
     /// Staggered entrance: false → true on onAppear drives the fade-up.
-    @State private var appeared = false
+    /// Pre-set under `--qa`: the offscreen snapshot harness never fires onAppear,
+    /// so without this the "today" capture photographs all three sections at
+    /// opacity 0 (background-only) while nonBlank still passes on the glow.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {

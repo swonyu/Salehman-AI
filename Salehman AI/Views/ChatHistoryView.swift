@@ -143,7 +143,7 @@ struct ChatHistoryView: View {
                 let shown = Self.filtered(archives, query: query)
                 Group {
                     if shown.isEmpty {
-                        Text(“No conversations match “\(query.trimmingCharacters(in: .whitespaces))””)
+                        Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
                             .font(.system(size: 11.5)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)

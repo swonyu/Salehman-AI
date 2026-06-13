@@ -27,8 +27,10 @@ struct AgentsView: View {
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
     @State private var hoveredRunID: UUID?
-    /// Staggered entrance — sections fade up on first appear.
-    @State private var appeared = false
+    /// Staggered entrance — sections fade up on first appear. Pre-set under
+    /// `--qa` so the offscreen snapshot (onAppear never fires) captures the
+    /// settled layout, not the opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         ZStack {
@@ -261,7 +263,7 @@ struct AgentsView: View {
         return VStack(alignment: .leading, spacing: DS.Space.md) {
             agentSearchRow
             if agents.isEmpty {
-                Text("No agents match "\(agentSearch)".")
+                Text("No agents match “\(agentSearch)”.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
                     .transition(.opacity)

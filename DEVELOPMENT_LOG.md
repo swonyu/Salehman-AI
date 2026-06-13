@@ -4102,6 +4102,51 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+## 2026-06-13 — EOAM: 🟥 CRITICAL build-red fix (string-literal syntax) + QA pre-settlement guards
+
+**What changed (two things, found in one adversarial sweep):**
+
+1. **🟥 Build-breaking string literals (the headline).** `swiftc -parse` proved the app
+   has NOT compiled since 2026-06-12 (commit `465a51e`, marathon DC). Two bug classes,
+   same root cause (quoting an interpolated term in a display string):
+   - **Curly-quote DELIMITERS** — `Text(“…”)` with smart quotes `“ ”` (U+201C/201D) used
+     as the string delimiter. 13 lines across `MemoryView` (1), `MarketsView` (1),
+     `ChatHistoryView` (1), `KnowledgeView` (10 — incl. a curly-quoted SF Symbol name
+     `Image(systemName: “books.vertical.fill”)`). Swift rejects curly quotes as delimiters.
+   - **Straight inner quotes closing the literal early** — `AgentsView:266`
+     `Text("No agents match "\(agentSearch)".")` parsed as string + dangling interp + string
+     (`expected ',' separator`).
+   - **Fix:** the codebase's own accepted convention — **straight outer, curly inner**
+     (`Text("… match “\(x)”.")`, as in `ScratchpadView:228`). Applied uniformly to all 6
+     empty-state strings. Verified: `swiftc -parse` over **all** app + test sources → **0
+     source syntax errors** (down from 14 lines across 5 files).
+   - **Record correction:** the EOAL entry above claims "Build green" — that was wrong.
+     xcodebuild dies on sandbox cache/SimService errors *before* compiling, which masked the
+     real red since 06-12. EOAL's green claim was unverified; this entry supersedes it.
+
+2. **QA pre-settlement guards.** 7 QA-captured views gated entrance animation on
+   `appeared`/`revealed` flipped only in `onAppear` — which never fires in the offscreen
+   `NSHostingView` snapshot path. Their captures photographed opacity-0 content (background
+   only) while `nonBlank` still passed on the ambient glow → silently degraded baselines.
+   Added the established `= ProcessInfo.processInfo.arguments.contains("--qa")` guard to
+   `TodayView, AgentsView, ScratchpadView, KnowledgeView, MarketsView, MemoryView,
+   CommandPalette`. (ContentView's two flags already use the `QAGeometry.enabled` bypass — left.)
+
+**Files:** `Views/MemoryView.swift`, `MarketsView.swift`, `ChatHistoryView.swift`,
+`KnowledgeView.swift`, `AgentsView.swift`, `TodayView.swift`, `ScratchpadView.swift`,
+`CommandPalette.swift`
+
+**Why:** an app that doesn't compile is the only P0; design polish is moot until it builds.
+Verification-by-measurement (the owner directive) is exactly what caught it — `swiftc -parse`
+saw what the env-blocked xcodebuild could not.
+
+**Result:** `swiftc -parse` → 0 source syntax errors across app + tests. Build syntactically
+clean for the first time since 06-12. (Full `xcodebuild` typecheck still unrunnable in this
+sandbox — cache/SimService denial — so the type layer is unverified here; these were all
+lexical/syntactic errors, which `-parse` fully covers.)
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -46,7 +46,9 @@ struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: [String] = []
     @State private var confirmClear = false
-    @State private var appeared = false
+    /// Staggered row entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the opacity-0 pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var query = ""
     @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
@@ -86,7 +88,7 @@ struct MemoryView: View {
                         if shown.isEmpty {
                             VStack(spacing: 6) {
                                 Spacer()
-                                Text(“No memories match “\(query)”.”)
+                                Text("No memories match “\(query)”.")
                                     .font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }

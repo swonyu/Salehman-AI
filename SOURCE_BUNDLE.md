@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 11:22 +03 · Swift files: 160 · Swift LOC: 36654_
+_Generated: 2026-06-13 11:41 +03 · Swift files: 160 · Swift LOC: 36669_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13628,7 +13628,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (555 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (557 lines) =====
 ```swift
 import SwiftUI
 
@@ -13659,8 +13659,10 @@ struct AgentsView: View {
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
     @State private var hoveredRunID: UUID?
-    /// Staggered entrance — sections fade up on first appear.
-    @State private var appeared = false
+    /// Staggered entrance — sections fade up on first appear. Pre-set under
+    /// `--qa` so the offscreen snapshot (onAppear never fires) captures the
+    /// settled layout, not the opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         ZStack {
@@ -13893,7 +13895,7 @@ struct AgentsView: View {
         return VStack(alignment: .leading, spacing: DS.Space.md) {
             agentSearchRow
             if agents.isEmpty {
-                Text("No agents match "\(agentSearch)".")
+                Text("No agents match “\(agentSearch)”.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
                     .transition(.opacity)
@@ -14476,7 +14478,7 @@ struct ChatHistoryView: View {
                 let shown = Self.filtered(archives, query: query)
                 Group {
                     if shown.isEmpty {
-                        Text(“No conversations match “\(query.trimmingCharacters(in: .whitespaces))””)
+                        Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
                             .font(.system(size: 11.5)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)
@@ -17660,7 +17662,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (215 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (218 lines) =====
 ```swift
 import SwiftUI
 
@@ -17675,7 +17677,10 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var hoveredID: UUID?
     @State private var selectedIndex: Int = 0
-    @State private var appeared = false
+    /// Shell + staggered row entrance. Pre-set under `--qa` so the offscreen
+    /// snapshot (onAppear never fires) captures the settled palette, not the
+    /// opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -21064,7 +21069,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (700 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (701 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21104,8 +21109,9 @@ struct KnowledgeView: View {
     @State private var answerSaved = false
     /// Copy-feedback flash for the answer copy button.
     @State private var copiedAnswer = false
-    /// Staggered entrance.
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         ScrollView {
@@ -21332,19 +21338,19 @@ struct KnowledgeView: View {
                             ? .spring(duration: 2.2, bounce: 0.06)
                             : .easeOut(duration: 1.8)
                     }
-                    Image(systemName: “books.vertical.fill”)
+                    Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
                 .padding(.bottom, 4)
-                Text(“START YOUR VAULT”)
+                Text("START YOUR VAULT")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundStyle(DS.Palette.accent)
-                Text(“No documents yet”)
+                Text("No documents yet")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(“Add PDFs, text, or notes. Everything stays on this Mac.”)
+                Text("Add PDFs, text, or notes. Everything stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
@@ -21353,7 +21359,7 @@ struct KnowledgeView: View {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(“\(docs.count) document\(docs.count == 1 ? “” : “s”)”).font(.caption).foregroundStyle(.secondary)
+                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
@@ -21361,14 +21367,14 @@ struct KnowledgeView: View {
                         Menu {
                             ForEach(KnowledgeSort.allCases) { s in
                                 Button { docSort = s } label: {
-                                    Label(s.title, systemImage: docSort == s ? “checkmark” : “”)
+                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
                                 }
                             }
                         } label: {
-                            Label(“Sort: \(docSort.title)”, systemImage: “arrow.up.arrow.down”)
+                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel(“Sort documents”)
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
                         .transition(.opacity)
                     }
                 }
@@ -21378,7 +21384,7 @@ struct KnowledgeView: View {
                         .transition(.opacity)
                 }
                 if shown.isEmpty {
-                    Text(“No documents match “\(docFilter)”.”)
+                    Text("No documents match “\(docFilter)”.")
                         .font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
                         .transition(.opacity)
@@ -22561,7 +22567,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (750 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (752 lines) =====
 ```swift
 import SwiftUI
 
@@ -22591,7 +22597,9 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -22756,7 +22764,7 @@ struct MarketsView: View {
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if alertSignals.isEmpty {
-                Text(“No strong signals right now — mostly Hold. Tap “Check now” to scan again.”)
+                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                     .transition(.opacity)
@@ -23315,7 +23323,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (382 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (384 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23365,7 +23373,9 @@ struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: [String] = []
     @State private var confirmClear = false
-    @State private var appeared = false
+    /// Staggered row entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the opacity-0 pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var query = ""
     @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
@@ -23405,7 +23415,7 @@ struct MemoryView: View {
                         if shown.isEmpty {
                             VStack(spacing: 6) {
                                 Spacer()
-                                Text(“No memories match “\(query)”.”)
+                                Text("No memories match “\(query)”.")
                                     .font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }
@@ -24022,7 +24032,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (669 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (671 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24049,7 +24059,9 @@ struct ScratchpadView: View {
     /// Whether the "X Completed" disclosure group is expanded. Default collapsed
     /// so done tasks don't clutter the active-work view.
     @State private var showCompleted = false
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -26846,7 +26858,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (381 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (384 lines) =====
 ```swift
 import SwiftUI
 
@@ -26867,7 +26879,10 @@ struct TodayView: View {
     /// knowledge count so the Today dashboard shows live usage.
     @State private var todayChats = 0
     /// Staggered entrance: false → true on onAppear drives the fade-up.
-    @State private var appeared = false
+    /// Pre-set under `--qa`: the offscreen snapshot harness never fires onAppear,
+    /// so without this the "today" capture photographs all three sections at
+    /// opacity 0 (background-only) while nonBlank still passes on the glow.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -39262,7 +39277,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5165 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5210 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43364,6 +43379,51 @@ Token alignment in the autonomous-run stop button.
 **Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/ContentView.swift`
 
 **Result:** Build green (environmental xcodebuild sandbox/SimService errors are pre-existing, not code regressions). Zero remaining `cornerRadius: 8` in Swift sources.
+
+---
+
+## 2026-06-13 — EOAM: 🟥 CRITICAL build-red fix (string-literal syntax) + QA pre-settlement guards
+
+**What changed (two things, found in one adversarial sweep):**
+
+1. **🟥 Build-breaking string literals (the headline).** `swiftc -parse` proved the app
+   has NOT compiled since 2026-06-12 (commit `465a51e`, marathon DC). Two bug classes,
+   same root cause (quoting an interpolated term in a display string):
+   - **Curly-quote DELIMITERS** — `Text(“…”)` with smart quotes `“ ”` (U+201C/201D) used
+     as the string delimiter. 13 lines across `MemoryView` (1), `MarketsView` (1),
+     `ChatHistoryView` (1), `KnowledgeView` (10 — incl. a curly-quoted SF Symbol name
+     `Image(systemName: “books.vertical.fill”)`). Swift rejects curly quotes as delimiters.
+   - **Straight inner quotes closing the literal early** — `AgentsView:266`
+     `Text("No agents match "\(agentSearch)".")` parsed as string + dangling interp + string
+     (`expected ',' separator`).
+   - **Fix:** the codebase's own accepted convention — **straight outer, curly inner**
+     (`Text("… match “\(x)”.")`, as in `ScratchpadView:228`). Applied uniformly to all 6
+     empty-state strings. Verified: `swiftc -parse` over **all** app + test sources → **0
+     source syntax errors** (down from 14 lines across 5 files).
+   - **Record correction:** the EOAL entry above claims "Build green" — that was wrong.
+     xcodebuild dies on sandbox cache/SimService errors *before* compiling, which masked the
+     real red since 06-12. EOAL's green claim was unverified; this entry supersedes it.
+
+2. **QA pre-settlement guards.** 7 QA-captured views gated entrance animation on
+   `appeared`/`revealed` flipped only in `onAppear` — which never fires in the offscreen
+   `NSHostingView` snapshot path. Their captures photographed opacity-0 content (background
+   only) while `nonBlank` still passed on the ambient glow → silently degraded baselines.
+   Added the established `= ProcessInfo.processInfo.arguments.contains("--qa")` guard to
+   `TodayView, AgentsView, ScratchpadView, KnowledgeView, MarketsView, MemoryView,
+   CommandPalette`. (ContentView's two flags already use the `QAGeometry.enabled` bypass — left.)
+
+**Files:** `Views/MemoryView.swift`, `MarketsView.swift`, `ChatHistoryView.swift`,
+`KnowledgeView.swift`, `AgentsView.swift`, `TodayView.swift`, `ScratchpadView.swift`,
+`CommandPalette.swift`
+
+**Why:** an app that doesn't compile is the only P0; design polish is moot until it builds.
+Verification-by-measurement (the owner directive) is exactly what caught it — `swiftc -parse`
+saw what the env-blocked xcodebuild could not.
+
+**Result:** `swiftc -parse` → 0 source syntax errors across app + tests. Build syntactically
+clean for the first time since 06-12. (Full `xcodebuild` typecheck still unrunnable in this
+sandbox — cache/SimService denial — so the type layer is unverified here; these were all
+lexical/syntactic errors, which `-parse` fully covers.)
 
 ---
 

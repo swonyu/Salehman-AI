@@ -23,7 +23,9 @@ struct ScratchpadView: View {
     /// Whether the "X Completed" disclosure group is expanded. Default collapsed
     /// so done tasks don't clutter the active-work view.
     @State private var showCompleted = false
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes

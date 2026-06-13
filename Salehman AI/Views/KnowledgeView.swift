@@ -36,8 +36,9 @@ struct KnowledgeView: View {
     @State private var answerSaved = false
     /// Copy-feedback flash for the answer copy button.
     @State private var copiedAnswer = false
-    /// Staggered entrance.
-    @State private var appeared = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         ScrollView {
@@ -264,19 +265,19 @@ struct KnowledgeView: View {
                             ? .spring(duration: 2.2, bounce: 0.06)
                             : .easeOut(duration: 1.8)
                     }
-                    Image(systemName: “books.vertical.fill”)
+                    Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
                 }
                 .padding(.bottom, 4)
-                Text(“START YOUR VAULT”)
+                Text("START YOUR VAULT")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundStyle(DS.Palette.accent)
-                Text(“No documents yet”)
+                Text("No documents yet")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(“Add PDFs, text, or notes. Everything stays on this Mac.”)
+                Text("Add PDFs, text, or notes. Everything stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
@@ -285,7 +286,7 @@ struct KnowledgeView: View {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(“\(docs.count) document\(docs.count == 1 ? “” : “s”)”).font(.caption).foregroundStyle(.secondary)
+                    Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
@@ -293,14 +294,14 @@ struct KnowledgeView: View {
                         Menu {
                             ForEach(KnowledgeSort.allCases) { s in
                                 Button { docSort = s } label: {
-                                    Label(s.title, systemImage: docSort == s ? “checkmark” : “”)
+                                    Label(s.title, systemImage: docSort == s ? "checkmark" : "")
                                 }
                             }
                         } label: {
-                            Label(“Sort: \(docSort.title)”, systemImage: “arrow.up.arrow.down”)
+                            Label("Sort: \(docSort.title)", systemImage: "arrow.up.arrow.down")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel(“Sort documents”)
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
                         .transition(.opacity)
                     }
                 }
@@ -310,7 +311,7 @@ struct KnowledgeView: View {
                         .transition(.opacity)
                 }
                 if shown.isEmpty {
-                    Text(“No documents match “\(docFilter)”.”)
+                    Text("No documents match “\(docFilter)”.")
                         .font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
                         .transition(.opacity)

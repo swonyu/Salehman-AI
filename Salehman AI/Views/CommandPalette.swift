@@ -11,7 +11,10 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var hoveredID: UUID?
     @State private var selectedIndex: Int = 0
-    @State private var appeared = false
+    /// Shell + staggered row entrance. Pre-set under `--qa` so the offscreen
+    /// snapshot (onAppear never fires) captures the settled palette, not the
+    /// opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
