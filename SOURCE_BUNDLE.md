@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:19 +03 · Swift files: 150 · Swift LOC: 34251_
+_Generated: 2026-06-13 03:27 +03 · Swift files: 150 · Swift LOC: 34251_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13637,7 +13637,7 @@ struct AgentsView: View {
                               ? DS.Palette.accent.opacity(0.20)
                               : Color.white.opacity(0.07))
                         .frame(width: 32, height: 32)
-                    Image(systemName: settings.autonomousMode ? "brain.head.profile" : "brain.head.profile")
+                    Image(systemName: "brain.head.profile")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(settings.autonomousMode ? DS.Palette.accent : .secondary)
                 }
@@ -36819,7 +36819,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4307 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4321 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40083,6 +40083,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Why:** Internal consistency — both badges in the same HStack now counter-roll their digits identically. `.numericText()` on an embedded integer string (`"ctx \(pct)%"`) animates the numeric fragment independently, giving the same haptic digit-tick feel as tok/s without any extra state.
 
 **Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFI: AgentsView dead-ternary cleanup + full design sweep completion
+
+**What:** Removed the redundant no-op ternary on the Autonomous Mode icon in `AgentsView.autonomousControlSection` — `settings.autonomousMode ? "brain.head.profile" : "brain.head.profile"` (both branches identical) simplified to `"brain.head.profile"`. The visual distinction between modes is correctly handled by `.foregroundStyle(accent vs .secondary)` alone.
+
+Also completed an exhaustive cross-codebase audit of all remaining flat `Color.white.opacity(...)` strokes in every view file — all 16 remaining instances classified as correctly flat by design rule (circular buttons, hover-outer-rings, read-only status badges, code/terminal display blocks, structural card borders, image thumbnails). The design marathon is complete — all 27 view files audited, all applicable gradient strokes applied.
+
+**Files:** `Salehman AI/Views/AgentsView.swift` (−1 line ternary)
+
+**Why:** Dead code obscures intent — future readers would assume the two branch strings were different and look for how they diverge. Removing it makes the icon-is-constant / color-is-the-differentiator pattern explicit.
+
+**Result:** Build exit 0, 0 real Swift errors. Full design marathon verified complete.
 
 ---
 

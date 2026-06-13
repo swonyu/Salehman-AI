@@ -3264,6 +3264,20 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+## 2026-06-13 — Marathon EFI: AgentsView dead-ternary cleanup + full design sweep completion
+
+**What:** Removed the redundant no-op ternary on the Autonomous Mode icon in `AgentsView.autonomousControlSection` — `settings.autonomousMode ? "brain.head.profile" : "brain.head.profile"` (both branches identical) simplified to `"brain.head.profile"`. The visual distinction between modes is correctly handled by `.foregroundStyle(accent vs .secondary)` alone.
+
+Also completed an exhaustive cross-codebase audit of all remaining flat `Color.white.opacity(...)` strokes in every view file — all 16 remaining instances classified as correctly flat by design rule (circular buttons, hover-outer-rings, read-only status badges, code/terminal display blocks, structural card borders, image thumbnails). The design marathon is complete — all 27 view files audited, all applicable gradient strokes applied.
+
+**Files:** `Salehman AI/Views/AgentsView.swift` (−1 line ternary)
+
+**Why:** Dead code obscures intent — future readers would assume the two branch strings were different and look for how they diverge. Removing it makes the icon-is-constant / color-is-the-differentiator pattern explicit.
+
+**Result:** Build exit 0, 0 real Swift errors. Full design marathon verified complete.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

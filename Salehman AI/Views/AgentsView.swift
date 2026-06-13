@@ -125,7 +125,7 @@ struct AgentsView: View {
                               ? DS.Palette.accent.opacity(0.20)
                               : Color.white.opacity(0.07))
                         .frame(width: 32, height: 32)
-                    Image(systemName: settings.autonomousMode ? "brain.head.profile" : "brain.head.profile")
+                    Image(systemName: "brain.head.profile")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(settings.autonomousMode ? DS.Palette.accent : .secondary)
                 }
