@@ -4857,6 +4857,35 @@ lane) had the only two genuine gaps:
 
 ---
 
+## 2026-06-14 — EOBQ: deep research — Swift 6 UI + macOS 27 "Golden Gate" design (solo, no Workflow)
+
+Owner directive: research Swift 6 UI + macOS 27 design, then polish. Done SOLO via WebSearch/WebFetch
+(the `deep-research` Workflow is forbidden by standing directive). Full findings + sources →
+[`DESIGN_RESEARCH_macOS27.md`](DESIGN_RESEARCH_macOS27.md).
+
+Headlines:
+- **macOS 27 "Golden Gate"** REFINES Liquid Glass (post-pushback): system opacity slider, tighter +
+  consistent auto corner radii (all apps), edge-to-edge sidebars, uniform frosted top toolbar; most
+  refinements auto-apply to apps on the system Liquid Glass framework.
+- **Liquid Glass SwiftUI APIs (26+):** `.glassEffect` (shape / `.tint` / `.interactive`),
+  `GlassEffectContainer`, `glassEffectID` + `@Namespace` morph, `.buttonStyle(.glass/.glassProminent)`.
+  Rules: glass AFTER appearance modifiers; never stack glass-on-glass; semantic (not hardcoded) colors.
+- **Principles** (Hierarchy / Harmony / Consistency): custom fills are CORRECT for brand identity.
+
+**Strategic conclusion:** the app's branded crimson flat-dark DS is principle-valid — do NOT
+wholesale-convert to Liquid Glass (it would erase the brand AND reverse the owner's deliberate
+flat-opaque decision; most glass benefits are opt-in for system-material apps anyway). Selectively
+adopt the on-brand, macOS-27-aligned refinements (concentric-radius precision; dynamic-not-static
+controls; hierarchy/whitespace — most already done). One optional Liquid-Glass touchpoint (the ⌘K
+palette) is flagged for the owner, not assumed.
+
+**Files:** `DESIGN_RESEARCH_macOS27.md` (new).
+
+**Next:** /loop polish phase guided by the doc's §5 — `DS.Bezel`/`DS.Radius` concentric audit →
+app-wide static-control sweep → per-surface consistency.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
