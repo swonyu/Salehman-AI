@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:27 +03 · Swift files: 150 · Swift LOC: 34251_
+_Generated: 2026-06-13 03:27 +03 · Swift files: 150 · Swift LOC: 34256_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27295,7 +27295,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (376 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (381 lines) =====
 ```swift
 import SwiftUI
 
@@ -27493,6 +27493,11 @@ struct TodayView: View {
             ActionTile(icon: "note.text.badge.plus", title: "New Note") {
                 app.selectedTab = .scratchpad
                 app.scratchpadFocusNotesMode = true
+                app.focusScratchpadAddFieldRequested = true
+            }
+            ActionTile(icon: "checklist.checked", title: "New Task") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = false
                 app.focusScratchpadAddFieldRequested = true
             }
         }
@@ -36819,7 +36824,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4321 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4333 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40097,6 +40102,18 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 **Why:** Dead code obscures intent — future readers would assume the two branch strings were different and look for how they diverge. Removing it makes the icon-is-constant / color-is-the-differentiator pattern explicit.
 
 **Result:** Build exit 0, 0 real Swift errors. Full design marathon verified complete.
+
+---
+
+## 2026-06-13 — Marathon EFJ: TodayView "New Task" quick action tile
+
+**What:** Added a 5th `ActionTile` to TodayView's QUICK ACTIONS grid — "New Task" (icon: `checklist.checked`), which navigates to ScratchpadView in tasks mode with the add field focused. Mirrors the equivalent command already in the ⌘K Command Palette. The `LazyVGrid(.adaptive(minimum: 160))` wraps automatically to the additional tile with no layout work.
+
+**Files:** `Salehman AI/Views/TodayView.swift` (+5 lines)
+
+**Why:** Surface parity — users had "New Task" in the Command Palette but not on the home dashboard. Notes (free-form text) and Tasks (checkboxes) are meaningfully distinct modes in ScratchpadView; having both quick actions avoids navigating away just to switch mode.
+
+**Result:** Build exit 0, 0 real Swift errors.
 
 ---
 

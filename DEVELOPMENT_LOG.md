@@ -3278,6 +3278,18 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 
 ---
 
+## 2026-06-13 — Marathon EFJ: TodayView "New Task" quick action tile
+
+**What:** Added a 5th `ActionTile` to TodayView's QUICK ACTIONS grid — "New Task" (icon: `checklist.checked`), which navigates to ScratchpadView in tasks mode with the add field focused. Mirrors the equivalent command already in the ⌘K Command Palette. The `LazyVGrid(.adaptive(minimum: 160))` wraps automatically to the additional tile with no layout work.
+
+**Files:** `Salehman AI/Views/TodayView.swift` (+5 lines)
+
+**Why:** Surface parity — users had "New Task" in the Command Palette but not on the home dashboard. Notes (free-form text) and Tasks (checkboxes) are meaningfully distinct modes in ScratchpadView; having both quick actions avoids navigating away just to switch mode.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

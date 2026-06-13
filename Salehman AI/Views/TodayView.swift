@@ -196,6 +196,11 @@ struct TodayView: View {
                 app.scratchpadFocusNotesMode = true
                 app.focusScratchpadAddFieldRequested = true
             }
+            ActionTile(icon: "checklist.checked", title: "New Task") {
+                app.selectedTab = .scratchpad
+                app.scratchpadFocusNotesMode = false
+                app.focusScratchpadAddFieldRequested = true
+            }
         }
     }
 
