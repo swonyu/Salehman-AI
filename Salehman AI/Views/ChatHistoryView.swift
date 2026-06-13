@@ -128,6 +128,7 @@ struct ChatHistoryView: View {
                         Button { query = "" } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }.buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
                         .transition(.opacity)
                     }
                 }

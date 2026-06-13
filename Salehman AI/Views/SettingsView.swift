@@ -388,14 +388,14 @@ struct SettingsView: View {
         return Button { settings.responseMode = mode } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                         .fill(DS.Palette.accent.opacity(sel ? 0.18 : 0.09))
                         .frame(width: 26, height: 26)
                     Image(systemName: mode.icon)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(sel ? DS.Palette.accent : .secondary)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
@@ -1364,14 +1364,14 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             // Icon well — accent-tinted, consistent with all other list rows.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
@@ -1389,14 +1389,14 @@ struct SettingsView: View {
     private var speedRow: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: "speedometer")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
@@ -1412,14 +1412,14 @@ struct SettingsView: View {
     private var voiceRow: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: "person.wave.2")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
@@ -1454,14 +1454,14 @@ struct SettingsView: View {
         Button { showMemory = true } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                         .fill(DS.Palette.accent.opacity(0.12))
                         .frame(width: 26, height: 26)
                     Image(systemName: "brain")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
@@ -1480,7 +1480,7 @@ struct SettingsView: View {
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill((ok ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14))
                     .frame(width: 26, height: 26)
                 Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -1489,7 +1489,7 @@ struct SettingsView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: ok)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text(title).font(.system(size: 14)).foregroundStyle(.white)

@@ -4300,6 +4300,34 @@ ContentView/SettingsView search bars untouched (different component / other lane
 
 ---
 
+## 2026-06-13 — EOAS: whole-app a11y gaps + SettingsView icon-well tokens (now solo, full scope)
+
+**Context:** owner confirmed this is now the only session, so the Chat A/B lane split no longer
+applies — SettingsView/ContentView are back in scope.
+
+**What changed:**
+- **Accessibility:** a Python scan of every `Views/*.swift` for icon-only `Button` labels found
+  11 candidates; 9 were false positives (composite labels carrying visible text). The 2 real
+  gaps — icon-only buttons with no accessible name — fixed:
+  - `ChatHistoryView`: clear-search ✕ → `.accessibilityLabel("Clear search")` (its siblings in
+    Memory/Knowledge already had it; this one was missed).
+  - `CodeView`: remove-attachment ✕ → `.help` + `.accessibilityLabel("Remove attachment")`.
+- **DS token unification:** `SettingsView`'s 12 icon-well `RoundedRectangle(cornerRadius: 6)`
+  → `DS.Radius.well` (the EOAK token). Zero visual delta (well == 6); SettingsView was Chat B's
+  lane during EOAK so it never got the sweep. Now every icon well app-wide is tokenized.
+  (Left `ContentView:1190`, a slash-row hover bg at radius 7 — not an icon well; tokenizing
+  would be a visual change, unsafe without a pixel render.)
+
+**Why:** a11y labels + token consistency are the ideal "can't-render" polish — safe (no geometry
+change), valuable, and measurable (the `axScan` enforces labels; the token grep enforces radius).
+
+**Files:** `Views/ChatHistoryView.swift`, `CodeView.swift`, `SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings; 0 icon-well
+`cornerRadius: 6` literals remain in SettingsView.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

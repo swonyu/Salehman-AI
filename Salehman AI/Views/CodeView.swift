@@ -1535,6 +1535,8 @@ struct CodeView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(LuxPressStyle())
+                    .help("Remove attachment")
+                    .accessibilityLabel("Remove attachment")
                     Spacer()
                 }
                 .foregroundStyle(.secondary)

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 13:23 +03 · Swift files: 160 · Swift LOC: 36676_
+_Generated: 2026-06-13 13:31 +03 · Swift files: 160 · Swift LOC: 36679_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14343,7 +14343,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (262 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (263 lines) =====
 ```swift
 import SwiftUI
 
@@ -14475,6 +14475,7 @@ struct ChatHistoryView: View {
                         Button { query = "" } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }.buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
                         .transition(.opacity)
                     }
                 }
@@ -15013,7 +15014,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2657 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2659 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -16552,6 +16553,8 @@ struct CodeView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(LuxPressStyle())
+                    .help("Remove attachment")
+                    .accessibilityLabel("Remove attachment")
                     Spacer()
                 }
                 .foregroundStyle(.secondary)
@@ -25309,14 +25312,14 @@ struct SettingsView: View {
         return Button { settings.responseMode = mode } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                         .fill(DS.Palette.accent.opacity(sel ? 0.18 : 0.09))
                         .frame(width: 26, height: 26)
                     Image(systemName: mode.icon)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(sel ? DS.Palette.accent : .secondary)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
@@ -26285,14 +26288,14 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             // Icon well — accent-tinted, consistent with all other list rows.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
@@ -26310,14 +26313,14 @@ struct SettingsView: View {
     private var speedRow: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: "speedometer")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
@@ -26333,14 +26336,14 @@ struct SettingsView: View {
     private var voiceRow: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.12))
                     .frame(width: 26, height: 26)
                 Image(systemName: "person.wave.2")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
@@ -26375,14 +26378,14 @@ struct SettingsView: View {
         Button { showMemory = true } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                         .fill(DS.Palette.accent.opacity(0.12))
                         .frame(width: 26, height: 26)
                     Image(systemName: "brain")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(DS.Palette.accent)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
@@ -26401,7 +26404,7 @@ struct SettingsView: View {
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill((ok ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14))
                     .frame(width: 26, height: 26)
                 Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -26410,7 +26413,7 @@ struct SettingsView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: ok)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
@@ -39284,7 +39287,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5394 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5422 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43584,6 +43587,34 @@ ContentView/SettingsView search bars untouched (different component / other lane
 `MemoryView.swift`, `LiveTranscriptionView.swift`.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
+## 2026-06-13 — EOAS: whole-app a11y gaps + SettingsView icon-well tokens (now solo, full scope)
+
+**Context:** owner confirmed this is now the only session, so the Chat A/B lane split no longer
+applies — SettingsView/ContentView are back in scope.
+
+**What changed:**
+- **Accessibility:** a Python scan of every `Views/*.swift` for icon-only `Button` labels found
+  11 candidates; 9 were false positives (composite labels carrying visible text). The 2 real
+  gaps — icon-only buttons with no accessible name — fixed:
+  - `ChatHistoryView`: clear-search ✕ → `.accessibilityLabel("Clear search")` (its siblings in
+    Memory/Knowledge already had it; this one was missed).
+  - `CodeView`: remove-attachment ✕ → `.help` + `.accessibilityLabel("Remove attachment")`.
+- **DS token unification:** `SettingsView`'s 12 icon-well `RoundedRectangle(cornerRadius: 6)`
+  → `DS.Radius.well` (the EOAK token). Zero visual delta (well == 6); SettingsView was Chat B's
+  lane during EOAK so it never got the sweep. Now every icon well app-wide is tokenized.
+  (Left `ContentView:1190`, a slash-row hover bg at radius 7 — not an icon well; tokenizing
+  would be a visual change, unsafe without a pixel render.)
+
+**Why:** a11y labels + token consistency are the ideal "can't-render" polish — safe (no geometry
+change), valuable, and measurable (the `axScan` enforces labels; the token grep enforces radius).
+
+**Files:** `Views/ChatHistoryView.swift`, `CodeView.swift`, `SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings; 0 icon-well
+`cornerRadius: 6` literals remain in SettingsView.
 
 ---
 
