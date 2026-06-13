@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 08:20 +03 · Swift files: 160 · Swift LOC: 36639_
+_Generated: 2026-06-13 08:56 +03 · Swift files: 160 · Swift LOC: 36655_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14305,7 +14305,7 @@ struct BottomShortcutBar: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
                 .transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))
                 .onHover { over in
                     withAnimation(DS.Motion.press) {
@@ -17663,7 +17663,7 @@ struct CodeSampleGallery: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CommandPalette.swift (199 lines) =====
+===== FILE: Salehman AI/Views/CommandPalette.swift (215 lines) =====
 ```swift
 import SwiftUI
 
@@ -17849,8 +17849,24 @@ struct CommandPalette: View {
                 }
             }
         }
+        // Shell entrance — palette drifts up + fades in when opened, matching
+        // the other sheet views (AboutView, ShortcutsView, OnboardingView).
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 8)
+        .animation(DS.Motion.smooth, value: appeared)
         .frame(width: 560)
-        .background(DS.Palette.bgTop)
+        .background(
+            ZStack {
+                DS.Gradient.bgVertical
+                // Ambient brand glow — soft depth in the top-right corner.
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.10))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 60)
+                    .offset(x: 200, y: -100)
+                    .allowsHitTesting(false)
+            }
+        )
         .onAppear { searchFocused = true; appeared = true }
         // Reset selection to top whenever the result list changes.
         .onChange(of: query) { _, _ in selectedIndex = 0 }
@@ -39247,7 +39263,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4988 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5006 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43172,6 +43188,24 @@ Visual design marathon — third-pass polish on MarketsView (Chat A lane).
 **Files:** `Salehman AI/Views/MarketsView.swift`  
 **Why:** The `field()` helper was a shared gap — a single missing overlay line affected all three portfolio input fields. Empty state icon was the only one in a main tab view without the glass-circle treatment (all other views have it: KnowledgeView, ScratchpadView, MemoryView, AgentsView). Add button inconsistency matched the pattern fixed in EOY/EOZ.  
 **Result:** 3 field overlays at line 368 + surroundings, LuxPressStyle at line 355, RadialGradient empty state at line 670. API changes confirmed via grep.
+
+---
+
+### 2026-06-13 — EOAB: CommandPalette shell depth + BottomShortcutBar press feel
+Visual design marathon — highest-traffic surfaces upgraded to match the DS sheet standard.
+
+**Changes:**
+
+**CommandPalette (⌘K):**
+1. **Shell entrance animation** — added `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 8).animation(DS.Motion.smooth, value: appeared)` before `.frame(width: 560)`. The palette now drifts up + fades in on open, matching AboutView / ShortcutsView / OnboardingView — every other sheet. (`appeared` was already set to `true` in `onAppear` for the per-item staggered entrance, so no second animation trigger needed.)
+2. **Background upgrade** — replaced `.background(DS.Palette.bgTop)` (flat dark) with a `.background(ZStack { DS.Gradient.bgVertical; Circle (accent 0.10, blur 60, offset 200,-100, allowsHitTesting false) })`. Brings the palette in line with every other sheet view (they all use the gradient + ambient glow pattern).
+
+**BottomShortcutBar:**
+3. **LuxPressStyle on hint buttons** — changed `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` on the shortcut hint buttons. Existing hover effects (key-badge brightening, label color) are unchanged; `LuxPressStyle` adds the tactile scale-down on press, consistent with interactive buttons throughout the app.
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/BottomShortcutBar.swift`  
+**Why:** CommandPalette is the most-used interactive surface (every ⌘K interaction) but had 0 premium design hits — flat bgTop, no glow, no shell entrance. All other sheets were upgraded in prior sessions. BottomShortcutBar hint buttons are clickable actions with hover state but no press feel.  
+**Result:** Shell entrance at line 187, `DS.Gradient.bgVertical` at line 193, `LuxPressStyle` in BottomShortcutBar line 82. SourceKit "Cannot find AppState in scope" are known false positives.
 
 ---
 

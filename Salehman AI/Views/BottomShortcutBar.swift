@@ -79,7 +79,7 @@ struct BottomShortcutBar: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
                 .transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))
                 .onHover { over in
                     withAnimation(DS.Motion.press) {

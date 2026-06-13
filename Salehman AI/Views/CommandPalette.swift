@@ -182,8 +182,24 @@ struct CommandPalette: View {
                 }
             }
         }
+        // Shell entrance — palette drifts up + fades in when opened, matching
+        // the other sheet views (AboutView, ShortcutsView, OnboardingView).
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 8)
+        .animation(DS.Motion.smooth, value: appeared)
         .frame(width: 560)
-        .background(DS.Palette.bgTop)
+        .background(
+            ZStack {
+                DS.Gradient.bgVertical
+                // Ambient brand glow — soft depth in the top-right corner.
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.10))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 60)
+                    .offset(x: 200, y: -100)
+                    .allowsHitTesting(false)
+            }
+        )
         .onAppear { searchFocused = true; appeared = true }
         // Reset selection to top whenever the result list changes.
         .onChange(of: query) { _, _ in selectedIndex = 0 }

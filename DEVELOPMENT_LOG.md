@@ -3925,6 +3925,24 @@ Visual design marathon — third-pass polish on MarketsView (Chat A lane).
 
 ---
 
+### 2026-06-13 — EOAB: CommandPalette shell depth + BottomShortcutBar press feel
+Visual design marathon — highest-traffic surfaces upgraded to match the DS sheet standard.
+
+**Changes:**
+
+**CommandPalette (⌘K):**
+1. **Shell entrance animation** — added `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 8).animation(DS.Motion.smooth, value: appeared)` before `.frame(width: 560)`. The palette now drifts up + fades in on open, matching AboutView / ShortcutsView / OnboardingView — every other sheet. (`appeared` was already set to `true` in `onAppear` for the per-item staggered entrance, so no second animation trigger needed.)
+2. **Background upgrade** — replaced `.background(DS.Palette.bgTop)` (flat dark) with a `.background(ZStack { DS.Gradient.bgVertical; Circle (accent 0.10, blur 60, offset 200,-100, allowsHitTesting false) })`. Brings the palette in line with every other sheet view (they all use the gradient + ambient glow pattern).
+
+**BottomShortcutBar:**
+3. **LuxPressStyle on hint buttons** — changed `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())` on the shortcut hint buttons. Existing hover effects (key-badge brightening, label color) are unchanged; `LuxPressStyle` adds the tactile scale-down on press, consistent with interactive buttons throughout the app.
+
+**Files:** `Salehman AI/Views/CommandPalette.swift`, `Salehman AI/Views/BottomShortcutBar.swift`  
+**Why:** CommandPalette is the most-used interactive surface (every ⌘K interaction) but had 0 premium design hits — flat bgTop, no glow, no shell entrance. All other sheets were upgraded in prior sessions. BottomShortcutBar hint buttons are clickable actions with hover state but no press feel.  
+**Result:** Shell entrance at line 187, `DS.Gradient.bgVertical` at line 193, `LuxPressStyle` in BottomShortcutBar line 82. SourceKit "Cannot find AppState in scope" are known false positives.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
