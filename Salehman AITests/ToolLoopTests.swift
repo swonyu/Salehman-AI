@@ -228,3 +228,50 @@ struct AutoContinueDetectorTests {
         #expect(!AgentPipeline.looksIncomplete("[Groq error 429]"))  // error ⇒ handled elsewhere, not continued
     }
 }
+
+// MARK: - AgentPipeline.isErrorReply (direct unit tests)
+//
+// `SalehmanLeaderTests.FinalizeErrorBypassTests` tests the guard via
+// `SalehmanLeader.finalize`, but that path falls through to "return draft" any
+// time the engine is unreachable — which is always in CI. These tests hit the
+// pure predicate directly so the assertion is unambiguous: the guard fires
+// because `isErrorReply` returns true, NOT because the engine produced "".
+
+struct IsErrorReplyTests {
+
+    @Test func emptyStringIsAnError() {
+        #expect(AgentPipeline.isErrorReply(""))
+        #expect(AgentPipeline.isErrorReply("   "))
+    }
+
+    @Test func bracketedProviderErrorIsAnError() {
+        // The "[<Provider> error <STATUS>: …]" shape produced by every
+        // OpenAI-compatible client on a non-2xx response.
+        #expect(AgentPipeline.isErrorReply("[Groq error 429: rate limit exceeded]"))
+        #expect(AgentPipeline.isErrorReply("[Mistral error 401: unauthorized]"))
+        #expect(AgentPipeline.isErrorReply("[OpenRouter error 503: service unavailable]"))
+    }
+
+    @Test func requestFailedIsAnError() {
+        // Transport failure shape "[<Provider> request failed (HTTP <STATUS>). …]"
+        #expect(AgentPipeline.isErrorReply("[Mistral request failed (HTTP 503). Retry in a moment.]"))
+        #expect(AgentPipeline.isErrorReply("[Groq request failed (HTTP 408). Retry in a moment.]"))
+    }
+
+    @Test func onDeviceCouldntCompleteIsAnError() {
+        // "[The on-device model couldn't complete …]" — covered by
+        // LocalLLM.freeAnswerErrorMarkers; isErrorReply now matches it too.
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the request]"))
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the task: timeout]"))
+    }
+
+    @Test func realAnswersAreNotErrors() {
+        #expect(!AgentPipeline.isErrorReply("The capital of France is Paris."))
+        #expect(!AgentPipeline.isErrorReply("Here's a fix for your bug."))
+        // A real answer that contains the word "error" but isn't bracketed.
+        #expect(!AgentPipeline.isErrorReply("There was an error in your logic — see line 4."))
+        // Bracketed text that isn't an error sentinel.
+        #expect(!AgentPipeline.isErrorReply("[OK] The server is running."))
+        #expect(!AgentPipeline.isErrorReply("[DONE] All tests passed."))
+    }
+}

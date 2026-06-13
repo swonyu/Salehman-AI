@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:07 +03 · Swift files: 151 · Swift LOC: 34141_
+_Generated: 2026-06-13 05:14 +03 · Swift files: 151 · Swift LOC: 34194_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (837 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (843 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -405,7 +405,13 @@ enum AgentPipeline {
         if t.isEmpty || t == LocalLLM.offMessage { return true }
         guard t.hasPrefix("[") else { return false }
         let lower = t.lowercased()
+        // Matches all three bracketed diagnostic shapes:
+        //   [<Provider> error <STATUS>: …]          — parsed non-2xx body
+        //   [<Provider> request failed (HTTP …]     — transport / unparsed
+        //   [The on-device model couldn't complete …] — on-device generation fail
+        // Consistent with LocalLLM.freeAnswerErrorMarkers.
         return lower.contains("request failed (http")
+            || lower.contains("couldn't complete")
             || (lower.contains(" error ") && t.contains(where: \.isNumber))
     }
 
@@ -34176,7 +34182,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (230 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (277 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -34406,6 +34412,53 @@ struct AutoContinueDetectorTests {
         #expect(!AgentPipeline.looksIncomplete("Done — here's the code:\n```swift\nlet x = 1\n```\nThat's everything."))
         #expect(!AgentPipeline.looksIncomplete(""))                  // empty ⇒ not continuable
         #expect(!AgentPipeline.looksIncomplete("[Groq error 429]"))  // error ⇒ handled elsewhere, not continued
+    }
+}
+
+// MARK: - AgentPipeline.isErrorReply (direct unit tests)
+//
+// `SalehmanLeaderTests.FinalizeErrorBypassTests` tests the guard via
+// `SalehmanLeader.finalize`, but that path falls through to "return draft" any
+// time the engine is unreachable — which is always in CI. These tests hit the
+// pure predicate directly so the assertion is unambiguous: the guard fires
+// because `isErrorReply` returns true, NOT because the engine produced "".
+
+struct IsErrorReplyTests {
+
+    @Test func emptyStringIsAnError() {
+        #expect(AgentPipeline.isErrorReply(""))
+        #expect(AgentPipeline.isErrorReply("   "))
+    }
+
+    @Test func bracketedProviderErrorIsAnError() {
+        // The "[<Provider> error <STATUS>: …]" shape produced by every
+        // OpenAI-compatible client on a non-2xx response.
+        #expect(AgentPipeline.isErrorReply("[Groq error 429: rate limit exceeded]"))
+        #expect(AgentPipeline.isErrorReply("[Mistral error 401: unauthorized]"))
+        #expect(AgentPipeline.isErrorReply("[OpenRouter error 503: service unavailable]"))
+    }
+
+    @Test func requestFailedIsAnError() {
+        // Transport failure shape "[<Provider> request failed (HTTP <STATUS>). …]"
+        #expect(AgentPipeline.isErrorReply("[Mistral request failed (HTTP 503). Retry in a moment.]"))
+        #expect(AgentPipeline.isErrorReply("[Groq request failed (HTTP 408). Retry in a moment.]"))
+    }
+
+    @Test func onDeviceCouldntCompleteIsAnError() {
+        // "[The on-device model couldn't complete …]" — covered by
+        // LocalLLM.freeAnswerErrorMarkers; isErrorReply now matches it too.
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the request]"))
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the task: timeout]"))
+    }
+
+    @Test func realAnswersAreNotErrors() {
+        #expect(!AgentPipeline.isErrorReply("The capital of France is Paris."))
+        #expect(!AgentPipeline.isErrorReply("Here's a fix for your bug."))
+        // A real answer that contains the word "error" but isn't bracketed.
+        #expect(!AgentPipeline.isErrorReply("There was an error in your logic — see line 4."))
+        // Bracketed text that isn't an error sentinel.
+        #expect(!AgentPipeline.isErrorReply("[OK] The server is running."))
+        #expect(!AgentPipeline.isErrorReply("[DONE] All tests passed."))
     }
 }
 ```
@@ -36713,7 +36766,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4627 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4648 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40295,6 +40348,27 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Why:** `NvidiaClient` is the only provider with a live Keychain account that had zero test coverage. The stale `SalehmanLeader` docstring actively misled readers about whether cloud APIs are in use (they are not, post-DeepSeek removal).
 
 **Files:** `Salehman AI/LLM/SalehmanLeader.swift` (comment-only edit), `Salehman AITests/FreeCloudBrainsTests.swift` (+26 lines)
+
+**Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
+
+---
+
+## EOA (Marathon — 2026-06-13) — Fix isErrorReply gap for on-device "couldn't complete" errors
+
+**What changed:**
+
+1. **`AgentPipeline.swift` — `isErrorReply` gap fix** — Added `lower.contains("couldn't complete")` as a third check in the `isErrorReply` function, consistent with `LocalLLM.freeAnswerErrorMarkers`. The format `[The on-device model couldn't complete …]` was documented in comments and in `freeAnswerErrorMarkers`, but `isErrorReply` missed it — it only caught `request failed (http` and `error + digit` patterns. Without this fix, a `[… couldn't complete …]` error string would slip past the `SalehmanLeader.finalize` guard and be passed as a prompt to `SalehmanEngine.generate` (wasting a call and potentially returning garbled output).
+
+2. **`ToolLoopTests.swift` — `IsErrorReplyTests` (5 new tests)** — Adds a direct `AgentPipeline.isErrorReply` test struct. The existing `SalehmanLeaderTests.FinalizeErrorBypassTests.onDeviceErrorReturnedUnchanged` test passed for the wrong reason: the engine is unreachable in CI (MLX not loaded, Ollama not running), so `SalehmanEngine.generate` returned nil → `""` → empty → falls through and returns `draft`. The test appeared to pass due to fallthrough, not due to the guard firing. The new `IsErrorReplyTests` calls the predicate directly, proving the guard fires for the right reason:
+   - `emptyStringIsAnError` — empty and whitespace-only
+   - `bracketedProviderErrorIsAnError` — Groq/Mistral/OpenRouter error 4xx/5xx forms
+   - `requestFailedIsAnError` — transport failure format
+   - `onDeviceCouldntCompleteIsAnError` — NOW properly caught (the gap that prompted this slice)
+   - `realAnswersAreNotErrors` — plain text, "error" in prose, `[OK]` / `[DONE]` bracketed non-errors
+
+**Why:** `isErrorReply` is called from `SalehmanLeader.finalize` and from `AgentPipeline.run` to decide whether to waste another model call on a diagnostic string. The "couldn't complete" gap was a real correctness hazard if the on-device path ever emits that format.
+
+**Files:** `Salehman AI/Agents/AgentPipeline.swift` (+4 lines), `Salehman AITests/ToolLoopTests.swift` (+47 lines)
 
 **Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
 

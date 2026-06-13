@@ -3584,6 +3584,27 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## EOA (Marathon — 2026-06-13) — Fix isErrorReply gap for on-device "couldn't complete" errors
+
+**What changed:**
+
+1. **`AgentPipeline.swift` — `isErrorReply` gap fix** — Added `lower.contains("couldn't complete")` as a third check in the `isErrorReply` function, consistent with `LocalLLM.freeAnswerErrorMarkers`. The format `[The on-device model couldn't complete …]` was documented in comments and in `freeAnswerErrorMarkers`, but `isErrorReply` missed it — it only caught `request failed (http` and `error + digit` patterns. Without this fix, a `[… couldn't complete …]` error string would slip past the `SalehmanLeader.finalize` guard and be passed as a prompt to `SalehmanEngine.generate` (wasting a call and potentially returning garbled output).
+
+2. **`ToolLoopTests.swift` — `IsErrorReplyTests` (5 new tests)** — Adds a direct `AgentPipeline.isErrorReply` test struct. The existing `SalehmanLeaderTests.FinalizeErrorBypassTests.onDeviceErrorReturnedUnchanged` test passed for the wrong reason: the engine is unreachable in CI (MLX not loaded, Ollama not running), so `SalehmanEngine.generate` returned nil → `""` → empty → falls through and returns `draft`. The test appeared to pass due to fallthrough, not due to the guard firing. The new `IsErrorReplyTests` calls the predicate directly, proving the guard fires for the right reason:
+   - `emptyStringIsAnError` — empty and whitespace-only
+   - `bracketedProviderErrorIsAnError` — Groq/Mistral/OpenRouter error 4xx/5xx forms
+   - `requestFailedIsAnError` — transport failure format
+   - `onDeviceCouldntCompleteIsAnError` — NOW properly caught (the gap that prompted this slice)
+   - `realAnswersAreNotErrors` — plain text, "error" in prose, `[OK]` / `[DONE]` bracketed non-errors
+
+**Why:** `isErrorReply` is called from `SalehmanLeader.finalize` and from `AgentPipeline.run` to decide whether to waste another model call on a diagnostic string. The "couldn't complete" gap was a real correctness hazard if the on-device path ever emits that format.
+
+**Files:** `Salehman AI/Agents/AgentPipeline.swift` (+4 lines), `Salehman AITests/ToolLoopTests.swift` (+47 lines)
+
+**Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

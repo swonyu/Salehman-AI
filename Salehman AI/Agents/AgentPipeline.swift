@@ -311,7 +311,13 @@ enum AgentPipeline {
         if t.isEmpty || t == LocalLLM.offMessage { return true }
         guard t.hasPrefix("[") else { return false }
         let lower = t.lowercased()
+        // Matches all three bracketed diagnostic shapes:
+        //   [<Provider> error <STATUS>: …]          — parsed non-2xx body
+        //   [<Provider> request failed (HTTP …]     — transport / unparsed
+        //   [The on-device model couldn't complete …] — on-device generation fail
+        // Consistent with LocalLLM.freeAnswerErrorMarkers.
         return lower.contains("request failed (http")
+            || lower.contains("couldn't complete")
             || (lower.contains(" error ") && t.contains(where: \.isNumber))
     }
 
