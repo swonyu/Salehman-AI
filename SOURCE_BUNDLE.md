@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 00:05 +03 · Swift files: 160 · Swift LOC: 37057_
+_Generated: 2026-06-14 00:14 +03 · Swift files: 160 · Swift LOC: 37057_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14363,9 +14363,9 @@ struct BottomShortcutBar: View {
                             .foregroundStyle(.white.opacity(hinted ? 1.0 : 0.85))
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Color.white.opacity(hinted ? 0.14 : 0.08),
-                                        in: RoundedRectangle(cornerRadius: 4))
+                                        in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
                                     .stroke(LinearGradient(
                                         colors: [.white.opacity(hinted ? 0.40 : 0.28),
                                                  .white.opacity(hinted ? 0.08 : 0.04)],
@@ -15486,7 +15486,7 @@ struct SlashMenuView: View {
                     }
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(hovered == cmd.id ? Color.white.opacity(0.06) : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -15610,7 +15610,7 @@ struct ChangedFileRow: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSelected ? Color.white.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -15993,8 +15993,8 @@ struct CodeView: View {
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
         .animation(DS.Motion.magnetic, value: fileFilter.isEmpty)
     }
@@ -16079,9 +16079,9 @@ struct CodeView: View {
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSel ? Color.white.opacity(0.10)
                         : (hoveredFile == url ? Color.white.opacity(0.05) : .clear),
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
@@ -16203,7 +16203,7 @@ struct CodeView: View {
                             codeBubble(msg)
                                 .background(currentConvoMatch == msg.id
                                             ? DS.Palette.accent.opacity(0.08) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 10))
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .id(msg.id)
                                 .transition(.opacity.combined(with: .offset(y: 8)))
                         }
@@ -16513,8 +16513,8 @@ struct CodeView: View {
             Text(key)
                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(
                     LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.07)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
@@ -17768,7 +17768,7 @@ struct CodeSampleGallery: View {
                 }
                 .frame(maxWidth: 360, alignment: .leading)
                 .padding(8)
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .padding(26)
@@ -17892,8 +17892,8 @@ struct CommandPalette: View {
                 Text("esc")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
                         LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
@@ -17934,10 +17934,10 @@ struct CommandPalette: View {
                                     (hoveredID == cmd.id || isSelected)
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: DS.Radius.small)
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: DS.Radius.small)
+                                    RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                         .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
@@ -18859,8 +18859,8 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
                     LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
@@ -19207,7 +19207,7 @@ struct ContentView: View {
                             .padding(.horizontal, 11).padding(.vertical, 7)
                             .background(cmd.id == selected || hoveredChatSlash == cmd.id
                                         ? Color.white.opacity(0.06) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7))
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -19222,8 +19222,8 @@ struct ContentView: View {
                 }
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(
                     LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
                                             DS.Palette.accent.opacity(0.12)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
@@ -20277,7 +20277,7 @@ struct MessageBubble: View, @MainActor Equatable {
     /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
     private func quoteCard(_ quote: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 1)
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
             Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
@@ -21175,7 +21175,7 @@ struct FileTreeRow: View {
                         .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(hovering ? 1.0 : 0.8))
                         .lineLimit(1).truncationMode(.middle)
                 }
-                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
@@ -21212,7 +21212,7 @@ struct FileTreeRow: View {
                 }
                 .background(
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
-                    in: RoundedRectangle(cornerRadius: 6)
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
                 .animation(DS.Motion.smooth, value: isSel)
                 .animation(DS.Motion.spring, value: changed)
@@ -22540,7 +22540,7 @@ struct MarkdownText: View {
                 .padding(.vertical, 4)
         } else if let quote = blockquote(trimmed) {
             HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 1.5)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.7))
                     .frame(width: 3)
                 Text(highlighted(inlineMarkdown(quote), query: highlight))
@@ -22666,8 +22666,8 @@ struct MarkdownText: View {
             }
             .padding(10)
         }
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -25400,8 +25400,8 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -26005,8 +26005,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -26026,8 +26026,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -26082,8 +26082,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -26103,8 +26103,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -27143,7 +27143,7 @@ struct TabSwitcherBar: View {
                 // Decorative only, so it's hidden from accessibility; guarded
                 // so it never floats alone if every left-zone item is hidden.
                 if !cornerTabs.isEmpty || !AppTab.hidden.contains(.markets) {
-                    RoundedRectangle(cornerRadius: 0.5)
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
                         .fill(Color.white.opacity(0.10))
                         .frame(width: 1, height: 16)
                         .padding(.horizontal, 2)
@@ -39749,7 +39749,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (5998 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6016 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44635,6 +44635,24 @@ palette) is flagged for the owner, not assumed.
 
 **Next:** /loop polish phase guided by the doc's §5 — `DS.Bezel`/`DS.Radius` concentric audit →
 app-wide static-control sweep → per-surface consistency.
+
+---
+
+## 2026-06-14 — EOBR: continuous-corner consistency (polish phase 3, slice 1)
+
+Research-guided ([`DESIGN_RESEARCH_macOS27.md`](DESIGN_RESEARCH_macOS27.md) §5). The `DS.Bezel`
+concentric math was ALREADY correct (`innerRadius = outerRadius − shellPadding = 22 − 5 = 17`, in both
+the `Bezel` struct and the inline bezels) — verified, no change needed. The real precision gap: **38 of
+251 `RoundedRectangle`s in `Views/` used the default CIRCULAR corner instead of Apple's `.continuous`
+squircle**, reading slightly "off" beside macOS 27's uniform system curves. Added `style: .continuous`
+to all 38 via a conservative regex (matches only the no-style form; leaves existing `.continuous`
+untouched). 8 files: BottomShortcutBar, CodeView, CommandPalette, ContentView, FileTree, MarkdownText,
+SettingsView, TabSwitcherBar. On-brand (no fill/color change), macOS-27-aligned (consistent curvature).
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**; 0
+`RoundedRectangle`s missing `.continuous` in `Views/` (was 38); clean 38-insert / 38-delete 1:1 diff.
+
+**Files:** 8 view files (corner-style only).
 
 ---
 

@@ -101,8 +101,8 @@ struct CommandPalette: View {
                 Text("esc")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
                         LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
@@ -143,10 +143,10 @@ struct CommandPalette: View {
                                     (hoveredID == cmd.id || isSelected)
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: DS.Radius.small)
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: DS.Radius.small)
+                                    RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                         .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())

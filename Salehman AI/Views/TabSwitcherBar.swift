@@ -192,7 +192,7 @@ struct TabSwitcherBar: View {
                 // Decorative only, so it's hidden from accessibility; guarded
                 // so it never floats alone if every left-zone item is hidden.
                 if !cornerTabs.isEmpty || !AppTab.hidden.contains(.markets) {
-                    RoundedRectangle(cornerRadius: 0.5)
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
                         .fill(Color.white.opacity(0.10))
                         .frame(width: 1, height: 16)
                         .padding(.horizontal, 2)

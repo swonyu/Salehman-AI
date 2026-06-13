@@ -390,7 +390,7 @@ struct SlashMenuView: View {
                     }
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(hovered == cmd.id ? Color.white.opacity(0.06) : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -514,7 +514,7 @@ struct ChangedFileRow: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSelected ? Color.white.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -897,8 +897,8 @@ struct CodeView: View {
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
         .animation(DS.Motion.magnetic, value: fileFilter.isEmpty)
     }
@@ -983,9 +983,9 @@ struct CodeView: View {
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSel ? Color.white.opacity(0.10)
                         : (hoveredFile == url ? Color.white.opacity(0.05) : .clear),
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
@@ -1107,7 +1107,7 @@ struct CodeView: View {
                             codeBubble(msg)
                                 .background(currentConvoMatch == msg.id
                                             ? DS.Palette.accent.opacity(0.08) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 10))
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .id(msg.id)
                                 .transition(.opacity.combined(with: .offset(y: 8)))
                         }
@@ -1417,8 +1417,8 @@ struct CodeView: View {
             Text(key)
                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(
                     LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.07)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
@@ -2672,7 +2672,7 @@ struct CodeSampleGallery: View {
                 }
                 .frame(maxWidth: 360, alignment: .leading)
                 .padding(8)
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .padding(26)

@@ -169,8 +169,8 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -774,8 +774,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -795,8 +795,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -851,8 +851,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -872,8 +872,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)

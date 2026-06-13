@@ -189,7 +189,7 @@ struct MarkdownText: View {
                 .padding(.vertical, 4)
         } else if let quote = blockquote(trimmed) {
             HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 1.5)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.7))
                     .frame(width: 3)
                 Text(highlighted(inlineMarkdown(quote), query: highlight))
@@ -315,8 +315,8 @@ struct MarkdownText: View {
             }
             .padding(10)
         }
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 

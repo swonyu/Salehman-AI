@@ -4886,6 +4886,24 @@ app-wide static-control sweep → per-surface consistency.
 
 ---
 
+## 2026-06-14 — EOBR: continuous-corner consistency (polish phase 3, slice 1)
+
+Research-guided ([`DESIGN_RESEARCH_macOS27.md`](DESIGN_RESEARCH_macOS27.md) §5). The `DS.Bezel`
+concentric math was ALREADY correct (`innerRadius = outerRadius − shellPadding = 22 − 5 = 17`, in both
+the `Bezel` struct and the inline bezels) — verified, no change needed. The real precision gap: **38 of
+251 `RoundedRectangle`s in `Views/` used the default CIRCULAR corner instead of Apple's `.continuous`
+squircle**, reading slightly "off" beside macOS 27's uniform system curves. Added `style: .continuous`
+to all 38 via a conservative regex (matches only the no-style form; leaves existing `.continuous`
+untouched). 8 files: BottomShortcutBar, CodeView, CommandPalette, ContentView, FileTree, MarkdownText,
+SettingsView, TabSwitcherBar. On-brand (no fill/color change), macOS-27-aligned (consistent curvature).
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**; 0
+`RoundedRectangle`s missing `.continuous` in `Views/` (was 38); clean 38-insert / 38-delete 1:1 diff.
+
+**Files:** 8 view files (corner-style only).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

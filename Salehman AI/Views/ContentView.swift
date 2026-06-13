@@ -846,8 +846,8 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
                     LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
@@ -1194,7 +1194,7 @@ struct ContentView: View {
                             .padding(.horizontal, 11).padding(.vertical, 7)
                             .background(cmd.id == selected || hoveredChatSlash == cmd.id
                                         ? Color.white.opacity(0.06) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7))
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -1209,8 +1209,8 @@ struct ContentView: View {
                 }
                 .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(
                     LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
                                             DS.Palette.accent.opacity(0.12)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
@@ -2264,7 +2264,7 @@ struct MessageBubble: View, @MainActor Equatable {
     /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
     private func quoteCard(_ quote: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 1)
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
             Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
