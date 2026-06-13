@@ -4555,6 +4555,37 @@ same empty-state-glow gate pattern):
 
 ---
 
+## 2026-06-13 — EOBD: removed 5 redundant `await`s + fixed the swiftc verification gap
+
+**The bug I introduced in EOAN, now understood and undone.** The 5 "no async operations occur
+within 'await' expression" warnings (LocalLLM `runLocalTool` ×2 at the tool-loop sites,
+LiveTranscriber `begin()`→`setStatus` ×3) came from `await`s I added in EOAN. Root cause: the
+project sets **`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`**, so the unannotated callers
+(`chatOllamaWithTools`, `begin()`) are *already* `@MainActor` — same actor as the `@MainActor`
+callees — making the `await` redundant.
+
+**Why my EOAN verification lied in BOTH directions:** my standalone `swiftc -emit-module` omitted
+`-default-isolation MainActor`, so it used Swift's *nonisolated* default. Under that wrong default
+it (a) hallucinated the "called from nonisolated context" actor errors I "fixed" by adding the
+awaits, and (b) then couldn't see the redundant-await warnings the real MainActor-default build
+emits. SourceKit diverges identically (it re-flagged the sites as errors the instant I removed the
+awaits — also wrong).
+
+**Fix:** removed the 5 `await`s; corrected the now-false `runLocalTool` doc comment.
+
+**Verification (now accurate):** `swiftc -emit-module -swift-version 6 -default-isolation MainActor`
+over all app sources → the 5 warnings GONE, no new errors at those sites. That flag surfaces one
+stricter-than-Xcode `OpenAIClient.swift:31 [#SendingRisksDataRace]` that the real Xcode build does
+NOT flag (its Issue navigator showed only the 5 awaits) — swiftc's `sending` check is stricter than
+the project's concurrency level, so it's a tooling artifact, not a build error.
+
+**Files:** `LLM/LocalLLM.swift`, `Media/LiveTranscriber.swift`.
+
+**Result:** clean build restored (the last blocker before the visual-polish slices). Standing-notes
+recipe updated below: always pass `-default-isolation MainActor` to swiftc.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -4575,12 +4606,21 @@ same empty-state-glow gate pattern):
   mode are cross-module false positives, NOT real). Whole-tree sweep, count only
   source-located errors: `find "Salehman AI" -name '*.swift' -not -path '*/.*' |
   while read f; do swiftc -parse "$f" 2>&1 | grep -E "\.swift:[0-9]+:[0-9]+: error:"; done`.
-- **Full Swift-6 verification recipe (2026-06-13):** to catch Swift-6-mode-only errors
-  (actor isolation, `#ConformanceIsolation`, captured-var races) you MUST pass
-  `-swift-version 6` — without it they silently downgrade to warnings. Emit the app as a
+- **Full Swift-6 verification recipe (2026-06-13, flag-parity corrected EOBD):** to catch
+  Swift-6-mode-only errors (actor isolation, `#ConformanceIsolation`, captured-var races) you
+  MUST pass `-swift-version 6` — without it they silently downgrade to warnings. **You MUST ALSO
+  pass `-default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault`** —
+  these are the two frontend flags `SWIFT_APPROACHABLE_CONCURRENCY = YES` expands to in this
+  project. Omit them and swiftc analyzes a *different dialect* than Xcode: it treats unannotated
+  code as `nonisolated` (not `@MainActor`), which BOTH hallucinates "called from nonisolated
+  context" errors AND hides redundant-`await` warnings — the EOAN→EOBD bug (5 phantom warnings I
+  chased for a day). With all three flags, swiftc matches the real build exactly (verified: same
+  0/0, and a phantom `OpenAIClient SendingRisksDataRace` error disappears). Emit the app as a
   testable module (`swiftc -emit-module -module-name Salehman_AI -enable-testing -swift-version 6
+  -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault
   -module-cache-path $TMPDIR/mc -o $MODDIR/Salehman_AI.swiftmodule <app files>`), then typecheck
-  the unit tests against it: `swiftc -typecheck -swift-version 6 -I $MODDIR -F
+  the unit tests against it: `swiftc -typecheck -swift-version 6 -default-isolation MainActor
+  -enable-upcoming-feature NonisolatedNonsendingByDefault -I $MODDIR -F
   "$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks" -plugin-path
   "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins[/testing]"
   <test files>`. The `-plugin-path` is REQUIRED or every `@Test`/`#expect` reports
