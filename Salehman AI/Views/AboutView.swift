@@ -87,8 +87,8 @@ struct AboutView: View {
                         } keyframes: { _ in
                             KeyframeTrack {
                                 LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.20, spring: .snappy, duration: 0.30)
-                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.24)
+                                SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
                             }
                         }
                     }

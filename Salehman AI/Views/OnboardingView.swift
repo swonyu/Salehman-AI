@@ -87,8 +87,8 @@ struct OnboardingView: View {
                     } keyframes: { _ in
                         KeyframeTrack {
                             LinearKeyframe(0.55, duration: 0.07)
-                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                         }
                     }
                 }

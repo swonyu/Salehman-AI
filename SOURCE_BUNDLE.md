@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 11:42 +03 · Swift files: 160 · Swift LOC: 36669_
+_Generated: 2026-06-13 12:02 +03 · Swift files: 160 · Swift LOC: 36670_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5183,7 +5183,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1702 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1703 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -6187,11 +6187,12 @@ enum LocalLLM {
     /// user's Notes / tasks / long-term memory. Shared by BOTH tool loops so every
     /// brain — local Ollama or any OpenAI-compatible cloud — gets the same on-device
     /// capabilities. Returns `nil` when `name` isn't one of these, so the caller
-    /// falls through to the terminal / web / unknown branches. MainActor-isolated
-    /// because `ScratchpadStore` is `@MainActor`; the tool loops already run there,
-    /// so callers invoke it synchronously. All four tools are non-destructive writes
-    /// to the user's own local stores, so (like the prior FM tools) they need no
-    /// approval card — only the terminal does.
+    /// falls through to the terminal / web / unknown branches. `@MainActor`-isolated
+    /// because `ScratchpadStore` is `@MainActor`; the async tool loops `await` it to
+    /// hop onto the main actor. All four tools are non-destructive writes to the
+    /// user's own local stores, so (like the prior FM tools) they need no approval
+    /// card — only the terminal does.
+    @MainActor
     static func runLocalTool(_ name: String, _ args: [String: String]) -> String? {
         switch name {
         case "search_documents":
@@ -6362,7 +6363,7 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in toolCalls {
                 let result: String
-                if let local = Self.runLocalTool(call.name, call.arguments) {
+                if let local = await Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
                     // approval card. Returns nil for the terminal/web tools below.
                     result = local
@@ -6493,7 +6494,7 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in toolCalls {
                 let result: String
-                if let local = Self.runLocalTool(call.name, call.arguments) {
+                if let local = await Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
                     // approval card. Returns nil for the terminal/web tools below.
                     result = local
@@ -8846,7 +8847,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         dlog("begin()")
         let speechOK = await requestSpeechAuth()
         dlog("speechAuth=\(speechOK)")
-        guard speechOK else { setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
+        guard speechOK else { await setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
 
         // System-audio capture needs Screen Recording access (it does NOT share or
         // record your screen). Trigger the prompt up front.
@@ -8879,13 +8880,13 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
             startTasks()
         }
         guard !recs.isEmpty else {
-            setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
+            await setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
             return
         }
 
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else { setStatus("No display available."); return }
+            guard let display = content.displays.first else { await setStatus("No display available."); return }
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
@@ -13521,8 +13522,8 @@ struct AboutView: View {
                         } keyframes: { _ in
                             KeyframeTrack {
                                 LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.20, spring: .snappy, duration: 0.30)
-                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.24)
+                                SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
                             }
                         }
                     }
@@ -13723,8 +13724,8 @@ struct AgentsView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -14395,8 +14396,8 @@ struct ChatHistoryView: View {
                     } keyframes: { _ in
                         KeyframeTrack {
                             LinearKeyframe(0.60, duration: 0.07)
-                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                         }
                     }
                 }
@@ -20796,8 +20797,8 @@ struct CopilotSignInView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -21179,8 +21180,8 @@ struct KnowledgeView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -21857,8 +21858,8 @@ struct LiveTranscriptionView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -22663,8 +22664,8 @@ struct MarketsView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -23495,8 +23496,8 @@ struct MemoryView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -23802,8 +23803,8 @@ struct OnboardingView: View {
                     } keyframes: { _ in
                         KeyframeTrack {
                             LinearKeyframe(0.55, duration: 0.07)
-                            SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                            SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                         }
                     }
                 }
@@ -24161,8 +24162,8 @@ struct ScratchpadView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -25221,8 +25222,8 @@ struct SettingsView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -26472,8 +26473,8 @@ struct ShortcutsView: View {
                         } keyframes: { _ in
                             KeyframeTrack {
                                 LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                             }
                         }
                     }
@@ -26979,8 +26980,8 @@ struct TodayView: View {
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                        SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                     }
                 }
             }
@@ -27317,8 +27318,8 @@ struct VoiceModeView: View {
                         } keyframes: { _ in
                             KeyframeTrack {
                                 LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, spring: .snappy, duration: 0.28)
-                                SpringKeyframe(1.0, spring: .bouncy, duration: 0.22)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
                             }
                         }
                     }
@@ -39277,7 +39278,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5224 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5261 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43424,6 +43425,43 @@ saw what the env-blocked xcodebuild could not.
 clean for the first time since 06-12. (Full `xcodebuild` typecheck still unrunnable in this
 sandbox — cache/SimService denial — so the type layer is unverified here; these were all
 lexical/syntactic errors, which `-parse` fully covers.)
+
+---
+
+## 2026-06-13 — EOAN: ✅ build GREEN — 33 masked Swift-6 errors cleared (concurrency + keyframe API)
+
+**What changed:** With the curly-quote *parse* errors fixed (EOAM), a whole-module
+`swiftc -typecheck` (Swift 6 mode, real macOS SDK, writable module cache) could finally
+run sema — and surfaced **33 real errors** that the parse failure had masked since 06-12
+(one parse error aborts whole-module compilation before sema, hiding every downstream error):
+
+1. **`SpringKeyframe` argument order ×28** (14 files). Every brand-tile KeyframeAnimator was
+   copy-pasted as `SpringKeyframe(v, spring: …, duration: …)`, but the initializer declares
+   `duration:` before `spring:` → `error: argument 'duration' must precede argument 'spring'`.
+   Reordered all 28 to `SpringKeyframe(v, duration: …, spring: …)` (one sed pass; AboutView's
+   unique 0.30/0.24 values preserved; verified 0 wrong-order / 28 right-order remain).
+2. **Actor isolation in `LocalLLM.runLocalTool` ×2.** `LocalLLM` is a plain `enum`
+   (nonisolated); `ScratchpadStore.addNote/addTask` are `@MainActor`. The doc already said
+   the func should be MainActor-isolated — so added `@MainActor` to `runLocalTool` and
+   `await`-ed it at its 2 async tool-loop call sites (corrected the stale "synchronously" doc).
+3. **Actor isolation in `LiveTranscriber.begin()` ×3.** `begin()` is `nonisolated async`;
+   `setStatus` is `@MainActor`. Changed the 3 synchronous `setStatus(…)` calls to
+   `await setStatus(…)` (matches the sibling `await MainActor.run { … }` pattern).
+
+**Why:** the project is `SWIFT_VERSION = 6.0` + `SWIFT_APPROACHABLE_CONCURRENCY = YES`, so
+actor-isolation violations and arg-order mistakes are hard errors. An app that doesn't compile
+is the only P0. Found purely by measurement (`swiftc -typecheck`) — the env-blocked xcodebuild
+could never have shown it.
+
+**Files:** `LLM/LocalLLM.swift`, `Media/LiveTranscriber.swift`, and the 14 views carrying the
+keyframe pattern (AboutView, AgentsView, ChatHistoryView, CopilotSignInView, KnowledgeView,
+LiveTranscriptionView, MarketsView, MemoryView, OnboardingView, ScratchpadView, SettingsView,
+ShortcutsView, TodayView, VoiceModeView).
+
+**Result:** whole-module `swiftc -typecheck` → **0 source errors** (Swift 6, real SDK). Build
+green for the first time since 06-12. Remaining: **5 Sendable-capture WARNINGS** in
+LiveTranscriber (`DispatchQueue.main.async { self.… }`) — non-blocking (no warnings-as-errors);
+tracked as a follow-up to avoid bundling a concurrency-contract change into the green-up.
 
 ---
 

@@ -1000,11 +1000,12 @@ enum LocalLLM {
     /// user's Notes / tasks / long-term memory. Shared by BOTH tool loops so every
     /// brain — local Ollama or any OpenAI-compatible cloud — gets the same on-device
     /// capabilities. Returns `nil` when `name` isn't one of these, so the caller
-    /// falls through to the terminal / web / unknown branches. MainActor-isolated
-    /// because `ScratchpadStore` is `@MainActor`; the tool loops already run there,
-    /// so callers invoke it synchronously. All four tools are non-destructive writes
-    /// to the user's own local stores, so (like the prior FM tools) they need no
-    /// approval card — only the terminal does.
+    /// falls through to the terminal / web / unknown branches. `@MainActor`-isolated
+    /// because `ScratchpadStore` is `@MainActor`; the async tool loops `await` it to
+    /// hop onto the main actor. All four tools are non-destructive writes to the
+    /// user's own local stores, so (like the prior FM tools) they need no approval
+    /// card — only the terminal does.
+    @MainActor
     static func runLocalTool(_ name: String, _ args: [String: String]) -> String? {
         switch name {
         case "search_documents":
@@ -1175,7 +1176,7 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in toolCalls {
                 let result: String
-                if let local = Self.runLocalTool(call.name, call.arguments) {
+                if let local = await Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
                     // approval card. Returns nil for the terminal/web tools below.
                     result = local
@@ -1306,7 +1307,7 @@ enum LocalLLM {
             messages.append(assistantMsg)
             for call in toolCalls {
                 let result: String
-                if let local = Self.runLocalTool(call.name, call.arguments) {
+                if let local = await Self.runLocalTool(call.name, call.arguments) {
                     // On-device tool (knowledge/notes/tasks/memory): no network, no
                     // approval card. Returns nil for the terminal/web tools below.
                     result = local

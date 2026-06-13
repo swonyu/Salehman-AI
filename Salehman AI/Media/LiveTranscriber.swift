@@ -116,7 +116,7 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
         dlog("begin()")
         let speechOK = await requestSpeechAuth()
         dlog("speechAuth=\(speechOK)")
-        guard speechOK else { setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
+        guard speechOK else { await setStatus("Enable Speech Recognition in System Settings → Privacy."); return }
 
         // System-audio capture needs Screen Recording access (it does NOT share or
         // record your screen). Trigger the prompt up front.
@@ -149,13 +149,13 @@ final class LiveTranscriber: NSObject, ObservableObject, SCStreamDelegate, SCStr
             startTasks()
         }
         guard !recs.isEmpty else {
-            setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
+            await setStatus("Speech recognizer for that language isn't available yet. Try again in a moment.")
             return
         }
 
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else { setStatus("No display available."); return }
+            guard let display = content.displays.first else { await setStatus("No display available."); return }
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()

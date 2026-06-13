@@ -4147,6 +4147,43 @@ lexical/syntactic errors, which `-parse` fully covers.)
 
 ---
 
+## 2026-06-13 — EOAN: ✅ build GREEN — 33 masked Swift-6 errors cleared (concurrency + keyframe API)
+
+**What changed:** With the curly-quote *parse* errors fixed (EOAM), a whole-module
+`swiftc -typecheck` (Swift 6 mode, real macOS SDK, writable module cache) could finally
+run sema — and surfaced **33 real errors** that the parse failure had masked since 06-12
+(one parse error aborts whole-module compilation before sema, hiding every downstream error):
+
+1. **`SpringKeyframe` argument order ×28** (14 files). Every brand-tile KeyframeAnimator was
+   copy-pasted as `SpringKeyframe(v, spring: …, duration: …)`, but the initializer declares
+   `duration:` before `spring:` → `error: argument 'duration' must precede argument 'spring'`.
+   Reordered all 28 to `SpringKeyframe(v, duration: …, spring: …)` (one sed pass; AboutView's
+   unique 0.30/0.24 values preserved; verified 0 wrong-order / 28 right-order remain).
+2. **Actor isolation in `LocalLLM.runLocalTool` ×2.** `LocalLLM` is a plain `enum`
+   (nonisolated); `ScratchpadStore.addNote/addTask` are `@MainActor`. The doc already said
+   the func should be MainActor-isolated — so added `@MainActor` to `runLocalTool` and
+   `await`-ed it at its 2 async tool-loop call sites (corrected the stale "synchronously" doc).
+3. **Actor isolation in `LiveTranscriber.begin()` ×3.** `begin()` is `nonisolated async`;
+   `setStatus` is `@MainActor`. Changed the 3 synchronous `setStatus(…)` calls to
+   `await setStatus(…)` (matches the sibling `await MainActor.run { … }` pattern).
+
+**Why:** the project is `SWIFT_VERSION = 6.0` + `SWIFT_APPROACHABLE_CONCURRENCY = YES`, so
+actor-isolation violations and arg-order mistakes are hard errors. An app that doesn't compile
+is the only P0. Found purely by measurement (`swiftc -typecheck`) — the env-blocked xcodebuild
+could never have shown it.
+
+**Files:** `LLM/LocalLLM.swift`, `Media/LiveTranscriber.swift`, and the 14 views carrying the
+keyframe pattern (AboutView, AgentsView, ChatHistoryView, CopilotSignInView, KnowledgeView,
+LiveTranscriptionView, MarketsView, MemoryView, OnboardingView, ScratchpadView, SettingsView,
+ShortcutsView, TodayView, VoiceModeView).
+
+**Result:** whole-module `swiftc -typecheck` → **0 source errors** (Swift 6, real SDK). Build
+green for the first time since 06-12. Remaining: **5 Sendable-capture WARNINGS** in
+LiveTranscriber (`DispatchQueue.main.async { self.… }`) — non-blocking (no warnings-as-errors);
+tracked as a follow-up to avoid bundling a concurrency-contract change into the green-up.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
