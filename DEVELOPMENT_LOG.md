@@ -3633,6 +3633,24 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOE: webToolsDisabledReason three-branch diagnostic tests
+
+**What:** Added `WebToolsDisabledReasonTests` struct to `Salehman AITests/ToolPolicyTests.swift` (+70 lines, 4 tests):
+- `returnsNilWhenExternalIsAllowed` — web on + not offline → nil
+- `returnsOfflineMessageWhenOfflineModeIsOn` — offline=true → "Offline Mode is on…"
+- `returnsWebAccessMessageWhenWebAccessIsOffButNotOffline` — offline=false + web=false → "Web access is turned off…"
+- `offlineAndWebOnStillReturnsOfflineMessage` — isOfflineOnly dominates even if webAccess flag is on
+
+Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPolicyTests` suite.
+
+**Why:** `webToolsDisabledReason()` is the single source for the Offline-Mode vs web-off user-facing hint displayed in the tool-loop, agent menu, and settings probe. The two negative branches produce distinct strings that drove UI copy decisions; swapping them silently would confuse users (wrong diagnostic in the banner).
+
+**Files:** `Salehman AITests/ToolPolicyTests.swift`
+
+**Result:** Three-branch logic verified by reading `isExternalAllowed` implementation.
+
+---
+
 ## 2026-06-13 — EOD: withConversationContext + isSerialLocalBrain + buildPrompt tests
 
 **What:** Added three test structs to `Salehman AITests/ToolLoopTests.swift` (+95 lines):
