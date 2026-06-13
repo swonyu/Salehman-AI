@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 07:08 +03 · Swift files: 160 · Swift LOC: 36619_
+_Generated: 2026-06-13 07:21 +03 · Swift files: 160 · Swift LOC: 36621_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23991,7 +23991,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (667 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (669 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24184,7 +24184,7 @@ struct ScratchpadView: View {
             Button(action: add) {
                 Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain).help("Add")
+            .buttonStyle(LuxPressStyle()).help("Add")
             .accessibilityLabel(pad == .tasks ? "Add task" : "Add note")
             .disabled(newText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
@@ -24336,10 +24336,10 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != t.id {
-                editButton { startEdit(id: t.id, text: t.title) }
+                editButton(hovered: hovered) { startEdit(id: t.id, text: t.title) }
                     .transition(.opacity)
             }
-            deleteButton { store.deleteTask(t.id) }
+            deleteButton(hovered: hovered) { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -24430,10 +24430,10 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != n.id {
-                editButton { startEdit(id: n.id, text: n.text) }
+                editButton(hovered: hovered) { startEdit(id: n.id, text: n.text) }
                     .transition(.opacity)
             }
-            deleteButton { store.deleteNote(n.id) }
+            deleteButton(hovered: hovered) { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -24477,16 +24477,18 @@ struct ScratchpadView: View {
         editingText = ""
     }
 
-    private func editButton(_ action: @escaping () -> Void) -> some View {
+    private func editButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(.secondary)
+            Image(systemName: "pencil").font(.system(size: 11))
+                .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
         }
         .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
     }
 
-    private func deleteButton(_ action: @escaping () -> Void) -> some View {
+    private func deleteButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "trash").font(.system(size: 12))
+                .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary)
         }
         .buttonStyle(.plain).help("Delete").accessibilityLabel("Delete")
     }
@@ -39227,7 +39229,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4946 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4961 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43110,6 +43112,21 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 **Files:** `Salehman AITests/FourteenBReadinessTests.swift`  
 **Why:** Prior 3 tests only used bare lowercase names (`"salehman14b"`, `"salehman"`). The `components(separatedBy:":")` code path was dead to tests — a refactor could delete it silently. Now pinned.  
 **Result:** 5 tuned-knobs tests total. API signatures confirmed via grep (`OllamaClient.swift:128`, `OllamaClient.defaultNumCtx:109`, `AppSettings.Keys.customModel:220`). SourceKit "No such module 'Testing'" on line 1 is the known pre-existing false positive.
+
+---
+
+### 2026-06-13 — EOY: ScratchpadView hover micro-interaction polish
+Visual design marathon — final polish pass on ScratchpadView row actions.
+
+**Changes:**
+- `editButton(hovered: Bool = false, _:)` — pencil icon now tints `DS.Palette.accent.opacity(0.7)` when the containing row is hovered; default `false` keeps all existing (context menu) call sites compiling without change.
+- `deleteButton(hovered: Bool = false, _:)` — trash icon now tints `DS.Palette.danger.opacity(0.70)` on hover, matching MemoryView's row behavior precisely.
+- Both `taskRow` and `noteRow` pass `hovered: hovered` to both helpers.
+- `addRow` add button: changed from `.buttonStyle(.plain)` to `.buttonStyle(LuxPressStyle())` for a physical press feel matching the AI "Organize/Summarize" button.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`  
+**Why:** `editButton`/`deleteButton` were shared helpers with no hover-awareness, so pencil and trash stayed neutral gray regardless of row highlight state. MemoryView rows had already set the pattern (danger-tinted trash, accent-tinted pencil on hover) — this brings ScratchpadView to parity. The `hovered: Bool = false` default makes the upgrade zero blast-radius.  
+**Result:** All 4 row call sites confirmed via grep (`editButton(hovered:hovered)` × 2, `deleteButton(hovered:hovered)` × 2, helpers at lines 485/493). SourceKit "Cannot find 'DS' in scope" diagnostics are the known module-resolution false positives.
 
 ---
 

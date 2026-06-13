@@ -3883,6 +3883,21 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+### 2026-06-13 — EOY: ScratchpadView hover micro-interaction polish
+Visual design marathon — final polish pass on ScratchpadView row actions.
+
+**Changes:**
+- `editButton(hovered: Bool = false, _:)` — pencil icon now tints `DS.Palette.accent.opacity(0.7)` when the containing row is hovered; default `false` keeps all existing (context menu) call sites compiling without change.
+- `deleteButton(hovered: Bool = false, _:)` — trash icon now tints `DS.Palette.danger.opacity(0.70)` on hover, matching MemoryView's row behavior precisely.
+- Both `taskRow` and `noteRow` pass `hovered: hovered` to both helpers.
+- `addRow` add button: changed from `.buttonStyle(.plain)` to `.buttonStyle(LuxPressStyle())` for a physical press feel matching the AI "Organize/Summarize" button.
+
+**Files:** `Salehman AI/Views/ScratchpadView.swift`  
+**Why:** `editButton`/`deleteButton` were shared helpers with no hover-awareness, so pencil and trash stayed neutral gray regardless of row highlight state. MemoryView rows had already set the pattern (danger-tinted trash, accent-tinted pencil on hover) — this brings ScratchpadView to parity. The `hovered: Bool = false` default makes the upgrade zero blast-radius.  
+**Result:** All 4 row call sites confirmed via grep (`editButton(hovered:hovered)` × 2, `deleteButton(hovered:hovered)` × 2, helpers at lines 485/493). SourceKit "Cannot find 'DS' in scope" diagnostics are the known module-resolution false positives.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

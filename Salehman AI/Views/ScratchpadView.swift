@@ -189,7 +189,7 @@ struct ScratchpadView: View {
             Button(action: add) {
                 Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain).help("Add")
+            .buttonStyle(LuxPressStyle()).help("Add")
             .accessibilityLabel(pad == .tasks ? "Add task" : "Add note")
             .disabled(newText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
@@ -341,10 +341,10 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != t.id {
-                editButton { startEdit(id: t.id, text: t.title) }
+                editButton(hovered: hovered) { startEdit(id: t.id, text: t.title) }
                     .transition(.opacity)
             }
-            deleteButton { store.deleteTask(t.id) }
+            deleteButton(hovered: hovered) { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -435,10 +435,10 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != n.id {
-                editButton { startEdit(id: n.id, text: n.text) }
+                editButton(hovered: hovered) { startEdit(id: n.id, text: n.text) }
                     .transition(.opacity)
             }
-            deleteButton { store.deleteNote(n.id) }
+            deleteButton(hovered: hovered) { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -482,16 +482,18 @@ struct ScratchpadView: View {
         editingText = ""
     }
 
-    private func editButton(_ action: @escaping () -> Void) -> some View {
+    private func editButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(.secondary)
+            Image(systemName: "pencil").font(.system(size: 11))
+                .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
         }
         .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
     }
 
-    private func deleteButton(_ action: @escaping () -> Void) -> some View {
+    private func deleteButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "trash").font(.system(size: 12))
+                .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary)
         }
         .buttonStyle(.plain).help("Delete").accessibilityLabel("Delete")
     }
