@@ -15,13 +15,9 @@ import Foundation
 ///   still applies via `refineOwnDraft` — no regeneration, just self-critique.
 /// - **Graceful:** if the Salehman engine isn't reachable it returns the draft
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
-/// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
-///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
-///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), then the
-///   local floor (MLX, Ollama). So whenever you're online with any one free key
-///   set, Salehman finalizes on a big model at **$0**, and it drops to the ~7B
-///   local model when offline. (The paid DeepSeek backstop was removed
-///   2026-06-12 — owner: "remove deepseek".)
+/// - **On-device-only pass:** the engine falls through MLX (if loaded) then
+///   Ollama (Salehman custom model). The leader only runs when one of these is
+///   available; if neither is ready it returns the draft unchanged.
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {

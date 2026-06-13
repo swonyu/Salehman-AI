@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:57 +03 · Swift files: 151 · Swift LOC: 34116_
+_Generated: 2026-06-13 05:07 +03 · Swift files: 151 · Swift LOC: 34141_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8228,7 +8228,7 @@ enum SalehmanEngine {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanLeader.swift (145 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanLeader.swift (141 lines) =====
 ```swift
 import Foundation
 
@@ -8247,13 +8247,9 @@ import Foundation
 ///   still applies via `refineOwnDraft` — no regeneration, just self-critique.
 /// - **Graceful:** if the Salehman engine isn't reachable it returns the draft
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
-/// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
-///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
-///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), then the
-///   local floor (MLX, Ollama). So whenever you're online with any one free key
-///   set, Salehman finalizes on a big model at **$0**, and it drops to the ~7B
-///   local model when offline. (The paid DeepSeek backstop was removed
-///   2026-06-12 — owner: "remove deepseek".)
+/// - **On-device-only pass:** the engine falls through MLX (if loaded) then
+///   Ollama (Salehman custom model). The leader only runs when one of these is
+///   available; if neither is ready it returns the draft unchanged.
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
@@ -30482,7 +30478,7 @@ struct FreeAutoRoutingTests {
 }
 ```
 
-===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (244 lines) =====
+===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (273 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30566,6 +30562,33 @@ struct CerebrasModelIDTests {
     }
 }
 
+// MARK: - NVIDIA NIM model IDs
+//
+// NvidiaClient speaks the NVIDIA NIM OpenAI-compatible endpoint. Pinning the
+// model IDs here catches any future renaming before it silently 404s at runtime.
+// NOTE: NvidiaClient is NOT in CloudProvider and has no brain-routing slot —
+// the key is stored in Keychain but only feeds the SalehmanEngine cloud-optional
+// path (vLLM / Unsloth fallback; the NIM path is forward-looking). Tests in
+// SettingsBrainReadyTests pin that `nvidia=true` has no routing effect.
+
+struct NvidiaModelIDTests {
+    @Test func defaultModelIsDeepSeekV4Flash() {
+        // The free-tier everyday model on NVIDIA NIM.
+        #expect(NvidiaClient.defaultModel == "deepseek-ai/deepseek-v4-flash")
+    }
+    @Test func allModelsContainsDefault() {
+        #expect(NvidiaClient.allModels.contains(NvidiaClient.defaultModel))
+    }
+    @Test func endpointAndDisplayNameMatchNvidiaDocs() {
+        #expect(NvidiaClient.shared.baseURL == "https://integrate.api.nvidia.com/v1")
+        #expect(NvidiaClient.shared.displayName == "NVIDIA")
+    }
+    @Test func keychainAccountStringIsStable() {
+        // Renaming this loses every saved NVIDIA key silently.
+        #expect(KeychainStore.Account.nvidiaAPIKey.rawValue == "nvidia-api-key")
+    }
+}
+
 // MARK: - Keychain account contracts
 //
 // Each provider gets its own Keychain slot. Renaming any of these silently
@@ -30579,8 +30602,9 @@ struct CloudKeychainAccountTests {
             KeychainStore.Account.groqAPIKey.rawValue,
             KeychainStore.Account.mistralAPIKey.rawValue,
             KeychainStore.Account.cerebrasAPIKey.rawValue,
+            KeychainStore.Account.nvidiaAPIKey.rawValue,
         ])
-        #expect(names.count == 5,
+        #expect(names.count == 6,
                 "Each Keychain account string must be distinct — collisions overwrite keys")
     }
     @Test func accountStringsMatchExpectedSchema() {
@@ -30591,6 +30615,7 @@ struct CloudKeychainAccountTests {
             KeychainStore.Account.groqAPIKey.rawValue,
             KeychainStore.Account.mistralAPIKey.rawValue,
             KeychainStore.Account.cerebrasAPIKey.rawValue,
+            KeychainStore.Account.nvidiaAPIKey.rawValue,
         ] {
             #expect(raw.hasSuffix("-api-key"), "\(raw) must end with -api-key")
             #expect(raw == raw.lowercased(), "\(raw) must be lowercase")
@@ -36688,7 +36713,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4605 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4627 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40250,6 +40275,28 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AI/LLM/SalehmanLeader.swift` (+6 / -1 lines), `Salehman AITests/SalehmanLeaderTests.swift` (new, 110 lines)
 
 **Result:** 0 real Swift errors.
+
+---
+
+## EOZ (Marathon — 2026-06-13) — Fix stale SalehmanLeader cloud claim + NvidiaClient tests
+
+**What changed:**
+
+1. **`SalehmanLeader.swift` docstring fix** — Removed the "Cloud-capable, FREE-FIRST" bullet that referenced "Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B" as the leader engine's providers. Those models are in OpenRouter's free roster, not in SalehmanEngine. Since the 2026-06-12 DeepSeek removal stripped the cloud chain, `SalehmanEngine.generate()` is strictly MLX → Ollama; the cloud-capability claim was aspirational dead text. Replaced with the accurate "On-device-only pass" description.
+
+2. **`FreeCloudBrainsTests.swift` — `NvidiaModelIDTests` (4 new tests)** — Every other provider (Groq, Gemini, Mistral, Cerebras, OpenRouter) has model-ID and endpoint pinning tests. `NvidiaClient` was the sole exception. Added 4 tests:
+   - `defaultModelIsDeepSeekV4Flash` — pins `NvidiaClient.defaultModel`
+   - `allModelsContainsDefault` — roster includes the default
+   - `endpointAndDisplayNameMatchNvidiaDocs` — `baseURL` and `displayName` stable
+   - `keychainAccountStringIsStable` — `nvidia-api-key` string frozen
+
+3. **`CloudKeychainAccountTests` updated** — Added `nvidiaAPIKey` to both the uniqueness test (count 5→6) and the schema test (`-api-key` suffix, lowercase). Confirms NVIDIA's Keychain slot is distinct from all other provider slots and follows the naming convention.
+
+**Why:** `NvidiaClient` is the only provider with a live Keychain account that had zero test coverage. The stale `SalehmanLeader` docstring actively misled readers about whether cloud APIs are in use (they are not, post-DeepSeek removal).
+
+**Files:** `Salehman AI/LLM/SalehmanLeader.swift` (comment-only edit), `Salehman AITests/FreeCloudBrainsTests.swift` (+26 lines)
+
+**Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
 
 ---
 

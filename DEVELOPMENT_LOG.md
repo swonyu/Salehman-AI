@@ -3562,6 +3562,28 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## EOZ (Marathon — 2026-06-13) — Fix stale SalehmanLeader cloud claim + NvidiaClient tests
+
+**What changed:**
+
+1. **`SalehmanLeader.swift` docstring fix** — Removed the "Cloud-capable, FREE-FIRST" bullet that referenced "Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B" as the leader engine's providers. Those models are in OpenRouter's free roster, not in SalehmanEngine. Since the 2026-06-12 DeepSeek removal stripped the cloud chain, `SalehmanEngine.generate()` is strictly MLX → Ollama; the cloud-capability claim was aspirational dead text. Replaced with the accurate "On-device-only pass" description.
+
+2. **`FreeCloudBrainsTests.swift` — `NvidiaModelIDTests` (4 new tests)** — Every other provider (Groq, Gemini, Mistral, Cerebras, OpenRouter) has model-ID and endpoint pinning tests. `NvidiaClient` was the sole exception. Added 4 tests:
+   - `defaultModelIsDeepSeekV4Flash` — pins `NvidiaClient.defaultModel`
+   - `allModelsContainsDefault` — roster includes the default
+   - `endpointAndDisplayNameMatchNvidiaDocs` — `baseURL` and `displayName` stable
+   - `keychainAccountStringIsStable` — `nvidia-api-key` string frozen
+
+3. **`CloudKeychainAccountTests` updated** — Added `nvidiaAPIKey` to both the uniqueness test (count 5→6) and the schema test (`-api-key` suffix, lowercase). Confirms NVIDIA's Keychain slot is distinct from all other provider slots and follows the naming convention.
+
+**Why:** `NvidiaClient` is the only provider with a live Keychain account that had zero test coverage. The stale `SalehmanLeader` docstring actively misled readers about whether cloud APIs are in use (they are not, post-DeepSeek removal).
+
+**Files:** `Salehman AI/LLM/SalehmanLeader.swift` (comment-only edit), `Salehman AITests/FreeCloudBrainsTests.swift` (+26 lines)
+
+**Result:** 0 real Swift errors (SourceKit cross-module false positives filtered).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

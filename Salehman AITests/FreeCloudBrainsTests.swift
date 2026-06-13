@@ -80,6 +80,33 @@ struct CerebrasModelIDTests {
     }
 }
 
+// MARK: - NVIDIA NIM model IDs
+//
+// NvidiaClient speaks the NVIDIA NIM OpenAI-compatible endpoint. Pinning the
+// model IDs here catches any future renaming before it silently 404s at runtime.
+// NOTE: NvidiaClient is NOT in CloudProvider and has no brain-routing slot —
+// the key is stored in Keychain but only feeds the SalehmanEngine cloud-optional
+// path (vLLM / Unsloth fallback; the NIM path is forward-looking). Tests in
+// SettingsBrainReadyTests pin that `nvidia=true` has no routing effect.
+
+struct NvidiaModelIDTests {
+    @Test func defaultModelIsDeepSeekV4Flash() {
+        // The free-tier everyday model on NVIDIA NIM.
+        #expect(NvidiaClient.defaultModel == "deepseek-ai/deepseek-v4-flash")
+    }
+    @Test func allModelsContainsDefault() {
+        #expect(NvidiaClient.allModels.contains(NvidiaClient.defaultModel))
+    }
+    @Test func endpointAndDisplayNameMatchNvidiaDocs() {
+        #expect(NvidiaClient.shared.baseURL == "https://integrate.api.nvidia.com/v1")
+        #expect(NvidiaClient.shared.displayName == "NVIDIA")
+    }
+    @Test func keychainAccountStringIsStable() {
+        // Renaming this loses every saved NVIDIA key silently.
+        #expect(KeychainStore.Account.nvidiaAPIKey.rawValue == "nvidia-api-key")
+    }
+}
+
 // MARK: - Keychain account contracts
 //
 // Each provider gets its own Keychain slot. Renaming any of these silently
@@ -93,8 +120,9 @@ struct CloudKeychainAccountTests {
             KeychainStore.Account.groqAPIKey.rawValue,
             KeychainStore.Account.mistralAPIKey.rawValue,
             KeychainStore.Account.cerebrasAPIKey.rawValue,
+            KeychainStore.Account.nvidiaAPIKey.rawValue,
         ])
-        #expect(names.count == 5,
+        #expect(names.count == 6,
                 "Each Keychain account string must be distinct — collisions overwrite keys")
     }
     @Test func accountStringsMatchExpectedSchema() {
@@ -105,6 +133,7 @@ struct CloudKeychainAccountTests {
             KeychainStore.Account.groqAPIKey.rawValue,
             KeychainStore.Account.mistralAPIKey.rawValue,
             KeychainStore.Account.cerebrasAPIKey.rawValue,
+            KeychainStore.Account.nvidiaAPIKey.rawValue,
         ] {
             #expect(raw.hasSuffix("-api-key"), "\(raw) must end with -api-key")
             #expect(raw == raw.lowercased(), "\(raw) must be lowercase")
