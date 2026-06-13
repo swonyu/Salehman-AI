@@ -5167,6 +5167,24 @@ no-gap — owner redirect to higher-value work strongly recommended (see below /
 
 ---
 
+## 2026-06-14 — EOCE: microcopy / typo audit (rotation 2, angle h) — no gap
+
+Swept ~200 user-facing strings (titles, button labels, placeholders, empty states, hints, errors,
+help). The copy is professional, consistent, on-brand (Saleh woven in: "What are we building, Saleh?",
+"built by Saleh"), and TYPO-FREE (the typo-pattern grep returned only param-name false positives). Tone
+is consistent — calm, privacy-forward, honest (e.g. the "educational, not financial advice" market
+disclaimer; "Sample data — no live feed connected yet"). The one help/a11y-label difference on the Code
+inspector toggle ("activity / files panel" tooltip vs "activity and files panel" VoiceOver) is a
+DELIBERATE spoken-vs-visual distinction ("and" reads better aloud than "/"), not a bug. **No gap.**
+
+**Files:** none (audit only — no source change).
+
+**↪︎ Redirect still recommended:** the app is exhaustively polished (rotation 1 found 2 fixes; this is
+rotation 2). Higher-value next: ⌘K Liquid-Glass palette experiment · feature work · test coverage ·
+perf profiling · chat/code MarkdownText RTL.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
