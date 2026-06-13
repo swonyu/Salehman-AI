@@ -72,8 +72,17 @@ struct CopilotSignInView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(d.userCode, forType: .string)
-                        } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            .buttonStyle(.bordered)
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Color.white.opacity(0.08), in: Capsule())
+                                .overlay(Capsule().stroke(
+                                    LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                        }
+                        .buttonStyle(LuxPressStyle())
                         Button {
                             if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
                         } label: {

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 00:14 +03 · Swift files: 160 · Swift LOC: 37057_
+_Generated: 2026-06-14 00:23 +03 · Swift files: 160 · Swift LOC: 37066_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -20902,7 +20902,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (144 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (153 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20978,8 +20978,17 @@ struct CopilotSignInView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(d.userCode, forType: .string)
-                        } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            .buttonStyle(.bordered)
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Color.white.opacity(0.08), in: Capsule())
+                                .overlay(Capsule().stroke(
+                                    LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                        }
+                        .buttonStyle(LuxPressStyle())
                         Button {
                             if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
                         } label: {
@@ -39749,7 +39758,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6016 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6042 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44653,6 +44662,32 @@ SettingsView, TabSwitcherBar. On-brand (no fill/color change), macOS-27-aligned 
 `RoundedRectangle`s missing `.continuous` in `Views/` (was 38); clean 38-insert / 38-delete 1:1 diff.
 
 **Files:** 8 view files (corner-style only).
+
+---
+
+## 2026-06-14 — EOBS: static-control audit (clean) + TodayView (complete) + CopilotSignInView Copy pill (phase 3, slices 2→3)
+
+**Static/dated-control sweep (plan item 2) — verified CLEAN:** `.pickerStyle(.segmented)` is fully
+eliminated app-wide (`DSSegmentPicker` replaced all). The remaining `Picker`s are Menu/`.inline`/`.menu`
+dropdowns — the correct native macOS pattern for list selection, not the dated segmented bar — and the
+lone `Slider` (speech rate, 0…1) is the right control. No dated controls remain; no change.
+
+**TodayView audit (plan item 3) — already at the bar, no change:** bezel greeting with reduceMotion-
+gated ambient glow + gated brand bounce, `Eyebrow` tags, and ActionTile/StatTile already implement the
+full magnetic-hover + button-in-button kinetic-tension pattern (arrow circle scales AND offsets
+diagonally). Tiles are `Button`s (clean synthesized VoiceOver labels); sections carry `.isHeader`.
+Manufacturing a change would be churn — logged as audited-complete.
+
+**CopilotSignInView — genuine gap fixed:** the "Copy" device-code button was stock `.bordered` sitting
+beside the custom accent "Open GitHub" pill. Converted Copy to the app's secondary-pill treatment
+(white-fill capsule + gradient hairline + `LuxPressStyle`, metrics matched to the accent pill) → clean
+neutral/accent hierarchy.
+
+**Files:** `Views/CopilotSignInView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+Remaining `.bordered`: SettingsView ×17 (deliberate — conventional for a config panel, EOBJ) +
+LiveTranscriptionView ×2 (un-audited surface — candidate for a future slice).
 
 ---
 

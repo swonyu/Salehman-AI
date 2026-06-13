@@ -4904,6 +4904,32 @@ SettingsView, TabSwitcherBar. On-brand (no fill/color change), macOS-27-aligned 
 
 ---
 
+## 2026-06-14 — EOBS: static-control audit (clean) + TodayView (complete) + CopilotSignInView Copy pill (phase 3, slices 2→3)
+
+**Static/dated-control sweep (plan item 2) — verified CLEAN:** `.pickerStyle(.segmented)` is fully
+eliminated app-wide (`DSSegmentPicker` replaced all). The remaining `Picker`s are Menu/`.inline`/`.menu`
+dropdowns — the correct native macOS pattern for list selection, not the dated segmented bar — and the
+lone `Slider` (speech rate, 0…1) is the right control. No dated controls remain; no change.
+
+**TodayView audit (plan item 3) — already at the bar, no change:** bezel greeting with reduceMotion-
+gated ambient glow + gated brand bounce, `Eyebrow` tags, and ActionTile/StatTile already implement the
+full magnetic-hover + button-in-button kinetic-tension pattern (arrow circle scales AND offsets
+diagonally). Tiles are `Button`s (clean synthesized VoiceOver labels); sections carry `.isHeader`.
+Manufacturing a change would be churn — logged as audited-complete.
+
+**CopilotSignInView — genuine gap fixed:** the "Copy" device-code button was stock `.bordered` sitting
+beside the custom accent "Open GitHub" pill. Converted Copy to the app's secondary-pill treatment
+(white-fill capsule + gradient hairline + `LuxPressStyle`, metrics matched to the accent pill) → clean
+neutral/accent hierarchy.
+
+**Files:** `Views/CopilotSignInView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+Remaining `.bordered`: SettingsView ×17 (deliberate — conventional for a config panel, EOBJ) +
+LiveTranscriptionView ×2 (un-audited surface — candidate for a future slice).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
