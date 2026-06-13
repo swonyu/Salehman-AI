@@ -12,6 +12,7 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var archives: [ChatStore.ArchivedChat] =
         ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
@@ -90,16 +91,25 @@ struct ChatHistoryView: View {
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     ZStack {
-                        PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no pulsing).
                             Circle()
-                                .fill(DS.Palette.accent.opacity(opacity))
+                                .fill(DS.Palette.accent.opacity(0.14))
                                 .frame(width: 60, height: 60)
                                 .blur(radius: 14)
                                 .allowsHitTesting(false)
-                        } animation: { opacity in
-                            opacity > 0.14
-                                ? .spring(duration: 2.2, bounce: 0.06)
-                                : .easeOut(duration: 1.8)
+                        } else {
+                            PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                                Circle()
+                                    .fill(DS.Palette.accent.opacity(opacity))
+                                    .frame(width: 60, height: 60)
+                                    .blur(radius: 14)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.14
+                                    ? .spring(duration: 2.2, bounce: 0.06)
+                                    : .easeOut(duration: 1.8)
+                            }
                         }
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 22, weight: .semibold))

@@ -44,6 +44,7 @@ enum MemorySort: String, CaseIterable, Identifiable {
 /// state on appear.
 struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var facts: [String] = []
     @State private var confirmClear = false
     /// Staggered row entrance. Pre-set under `--qa` so the offscreen snapshot
@@ -200,15 +201,23 @@ struct MemoryView: View {
             // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
             // pattern so an empty sheet still feels lived-in, not abandoned.
             ZStack {
-                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no pulsing).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.18))
                         .frame(width: 84, height: 84)
                         .blur(radius: 16)
-                } animation: { opacity in
-                    opacity > 0.18
-                        ? .spring(duration: 2.2, bounce: 0.06)
-                        : .easeOut(duration: 1.8)
+                } else {
+                    PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 84, height: 84)
+                            .blur(radius: 16)
+                    } animation: { opacity in
+                        opacity > 0.18
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                 }
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 40))

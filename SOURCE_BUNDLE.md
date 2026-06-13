@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 15:58 +03 · Swift files: 160 · Swift LOC: 36700_
+_Generated: 2026-06-13 16:09 +03 · Swift files: 160 · Swift LOC: 36728_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14348,7 +14348,7 @@ struct BottomShortcutBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatHistoryView.swift (266 lines) =====
+===== FILE: Salehman AI/Views/ChatHistoryView.swift (276 lines) =====
 ```swift
 import SwiftUI
 
@@ -14364,6 +14364,7 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var archives: [ChatStore.ArchivedChat] =
         ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
@@ -14442,16 +14443,25 @@ struct ChatHistoryView: View {
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
                     ZStack {
-                        PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no pulsing).
                             Circle()
-                                .fill(DS.Palette.accent.opacity(opacity))
+                                .fill(DS.Palette.accent.opacity(0.14))
                                 .frame(width: 60, height: 60)
                                 .blur(radius: 14)
                                 .allowsHitTesting(false)
-                        } animation: { opacity in
-                            opacity > 0.14
-                                ? .spring(duration: 2.2, bounce: 0.06)
-                                : .easeOut(duration: 1.8)
+                        } else {
+                            PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                                Circle()
+                                    .fill(DS.Palette.accent.opacity(opacity))
+                                    .frame(width: 60, height: 60)
+                                    .blur(radius: 14)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.14
+                                    ? .spring(duration: 2.2, bounce: 0.06)
+                                    : .easeOut(duration: 1.8)
+                            }
                         }
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 22, weight: .semibold))
@@ -21104,7 +21114,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (706 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (715 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21149,6 +21159,7 @@ struct KnowledgeView: View {
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -21365,15 +21376,23 @@ struct KnowledgeView: View {
         if docs.isEmpty {
             VStack(spacing: 12) {
                 ZStack {
-                    PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                    if reduceMotion {
+                        // Reduce Motion: static halo (same geometry, no pulsing).
                         Circle()
-                            .fill(DS.Palette.accent.opacity(opacity))
+                            .fill(DS.Palette.accent.opacity(0.23))
                             .frame(width: 100)
                             .blur(radius: 24)
-                    } animation: { opacity in
-                        opacity > 0.23
-                            ? .spring(duration: 2.2, bounce: 0.06)
-                            : .easeOut(duration: 1.8)
+                    } else {
+                        PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(opacity))
+                                .frame(width: 100)
+                                .blur(radius: 24)
+                        } animation: { opacity in
+                            opacity > 0.23
+                                ? .spring(duration: 2.2, bounce: 0.06)
+                                : .easeOut(duration: 1.8)
+                        }
                     }
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
@@ -23368,7 +23387,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (389 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (398 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23416,6 +23435,7 @@ enum MemorySort: String, CaseIterable, Identifiable {
 /// state on appear.
 struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var facts: [String] = []
     @State private var confirmClear = false
     /// Staggered row entrance. Pre-set under `--qa` so the offscreen snapshot
@@ -23572,15 +23592,23 @@ struct MemoryView: View {
             // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
             // pattern so an empty sheet still feels lived-in, not abandoned.
             ZStack {
-                PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no pulsing).
                     Circle()
-                        .fill(DS.Palette.accent.opacity(opacity))
+                        .fill(DS.Palette.accent.opacity(0.18))
                         .frame(width: 84, height: 84)
                         .blur(radius: 16)
-                } animation: { opacity in
-                    opacity > 0.18
-                        ? .spring(duration: 2.2, bounce: 0.06)
-                        : .easeOut(duration: 1.8)
+                } else {
+                    PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 84, height: 84)
+                            .blur(radius: 16)
+                    } animation: { opacity in
+                        opacity > 0.18
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
                 }
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 40))
@@ -39308,7 +39336,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5505 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5526 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43719,6 +43747,27 @@ VoiceOver (label) convey them. Additive, zero visual change.
 **Files:** `Views/CodeView.swift`, `Views/FileTree.swift`.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
+## 2026-06-13 — EOAX: Reduce Motion slice 1 — empty-state breathing glows go static
+
+**What changed:** Added `@Environment(\.accessibilityReduceMotion)` to MemoryView, KnowledgeView,
+and ChatHistoryView, and gated their empty-state halo `PhaseAnimator`s: when Reduce Motion is on,
+the pulsing glow is replaced by a static `Circle` at the phases' mid-opacity (MemoryView 0.18,
+KnowledgeView 0.23, ChatHistoryView 0.14). Same frame + blur radius — only the continuous opacity
+loop is dropped.
+
+**Why:** the app is animation-heavy and none of it respected Reduce Motion; continuously looping
+glows are exactly what motion-sensitive users ask the OS setting to calm. Geometry-preserving
+(identical Circle size/blur), so it's safe to land without a pixel render, and behavior only
+changes when the user has the setting ON (zero change for everyone else).
+
+**Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/ChatHistoryView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Slice 1 of
+the Reduce Motion pass; next: the always-on status pulses (TabSwitcherBar market pulse, AgentCard
+running dot, LiveTranscription recording dot) and KeyframeAnimator entrance bounces.
 
 ---
 

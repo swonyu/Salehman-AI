@@ -4411,6 +4411,27 @@ VoiceOver (label) convey them. Additive, zero visual change.
 
 ---
 
+## 2026-06-13 — EOAX: Reduce Motion slice 1 — empty-state breathing glows go static
+
+**What changed:** Added `@Environment(\.accessibilityReduceMotion)` to MemoryView, KnowledgeView,
+and ChatHistoryView, and gated their empty-state halo `PhaseAnimator`s: when Reduce Motion is on,
+the pulsing glow is replaced by a static `Circle` at the phases' mid-opacity (MemoryView 0.18,
+KnowledgeView 0.23, ChatHistoryView 0.14). Same frame + blur radius — only the continuous opacity
+loop is dropped.
+
+**Why:** the app is animation-heavy and none of it respected Reduce Motion; continuously looping
+glows are exactly what motion-sensitive users ask the OS setting to calm. Geometry-preserving
+(identical Circle size/blur), so it's safe to land without a pixel render, and behavior only
+changes when the user has the setting ON (zero change for everyone else).
+
+**Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/ChatHistoryView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Slice 1 of
+the Reduce Motion pass; next: the always-on status pulses (TabSwitcherBar market pulse, AgentCard
+running dot, LiveTranscription recording dot) and KeyframeAnimator entrance bounces.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

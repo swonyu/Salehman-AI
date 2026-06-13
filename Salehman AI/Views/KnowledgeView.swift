@@ -41,6 +41,7 @@ struct KnowledgeView: View {
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -257,15 +258,23 @@ struct KnowledgeView: View {
         if docs.isEmpty {
             VStack(spacing: 12) {
                 ZStack {
-                    PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                    if reduceMotion {
+                        // Reduce Motion: static halo (same geometry, no pulsing).
                         Circle()
-                            .fill(DS.Palette.accent.opacity(opacity))
+                            .fill(DS.Palette.accent.opacity(0.23))
                             .frame(width: 100)
                             .blur(radius: 24)
-                    } animation: { opacity in
-                        opacity > 0.23
-                            ? .spring(duration: 2.2, bounce: 0.06)
-                            : .easeOut(duration: 1.8)
+                    } else {
+                        PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(opacity))
+                                .frame(width: 100)
+                                .blur(radius: 24)
+                        } animation: { opacity in
+                            opacity > 0.23
+                                ? .spring(duration: 2.2, bounce: 0.06)
+                                : .easeOut(duration: 1.8)
+                        }
                     }
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
