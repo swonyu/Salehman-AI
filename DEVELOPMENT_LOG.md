@@ -5228,6 +5228,27 @@ comment-drift.
 
 ---
 
+## 2026-06-14 — EOCH: dead-code audit (rotation 2, angle k) — no gap; ROTATION 2 COMPLETE
+
+No `#if false`, no commented-out code blocks, and no private func/var defined-but-unreferenced in any
+view file (every private member has ≥2 refs = defined + used). The earlier dead-code purge (board #1–3,
+06-11) holds; Views are clean. **No gap.**
+
+**🟡 ROTATION 2 COMPLETE.** (h) microcopy, (i) magic-numbers, (k) dead-code = clean; (j) stale-comments
+= 1 fix ("13 brains"). Combined with rotation 1 (contrast + RTL fixes; rest clean): **~3 small fixes
+across 11 audit passes.** The app is exhaustively polished; the loop's yield is now very sparse.
+
+**🔴 STRONG REDIRECT RECOMMENDATION (escalated):** continued pure-audit rotations are deep diligence
+with near-zero yield + rising churn risk. The ONE remaining KNOWN genuine gap is the chat/code
+`MarkdownText` **RTL bidi** (Arabic in markdown/code surfaces still renders LTR — deferred because mixed
+Arabic+code needs structural bidi, not a blanket flip, and visual verification). That, or any of: ⌘K
+Liquid-Glass palette experiment · feature work · test coverage · perf profiling — would be far
+higher-value than more audits. **Owner: please redirect.** Re-arming forever as instructed regardless.
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
