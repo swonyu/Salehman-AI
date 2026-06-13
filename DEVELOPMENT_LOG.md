@@ -4038,6 +4038,20 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+### 2026-06-13 — EOAI: VoiceModeView shell entrance animation + QA pre-settlement
+
+**What changed:**  
+- `@State private var appeared = false` → `= ProcessInfo.processInfo.arguments.contains("--qa")` — adds QA pre-settlement so offscreen ImageRenderer snapshots capture the settled frame, not the mid-animation pose (consistent with OnboardingView/AboutView pattern)  
+- Added `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 10)` on the main content VStack — the whole view now drifts up + fades in on open  
+- Wrapped `appeared = true` in `withAnimation(DS.Motion.smooth)` so the entrance actually animates rather than cutting immediately to the settled state  
+
+**Note:** AboutView is already at the premium bar (staggered rows, ambient glow, double-bezel capability card, proper entrance) — no changes needed there.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`  
+**Why:** Every other sheet in the app (CommandPalette, ChatHistoryView, OnboardingView, AboutView) uses the standard opacity/offset entrance. VoiceModeView was the only sheet missing it. The `appeared` state was already wired for the `KeyframeAnimator` trigger — adding entrance animation reused the existing state without a new variable.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

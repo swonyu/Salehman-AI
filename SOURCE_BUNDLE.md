@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 10:47 +03 · Swift files: 160 · Swift LOC: 36651_
+_Generated: 2026-06-13 10:49 +03 · Swift files: 160 · Swift LOC: 36653_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27230,7 +27230,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (208 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (210 lines) =====
 ```swift
 import SwiftUI
 
@@ -27240,7 +27240,7 @@ struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
-    @State private var appeared = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var phaseColor: Color {
         switch session.phase {
@@ -27351,9 +27351,11 @@ struct VoiceModeView: View {
                 controls
             }
             .padding(DS.Space.xl)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start(); appeared = true }
+        .onAppear { session.start(); withAnimation(DS.Motion.smooth) { appeared = true } }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }
@@ -39259,7 +39261,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5101 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5115 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43297,6 +43299,20 @@ Token alignment in the autonomous-run stop button.
 
 **Files:** `Salehman AI/Views/KnowledgeView.swift`, `Salehman AI/Views/MemoryView.swift`  
 **Why:** Consistency with EOAC (ChatHistoryView) + EOAG (ScratchpadView, MarketsView, CodeView) — all row action buttons across the app now share a unified press-physics model.
+
+---
+
+### 2026-06-13 — EOAI: VoiceModeView shell entrance animation + QA pre-settlement
+
+**What changed:**  
+- `@State private var appeared = false` → `= ProcessInfo.processInfo.arguments.contains("--qa")` — adds QA pre-settlement so offscreen ImageRenderer snapshots capture the settled frame, not the mid-animation pose (consistent with OnboardingView/AboutView pattern)  
+- Added `.opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 10)` on the main content VStack — the whole view now drifts up + fades in on open  
+- Wrapped `appeared = true` in `withAnimation(DS.Motion.smooth)` so the entrance actually animates rather than cutting immediately to the settled state  
+
+**Note:** AboutView is already at the premium bar (staggered rows, ambient glow, double-bezel capability card, proper entrance) — no changes needed there.
+
+**Files:** `Salehman AI/Views/VoiceModeView.swift`  
+**Why:** Every other sheet in the app (CommandPalette, ChatHistoryView, OnboardingView, AboutView) uses the standard opacity/offset entrance. VoiceModeView was the only sheet missing it. The `appeared` state was already wired for the `KeyframeAnimator` trigger — adding entrance animation reused the existing state without a new variable.
 
 ---
 

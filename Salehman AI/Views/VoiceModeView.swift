@@ -6,7 +6,7 @@ struct VoiceModeView: View {
     let onClose: () -> Void
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
-    @State private var appeared = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private var phaseColor: Color {
         switch session.phase {
@@ -117,9 +117,11 @@ struct VoiceModeView: View {
                 controls
             }
             .padding(DS.Space.xl)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
         }
         .frame(width: 520, height: 640)
-        .onAppear { session.start(); appeared = true }
+        .onAppear { session.start(); withAnimation(DS.Motion.smooth) { appeared = true } }
         .onDisappear { session.stop() }
         .accessibilityLabel("Hands-free voice mode, \(phaseLabel)")
     }
