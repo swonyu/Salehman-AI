@@ -309,6 +309,9 @@ struct SuggestionCard: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 34, height: 34)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)

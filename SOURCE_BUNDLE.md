@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 02:57 +03 · Swift files: 150 · Swift LOC: 34242_
+_Generated: 2026-06-13 03:05 +03 · Swift files: 150 · Swift LOC: 34245_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2133,7 +2133,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (471 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (474 lines) =====
 ```swift
 import SwiftUI
 
@@ -2446,6 +2446,9 @@ struct SuggestionCard: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 34, height: 34)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -36810,7 +36813,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4259 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4271 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40024,6 +40027,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/Views/VoiceModeView.swift`
 
 **Why:** VoiceModeView was the only utility sheet without the brand-tile spring-bounce on open. The caption animation guards against rapid per-character jank by animating only on the empty/non-empty boundary rather than every update.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFE: SuggestionCard icon well stroke + full design-system audit
+
+**What changed:** Added top-lit gradient stroke to `SuggestionCard`'s 34px icon well (cornerRadius 10, brand-gradient fill `[white@0.22, white@0.04]` at 0.75pt) — the only remaining icon well in the app without the standard depth treatment. Completed adversarial audit of all remaining views: TodayView (54px greeting tile `[white@0.50, white@0.02]`, 38px ActionTile `[white@0.22, white@0.04]`, 26px StatTile `[white@0.20, white@0.04]` — all polished ✅), AgentsView (header tile + KeyframeAnimator + AdaptiveGradient on AgentCard icon well ✅), MemoryView (header tile + KeyframeAnimator + 24px memory row wells ✅), OnboardingView (88px hero tile with `[white@0.55, white@0.04]` at 1pt ✅), ShortcutsView (header tile + KeyframeAnimator + key badge gradient strokes ✅), CommandPalette (esc badge + accent-gradient icon wells ✅), BottomShortcutBar (hover-reactive key-badge gradient strokes ✅). All 8 marathon-directive views + every supplementary view confirmed polished. Full marathon directive complete.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** `SuggestionCard` is used on the Today tab and any surface rendering suggestions — its icon well missing the standard depth stroke was the last gap in the app-wide icon-well consistency pass.
 
 **Result:** Build exit 0, 0 real Swift errors.
 

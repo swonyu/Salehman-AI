@@ -3216,6 +3216,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+## 2026-06-13 — Marathon EFE: SuggestionCard icon well stroke + full design-system audit
+
+**What changed:** Added top-lit gradient stroke to `SuggestionCard`'s 34px icon well (cornerRadius 10, brand-gradient fill `[white@0.22, white@0.04]` at 0.75pt) — the only remaining icon well in the app without the standard depth treatment. Completed adversarial audit of all remaining views: TodayView (54px greeting tile `[white@0.50, white@0.02]`, 38px ActionTile `[white@0.22, white@0.04]`, 26px StatTile `[white@0.20, white@0.04]` — all polished ✅), AgentsView (header tile + KeyframeAnimator + AdaptiveGradient on AgentCard icon well ✅), MemoryView (header tile + KeyframeAnimator + 24px memory row wells ✅), OnboardingView (88px hero tile with `[white@0.55, white@0.04]` at 1pt ✅), ShortcutsView (header tile + KeyframeAnimator + key badge gradient strokes ✅), CommandPalette (esc badge + accent-gradient icon wells ✅), BottomShortcutBar (hover-reactive key-badge gradient strokes ✅). All 8 marathon-directive views + every supplementary view confirmed polished. Full marathon directive complete.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
+
+**Why:** `SuggestionCard` is used on the Today tab and any surface rendering suggestions — its icon well missing the standard depth stroke was the last gap in the app-wide icon-well consistency pass.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
