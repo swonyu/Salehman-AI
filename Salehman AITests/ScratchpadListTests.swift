@@ -38,4 +38,75 @@ struct ScratchpadListTests {
         #expect(ScratchpadList.completedCount([task("a", done: true), task("b"), task("c", done: true)]) == 2)
         #expect(ScratchpadList.completedCount([]) == 0)
     }
+
+    // MARK: - markdownList(tasks:) — GFM task-list export
+
+    @Test func markdownListTasksEmptyReturnsEmpty() {
+        #expect(ScratchpadList.markdownList(tasks: []).isEmpty)
+    }
+
+    @Test func markdownListTasksFormatsGFMCheckboxes() {
+        // Open tasks: "- [ ] title", done tasks: "- [x] title", joined with "\n".
+        let tasks = [task("buy milk"), task("call mom", done: true), task("write tests")]
+        let md = ScratchpadList.markdownList(tasks: tasks)
+        #expect(md == "- [ ] buy milk\n- [x] call mom\n- [ ] write tests",
+                "GFM task-list must use '- [ ]' for open and '- [x]' for done")
+    }
+
+    // MARK: - markdownList(notes:) — plain-list export
+
+    @Test func markdownListNotesEmptyReturnsEmpty() {
+        #expect(ScratchpadList.markdownList(notes: []).isEmpty)
+    }
+
+    @Test func markdownListNotesFormatsPlainList() {
+        let notes = [note("first thought"), note("second idea")]
+        let md = ScratchpadList.markdownList(notes: notes)
+        #expect(md == "- first thought\n- second idea",
+                "note list must prefix each line with '- ' and join with newlines")
+    }
+
+    // MARK: - ageLabel — relative time labelling
+
+    @Test func ageLabelJustNow() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-30), now: now) == "just now")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-1), now: now) == "just now",
+                "1-second-old date must be 'just now'")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-59), now: now) == "just now",
+                "59 seconds is still 'just now'")
+    }
+
+    @Test func ageLabelShowsMinutes() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-5 * 60), now: now) == "5m")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-59 * 60), now: now) == "59m",
+                "59 minutes (< 1 hour) must format as '59m'")
+    }
+
+    @Test func ageLabelShowsHours() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-3 * 3600), now: now) == "3h")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-23 * 3600), now: now) == "23h",
+                "23 hours (< 24h) must format as '23h'")
+    }
+
+    @Test func ageLabelFormatsOldDatesAsMonthDay() {
+        // Dates ≥ 24 h ago that are NOT calendar-yesterday fall through to the
+        // month+day formatter. An epoch-era date can never be "yesterday" in a
+        // real test run, so the branch is exercised deterministically.
+        let now  = Date(timeIntervalSince1970: 1_000_000)   // ~1970 Jan 12
+        let date = Date(timeIntervalSince1970: 0)            // 1970 Jan 1
+        let label = ScratchpadList.ageLabel(for: date, now: now)
+        // Verify it's none of the relative labels.
+        #expect(!label.hasPrefix("just"), "epoch date must not produce 'just now'")
+        #expect(!label.hasSuffix("m"),    "epoch date must not produce a minute label")
+        #expect(!label.hasSuffix("h"),    "epoch date must not produce an hour label")
+        #expect(label != "yesterday",     "epoch date must not produce 'yesterday'")
+        #expect(!label.isEmpty,           "old date must produce a non-empty formatted string")
+    }
+
+    // NOTE: the "yesterday" branch (Calendar.current.isDateInYesterday) uses
+    // the real system clock, not the injected `now`, so it cannot be covered
+    // by a deterministic unit test — exercised manually.
 }

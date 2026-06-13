@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 07:00 +03 · Swift files: 160 · Swift LOC: 36508_
+_Generated: 2026-06-13 07:04 +03 · Swift files: 160 · Swift LOC: 36579_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -35162,7 +35162,7 @@ struct MarkdownTextBlockTests {
 }
 ```
 
-===== FILE: Salehman AITests/ScratchpadListTests.swift (41 lines) =====
+===== FILE: Salehman AITests/ScratchpadListTests.swift (112 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -35204,6 +35204,77 @@ struct ScratchpadListTests {
         #expect(ScratchpadList.completedCount([task("a", done: true), task("b"), task("c", done: true)]) == 2)
         #expect(ScratchpadList.completedCount([]) == 0)
     }
+
+    // MARK: - markdownList(tasks:) — GFM task-list export
+
+    @Test func markdownListTasksEmptyReturnsEmpty() {
+        #expect(ScratchpadList.markdownList(tasks: []).isEmpty)
+    }
+
+    @Test func markdownListTasksFormatsGFMCheckboxes() {
+        // Open tasks: "- [ ] title", done tasks: "- [x] title", joined with "\n".
+        let tasks = [task("buy milk"), task("call mom", done: true), task("write tests")]
+        let md = ScratchpadList.markdownList(tasks: tasks)
+        #expect(md == "- [ ] buy milk\n- [x] call mom\n- [ ] write tests",
+                "GFM task-list must use '- [ ]' for open and '- [x]' for done")
+    }
+
+    // MARK: - markdownList(notes:) — plain-list export
+
+    @Test func markdownListNotesEmptyReturnsEmpty() {
+        #expect(ScratchpadList.markdownList(notes: []).isEmpty)
+    }
+
+    @Test func markdownListNotesFormatsPlainList() {
+        let notes = [note("first thought"), note("second idea")]
+        let md = ScratchpadList.markdownList(notes: notes)
+        #expect(md == "- first thought\n- second idea",
+                "note list must prefix each line with '- ' and join with newlines")
+    }
+
+    // MARK: - ageLabel — relative time labelling
+
+    @Test func ageLabelJustNow() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-30), now: now) == "just now")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-1), now: now) == "just now",
+                "1-second-old date must be 'just now'")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-59), now: now) == "just now",
+                "59 seconds is still 'just now'")
+    }
+
+    @Test func ageLabelShowsMinutes() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-5 * 60), now: now) == "5m")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-59 * 60), now: now) == "59m",
+                "59 minutes (< 1 hour) must format as '59m'")
+    }
+
+    @Test func ageLabelShowsHours() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-3 * 3600), now: now) == "3h")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-23 * 3600), now: now) == "23h",
+                "23 hours (< 24h) must format as '23h'")
+    }
+
+    @Test func ageLabelFormatsOldDatesAsMonthDay() {
+        // Dates ≥ 24 h ago that are NOT calendar-yesterday fall through to the
+        // month+day formatter. An epoch-era date can never be "yesterday" in a
+        // real test run, so the branch is exercised deterministically.
+        let now  = Date(timeIntervalSince1970: 1_000_000)   // ~1970 Jan 12
+        let date = Date(timeIntervalSince1970: 0)            // 1970 Jan 1
+        let label = ScratchpadList.ageLabel(for: date, now: now)
+        // Verify it's none of the relative labels.
+        #expect(!label.hasPrefix("just"), "epoch date must not produce 'just now'")
+        #expect(!label.hasSuffix("m"),    "epoch date must not produce a minute label")
+        #expect(!label.hasSuffix("h"),    "epoch date must not produce an hour label")
+        #expect(label != "yesterday",     "epoch date must not produce 'yesterday'")
+        #expect(!label.isEmpty,           "old date must produce a non-empty formatted string")
+    }
+
+    // NOTE: the "yesterday" branch (Calendar.current.isDateInYesterday) uses
+    // the real system clock, not the injected `now`, so it cannot be covered
+    // by a deterministic unit test — exercised manually.
 }
 ```
 
@@ -39116,7 +39187,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4918 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4932 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -42957,6 +43028,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 **Files:** `Salehman AITests/AgentPipelineHelpersTests.swift` (new)
 
 **Result:** All 6 function signatures confirmed via grep. All Brain enum cases verified. Pure deterministic assertions with no model calls.
+
+---
+
+## 2026-06-13 — marathon EOW: test coverage — ScratchpadList.markdownList + ageLabel (Chat A)
+
+**What changed:** Added 8 new tests to `Salehman AITests/ScratchpadListTests.swift`:
+
+- `markdownList(tasks:)` (2 tests): empty → `""`, mixed open/done → GFM `- [ ]`/`- [x]` format joined by `\n`
+- `markdownList(notes:)` (2 tests): empty → `""`, multiple notes → `- text` plain list
+- `ageLabel` (4 tests): "just now" (< 60s), minutes (5m, 59m), hours (3h, 23h), old-date formatted string (epoch Jan 1 1970 → never "yesterday" → falls to `.dateTime.month.day` formatter). "yesterday" branch skipped with a comment — uses `Calendar.current.isDateInYesterday` which reads the real system clock, not the injected `now`, so it's non-deterministic.
+
+**Files:** `Salehman AITests/ScratchpadListTests.swift`  
+**Why:** The export and age-labelling functions were entirely absent from tests — a silent regression in the GFM checkbox format (e.g., `[x]` → `[X]`) or the minute/hour thresholds would produce wrong output in the copy-to-clipboard flow with no build error.  
+**Result:** 14 total tests in the file (was 6). All API signatures confirmed via grep.
 
 ---
 

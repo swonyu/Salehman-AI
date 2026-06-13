@@ -3841,6 +3841,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+## 2026-06-13 — marathon EOW: test coverage — ScratchpadList.markdownList + ageLabel (Chat A)
+
+**What changed:** Added 8 new tests to `Salehman AITests/ScratchpadListTests.swift`:
+
+- `markdownList(tasks:)` (2 tests): empty → `""`, mixed open/done → GFM `- [ ]`/`- [x]` format joined by `\n`
+- `markdownList(notes:)` (2 tests): empty → `""`, multiple notes → `- text` plain list
+- `ageLabel` (4 tests): "just now" (< 60s), minutes (5m, 59m), hours (3h, 23h), old-date formatted string (epoch Jan 1 1970 → never "yesterday" → falls to `.dateTime.month.day` formatter). "yesterday" branch skipped with a comment — uses `Calendar.current.isDateInYesterday` which reads the real system clock, not the injected `now`, so it's non-deterministic.
+
+**Files:** `Salehman AITests/ScratchpadListTests.swift`  
+**Why:** The export and age-labelling functions were entirely absent from tests — a silent regression in the GFM checkbox format (e.g., `[x]` → `[X]`) or the minute/hour thresholds would produce wrong output in the copy-to-clipboard flow with no build error.  
+**Result:** 14 total tests in the file (was 6). All API signatures confirmed via grep.
+
+---
+
 ## 2026-06-13 — marathon EOV: test coverage — OllamaClient.Generation.tuned tagged+uppercase paths (Chat A)
 
 **What changed:** Added 2 new tests to `Salehman AITests/FourteenBReadinessTests.swift`:
