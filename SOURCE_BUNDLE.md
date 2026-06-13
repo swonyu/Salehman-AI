@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:35 +03 · Swift files: 152 · Swift LOC: 34641_
+_Generated: 2026-06-13 05:38 +03 · Swift files: 152 · Swift LOC: 34704_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -33563,7 +33563,7 @@ struct SSRFGuardUnitTests {
 }
 ```
 
-===== FILE: Salehman AITests/SelfCritiqueTests.swift (113 lines) =====
+===== FILE: Salehman AITests/SelfCritiqueTests.swift (176 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -33676,6 +33676,69 @@ import Foundation
         // After stripping: "NO_ISSUES" → correctly approved.
         let correctApproval = "<think>Reviewing the draft… it looks good to me.</think>NO_ISSUES"
         #expect(SelfCritique.isApproved(correctApproval) == true)
+    }
+}
+
+// MARK: - critiquePrompt + rewritePrompt content pins
+//
+// The scripted-generator tests in SelfCritiqueTests drive the refine() loop
+// but deliberately IGNORE the actual prompt content — the script returns
+// canned text regardless of what it receives. These tests pin the CONTENT:
+// a missing `approvedToken` reference in critiquePrompt means the model never
+// knows the token to emit → the loop can never converge → silent regression
+// with no existing test tripping. Same logic applies to the rewritePrompt
+// placeholders: without the question/answer/critique the rewrite operates blind.
+
+struct SelfCritiquePromptTests {
+
+    @Test func critiquePromptContainsQuestionAndAnswer() {
+        let p = SelfCritique.critiquePrompt(question: "What is 2+2?", answer: "four")
+        #expect(p.contains("What is 2+2?"))
+        #expect(p.contains("four"))
+    }
+
+    @Test func critiquePromptMentionsApprovedToken() {
+        // The model must be told what sentinel to emit when it approves the draft.
+        // Removing this reference silently breaks convergence for all callers.
+        let p = SelfCritique.critiquePrompt(question: "Q", answer: "A")
+        #expect(p.contains(SelfCritique.approvedToken),
+                "critiquePrompt must include the approvedToken so the model knows what to emit")
+    }
+
+    @Test func critiquePromptIsNonTrivial() {
+        // Guard against collapsing the prompt to just the interpolated values.
+        let p = SelfCritique.critiquePrompt(question: "Q", answer: "A")
+        #expect(p.count > 80, "prompt collapsed to \(p.count) chars — likely a regression")
+    }
+
+    @Test func rewritePromptContainsQuestionAnswerAndCritique() {
+        let p = SelfCritique.rewritePrompt(
+            question: "Explain recursion.",
+            answer: "It calls itself.",
+            critique: "Too terse — add a base case."
+        )
+        #expect(p.contains("Explain recursion."))
+        #expect(p.contains("It calls itself."))
+        #expect(p.contains("Too terse — add a base case."))
+    }
+
+    @Test func rewritePromptIsNonTrivial() {
+        let p = SelfCritique.rewritePrompt(question: "Q", answer: "A", critique: "C")
+        #expect(p.count > 60, "rewritePrompt collapsed to \(p.count) chars — likely a regression")
+    }
+
+    @Test func promptsDoNotContainTemplatePlaceholders() {
+        // Belt-and-suspenders: neither prompt should leak Swift interpolation
+        // artifacts into the LLM request (\\( would appear if the backslash
+        // escaping of the interpolation expressions was accidentally changed).
+        for p in [
+            SelfCritique.critiquePrompt(question: "Q", answer: "A"),
+            SelfCritique.rewritePrompt(question: "Q", answer: "A", critique: "C"),
+        ] {
+            #expect(!p.contains("\\("))
+            #expect(!p.contains("%@"))
+            #expect(!p.contains("{{"))
+        }
     }
 }
 ```
@@ -37217,7 +37280,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4723 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4741 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40850,6 +40913,24 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
 
 **Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
+
+---
+
+## 2026-06-13 — EOG: SelfCritique critiquePrompt + rewritePrompt content pins
+
+**What:** Added `SelfCritiquePromptTests` struct to `Salehman AITests/SelfCritiqueTests.swift` (+55 lines, 6 tests):
+- `critiquePromptContainsQuestionAndAnswer` — question and answer appear in the prompt
+- `critiquePromptMentionsApprovedToken` — approvedToken sentinel is referenced so the model knows what to emit
+- `critiquePromptIsNonTrivial` — guards against the prompt collapsing to only the interpolated values
+- `rewritePromptContainsQuestionAnswerAndCritique` — all three inputs appear in the rewrite prompt
+- `rewritePromptIsNonTrivial` — size guard
+- `promptsDoNotContainTemplatePlaceholders` — no `\(`, `%@`, `{{` artifacts in either prompt
+
+**Why:** The existing `SelfCritiqueTests` use a scripted generator that ignores actual prompt content. If someone removes the `\(approvedToken)` reference from `critiquePrompt`, the model never knows the sentinel to emit → the loop can never converge → silent regression with no existing test tripping. Content-pinning tests are the only guard for this failure mode.
+
+**Files:** `Salehman AITests/SelfCritiqueTests.swift`
+
+**Result:** approvedToken API name verified via grep.
 
 ---
 

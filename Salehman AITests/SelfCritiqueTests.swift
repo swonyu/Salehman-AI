@@ -111,3 +111,66 @@ import Foundation
         #expect(SelfCritique.isApproved(correctApproval) == true)
     }
 }
+
+// MARK: - critiquePrompt + rewritePrompt content pins
+//
+// The scripted-generator tests in SelfCritiqueTests drive the refine() loop
+// but deliberately IGNORE the actual prompt content — the script returns
+// canned text regardless of what it receives. These tests pin the CONTENT:
+// a missing `approvedToken` reference in critiquePrompt means the model never
+// knows the token to emit → the loop can never converge → silent regression
+// with no existing test tripping. Same logic applies to the rewritePrompt
+// placeholders: without the question/answer/critique the rewrite operates blind.
+
+struct SelfCritiquePromptTests {
+
+    @Test func critiquePromptContainsQuestionAndAnswer() {
+        let p = SelfCritique.critiquePrompt(question: "What is 2+2?", answer: "four")
+        #expect(p.contains("What is 2+2?"))
+        #expect(p.contains("four"))
+    }
+
+    @Test func critiquePromptMentionsApprovedToken() {
+        // The model must be told what sentinel to emit when it approves the draft.
+        // Removing this reference silently breaks convergence for all callers.
+        let p = SelfCritique.critiquePrompt(question: "Q", answer: "A")
+        #expect(p.contains(SelfCritique.approvedToken),
+                "critiquePrompt must include the approvedToken so the model knows what to emit")
+    }
+
+    @Test func critiquePromptIsNonTrivial() {
+        // Guard against collapsing the prompt to just the interpolated values.
+        let p = SelfCritique.critiquePrompt(question: "Q", answer: "A")
+        #expect(p.count > 80, "prompt collapsed to \(p.count) chars — likely a regression")
+    }
+
+    @Test func rewritePromptContainsQuestionAnswerAndCritique() {
+        let p = SelfCritique.rewritePrompt(
+            question: "Explain recursion.",
+            answer: "It calls itself.",
+            critique: "Too terse — add a base case."
+        )
+        #expect(p.contains("Explain recursion."))
+        #expect(p.contains("It calls itself."))
+        #expect(p.contains("Too terse — add a base case."))
+    }
+
+    @Test func rewritePromptIsNonTrivial() {
+        let p = SelfCritique.rewritePrompt(question: "Q", answer: "A", critique: "C")
+        #expect(p.count > 60, "rewritePrompt collapsed to \(p.count) chars — likely a regression")
+    }
+
+    @Test func promptsDoNotContainTemplatePlaceholders() {
+        // Belt-and-suspenders: neither prompt should leak Swift interpolation
+        // artifacts into the LLM request (\\( would appear if the backslash
+        // escaping of the interpolation expressions was accidentally changed).
+        for p in [
+            SelfCritique.critiquePrompt(question: "Q", answer: "A"),
+            SelfCritique.rewritePrompt(question: "Q", answer: "A", critique: "C"),
+        ] {
+            #expect(!p.contains("\\("))
+            #expect(!p.contains("%@"))
+            #expect(!p.contains("{{"))
+        }
+    }
+}

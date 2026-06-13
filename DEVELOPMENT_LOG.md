@@ -3633,6 +3633,24 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOG: SelfCritique critiquePrompt + rewritePrompt content pins
+
+**What:** Added `SelfCritiquePromptTests` struct to `Salehman AITests/SelfCritiqueTests.swift` (+55 lines, 6 tests):
+- `critiquePromptContainsQuestionAndAnswer` — question and answer appear in the prompt
+- `critiquePromptMentionsApprovedToken` — approvedToken sentinel is referenced so the model knows what to emit
+- `critiquePromptIsNonTrivial` — guards against the prompt collapsing to only the interpolated values
+- `rewritePromptContainsQuestionAnswerAndCritique` — all three inputs appear in the rewrite prompt
+- `rewritePromptIsNonTrivial` — size guard
+- `promptsDoNotContainTemplatePlaceholders` — no `\(`, `%@`, `{{` artifacts in either prompt
+
+**Why:** The existing `SelfCritiqueTests` use a scripted generator that ignores actual prompt content. If someone removes the `\(approvedToken)` reference from `critiquePrompt`, the model never knows the sentinel to emit → the loop can never converge → silent regression with no existing test tripping. Content-pinning tests are the only guard for this failure mode.
+
+**Files:** `Salehman AITests/SelfCritiqueTests.swift`
+
+**Result:** approvedToken API name verified via grep.
+
+---
+
 ## 2026-06-13 — EOE: webToolsDisabledReason three-branch diagnostic tests
 
 **What:** Added `WebToolsDisabledReasonTests` struct to `Salehman AITests/ToolPolicyTests.swift` (+70 lines, 4 tests):
