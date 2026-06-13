@@ -15,6 +15,7 @@ struct TabSwitcherBar: View {
     /// brightening that signals "this thing has a tooltip / is interactive" to a
     /// keyboard/mouse user without yelling on first paint.
     @State private var marketHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Namespace that ties the selection-highlight Capsule across pills, so the
     /// `matchedGeometryEffect` interpolates the highlight's FRAME from the old
@@ -131,22 +132,30 @@ struct TabSwitcherBar: View {
                 HStack(spacing: 7) {
                     ZStack {
                         if market.session.isOpen {
-                            // Continuously breathing halo — signals "live market"
-                            // more clearly than a static ring.
-                            PhaseAnimator([false, true]) { pulsing in
-                                ZStack {
-                                    Circle()
-                                        .fill(DS.Palette.successSoft)
-                                        .frame(width: 8, height: 8)
-                                        .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
-                                                radius: pulsing ? 5 : 1)
-                                    Circle()
-                                        .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
-                                        .frame(width: 8, height: 8)
-                                        .scaleEffect(pulsing ? 2.6 : 1.7)
+                            if reduceMotion {
+                                // Reduce Motion: static "market open" dot (no breathing halo).
+                                Circle()
+                                    .fill(DS.Palette.successSoft)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 3)
+                            } else {
+                                // Continuously breathing halo — signals "live market"
+                                // more clearly than a static ring.
+                                PhaseAnimator([false, true]) { pulsing in
+                                    ZStack {
+                                        Circle()
+                                            .fill(DS.Palette.successSoft)
+                                            .frame(width: 8, height: 8)
+                                            .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
+                                                    radius: pulsing ? 5 : 1)
+                                        Circle()
+                                            .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
+                                            .frame(width: 8, height: 8)
+                                            .scaleEffect(pulsing ? 2.6 : 1.7)
+                                    }
+                                } animation: { pulsing in
+                                    pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
                                 }
-                            } animation: { pulsing in
-                                pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
                             }
                         } else {
                             Circle()

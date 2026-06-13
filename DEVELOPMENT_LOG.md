@@ -4432,6 +4432,31 @@ running dot, LiveTranscription recording dot) and KeyframeAnimator entrance boun
 
 ---
 
+## 2026-06-13 — EOAY: Reduce Motion slice 2 — always-on status pulses go static
+
+**What changed:** Gated the four continuously-looping status animations on
+`accessibilityReduceMotion` (each: add the `@Environment`, swap the `PhaseAnimator` for a static
+view at the pulse's bright value, identical geometry):
+- **TabSwitcherBar** market-open breathing halo → static success dot.
+- **AgentCard** running heartbeat dot → static dot (ProgressView spinner stays — it's a
+  determinate-progress affordance, not decorative motion).
+- **LiveTranscriptionView** recording dot pulse → static dot.
+- **TodayView** breathing ambient orb → static glow at the rest size (140) / mid-opacity (0.25).
+
+**Why:** continuously-looping motion is the primary motion-sensitivity concern; these run the
+whole time their view is on screen. Combined with EOAX (empty-state glows), the app's looping
+animations now calm under Reduce Motion. Geometry-preserving, behavior changes only when the OS
+setting is on.
+
+**Files:** `Views/TabSwitcherBar.swift`, `Views/AgentsView.swift`, `Views/LiveTranscriptionView.swift`,
+`Views/TodayView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. One-shot
+KeyframeAnimator entrance bounces were left (they play once, not looping — lower motion-sensitivity
+priority).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

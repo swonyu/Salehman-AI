@@ -457,6 +457,7 @@ private struct AgentCard: View {
     let spec: AgentSpec
     let isActive: Bool
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
@@ -496,14 +497,22 @@ private struct AgentCard: View {
             // arrow at rest. PhaseAnimator gives the dot a heartbeat glow.
             if isActive {
                 HStack(spacing: 5) {
-                    PhaseAnimator([false, true]) { bright in
+                    if reduceMotion {
+                        // Reduce Motion: static running dot (no heartbeat glow).
                         Circle()
                             .fill(DS.Palette.successSoft)
                             .frame(width: 6, height: 6)
-                            .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
-                                    radius: bright ? 4 : 1)
-                    } animation: { bright in
-                        bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                            .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 2)
+                    } else {
+                        PhaseAnimator([false, true]) { bright in
+                            Circle()
+                                .fill(DS.Palette.successSoft)
+                                .frame(width: 6, height: 6)
+                                .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
+                                        radius: bright ? 4 : 1)
+                        } animation: { bright in
+                            bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                        }
                     }
                     ProgressView().controlSize(.small)
                 }

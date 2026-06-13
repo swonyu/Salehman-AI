@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 16:09 +03 · Swift files: 160 · Swift LOC: 36728_
+_Generated: 2026-06-13 16:32 +03 · Swift files: 160 · Swift LOC: 36766_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13634,7 +13634,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (568 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (577 lines) =====
 ```swift
 import SwiftUI
 
@@ -14095,6 +14095,7 @@ private struct AgentCard: View {
     let spec: AgentSpec
     let isActive: Bool
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
@@ -14134,14 +14135,22 @@ private struct AgentCard: View {
             // arrow at rest. PhaseAnimator gives the dot a heartbeat glow.
             if isActive {
                 HStack(spacing: 5) {
-                    PhaseAnimator([false, true]) { bright in
+                    if reduceMotion {
+                        // Reduce Motion: static running dot (no heartbeat glow).
                         Circle()
                             .fill(DS.Palette.successSoft)
                             .frame(width: 6, height: 6)
-                            .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
-                                    radius: bright ? 4 : 1)
-                    } animation: { bright in
-                        bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                            .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 2)
+                    } else {
+                        PhaseAnimator([false, true]) { bright in
+                            Circle()
+                                .fill(DS.Palette.successSoft)
+                                .frame(width: 6, height: 6)
+                                .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
+                                        radius: bright ? 4 : 1)
+                        } animation: { bright in
+                            bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                        }
                     }
                     ProgressView().controlSize(.small)
                 }
@@ -21833,7 +21842,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (336 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (345 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21844,6 +21853,7 @@ struct LiveTranscriptionView: View {
     @State private var searchText = ""
     /// Focus glow on the transcript search — consistent with the app's text inputs.
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var copied = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     var onAsk: (String) -> Void
@@ -21970,14 +21980,22 @@ struct LiveTranscriptionView: View {
                 HStack(spacing: 6) {
                     // PhaseAnimator pulses the glow shadow continuously while
                     // recording — makes the dot read as "actively capturing".
-                    PhaseAnimator([false, true]) { bright in
+                    if reduceMotion {
+                        // Reduce Motion: static recording dot (no pulsing glow).
                         Circle()
                             .fill(DS.Palette.accent)
                             .frame(width: 8, height: 8)
-                            .shadow(color: DS.Palette.accent.opacity(bright ? 0.80 : 0.30),
-                                    radius: bright ? 5 : 2)
-                    } animation: { bright in
-                        bright ? .easeIn(duration: 0.65) : .easeOut(duration: 1.10)
+                            .shadow(color: DS.Palette.accent.opacity(0.55), radius: 3)
+                    } else {
+                        PhaseAnimator([false, true]) { bright in
+                            Circle()
+                                .fill(DS.Palette.accent)
+                                .frame(width: 8, height: 8)
+                                .shadow(color: DS.Palette.accent.opacity(bright ? 0.80 : 0.30),
+                                        radius: bright ? 5 : 2)
+                        } animation: { bright in
+                            bright ? .easeIn(duration: 0.65) : .easeOut(duration: 1.10)
+                        }
                     }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
@@ -26662,7 +26680,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TabSwitcherBar.swift (279 lines) =====
+===== FILE: Salehman AI/Views/TabSwitcherBar.swift (288 lines) =====
 ```swift
 import SwiftUI
 
@@ -26681,6 +26699,7 @@ struct TabSwitcherBar: View {
     /// brightening that signals "this thing has a tooltip / is interactive" to a
     /// keyboard/mouse user without yelling on first paint.
     @State private var marketHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Namespace that ties the selection-highlight Capsule across pills, so the
     /// `matchedGeometryEffect` interpolates the highlight's FRAME from the old
@@ -26797,22 +26816,30 @@ struct TabSwitcherBar: View {
                 HStack(spacing: 7) {
                     ZStack {
                         if market.session.isOpen {
-                            // Continuously breathing halo — signals "live market"
-                            // more clearly than a static ring.
-                            PhaseAnimator([false, true]) { pulsing in
-                                ZStack {
-                                    Circle()
-                                        .fill(DS.Palette.successSoft)
-                                        .frame(width: 8, height: 8)
-                                        .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
-                                                radius: pulsing ? 5 : 1)
-                                    Circle()
-                                        .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
-                                        .frame(width: 8, height: 8)
-                                        .scaleEffect(pulsing ? 2.6 : 1.7)
+                            if reduceMotion {
+                                // Reduce Motion: static "market open" dot (no breathing halo).
+                                Circle()
+                                    .fill(DS.Palette.successSoft)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 3)
+                            } else {
+                                // Continuously breathing halo — signals "live market"
+                                // more clearly than a static ring.
+                                PhaseAnimator([false, true]) { pulsing in
+                                    ZStack {
+                                        Circle()
+                                            .fill(DS.Palette.successSoft)
+                                            .frame(width: 8, height: 8)
+                                            .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
+                                                    radius: pulsing ? 5 : 1)
+                                        Circle()
+                                            .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
+                                            .frame(width: 8, height: 8)
+                                            .scaleEffect(pulsing ? 2.6 : 1.7)
+                                    }
+                                } animation: { pulsing in
+                                    pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
                                 }
-                            } animation: { pulsing in
-                                pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
                             }
                         } else {
                             Circle()
@@ -26945,7 +26972,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (386 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (397 lines) =====
 ```swift
 import SwiftUI
 
@@ -26970,6 +26997,7 @@ struct TodayView: View {
     /// so without this the "today" capture photographs all three sections at
     /// opacity 0 (background-only) while nonBlank still passes on the glow.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
@@ -27090,18 +27118,28 @@ struct TodayView: View {
             // PhaseAnimator cycles rest→pulse→rest continuously, giving the glow
             // a slow organic "breath". The third 0.20 phase acts as a dead frame
             // (same values as the first) — a pause before the next exhale.
-            PhaseAnimator([0.20, 0.30, 0.20]) { opacity in
+            if reduceMotion {
+                // Reduce Motion: static glow at the breath's rest size/opacity.
                 Circle()
-                    .fill(DS.Palette.accent.opacity(opacity))
-                    .frame(width: opacity > 0.25 ? 162 : 140,
-                           height: opacity > 0.25 ? 162 : 140)
+                    .fill(DS.Palette.accent.opacity(0.25))
+                    .frame(width: 140, height: 140)
                     .blur(radius: 55)
                     .offset(x: -20, y: 0)
                     .allowsHitTesting(false)
-            } animation: { opacity in
-                opacity > 0.25
-                    ? .spring(duration: 2.4, bounce: 0.08)
-                    : .easeOut(duration: 2.0)
+            } else {
+                PhaseAnimator([0.20, 0.30, 0.20]) { opacity in
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(opacity))
+                        .frame(width: opacity > 0.25 ? 162 : 140,
+                               height: opacity > 0.25 ? 162 : 140)
+                        .blur(radius: 55)
+                        .offset(x: -20, y: 0)
+                        .allowsHitTesting(false)
+                } animation: { opacity in
+                    opacity > 0.25
+                        ? .spring(duration: 2.4, bounce: 0.08)
+                        : .easeOut(duration: 2.0)
+                }
             }
         }
         // Inner core: brand-tinted fill + top-lit inner highlight.
@@ -39336,7 +39374,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5526 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5551 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43768,6 +43806,31 @@ changes when the user has the setting ON (zero change for everyone else).
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Slice 1 of
 the Reduce Motion pass; next: the always-on status pulses (TabSwitcherBar market pulse, AgentCard
 running dot, LiveTranscription recording dot) and KeyframeAnimator entrance bounces.
+
+---
+
+## 2026-06-13 — EOAY: Reduce Motion slice 2 — always-on status pulses go static
+
+**What changed:** Gated the four continuously-looping status animations on
+`accessibilityReduceMotion` (each: add the `@Environment`, swap the `PhaseAnimator` for a static
+view at the pulse's bright value, identical geometry):
+- **TabSwitcherBar** market-open breathing halo → static success dot.
+- **AgentCard** running heartbeat dot → static dot (ProgressView spinner stays — it's a
+  determinate-progress affordance, not decorative motion).
+- **LiveTranscriptionView** recording dot pulse → static dot.
+- **TodayView** breathing ambient orb → static glow at the rest size (140) / mid-opacity (0.25).
+
+**Why:** continuously-looping motion is the primary motion-sensitivity concern; these run the
+whole time their view is on screen. Combined with EOAX (empty-state glows), the app's looping
+animations now calm under Reduce Motion. Geometry-preserving, behavior changes only when the OS
+setting is on.
+
+**Files:** `Views/TabSwitcherBar.swift`, `Views/AgentsView.swift`, `Views/LiveTranscriptionView.swift`,
+`Views/TodayView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. One-shot
+KeyframeAnimator entrance bounces were left (they play once, not looping — lower motion-sensitivity
+priority).
 
 ---
 
