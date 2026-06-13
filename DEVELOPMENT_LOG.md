@@ -3960,6 +3960,20 @@ Final marathon gap-close across Chat A lane views.
 
 ---
 
+### 2026-06-13 — EOAD: MarkdownText DS token alignment — table border + CodeBlock border + copy button
+Highest-traffic surface in the app (renders every chat response).
+
+**Gaps:**
+1. **Table border** (`tableView`, line 318-319): `cornerRadius: 8` (not tokenized) + `Color.white.opacity(0.08)` (below DS standard) — switched to `DS.Radius.small` + `DS.Palette.surfaceStroke` (0.12). Makes GFM table borders match every other card border in the app.
+2. **CodeBlock outer border** (line 415): `Color.white.opacity(0.1)` — switched to `DS.Palette.surfaceStroke`. Same 0.10→0.12 consistency bump for code block chrome.
+3. **CodeBlock copy button** (line 394): `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())`. The button already has excellent feedback (`.contentTransition(.symbolEffect(.replace))`, `copied` state); LuxPress adds the tactile scale-down on press that matches all other action buttons.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift`  
+**Why:** MarkdownText renders in every single AI reply — table and code blocks are the most-seen surfaces in the app after the chat background itself. Bringing borders in line with `DS.Palette.surfaceStroke` means they're consistent with every other card/panel in the app, and they'll correctly track if the token ever changes.  
+**Result:** Lines 318 (`DS.Radius.small`), 319 (`DS.Palette.surfaceStroke`), 394 (`LuxPressStyle()`), 415 (`DS.Palette.surfaceStroke`) — all verified via grep.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 09:00 +03 · Swift files: 160 · Swift LOC: 36655_
+_Generated: 2026-06-13 09:32 +03 · Swift files: 160 · Swift LOC: 36655_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22425,8 +22425,8 @@ struct MarkdownText: View {
             }
             .padding(10)
         }
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -22501,7 +22501,7 @@ struct CodeBlock: View {
                         .frame(minWidth: 56, minHeight: 24, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
                 .help("Copy code to clipboard")
                 .accessibilityLabel(copied ? "Copied" : "Copy code to clipboard")
             }
@@ -22522,7 +22522,7 @@ struct CodeBlock: View {
         .frame(maxWidth: 520, alignment: .leading)
         .background(Color.black.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func copyToClipboard(_ s: String) {
@@ -39263,7 +39263,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5023 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5037 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43223,6 +43223,20 @@ Final marathon gap-close across Chat A lane views.
 **Files:** `Salehman AI/Views/ChatHistoryView.swift`  
 **Why:** One export + one delete icon per conversation row (10–20 rows) — staying gray while the row highlights created an inconsistency; icons appeared non-interactive.  
 **Result:** Lines 236 (`accent.opacity(0.7)` on hover), 238 (`LuxPressStyle()`), 247 (`danger.opacity(0.7)` on hover), 249 (`LuxPressStyle()`).
+
+---
+
+### 2026-06-13 — EOAD: MarkdownText DS token alignment — table border + CodeBlock border + copy button
+Highest-traffic surface in the app (renders every chat response).
+
+**Gaps:**
+1. **Table border** (`tableView`, line 318-319): `cornerRadius: 8` (not tokenized) + `Color.white.opacity(0.08)` (below DS standard) — switched to `DS.Radius.small` + `DS.Palette.surfaceStroke` (0.12). Makes GFM table borders match every other card border in the app.
+2. **CodeBlock outer border** (line 415): `Color.white.opacity(0.1)` — switched to `DS.Palette.surfaceStroke`. Same 0.10→0.12 consistency bump for code block chrome.
+3. **CodeBlock copy button** (line 394): `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())`. The button already has excellent feedback (`.contentTransition(.symbolEffect(.replace))`, `copied` state); LuxPress adds the tactile scale-down on press that matches all other action buttons.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift`  
+**Why:** MarkdownText renders in every single AI reply — table and code blocks are the most-seen surfaces in the app after the chat background itself. Bringing borders in line with `DS.Palette.surfaceStroke` means they're consistent with every other card/panel in the app, and they'll correctly track if the token ever changes.  
+**Result:** Lines 318 (`DS.Radius.small`), 319 (`DS.Palette.surfaceStroke`), 394 (`LuxPressStyle()`), 415 (`DS.Palette.surfaceStroke`) — all verified via grep.
 
 ---
 

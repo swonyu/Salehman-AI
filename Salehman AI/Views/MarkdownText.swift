@@ -315,8 +315,8 @@ struct MarkdownText: View {
             }
             .padding(10)
         }
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -391,7 +391,7 @@ struct CodeBlock: View {
                         .frame(minWidth: 56, minHeight: 24, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
                 .help("Copy code to clipboard")
                 .accessibilityLabel(copied ? "Copied" : "Copy code to clipboard")
             }
@@ -412,7 +412,7 @@ struct CodeBlock: View {
         .frame(maxWidth: 520, alignment: .leading)
         .background(Color.black.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func copyToClipboard(_ s: String) {
