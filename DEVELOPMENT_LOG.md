@@ -5249,6 +5249,23 @@ higher-value than more audits. **Owner: please redirect.** Re-arming forever as 
 
 ---
 
+## 2026-06-14 — EOCI: banned/default-easing audit (rotation 3, angle l) — no gap
+
+The high-end skill bans `.linear`/`.easeInOut` transitions. App-wide:
+- **ZERO `.easeInOut`** and ZERO linear EASING. (The one `.linear` is `.progressViewStyle(.linear)` — a
+  horizontal progress-bar STYLE, not an easing curve.)
+- The `.easeIn`/`.easeOut` uses are all PhaseAnimator breathing-glow phase timing (inhale/exhale) —
+  intentional + correct for organic pulsing, not banned transitions. Left as-is per directive.
+- 5 bare `withAnimation { proxy.scrollTo(…) }` (CommandPalette + CodeView) use SwiftUI's DEFAULT spring
+  (not a banned curve) for scroll positioning — conventional + acceptable; tokenizing scroll-tos to a DS
+  curve would be marginal churn (springy scroll feels right), left as-is.
+The app's motion already follows the skill: custom `.timingCurve`/spring everywhere, no banned easing.
+**No gap.**
+
+**Files:** none (audit only — no source change). ↪︎ Redirect still strongly recommended (loop yield near-zero).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
