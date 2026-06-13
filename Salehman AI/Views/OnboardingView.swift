@@ -162,12 +162,14 @@ struct OnboardingView: View {
                                 Circle()
                                     .fill(Color.white.opacity(ctaHover ? 0.20 : 0.12))
                                     .frame(width: 26, height: 26)
+                                    .scaleEffect(ctaHover ? 1.08 : 1.0)
                                 Image(systemName: isLast ? "checkmark" : "chevron.right")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.white)
                                     .contentTransition(.symbolEffect(.replace))
                                     .animation(DS.Motion.smooth, value: isLast)
-                                    .offset(x: ctaHover && !isLast ? 1 : 0)
+                                    .offset(x: ctaHover && !isLast ? 1.5 : 0,
+                                            y: ctaHover && !isLast ? -1 : 0)
                             }
                         }
                         .padding(.horizontal, 20).padding(.vertical, 11)
@@ -178,7 +180,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
-                    .onHover { hovering in withAnimation(DS.Motion.smooth) { ctaHover = hovering } }
+                    .onHover { hovering in withAnimation(DS.Motion.magnetic) { ctaHover = hovering } }
                 }
 
                 Button("Skip") { onDone() }

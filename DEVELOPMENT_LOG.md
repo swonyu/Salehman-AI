@@ -4761,6 +4761,34 @@ anti-churn discipline.
 
 ---
 
+## 2026-06-13 — EOBM: OnboardingView hero-CTA hover physics (loop slice 8/8 — view list COMPLETE)
+
+OnboardingView is the app's showcase and already implements the high-end skill's signature patterns
+(button-in-button CTA, dual ambient glow orbs, animated pill progress dots, gated hero bounce, per-page
+`Eyebrow`s). The one place it fell short of the skill's EXACT spec was the CTA's hover "internal kinetic
+tension": the nested chevron circle should scale up and the icon translate DIAGONALLY; it only shifted
++1px on x. Completed it:
+- Nested circle: `.scaleEffect(ctaHover ? 1.08 : 1.0)`.
+- Chevron: diagonal `.offset(x: 1.5, y: -1)` on hover (was x:1 only).
+- Hover animation: `DS.Motion.smooth` → `DS.Motion.magnetic` (spring), matching the app's other magnetic
+  hovers + the skill's spring-physics preference.
+
+**Files:** `Views/OnboardingView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**🏁 Loop milestone — named-view list COMPLETE (8/8):** AgentsView, KnowledgeView, MemoryView,
+ScratchpadView, SettingsView, VoiceModeView, AboutView, OnboardingView — each given a high-end
+gap-finding pass (EOBE–EOBM), build verified on macOS 27 (EOBH). Recurring gaps closed app-wide:
+stock `.bordered` → composer-style filled sends; focus glows on primary inputs; icon-in-circle empty
+states; Settings field strokes; a missed Reduce-Motion loop (Voice orb); VoiceOver row-grouping (About);
+and the hero CTA's kinetic tension. Discipline held throughout: no manufactured churn on already-polished
+surfaces — each slice fixed only genuine gaps and documented what was left intentionally alone.
+**Next phase:** finish the EOBC-queued Reduce-Motion gaps in CodeView + ContentView (the one block of
+concretely-documented pending a11y work) to complete the app-wide Reduce-Motion pass.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

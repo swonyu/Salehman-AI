@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:20 +03 · Swift files: 160 · Swift LOC: 36993_
+_Generated: 2026-06-13 22:28 +03 · Swift files: 160 · Swift LOC: 36995_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -23951,7 +23951,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (200 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (202 lines) =====
 ```swift
 import SwiftUI
 
@@ -24117,12 +24117,14 @@ struct OnboardingView: View {
                                 Circle()
                                     .fill(Color.white.opacity(ctaHover ? 0.20 : 0.12))
                                     .frame(width: 26, height: 26)
+                                    .scaleEffect(ctaHover ? 1.08 : 1.0)
                                 Image(systemName: isLast ? "checkmark" : "chevron.right")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.white)
                                     .contentTransition(.symbolEffect(.replace))
                                     .animation(DS.Motion.smooth, value: isLast)
-                                    .offset(x: ctaHover && !isLast ? 1 : 0)
+                                    .offset(x: ctaHover && !isLast ? 1.5 : 0,
+                                            y: ctaHover && !isLast ? -1 : 0)
                             }
                         }
                         .padding(.horizontal, 20).padding(.vertical, 11)
@@ -24133,7 +24135,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
-                    .onHover { hovering in withAnimation(DS.Motion.smooth) { ctaHover = hovering } }
+                    .onHover { hovering in withAnimation(DS.Motion.magnetic) { ctaHover = hovering } }
                 }
 
                 Button("Skip") { onDone() }
@@ -39601,7 +39603,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5873 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5901 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44362,6 +44364,34 @@ anti-churn discipline.
 **Files:** `Views/AboutView.swift`.
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
+## 2026-06-13 — EOBM: OnboardingView hero-CTA hover physics (loop slice 8/8 — view list COMPLETE)
+
+OnboardingView is the app's showcase and already implements the high-end skill's signature patterns
+(button-in-button CTA, dual ambient glow orbs, animated pill progress dots, gated hero bounce, per-page
+`Eyebrow`s). The one place it fell short of the skill's EXACT spec was the CTA's hover "internal kinetic
+tension": the nested chevron circle should scale up and the icon translate DIAGONALLY; it only shifted
++1px on x. Completed it:
+- Nested circle: `.scaleEffect(ctaHover ? 1.08 : 1.0)`.
+- Chevron: diagonal `.offset(x: 1.5, y: -1)` on hover (was x:1 only).
+- Hover animation: `DS.Motion.smooth` → `DS.Motion.magnetic` (spring), matching the app's other magnetic
+  hovers + the skill's spring-physics preference.
+
+**Files:** `Views/OnboardingView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**🏁 Loop milestone — named-view list COMPLETE (8/8):** AgentsView, KnowledgeView, MemoryView,
+ScratchpadView, SettingsView, VoiceModeView, AboutView, OnboardingView — each given a high-end
+gap-finding pass (EOBE–EOBM), build verified on macOS 27 (EOBH). Recurring gaps closed app-wide:
+stock `.bordered` → composer-style filled sends; focus glows on primary inputs; icon-in-circle empty
+states; Settings field strokes; a missed Reduce-Motion loop (Voice orb); VoiceOver row-grouping (About);
+and the hero CTA's kinetic tension. Discipline held throughout: no manufactured churn on already-polished
+surfaces — each slice fixed only genuine gaps and documented what was left intentionally alone.
+**Next phase:** finish the EOBC-queued Reduce-Motion gaps in CodeView + ContentView (the one block of
+concretely-documented pending a11y work) to complete the app-wide Reduce-Motion pass.
 
 ---
 
