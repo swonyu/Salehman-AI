@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 05:47 +03 · Swift files: 152 · Swift LOC: 34836_
+_Generated: 2026-06-13 05:50 +03 · Swift files: 152 · Swift LOC: 34866_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -30042,7 +30042,7 @@ struct CodeGitStatusTests {
 }
 ```
 
-===== FILE: Salehman AITests/EffortTests.swift (128 lines) =====
+===== FILE: Salehman AITests/EffortTests.swift (158 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30089,6 +30089,36 @@ struct EffortTests {
         #expect(Effort.instant.approxModelCalls <= Effort.balanced.approxModelCalls)
         #expect(Effort.balanced.approxModelCalls <= Effort.high.approxModelCalls)
         #expect(Effort.high.approxModelCalls <= Effort.ultra.approxModelCalls)
+    }
+
+    // MARK: refineRounds + approxRefineCalls (the pinned-Salehman-brain path)
+    //
+    // `refineOwnDraft` runs when the Salehman brain calls critique on its own
+    // answer — no fan-out is available there, so `.ultra` is capped at `.high`.
+    // Breaking that cap would silently add extra model calls per reply.
+
+    @Test func refineRoundsMonotonicAndUltraCappedAtHigh() {
+        // instant < balanced < high == ultra (ultra can't fan out here).
+        #expect(Effort.instant.refineRounds == 0)
+        #expect(Effort.instant.refineRounds < Effort.balanced.refineRounds)
+        #expect(Effort.balanced.refineRounds < Effort.high.refineRounds)
+        // Key cap: .ultra caps at .high so refineOwnDraft doesn't spawn extra calls.
+        #expect(Effort.ultra.refineRounds == Effort.high.refineRounds,
+                ".ultra.refineRounds must equal .high.refineRounds — fan-out unavailable for refine path")
+    }
+
+    @Test func approxRefineCallsIsRefineRoundsTimesTwo() {
+        for e in Effort.allCases {
+            #expect(e.approxRefineCalls == e.refineRounds * 2,
+                    "approxRefineCalls must equal refineRounds × 2 for \(e)")
+        }
+    }
+
+    @Test func ultraRefineIsNotCheaperThanHigh() {
+        // Monotonic guard: the dial must never go backwards on the refine path.
+        #expect(Effort.instant.approxRefineCalls <= Effort.balanced.approxRefineCalls)
+        #expect(Effort.balanced.approxRefineCalls <= Effort.high.approxRefineCalls)
+        #expect(Effort.high.approxRefineCalls <= Effort.ultra.approxRefineCalls)
     }
 
     // MARK: control flow
@@ -37412,7 +37442,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4770 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4785 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -41045,6 +41075,21 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 **Files:** `Salehman AITests/BrainAdapterTests.swift` (new, 103 lines)
 
 **Result:** 0 real Swift errors (pure function, no cross-module false positives expected).
+
+---
+
+## 2026-06-13 — EOJ: Effort.refineRounds + approxRefineCalls (pinned-Salehman-brain path)
+
+**What:** Added 3 tests to `Salehman AITests/EffortTests.swift` (+30 lines):
+- `refineRoundsMonotonicAndUltraCappedAtHigh` — pins the `instant < balanced < high == ultra` ladder; the critical invariant is `.ultra.refineRounds == .high.refineRounds` (ultra is capped — no fan-out available on the refine path)
+- `approxRefineCallsIsRefineRoundsTimesTwo` — loops all cases, asserts `approxRefineCalls == refineRounds * 2`
+- `ultraRefineIsNotCheaperThanHigh` — monotonic guard for the refine-only cost axis
+
+**Why:** `refineOwnDraft` (SalehmanLeader) uses `refineRounds`, not `critiqueRounds`. If `.ultra.refineRounds` was ever bumped above `.high.refineRounds`, every pinned-Salehman reply would silently spend extra model calls. Zero prior test coverage for this path.
+
+**Files:** `Salehman AITests/EffortTests.swift`
+
+**Result:** API signatures verified — `refineRounds` (Effort.swift:36), `approxRefineCalls` (Effort.swift:46). SourceKit "No such module 'Testing'" is pre-existing false positive.
 
 ---
 

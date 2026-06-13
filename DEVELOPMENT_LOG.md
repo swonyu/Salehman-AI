@@ -3633,6 +3633,21 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOJ: Effort.refineRounds + approxRefineCalls (pinned-Salehman-brain path)
+
+**What:** Added 3 tests to `Salehman AITests/EffortTests.swift` (+30 lines):
+- `refineRoundsMonotonicAndUltraCappedAtHigh` — pins the `instant < balanced < high == ultra` ladder; the critical invariant is `.ultra.refineRounds == .high.refineRounds` (ultra is capped — no fan-out available on the refine path)
+- `approxRefineCallsIsRefineRoundsTimesTwo` — loops all cases, asserts `approxRefineCalls == refineRounds * 2`
+- `ultraRefineIsNotCheaperThanHigh` — monotonic guard for the refine-only cost axis
+
+**Why:** `refineOwnDraft` (SalehmanLeader) uses `refineRounds`, not `critiqueRounds`. If `.ultra.refineRounds` was ever bumped above `.high.refineRounds`, every pinned-Salehman reply would silently spend extra model calls. Zero prior test coverage for this path.
+
+**Files:** `Salehman AITests/EffortTests.swift`
+
+**Result:** API signatures verified — `refineRounds` (Effort.swift:36), `approxRefineCalls` (Effort.swift:46). SourceKit "No such module 'Testing'" is pre-existing false positive.
+
+---
+
 ## 2026-06-13 — EOI: openAIModelCurrent fallback + boolDefaultTrue default-ON contract tests
 
 **What:** Added 7 tests across two new structs in `Salehman AITests/FreeCloudBrainsTests.swift` (+75 lines):

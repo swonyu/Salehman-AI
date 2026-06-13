@@ -45,6 +45,36 @@ struct EffortTests {
         #expect(Effort.high.approxModelCalls <= Effort.ultra.approxModelCalls)
     }
 
+    // MARK: refineRounds + approxRefineCalls (the pinned-Salehman-brain path)
+    //
+    // `refineOwnDraft` runs when the Salehman brain calls critique on its own
+    // answer — no fan-out is available there, so `.ultra` is capped at `.high`.
+    // Breaking that cap would silently add extra model calls per reply.
+
+    @Test func refineRoundsMonotonicAndUltraCappedAtHigh() {
+        // instant < balanced < high == ultra (ultra can't fan out here).
+        #expect(Effort.instant.refineRounds == 0)
+        #expect(Effort.instant.refineRounds < Effort.balanced.refineRounds)
+        #expect(Effort.balanced.refineRounds < Effort.high.refineRounds)
+        // Key cap: .ultra caps at .high so refineOwnDraft doesn't spawn extra calls.
+        #expect(Effort.ultra.refineRounds == Effort.high.refineRounds,
+                ".ultra.refineRounds must equal .high.refineRounds — fan-out unavailable for refine path")
+    }
+
+    @Test func approxRefineCallsIsRefineRoundsTimesTwo() {
+        for e in Effort.allCases {
+            #expect(e.approxRefineCalls == e.refineRounds * 2,
+                    "approxRefineCalls must equal refineRounds × 2 for \(e)")
+        }
+    }
+
+    @Test func ultraRefineIsNotCheaperThanHigh() {
+        // Monotonic guard: the dial must never go backwards on the refine path.
+        #expect(Effort.instant.approxRefineCalls <= Effort.balanced.approxRefineCalls)
+        #expect(Effort.balanced.approxRefineCalls <= Effort.high.approxRefineCalls)
+        #expect(Effort.high.approxRefineCalls <= Effort.ultra.approxRefineCalls)
+    }
+
     // MARK: control flow
 
     @Test func instantReturnsDraftWithoutCritiquing() async {
