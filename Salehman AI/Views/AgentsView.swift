@@ -169,11 +169,11 @@ struct AgentsView: View {
                     .padding(.horizontal, 16).padding(.vertical, 9)
                     .background(
                         isRunningAutonomous
-                            ? AnyShapeStyle(Color.red.opacity(0.85))
+                            ? AnyShapeStyle(DS.Palette.danger.opacity(0.85))
                             : AnyShapeStyle(DS.Gradient.brand),
                         in: Capsule()
                     )
-                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.30),
+                    .shadow(color: (isRunningAutonomous ? DS.Palette.danger : DS.Palette.accent).opacity(0.30),
                             radius: 8, y: 3)
                 }
                 .buttonStyle(LuxPressStyle())

@@ -3990,6 +3990,22 @@ Extracted the "lux" animation token from CodeView to DS.Motion back in an earlie
 
 ---
 
+### 2026-06-13 — EOAF: AgentsView — DS.Palette.danger instead of Color.red
+Token alignment in the autonomous-run stop button.
+
+**Gap:** AgentsView lines 172/176 used `Color.red` directly for the autonomous-mode pill background and shadow — bypassing `DS.Palette.danger` which is defined as `Color.red` in the DS. Zero visual change; pure semantic alignment so theming changes in one place.
+
+**Fix:**
+- Line 172: `Color.red.opacity(0.85)` → `DS.Palette.danger.opacity(0.85)` (pill fill)
+- Line 176: `Color.red` → `DS.Palette.danger` (shadow color)
+
+**Sweep result:** No other raw `Color.red/orange/green` remain in Chat A lane views. CodeSyntaxView keeps `Color.yellow` (IDE search highlight convention; not a DS-managed semantic color).
+
+**Files:** `Salehman AI/Views/AgentsView.swift`  
+**Why:** Consistency with every other danger-colored element in the app (all other views use `DS.Palette.danger`). If danger is ever recolored in the DS, this button now tracks automatically.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

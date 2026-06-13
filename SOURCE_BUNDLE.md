@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 10:05 +03 · Swift files: 160 · Swift LOC: 36651_
+_Generated: 2026-06-13 10:07 +03 · Swift files: 160 · Swift LOC: 36651_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13800,11 +13800,11 @@ struct AgentsView: View {
                     .padding(.horizontal, 16).padding(.vertical, 9)
                     .background(
                         isRunningAutonomous
-                            ? AnyShapeStyle(Color.red.opacity(0.85))
+                            ? AnyShapeStyle(DS.Palette.danger.opacity(0.85))
                             : AnyShapeStyle(DS.Gradient.brand),
                         in: Capsule()
                     )
-                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.30),
+                    .shadow(color: (isRunningAutonomous ? DS.Palette.danger : DS.Palette.accent).opacity(0.30),
                             radius: 8, y: 3)
                 }
                 .buttonStyle(LuxPressStyle())
@@ -39259,7 +39259,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5053 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5069 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43249,6 +43249,22 @@ Extracted the "lux" animation token from CodeView to DS.Motion back in an earlie
 
 **Files:** `Salehman AI/Views/CodeView.swift`  
 **Why:** Extraction-without-deletion creates a permanent divergence risk — if `DS.Motion.lux` is ever tuned, CodeView would silently run a different curve. The DS comment itself said "Moved from CodeView so all tabs share one definition (Marathon EN)" — the deletion was just never done.
+
+---
+
+### 2026-06-13 — EOAF: AgentsView — DS.Palette.danger instead of Color.red
+Token alignment in the autonomous-run stop button.
+
+**Gap:** AgentsView lines 172/176 used `Color.red` directly for the autonomous-mode pill background and shadow — bypassing `DS.Palette.danger` which is defined as `Color.red` in the DS. Zero visual change; pure semantic alignment so theming changes in one place.
+
+**Fix:**
+- Line 172: `Color.red.opacity(0.85)` → `DS.Palette.danger.opacity(0.85)` (pill fill)
+- Line 176: `Color.red` → `DS.Palette.danger` (shadow color)
+
+**Sweep result:** No other raw `Color.red/orange/green` remain in Chat A lane views. CodeSyntaxView keeps `Color.yellow` (IDE search highlight convention; not a DS-managed semantic color).
+
+**Files:** `Salehman AI/Views/AgentsView.swift`  
+**Why:** Consistency with every other danger-colored element in the app (all other views use `DS.Palette.danger`). If danger is ever recolored in the DS, this button now tracks automatically.
 
 ---
 
