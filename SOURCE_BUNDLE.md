@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 09:32 +03 · Swift files: 160 · Swift LOC: 36655_
+_Generated: 2026-06-13 10:05 +03 · Swift files: 160 · Swift LOC: 36651_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -14998,7 +14998,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2661 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2657 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15551,10 +15551,6 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
-    /// Design-language motion: one sprung curve for every Code-tab transition
-    /// (cubic-bezier(0.32, 0.72, 0, 1) — heavy start, soft landing). Replaces the
-    /// scattered `easeOut` micro-durations so all motion shares one physical feel.
-    static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
     /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
     /// onAppear, so the capture would otherwise photograph an invisible welcome).
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
@@ -15691,11 +15687,11 @@ struct CodeView: View {
         // and pop the right panel open so the file/diff is actually visible.
         .onChange(of: ws.selectedFile) { _, sel in
             revealInTree(sel)
-            if sel != nil { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+            if sel != nil { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } }
         }
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
-            if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+            if !files.isEmpty { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } }
         }
         // Edge-triggers from BottomShortcutBar hints (same actions as the local shortcuts).
         .onChange(of: app.reviewProjectRequested) { _, req in
@@ -15716,7 +15712,7 @@ struct CodeView: View {
         .onChange(of: app.toggleCodeTreeRequested) { _, req in
             guard req else { return }
             app.toggleCodeTreeRequested = false
-            withAnimation(CodeView.lux) { treeCollapsed.toggle() }
+            withAnimation(DS.Motion.lux) { treeCollapsed.toggle() }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -15727,12 +15723,12 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
-                Button("") { withAnimation(CodeView.lux) { treeCollapsed.toggle() } }
+                Button("") { withAnimation(DS.Motion.lux) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
-                Button("") { withAnimation(CodeView.lux) { rightPanelCollapsed.toggle() } }
+                Button("") { withAnimation(DS.Motion.lux) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button("") {
-                    withAnimation(CodeView.lux) { convoSearching = true }
+                    withAnimation(DS.Motion.lux) { convoSearching = true }
                     convoSearchFocused = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
@@ -15804,7 +15800,7 @@ struct CodeView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Rescan project files")
                         .accessibilityLabel("Rescan project files")
-                    Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
+                    Button { withAnimation(DS.Motion.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -16016,7 +16012,7 @@ struct CodeView: View {
                 HStack(spacing: 10) {
                     if treeCollapsed {
                         headerIcon("sidebar.left", "Show the file tree") {
-                            withAnimation(CodeView.lux) { treeCollapsed = false }
+                            withAnimation(DS.Motion.lux) { treeCollapsed = false }
                         }
                     }
                     // Context meter — the local 14B sees only ~9k chars of history;
@@ -16085,8 +16081,8 @@ struct CodeView: View {
                                 .offset(y: welcomeAppeared ? 0 : 16)
                                 .onAppear {
                                     guard !welcomeAppeared else { return }
-                                    withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
-                                    withAnimation(Self.lux.delay(0.22)) { welcomeContentAppeared = true }
+                                    withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+                                    withAnimation(DS.Motion.lux.delay(0.22)) { welcomeContentAppeared = true }
                                 }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
@@ -16226,7 +16222,7 @@ struct CodeView: View {
     }
 
     private func closeConvoSearch() {
-        withAnimation(CodeView.lux) { convoSearching = false }
+        withAnimation(DS.Motion.lux) { convoSearching = false }
         convoQuery = ""; convoMatchIndex = 0
         inputFocused = true
     }
@@ -16641,9 +16637,9 @@ struct CodeView: View {
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(Self.lux, value: input.isEmpty)
-            .animation(Self.lux, value: isDropTargeted)
-            .animation(Self.lux, value: inputFocused)
+            .animation(DS.Motion.lux, value: input.isEmpty)
+            .animation(DS.Motion.lux, value: isDropTargeted)
+            .animation(DS.Motion.lux, value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -16744,7 +16740,7 @@ struct CodeView: View {
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(CodeView.lux) { treeCollapsed = false } } label: {
+            Button { withAnimation(DS.Motion.lux) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
@@ -16817,7 +16813,7 @@ struct CodeView: View {
                     .transition(.opacity)
                 }
                 Spacer()
-                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
+                Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
@@ -16851,7 +16847,7 @@ struct CodeView: View {
             attachedFile = nil
             attachedText = ""
             input = ""
-            withAnimation(Self.lux) {
+            withAnimation(DS.Motion.lux) {
                 messages.append(ChatMessage(id: UUID(),
                     text: "No screenshots found in \(ScreenshotGrabber.screenshotsDirectory().path).",
                     isUser: false, timestamp: Date()))
@@ -16894,7 +16890,7 @@ struct CodeView: View {
                 Spacer()
                 // The run-level safety net: one click reverts EVERY AI edit from
                 // this run (your own edits in other files are untouched).
-                Button { withAnimation(CodeView.lux) { ws.restoreAllChanged() } } label: {
+                Button { withAnimation(DS.Motion.lux) { ws.restoreAllChanged() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
                         Text("Restore all").font(.system(size: 9.5, weight: .semibold))
@@ -16917,7 +16913,7 @@ struct CodeView: View {
                         ChangedFileRow(label: relativePath(url),
                                        isSelected: ws.selectedFile == url,
                                        stat: ws.changeStats[url],
-                                       onRestore: { withAnimation(CodeView.lux) { _ = ws.restoreFromSnapshot(url) } }) {
+                                       onRestore: { withAnimation(DS.Motion.lux) { _ = ws.restoreFromSnapshot(url) } }) {
                             ws.select(url)
                             rightPane = .diff
                         }
@@ -17004,14 +17000,14 @@ struct CodeView: View {
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
     private var rightReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+            Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } } label: {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
-                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+                Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10.5))
                         .frame(width: 24, height: 22).contentShape(Rectangle())
                         .overlay(alignment: .topTrailing) {
@@ -17031,7 +17027,7 @@ struct CodeView: View {
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
-            withAnimation(CodeView.lux) { inspectorCollapsed = false }
+            withAnimation(DS.Motion.lux) { inspectorCollapsed = false }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
@@ -17093,7 +17089,7 @@ struct CodeView: View {
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(CodeView.lux) { rightPanelCollapsed = true }
+                    withAnimation(DS.Motion.lux) { rightPanelCollapsed = true }
                 } label: {
                     Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
@@ -39263,7 +39259,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5037 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5053 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43237,6 +43233,22 @@ Highest-traffic surface in the app (renders every chat response).
 **Files:** `Salehman AI/Views/MarkdownText.swift`  
 **Why:** MarkdownText renders in every single AI reply — table and code blocks are the most-seen surfaces in the app after the chat background itself. Bringing borders in line with `DS.Palette.surfaceStroke` means they're consistent with every other card/panel in the app, and they'll correctly track if the token ever changes.  
 **Result:** Lines 318 (`DS.Radius.small`), 319 (`DS.Palette.surfaceStroke`), 394 (`LuxPressStyle()`), 415 (`DS.Palette.surfaceStroke`) — all verified via grep.
+
+---
+
+---
+
+### 2026-06-13 — EOAE: CodeView.lux → DS.Motion.lux — remove duplicate animation definition
+Extracted the "lux" animation token from CodeView to DS.Motion back in an earlier session (Marathon EN), but the local `static let lux` definition in CodeView was never removed. 24 call sites kept using `CodeView.lux` / `Self.lux` instead of `DS.Motion.lux`.
+
+**Fix:**
+1. Deleted `static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)` from `CodeView` (line 555).
+2. Replaced all `CodeView.lux` (18 hits) and `Self.lux` (6 hits) with `DS.Motion.lux` via `replace_all`.
+
+**Result:** 0 local references remaining; 24 sites now use `DS.Motion.lux`. Behavior is pixel-identical (same cubic-bezier values). Single source of truth means tuning the curve in DesignSystem.swift updates all 24 animations automatically.
+
+**Files:** `Salehman AI/Views/CodeView.swift`  
+**Why:** Extraction-without-deletion creates a permanent divergence risk — if `DS.Motion.lux` is ever tuned, CodeView would silently run a different curve. The DS comment itself said "Moved from CodeView so all tabs share one definition (Marathon EN)" — the deletion was just never done.
 
 ---
 

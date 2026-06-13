@@ -3974,6 +3974,22 @@ Highest-traffic surface in the app (renders every chat response).
 
 ---
 
+---
+
+### 2026-06-13 — EOAE: CodeView.lux → DS.Motion.lux — remove duplicate animation definition
+Extracted the "lux" animation token from CodeView to DS.Motion back in an earlier session (Marathon EN), but the local `static let lux` definition in CodeView was never removed. 24 call sites kept using `CodeView.lux` / `Self.lux` instead of `DS.Motion.lux`.
+
+**Fix:**
+1. Deleted `static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)` from `CodeView` (line 555).
+2. Replaced all `CodeView.lux` (18 hits) and `Self.lux` (6 hits) with `DS.Motion.lux` via `replace_all`.
+
+**Result:** 0 local references remaining; 24 sites now use `DS.Motion.lux`. Behavior is pixel-identical (same cubic-bezier values). Single source of truth means tuning the curve in DesignSystem.swift updates all 24 animations automatically.
+
+**Files:** `Salehman AI/Views/CodeView.swift`  
+**Why:** Extraction-without-deletion creates a permanent divergence risk — if `DS.Motion.lux` is ever tuned, CodeView would silently run a different curve. The DS comment itself said "Moved from CodeView so all tabs share one definition (Marathon EN)" — the deletion was just never done.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
