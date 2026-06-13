@@ -10,6 +10,7 @@ struct AgentsView: View {
     /// Focus drives a subtle accent glow on the filter field — consistent with
     /// the app's other text inputs (add-note/composer focus affordance).
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -86,16 +87,23 @@ struct AgentsView: View {
                                 lineWidth: 0.75
                             )
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "sparkles")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }

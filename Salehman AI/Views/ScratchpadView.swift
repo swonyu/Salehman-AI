@@ -15,6 +15,7 @@ struct ScratchpadView: View {
     @FocusState private var addFocused: Bool
     /// Focus glow on the search field — consistent with the add field below.
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Inline edit: which note/task is being renamed and its live draft text.
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
@@ -117,18 +118,27 @@ struct ScratchpadView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: pad == .tasks ? "checklist" : "note.text")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
                         .contentTransition(.symbolEffect(.replace))
                         .animation(DS.Motion.smooth, value: pad)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: pad)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }

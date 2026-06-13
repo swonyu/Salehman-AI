@@ -4494,6 +4494,39 @@ CopilotSignInView, SettingsView, VoiceModeView, OnboardingView) need `@Environme
 
 ---
 
+## 2026-06-13 — EOBB: Reduce Motion COMPLETE — all brand-tile bounces gated (first 6-agent slice)
+
+**Directive update:** owner amended the long-standing "no multi-agent workflows" rule mid-session
+to **"≤6 agents max, scoped to the loop."** This slice is the first to use it.
+
+**What changed:** gated the header brand-tile `KeyframeAnimator` bounce-in on
+`accessibilityReduceMotion` in the 9 remaining views — `if reduceMotion { static icon } else
+{ KeyframeAnimator }`, dropping only `.scaleEffect(scale)`, geometry preserved:
+- **Inline (me):** AgentsView (sparkles), MarketsView (chart.line.uptrend.xyaxis), AboutView (sparkles).
+- **6 parallel agents (one view each):** ScratchpadView (kept its `.symbolEffect` swap),
+  ShortcutsView (keyboard), CopilotSignInView (person.2.badge.gearshape.fill), SettingsView (gear),
+  VoiceModeView (waveform), OnboardingView (kept `trigger: page` + `pages[page].icon`). Each agent
+  self-verified with `swiftc -parse`; I ran the authoritative central check.
+
+**Why:** finishes the Reduce Motion pass started in EOAX/EOAY/EOAZ/EOBA. Combined, the app now
+calms ALL of: empty-state breathing glows, always-on status pulses, and brand-tile bounce-ins
+when the OS Reduce Motion setting is on. Apple HIG-aligned; geometry-preserving; behavior changes
+only when the setting is on.
+
+**Files:** `Views/AgentsView.swift`, `MarketsView.swift`, `AboutView.swift`, `ScratchpadView.swift`,
+`ShortcutsView.swift`, `CopilotSignInView.swift`, `SettingsView.swift`, `VoiceModeView.swift`,
+`OnboardingView.swift`.
+
+**Result:** central `swiftc -emit-module -swift-version 6` over all app sources → **0 errors / 0
+warnings**. Reduce Motion is now fully covered app-wide.
+
+**Sandbox note:** "open the app" isn't possible from here — `xcodebuild` (build) AND `open` (GUI
+launch, LaunchServices error -10810) are both sandbox-blocked. The only built `.app` is a stale
+06-12 binary (predates this whole session). To see current work: build+run in Xcode (⌘R) — it now
+compiles (was red 06-12→06-13; fixed in EOAM–EOAP).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

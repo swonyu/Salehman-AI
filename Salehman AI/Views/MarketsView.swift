@@ -29,6 +29,7 @@ struct MarketsView: View {
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -84,16 +85,23 @@ struct MarketsView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }

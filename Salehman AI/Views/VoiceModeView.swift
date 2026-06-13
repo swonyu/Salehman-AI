@@ -7,6 +7,7 @@ struct VoiceModeView: View {
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var phaseColor: Color {
         switch session.phase {
@@ -59,16 +60,23 @@ struct VoiceModeView: View {
                                     .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
                                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                             )
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "waveform")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                                }
                             }
                         }
                     }

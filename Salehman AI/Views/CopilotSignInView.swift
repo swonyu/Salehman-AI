@@ -13,6 +13,7 @@ struct CopilotSignInView: View {
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 16) {
@@ -28,16 +29,23 @@ struct CopilotSignInView: View {
                         ? .spring(duration: 2.4, bounce: 0.06)
                         : .easeOut(duration: 2.0)
                 }
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "person.2.badge.gearshape.fill")
                         .font(.system(size: 34))
                         .foregroundStyle(DS.Palette.accent)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "person.2.badge.gearshape.fill")
+                            .font(.system(size: 34))
+                            .foregroundStyle(DS.Palette.accent)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }

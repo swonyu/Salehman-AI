@@ -9,6 +9,7 @@ struct AboutView: View {
     // Entrance choreography — settled under `--qa` so offscreen snapshots capture
     // the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredCap: UUID?
 
     /// Major capability rows. Edit when a new feature surfaces — this is the
@@ -79,16 +80,23 @@ struct AboutView: View {
                             )
                         // KeyframeAnimator: compress → overshoot → settle on
                         // first appear. Hardware-accurate bounce physics.
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "sparkles")
                                 .font(.system(size: 22, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
+                                }
                             }
                         }
                     }

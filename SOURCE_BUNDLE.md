@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 16:52 +03 · Swift files: 160 · Swift LOC: 36801_
+_Generated: 2026-06-13 17:09 +03 · Swift files: 160 · Swift LOC: 36876_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13436,7 +13436,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (194 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (202 lines) =====
 ```swift
 import SwiftUI
 
@@ -13449,6 +13449,7 @@ struct AboutView: View {
     // Entrance choreography — settled under `--qa` so offscreen snapshots capture
     // the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredCap: UUID?
 
     /// Major capability rows. Edit when a new feature surfaces — this is the
@@ -13519,16 +13520,23 @@ struct AboutView: View {
                             )
                         // KeyframeAnimator: compress → overshoot → settle on
                         // first appear. Hardware-accurate bounce physics.
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "sparkles")
                                 .font(.system(size: 22, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
+                                }
                             }
                         }
                     }
@@ -13634,7 +13642,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (577 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (585 lines) =====
 ```swift
 import SwiftUI
 
@@ -13648,6 +13656,7 @@ struct AgentsView: View {
     /// Focus drives a subtle accent glow on the filter field — consistent with
     /// the app's other text inputs (add-note/composer focus affordance).
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -13724,16 +13733,23 @@ struct AgentsView: View {
                                 lineWidth: 0.75
                             )
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "sparkles")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -20814,7 +20830,7 @@ struct ChatSlashCommand: Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (127 lines) =====
+===== FILE: Salehman AI/Views/CopilotSignInView.swift (135 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -20831,6 +20847,7 @@ struct CopilotSignInView: View {
     @State private var working = true
     @State private var pollTask: Task<Void, Never>?
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 16) {
@@ -20846,16 +20863,23 @@ struct CopilotSignInView: View {
                         ? .spring(duration: 2.4, bounce: 0.06)
                         : .easeOut(duration: 2.0)
                 }
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "person.2.badge.gearshape.fill")
                         .font(.system(size: 34))
                         .foregroundStyle(DS.Palette.accent)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "person.2.badge.gearshape.fill")
+                            .font(.system(size: 34))
+                            .foregroundStyle(DS.Palette.accent)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -22670,7 +22694,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (752 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (760 lines) =====
 ```swift
 import SwiftUI
 
@@ -22703,6 +22727,7 @@ struct MarketsView: View {
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -22758,16 +22783,23 @@ struct MarketsView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -23835,7 +23867,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (191 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (200 lines) =====
 ```swift
 import SwiftUI
 
@@ -23850,6 +23882,7 @@ struct OnboardingView: View {
     // Entrance choreography. Starts settled under `--qa` so offscreen snapshots
     // capture the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Page: Identifiable {
         let id = UUID()
@@ -23917,17 +23950,25 @@ struct OnboardingView: View {
                     // KeyframeAnimator gives each page-change a physics-accurate
                     // rubber-band pop: compress → overshoot → settle. Symbol
                     // crossfade handled by contentTransition, scale by the track.
-                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                    if reduceMotion {
+                        // Reduce Motion: static icon (no scale bounce).
                         Image(systemName: pages[page].icon)
                             .font(.system(size: 40, weight: .bold))
                             .foregroundStyle(.white)
-                            .scaleEffect(scale)
                             .contentTransition(.symbolEffect(.replace))
-                    } keyframes: { _ in
-                        KeyframeTrack {
-                            LinearKeyframe(0.55, duration: 0.07)
-                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                    } else {
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                            Image(systemName: pages[page].icon)
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                                .contentTransition(.symbolEffect(.replace))
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.55, duration: 0.07)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                            }
                         }
                     }
                 }
@@ -24156,7 +24197,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (676 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (686 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24175,6 +24216,7 @@ struct ScratchpadView: View {
     @FocusState private var addFocused: Bool
     /// Focus glow on the search field — consistent with the add field below.
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Inline edit: which note/task is being renamed and its live draft text.
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
@@ -24277,18 +24319,27 @@ struct ScratchpadView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: pad == .tasks ? "checklist" : "note.text")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
                         .contentTransition(.symbolEffect(.replace))
                         .animation(DS.Motion.smooth, value: pad)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: pad)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -25009,7 +25060,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1506 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1514 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25081,6 +25132,7 @@ struct SettingsView: View {
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
@@ -25342,16 +25394,23 @@ struct SettingsView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "gear")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "gear")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -26519,7 +26578,7 @@ struct SettingsView: View {
 
 ```
 
-===== FILE: Salehman AI/Views/ShortcutsView.swift (185 lines) =====
+===== FILE: Salehman AI/Views/ShortcutsView.swift (193 lines) =====
 ```swift
 import SwiftUI
 
@@ -26529,6 +26588,7 @@ import SwiftUI
 struct ShortcutsView: View {
     let onClose: () -> Void
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredID: UUID?
 
     private struct Shortcut: Identifiable { let id = UUID(); let keys: String; let label: String }
@@ -26597,16 +26657,23 @@ struct ShortcutsView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 0.75)
                             )
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "keyboard")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                                }
                             }
                         }
                     }
@@ -27408,7 +27475,7 @@ private struct StatTile: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/VoiceModeView.swift (210 lines) =====
+===== FILE: Salehman AI/Views/VoiceModeView.swift (218 lines) =====
 ```swift
 import SwiftUI
 
@@ -27419,6 +27486,7 @@ struct VoiceModeView: View {
     @StateObject private var session = VoiceSession()
     @State private var savedConfirmation = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var phaseColor: Color {
         switch session.phase {
@@ -27471,16 +27539,23 @@ struct VoiceModeView: View {
                                     .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
                                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                             )
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "waveform")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                                }
                             }
                         }
                     }
@@ -39409,7 +39484,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5588 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5621 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43903,6 +43978,39 @@ remaining headers that already had `reduceMotion` wired, so they were the cleane
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Remaining
 brand-tile bounces (AgentsView, ScratchpadView, MarketsView, AboutView, ShortcutsView,
 CopilotSignInView, SettingsView, VoiceModeView, OnboardingView) need `@Environment` added — next.
+
+---
+
+## 2026-06-13 — EOBB: Reduce Motion COMPLETE — all brand-tile bounces gated (first 6-agent slice)
+
+**Directive update:** owner amended the long-standing "no multi-agent workflows" rule mid-session
+to **"≤6 agents max, scoped to the loop."** This slice is the first to use it.
+
+**What changed:** gated the header brand-tile `KeyframeAnimator` bounce-in on
+`accessibilityReduceMotion` in the 9 remaining views — `if reduceMotion { static icon } else
+{ KeyframeAnimator }`, dropping only `.scaleEffect(scale)`, geometry preserved:
+- **Inline (me):** AgentsView (sparkles), MarketsView (chart.line.uptrend.xyaxis), AboutView (sparkles).
+- **6 parallel agents (one view each):** ScratchpadView (kept its `.symbolEffect` swap),
+  ShortcutsView (keyboard), CopilotSignInView (person.2.badge.gearshape.fill), SettingsView (gear),
+  VoiceModeView (waveform), OnboardingView (kept `trigger: page` + `pages[page].icon`). Each agent
+  self-verified with `swiftc -parse`; I ran the authoritative central check.
+
+**Why:** finishes the Reduce Motion pass started in EOAX/EOAY/EOAZ/EOBA. Combined, the app now
+calms ALL of: empty-state breathing glows, always-on status pulses, and brand-tile bounce-ins
+when the OS Reduce Motion setting is on. Apple HIG-aligned; geometry-preserving; behavior changes
+only when the setting is on.
+
+**Files:** `Views/AgentsView.swift`, `MarketsView.swift`, `AboutView.swift`, `ScratchpadView.swift`,
+`ShortcutsView.swift`, `CopilotSignInView.swift`, `SettingsView.swift`, `VoiceModeView.swift`,
+`OnboardingView.swift`.
+
+**Result:** central `swiftc -emit-module -swift-version 6` over all app sources → **0 errors / 0
+warnings**. Reduce Motion is now fully covered app-wide.
+
+**Sandbox note:** "open the app" isn't possible from here — `xcodebuild` (build) AND `open` (GUI
+launch, LaunchServices error -10810) are both sandbox-blocked. The only built `.app` is a stale
+06-12 binary (predates this whole session). To see current work: build+run in Xcode (⌘R) — it now
+compiles (was red 06-12→06-13; fixed in EOAM–EOAP).
 
 ---
 

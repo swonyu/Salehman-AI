@@ -6,6 +6,7 @@ import SwiftUI
 struct ShortcutsView: View {
     let onClose: () -> Void
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredID: UUID?
 
     private struct Shortcut: Identifiable { let id = UUID(); let keys: String; let label: String }
@@ -74,16 +75,23 @@ struct ShortcutsView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 0.75)
                             )
-                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
                             Image(systemName: "keyboard")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(scale)
-                        } keyframes: { _ in
-                            KeyframeTrack {
-                                LinearKeyframe(0.60, duration: 0.07)
-                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                                }
                             }
                         }
                     }

@@ -11,6 +11,7 @@ struct OnboardingView: View {
     // Entrance choreography. Starts settled under `--qa` so offscreen snapshots
     // capture the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Page: Identifiable {
         let id = UUID()
@@ -78,17 +79,25 @@ struct OnboardingView: View {
                     // KeyframeAnimator gives each page-change a physics-accurate
                     // rubber-band pop: compress → overshoot → settle. Symbol
                     // crossfade handled by contentTransition, scale by the track.
-                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                    if reduceMotion {
+                        // Reduce Motion: static icon (no scale bounce).
                         Image(systemName: pages[page].icon)
                             .font(.system(size: 40, weight: .bold))
                             .foregroundStyle(.white)
-                            .scaleEffect(scale)
                             .contentTransition(.symbolEffect(.replace))
-                    } keyframes: { _ in
-                        KeyframeTrack {
-                            LinearKeyframe(0.55, duration: 0.07)
-                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                    } else {
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                            Image(systemName: pages[page].icon)
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                                .contentTransition(.symbolEffect(.replace))
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.55, duration: 0.07)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                            }
                         }
                     }
                 }
