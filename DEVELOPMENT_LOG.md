@@ -3824,6 +3824,23 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+## 2026-06-13 — EOQ: AgentPipeline pure-helper coverage (6 functions, 37 tests)
+
+**What changed:** Created `AgentPipelineHelpersTests.swift` with 37 tests across 6 test structs covering `AgentPipeline`'s pure static helpers that had zero prior coverage:
+
+- `isErrorReply` (9 tests) — pipeline-level gate, distinct from `OpenAICompatibleClient.isErrorReply`; covers empty, whitespace, offMessage, normal text, mid-sentence error mention, and all three bracketed diagnostic shapes
+- `looksIncomplete` (8 tests) — auto-continue gate; covers empty, error reply, complete answer, tool-call limit text, unclosed/closed code fences, "should I continue" tail trigger, and "continue" mid-body not triggering
+- `trimmedForLocalWindow` (4 tests) — context budget trimmer; covers under-budget identity, trim-marker prefix, most-recent line preservation, and the two-line minimum guard
+- `recentTail` (4 tests) — turn-boundary suffix; covers identity, line-boundary cut, raw char cut (no newline), and newline-at-end fallback to raw tail
+- `isSerialLocalBrain` (3 tests) — OOM-prevention predicate; covers all 4 serial brains, 9 cloud brains, and all 5 orchestration modes
+- `buildPrompt` (8 tests) — prompt assembly; covers name/role/mission inclusion, full vs. terse length rule, history section presence/absence, context string inclusion, language-mirror instruction
+
+**Files:** `Salehman AITests/AgentPipelineHelpersTests.swift` (new)
+
+**Result:** All 6 function signatures confirmed via grep. All Brain enum cases verified. Pure deterministic assertions with no model calls.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
