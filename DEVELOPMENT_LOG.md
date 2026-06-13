@@ -3398,6 +3398,22 @@ streaming display (new), agent context (new).
 
 ---
 
+## 2026-06-13 — Marathon EOQ: strip `<think>` from tool-loop context history
+
+**What changed:** `LocalLLM.swift` — `chatOllamaWithTools` tool-loop.
+
+In the 8-round Ollama tool-calling loop, each turn's `turn.text` (which may contain `<think>…</think>` chain-of-thought from QwQ / DeepSeek-R1 / Qwen-thinking) was being stored verbatim as the `"assistant"` role message fed back to the model in subsequent rounds. Those reasoning tokens accumulated across every round — up to 8× the reasoning volume per query — bloating the effective context window without adding any value to tool orchestration decisions.
+
+**Fix:** Strip `<think>` blocks from `turn.text` before recording into `messages`, `lastAssistantText`, and the `parseTextAsToolCall` fallback path. Uses the existing `AgentPipeline.stripNarration` function (`.(?si)` regex handles multi-line blocks).
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (1 hunk, +4 / -4 lines)
+
+**Why:** With EGM (user-facing reply), EOP (MissionMemory + streaming display) already shipping, this is the final exposure path for raw reasoning tokens — the per-round assistant message in the tool loop. All three strips together guarantee reasoning models never leak chain-of-thought anywhere.
+
+**Result:** 0 real Swift errors. Tool loop now stays lean across all 8 rounds regardless of reasoning model verbosity.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

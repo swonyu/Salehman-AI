@@ -1149,17 +1149,20 @@ enum LocalLLM {
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before storing in context:
+            // they waste tokens in every subsequent round without adding value.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OllamaClient.ToolCall(name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
-            var assistantMsg: [String: Any] = ["role": "assistant", "content": turn.text]
+            var assistantMsg: [String: Any] = ["role": "assistant", "content": turnText]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 ["function": ["name": call.name, "arguments": call.arguments]]
             }

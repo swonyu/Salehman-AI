@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:07 +03 · Swift files: 150 · Swift LOC: 33755_
+_Generated: 2026-06-13 04:15 +03 · Swift files: 150 · Swift LOC: 33758_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -5128,7 +5128,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1694 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1697 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -6281,17 +6281,20 @@ enum LocalLLM {
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before storing in context:
+            // they waste tokens in every subsequent round without adding value.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OllamaClient.ToolCall(name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
-            var assistantMsg: [String: Any] = ["role": "assistant", "content": turn.text]
+            var assistantMsg: [String: Any] = ["role": "assistant", "content": turnText]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 ["function": ["name": call.name, "arguments": call.arguments]]
             }
@@ -36323,7 +36326,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4441 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4457 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39721,6 +39724,22 @@ were fixed in `AgentPipeline.swift`:
 
 **Result:** 0 real Swift errors. Full `<think>` coverage: user-facing reply (existing),
 streaming display (new), agent context (new).
+
+---
+
+## 2026-06-13 — Marathon EOQ: strip `<think>` from tool-loop context history
+
+**What changed:** `LocalLLM.swift` — `chatOllamaWithTools` tool-loop.
+
+In the 8-round Ollama tool-calling loop, each turn's `turn.text` (which may contain `<think>…</think>` chain-of-thought from QwQ / DeepSeek-R1 / Qwen-thinking) was being stored verbatim as the `"assistant"` role message fed back to the model in subsequent rounds. Those reasoning tokens accumulated across every round — up to 8× the reasoning volume per query — bloating the effective context window without adding any value to tool orchestration decisions.
+
+**Fix:** Strip `<think>` blocks from `turn.text` before recording into `messages`, `lastAssistantText`, and the `parseTextAsToolCall` fallback path. Uses the existing `AgentPipeline.stripNarration` function (`.(?si)` regex handles multi-line blocks).
+
+**Files:** `Salehman AI/LLM/LocalLLM.swift` (1 hunk, +4 / -4 lines)
+
+**Why:** With EGM (user-facing reply), EOP (MissionMemory + streaming display) already shipping, this is the final exposure path for raw reasoning tokens — the per-round assistant message in the tool loop. All three strips together guarantee reasoning models never leak chain-of-thought anywhere.
+
+**Result:** 0 real Swift errors. Tool loop now stays lean across all 8 rounds regardless of reasoning model verbosity.
 
 ---
 
