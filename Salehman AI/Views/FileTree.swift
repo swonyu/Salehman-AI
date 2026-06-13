@@ -149,8 +149,11 @@ struct FileTreeRow: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if changed {
+                        // Labelled so "AI changed this file" isn't color-only (VoiceOver).
                         Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
                             .transition(.scale(scale: 0.4).combined(with: .opacity))
+                            .help("Changed by the AI this run")
+                            .accessibilityLabel("Changed by the AI this run")
                     }
                 }
                 .background(

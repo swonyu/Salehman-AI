@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 15:23 +03 · Swift files: 160 · Swift LOC: 36693_
+_Generated: 2026-06-13 15:58 +03 · Swift files: 160 · Swift LOC: 36700_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -15022,7 +15022,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2659 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2663 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15984,12 +15984,16 @@ struct CodeView: View {
                     .lineLimit(1).truncationMode(.head)
                 Spacer(minLength: 0)
                 if changed {
-                    // Accent dot: the AI changed this file THIS run.
+                    // Accent dot: the AI changed this file THIS run. Labelled so the
+                    // status isn't color-only (WCAG 1.4.1 / VoiceOver).
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                        .help("Changed by the AI this run")
+                        .accessibilityLabel("Changed by the AI this run")
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
                     Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
+                        .accessibilityLabel("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
@@ -20915,7 +20919,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (178 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (181 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21068,8 +21072,11 @@ struct FileTreeRow: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if changed {
+                        // Labelled so "AI changed this file" isn't color-only (VoiceOver).
                         Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
                             .transition(.scale(scale: 0.4).combined(with: .opacity))
+                            .help("Changed by the AI this run")
+                            .accessibilityLabel("Changed by the AI this run")
                     }
                 }
                 .background(
@@ -39301,7 +39308,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5484 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5505 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43689,6 +43696,27 @@ their label, so they were left alone; the two targets are the bare/display rows 
 multiple swipes. Pure accessibility semantics — zero visual change, safe without a pixel render.
 
 **Files:** `Views/ChatHistoryView.swift`, `Views/AgentsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
+## 2026-06-13 — EOAW: color-only status → text equivalents (file-tree status dots)
+
+**What changed:** Audited every status indicator conveyed by color/shape. Most already pair
+color WITH text (SettingsView brain-readiness even documents the WCAG 1.4.1 intent inline;
+ContentView Auto-run dot + TabSwitcherBar market pulse sit beside their state Text). The genuine
+gaps were the **file-tree "changed" dots**:
+- CodeView file row: the accent "AI changed this file this run" dot had NO label (while its
+  sibling amber git dot already had `.help`). Added `.help` + `.accessibilityLabel`, and brought
+  the amber dot to parity with an `.accessibilityLabel` too.
+- FileTree row: same accent dot, also unlabelled → `.help` + `.accessibilityLabel`.
+
+**Why:** "the AI modified this file" / "uncommitted in git" were color-only signals — invisible to
+VoiceOver and to anyone not parsing the accent-vs-amber hue. Now both sighted-hover (tooltip) and
+VoiceOver (label) convey them. Additive, zero visual change.
+
+**Files:** `Views/CodeView.swift`, `Views/FileTree.swift`.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 

@@ -4390,6 +4390,27 @@ multiple swipes. Pure accessibility semantics — zero visual change, safe witho
 
 ---
 
+## 2026-06-13 — EOAW: color-only status → text equivalents (file-tree status dots)
+
+**What changed:** Audited every status indicator conveyed by color/shape. Most already pair
+color WITH text (SettingsView brain-readiness even documents the WCAG 1.4.1 intent inline;
+ContentView Auto-run dot + TabSwitcherBar market pulse sit beside their state Text). The genuine
+gaps were the **file-tree "changed" dots**:
+- CodeView file row: the accent "AI changed this file this run" dot had NO label (while its
+  sibling amber git dot already had `.help`). Added `.help` + `.accessibilityLabel`, and brought
+  the amber dot to parity with an `.accessibilityLabel` too.
+- FileTree row: same accent dot, also unlabelled → `.help` + `.accessibilityLabel`.
+
+**Why:** "the AI modified this file" / "uncommitted in git" were color-only signals — invisible to
+VoiceOver and to anyone not parsing the accent-vs-amber hue. Now both sighted-hover (tooltip) and
+VoiceOver (label) convey them. Additive, zero visual change.
+
+**Files:** `Views/CodeView.swift`, `Views/FileTree.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

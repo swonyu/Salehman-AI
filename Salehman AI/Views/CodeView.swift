@@ -958,12 +958,16 @@ struct CodeView: View {
                     .lineLimit(1).truncationMode(.head)
                 Spacer(minLength: 0)
                 if changed {
-                    // Accent dot: the AI changed this file THIS run.
+                    // Accent dot: the AI changed this file THIS run. Labelled so the
+                    // status isn't color-only (WCAG 1.4.1 / VoiceOver).
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                        .help("Changed by the AI this run")
+                        .accessibilityLabel("Changed by the AI this run")
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
                     Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
+                        .accessibilityLabel("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
