@@ -166,6 +166,8 @@ struct FileTreeRow: View {
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .contextMenu { fileActionsMenu(url) }
+            // Selection is otherwise color-only (white fill) — expose it to VoiceOver.
+            .accessibilityAddTraits(isSel ? .isSelected : [])
         }
     }
 

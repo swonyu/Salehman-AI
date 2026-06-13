@@ -4984,6 +4984,20 @@ idiom.)
 
 ---
 
+## 2026-06-14 — EOBV: FileTree selected-file VoiceOver trait (non-stop loop)
+
+FileTree audit: well-built (extension-tinted icons, context-menu actions, folder rows announce
+expanded/collapsed, AI-changed dot labelled — not color-only). One genuine a11y gap: a file row's
+SELECTED state was color-only (white fill) — not exposed to VoiceOver, unlike the folder rows. Added
+`.accessibilityAddTraits(isSel ? .isSelected : [])` to the file `Button` (rotation dimension d —
+VoiceOver traits). Minimal — leaves the existing synthesized name + "changed by the AI" label intact.
+
+**Files:** `Views/FileTree.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

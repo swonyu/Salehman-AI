@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 01:11 +03 · Swift files: 160 · Swift LOC: 37090_
+_Generated: 2026-06-14 01:19 +03 · Swift files: 160 · Swift LOC: 37092_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21067,7 +21067,7 @@ struct CopilotSignInView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/FileTree.swift (181 lines) =====
+===== FILE: Salehman AI/Views/FileTree.swift (183 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21237,6 +21237,8 @@ struct FileTreeRow: View {
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .contextMenu { fileActionsMenu(url) }
+            // Selection is otherwise color-only (white fill) — expose it to VoiceOver.
+            .accessibilityAddTraits(isSel ? .isSelected : [])
         }
     }
 
@@ -39782,7 +39784,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6096 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6110 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44764,6 +44766,20 @@ search field correctly has no boxed focus glow — it's the always-focused palet
 idiom.)
 
 **Files:** `Views/CommandPalette.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
+## 2026-06-14 — EOBV: FileTree selected-file VoiceOver trait (non-stop loop)
+
+FileTree audit: well-built (extension-tinted icons, context-menu actions, folder rows announce
+expanded/collapsed, AI-changed dot labelled — not color-only). One genuine a11y gap: a file row's
+SELECTED state was color-only (white fill) — not exposed to VoiceOver, unlike the folder rows. Added
+`.accessibilityAddTraits(isSel ? .isSelected : [])` to the file `Button` (rotation dimension d —
+VoiceOver traits). Minimal — leaves the existing synthesized name + "changed by the AI" label intact.
+
+**Files:** `Views/FileTree.swift`.
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 
