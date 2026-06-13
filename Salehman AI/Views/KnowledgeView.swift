@@ -370,7 +370,7 @@ struct KnowledgeView: View {
                 HStack(spacing: 12) {
                     // Icon well — consistent with ActionTile / AgentCard pattern.
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.12))
                             .frame(width: 28, height: 28)
                         Image(systemName: doc.icon)
@@ -378,7 +378,7 @@ struct KnowledgeView: View {
                             .foregroundStyle(DS.Palette.accent)
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                     )

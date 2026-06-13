@@ -196,14 +196,14 @@ struct ChatHistoryView: View {
         return HStack(spacing: 12) {
             // Icon well — accent-tinted, brightens on hover.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(hov ? 0.20 : 0.10))
                     .frame(width: 28, height: 28)
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 2) {

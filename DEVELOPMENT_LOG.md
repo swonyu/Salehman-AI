@@ -4068,6 +4068,28 @@ Token alignment in the autonomous-run stop button.
 
 ---
 
+### 2026-06-13 — EOAK: DS.Radius.well token — icon well cornerRadius unification
+
+**What changed:**  
+- `DesignSystem.swift`: Added `static let well: CGFloat = 6` to `DS.Radius` — semantic token for small icon-well containers (24-28pt squares)
+- `AboutView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (capability row icon wells)  
+- `TodayView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (StatTile icon wells)  
+- `KnowledgeView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (doc row icon wells)  
+- `CommandPalette.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (command row icon wells)  
+- `MemoryView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (memory row icon wells)  
+- `ChatHistoryView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (chat history row icon wells)  
+- `ScratchpadView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (scratchpad row icon wells)  
+
+**What was NOT changed:** `cornerRadius: 6` in ShortcutsView (key badge boxes — semantic purpose differs), FileTree (row hover/selection backgrounds), and CodeView (generic small container shapes).
+
+**Visual impact:** Sub-perceptual — the `7 → 6` change on larger wells is a 1px delta on a 28pt square (about half a physical pixel on @2x displays).
+
+**Why:** Icon wells appear in 8 views across the whole app. Without a token, a future design decision to change well rounding requires touching each file individually; with `DS.Radius.well` it's a single edit in DesignSystem.swift.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/AboutView.swift`, `TodayView.swift`, `KnowledgeView.swift`, `CommandPalette.swift`, `MemoryView.swift`, `ChatHistoryView.swift`, `ScratchpadView.swift`
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

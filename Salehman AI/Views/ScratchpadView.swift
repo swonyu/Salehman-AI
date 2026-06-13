@@ -402,7 +402,7 @@ struct ScratchpadView: View {
         return HStack(spacing: 12) {
             // Icon well — matches MemoryView fact rows.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
                     .frame(width: 24, height: 24)
                 Image(systemName: "note.text")
@@ -410,7 +410,7 @@ struct ScratchpadView: View {
                     .foregroundStyle(DS.Palette.accent)
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
             )

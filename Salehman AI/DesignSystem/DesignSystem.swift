@@ -16,6 +16,7 @@ enum DS {
 
     // MARK: Corner radii
     enum Radius {
+        static let well:   CGFloat = 6   // small icon-well container (24-28 pt square)
         static let small:  CGFloat = 8
         static let chip:   CGFloat = 12
         static let card:   CGFloat = 14

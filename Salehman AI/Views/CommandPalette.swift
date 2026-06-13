@@ -122,8 +122,8 @@ struct CommandPalette: View {
                                         .foregroundStyle(DS.Palette.accent)
                                         .frame(width: 26, height: 26)
                                         .background(DS.Palette.accent.opacity(0.10),
-                                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                    in: RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                                             .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.32),
                                                                             DS.Palette.accent.opacity(0.06)],
                                                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))

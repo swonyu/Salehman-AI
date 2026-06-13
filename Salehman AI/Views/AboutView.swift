@@ -162,14 +162,14 @@ struct AboutView: View {
         return HStack(alignment: .top, spacing: DS.Space.md) {
             // Icon well — 28×28, accent-tinted, brightens on hover.
             ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(isHovered ? 0.20 : 0.12))
                     .frame(width: 28, height: 28)
                 Image(systemName: cap.icon)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             .padding(.top, 1)

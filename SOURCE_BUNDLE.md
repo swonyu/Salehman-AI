@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 11:13 +03 · Swift files: 160 · Swift LOC: 36653_
+_Generated: 2026-06-13 11:17 +03 · Swift files: 160 · Swift LOC: 36654_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2171,7 +2171,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (474 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (475 lines) =====
 ```swift
 import SwiftUI
 
@@ -2191,6 +2191,7 @@ enum DS {
 
     // MARK: Corner radii
     enum Radius {
+        static let well:   CGFloat = 6   // small icon-well container (24-28 pt square)
         static let small:  CGFloat = 8
         static let chip:   CGFloat = 12
         static let card:   CGFloat = 14
@@ -13595,14 +13596,14 @@ struct AboutView: View {
         return HStack(alignment: .top, spacing: DS.Space.md) {
             // Icon well — 28×28, accent-tinted, brightens on hover.
             ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(isHovered ? 0.20 : 0.12))
                     .frame(width: 28, height: 28)
                 Image(systemName: cap.icon)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             .padding(.top, 1)
@@ -14528,14 +14529,14 @@ struct ChatHistoryView: View {
         return HStack(spacing: 12) {
             // Icon well — accent-tinted, brightens on hover.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(hov ? 0.20 : 0.10))
                     .frame(width: 28, height: 28)
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 2) {
@@ -17785,8 +17786,8 @@ struct CommandPalette: View {
                                         .foregroundStyle(DS.Palette.accent)
                                         .frame(width: 26, height: 26)
                                         .background(DS.Palette.accent.opacity(0.10),
-                                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                    in: RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                                             .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.32),
                                                                             DS.Palette.accent.opacity(0.06)],
                                                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
@@ -21437,7 +21438,7 @@ struct KnowledgeView: View {
                 HStack(spacing: 12) {
                     // Icon well — consistent with ActionTile / AgentCard pattern.
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.12))
                             .frame(width: 28, height: 28)
                         Image(systemName: doc.icon)
@@ -21445,7 +21446,7 @@ struct KnowledgeView: View {
                             .foregroundStyle(DS.Palette.accent)
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                     )
@@ -23600,7 +23601,7 @@ struct MemoryView: View {
         return HStack(spacing: 12) {
             // Icon well — accent fill brightens on hover.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
                     .frame(width: 24, height: 24)
                 Image(systemName: "sparkle")
@@ -23608,7 +23609,7 @@ struct MemoryView: View {
                     .foregroundStyle(DS.Palette.accent)
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
             )
@@ -24427,7 +24428,7 @@ struct ScratchpadView: View {
         return HStack(spacing: 12) {
             // Icon well — matches MemoryView fact rows.
             ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
                     .frame(width: 24, height: 24)
                 Image(systemName: "note.text")
@@ -24435,7 +24436,7 @@ struct ScratchpadView: View {
                     .foregroundStyle(DS.Palette.accent)
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                     .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
             )
@@ -27173,7 +27174,7 @@ private struct StatTile: View {
                 HStack(spacing: 6) {
                     // Icon well matches ActionTile's treatment for visual unity.
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .fill(DS.Palette.accent.opacity(0.12))
                             .frame(width: 26, height: 26)
                         Image(systemName: icon)
@@ -27181,7 +27182,7 @@ private struct StatTile: View {
                             .foregroundStyle(DS.Palette.accent)
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                     )
@@ -39261,7 +39262,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5131 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5153 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43329,6 +43330,28 @@ Token alignment in the autonomous-run stop button.
 
 **Files:** `Salehman AI/Views/CopilotSignInView.swift`  
 **Why:** All other animated sheets use the QA pre-settlement pattern; this one was added before the pattern was established across the app.
+
+---
+
+### 2026-06-13 — EOAK: DS.Radius.well token — icon well cornerRadius unification
+
+**What changed:**  
+- `DesignSystem.swift`: Added `static let well: CGFloat = 6` to `DS.Radius` — semantic token for small icon-well containers (24-28pt squares)
+- `AboutView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (capability row icon wells)  
+- `TodayView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (StatTile icon wells)  
+- `KnowledgeView.swift`: 2× `cornerRadius: 7` → `DS.Radius.well` (doc row icon wells)  
+- `CommandPalette.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (command row icon wells)  
+- `MemoryView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (memory row icon wells)  
+- `ChatHistoryView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (chat history row icon wells)  
+- `ScratchpadView.swift`: 2× `cornerRadius: 6` → `DS.Radius.well` (scratchpad row icon wells)  
+
+**What was NOT changed:** `cornerRadius: 6` in ShortcutsView (key badge boxes — semantic purpose differs), FileTree (row hover/selection backgrounds), and CodeView (generic small container shapes).
+
+**Visual impact:** Sub-perceptual — the `7 → 6` change on larger wells is a 1px delta on a 28pt square (about half a physical pixel on @2x displays).
+
+**Why:** Icon wells appear in 8 views across the whole app. Without a token, a future design decision to change well rounding requires touching each file individually; with `DS.Radius.well` it's a single edit in DesignSystem.swift.
+
+**Files:** `Salehman AI/DesignSystem/DesignSystem.swift`, `Salehman AI/Views/AboutView.swift`, `TodayView.swift`, `KnowledgeView.swift`, `CommandPalette.swift`, `MemoryView.swift`, `ChatHistoryView.swift`, `ScratchpadView.swift`
 
 ---
 

@@ -324,7 +324,7 @@ private struct StatTile: View {
                 HStack(spacing: 6) {
                     // Icon well matches ActionTile's treatment for visual unity.
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .fill(DS.Palette.accent.opacity(0.12))
                             .frame(width: 26, height: 26)
                         Image(systemName: icon)
@@ -332,7 +332,7 @@ private struct StatTile: View {
                             .foregroundStyle(DS.Palette.accent)
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
                             .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                                    startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                     )
