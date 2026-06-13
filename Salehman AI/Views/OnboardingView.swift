@@ -186,7 +186,9 @@ struct OnboardingView: View {
                 Button("Skip") { onDone() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.4))
+                    // WCAG-AA: 0.4 measured ~3.7:1 on the dark canvas (fails body-text
+                    // 4.5:1); 0.55 ≈ 6:1 while staying clearly subordinate to the CTA.
+                    .foregroundStyle(.white.opacity(0.55))
                     .padding(.top, 14)
             }
             .padding(44)

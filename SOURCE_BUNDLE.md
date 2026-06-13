@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 01:19 +03 · Swift files: 160 · Swift LOC: 37092_
+_Generated: 2026-06-14 01:40 +03 · Swift files: 160 · Swift LOC: 37094_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24048,7 +24048,7 @@ struct MemoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/OnboardingView.swift (202 lines) =====
+===== FILE: Salehman AI/Views/OnboardingView.swift (204 lines) =====
 ```swift
 import SwiftUI
 
@@ -24238,7 +24238,9 @@ struct OnboardingView: View {
                 Button("Skip") { onDone() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.4))
+                    // WCAG-AA: 0.4 measured ~3.7:1 on the dark canvas (fails body-text
+                    // 4.5:1); 0.55 ≈ 6:1 while staying clearly subordinate to the CTA.
+                    .foregroundStyle(.white.opacity(0.55))
                     .padding(.top, 14)
             }
             .padding(44)
@@ -39784,7 +39786,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6110 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6184 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44782,6 +44784,80 @@ VoiceOver traits). Minimal — leaves the existing synthesized name + "changed b
 **Files:** `Views/FileTree.swift`.
 
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+---
+
+## 2026-06-14 — EOBW: BottomShortcutBar + TabSwitcherBar + CodeBlock audited — at the bar, no change
+
+Non-stop loop, deeper sweep. Three more components audited for genuine gaps; ALL already at the
+high-end bar — no change (anti-churn):
+- **BottomShortcutBar:** dimensional key badges, hover states, `LuxPressStyle`, tab-contextual hints,
+  `.help` + `.accessibilityLabel` per hint. Complete.
+- **TabSwitcherBar:** sliding `matchedGeometryEffect` highlight, responsive label-collapse,
+  reduceMotion-gated market halo, full a11y (pill `.isSelected` + hint, market `accessibilityValue`,
+  pending-task/unread-dot labels, decorative divider hidden, documented WCAG-AA contrast). Masterclass.
+- **MarkdownText `CodeBlock`:** tinted language badge, copy button (`LuxPressStyle`, success-tint,
+  generous hit target + `contentShape`, `accessibilityLabel` + help), selectable syntax-highlighted
+  code, bezel container. Complete.
+
+**🟡 Saturation note (honest):** visual + a11y gaps are now rare — the last several audits (TodayView,
+ShortcutsView, and these three) found nothing real to fix. Remaining un-audited: chat `MessageBubble`
++ `ApprovalCard` (in ContentView). After those, the loop will be re-auditing already-complete surfaces
+across the deeper dimensions, where genuine fixes will be increasingly sparse. Flagged so the owner can
+redirect if desired; continuing the forever-loop as instructed.
+
+**Files:** none (audit only — no source change this firing).
+
+---
+
+## 2026-06-14 — EOBX: ApprovalCard + MessageBubble audited complete — 🔴 POLISH SATURATION
+
+Last un-audited components, both already far above the bar — no change:
+- **ApprovalCard:** double-bezel modal (`DS.Bezel` shell+core), labelled monospaced command box,
+  Cancel/Run/Always with custom styles + keyboard shortcuts (`.cancelAction`/`.defaultAction`) +
+  `accessibilityHint`s, `.isModal` trait, scrim tap-to-cancel, mass-settle entrance. Masterclass.
+- **MessageBubble:** Equatable-gated body re-eval (documented perf optimization), QA-aware blur entry,
+  comprehensive context menu (copy/pin/edit/quote/read-aloud/regenerate/save-note/rate), actions
+  "ALWAYS MOUNTED for keyboard/VoiceOver", offMessage→unavailable substitution. Production-grade.
+
+**🔴 POLISH SATURATION reached.** Every view, sheet, and component in the app has now been audited.
+The last 7 audits (TodayView, ShortcutsView, BottomShortcutBar, TabSwitcherBar, CodeBlock, ApprovalCard,
+MessageBubble) found ZERO genuine gaps. The high-end visual + a11y + macOS-27 marathon (EOBE–EOBX) is
+COMPLETE.
+
+**Deeper-dimension rotation — honest findings:**
+- (a) **Dynamic Type:** the app uses fixed `.font(.system(size:))` throughout — a DELIBERATE choice for
+  the premium dense layout (macOS de-emphasizes Dynamic Type). Wholesale `@ScaledMetric`/relative-font
+  conversion is a major effort + real design-risk to the tuned layouts → **flagged for owner decision,
+  NOT auto-applied** (would be churn + regression risk).
+- (b) RTL: chat + transcript already do per-line Arabic detection. (c) Contrast: WCAG-AA documented in
+  multiple spots (live partials 0.66, tab pills 0.70). (d) VoiceOver: traits/labels thorough (FileTree
+  selected-trait added EOBV). (e) Reduce-Motion: complete (EOBO). (f) Keyboard: shortcuts + arrow-nav
+  present. (g) Empty states: now uniform (CommandPalette EOBU was the last).
+
+**Owner decision point:** continued forever-looping will be predominantly audit-only (occasional
+deep-dimension nit at most). Genuinely higher-value next directions if the owner wants them: the
+optional ⌘K Liquid-Glass palette experiment, feature work, test coverage, or performance profiling.
+Re-arming the loop as instructed regardless.
+
+**Files:** none (audit only — no source change this firing).
+
+---
+
+## 2026-06-14 — EOBY: WCAG-AA contrast spot-audit (dimension c) — Onboarding "Skip" fixed
+
+Deeper-dimension rotation (c). Spot-measured the dimmest text foregrounds app-wide. One genuine AA
+fail: OnboardingView's "Skip" button used `white.opacity(0.4)` — ≈3.7:1 on the dark canvas, below the
+4.5:1 body-text floor. Bumped to 0.55 (≈6:1) while keeping it clearly subordinate to the "Get Started"
+CTA. The only other sub-0.5 text foregrounds — CodeView's two `Text("·")` metadata separators at
+`secondary@0.5` — are DECORATIVE dividers conveying no information (exempt from contrast), left as-is.
+Previously-documented dim spots (chat live partials @0.66 ≈ 5.7:1, tab pills @0.70) already pass.
+
+**Files:** `Views/OnboardingView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+(Encouraging: the contrast dimension surfaced a real gap — the deeper-dimension rotation IS finding
+genuine, if sparse, fixes rather than pure churn.)
 
 ---
 

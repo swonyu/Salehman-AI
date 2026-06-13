@@ -5055,6 +5055,23 @@ Re-arming the loop as instructed regardless.
 
 ---
 
+## 2026-06-14 — EOBY: WCAG-AA contrast spot-audit (dimension c) — Onboarding "Skip" fixed
+
+Deeper-dimension rotation (c). Spot-measured the dimmest text foregrounds app-wide. One genuine AA
+fail: OnboardingView's "Skip" button used `white.opacity(0.4)` — ≈3.7:1 on the dark canvas, below the
+4.5:1 body-text floor. Bumped to 0.55 (≈6:1) while keeping it clearly subordinate to the "Get Started"
+CTA. The only other sub-0.5 text foregrounds — CodeView's two `Text("·")` metadata separators at
+`secondary@0.5` — are DECORATIVE dividers conveying no information (exempt from contrast), left as-is.
+Previously-documented dim spots (chat live partials @0.66 ≈ 5.7:1, tab pills @0.70) already pass.
+
+**Files:** `Views/OnboardingView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+(Encouraging: the contrast dimension surfaced a real gap — the deeper-dimension rotation IS finding
+genuine, if sparse, fixes rather than pure churn.)
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
