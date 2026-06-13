@@ -4586,6 +4586,33 @@ recipe updated below: always pass `-default-isolation MainActor` to swiftc.
 
 ---
 
+## 2026-06-13 — EOBE: AgentsView high-end visual pass (loop slice 1/8)
+
+First view slice of the `/loop` polish marathon. AgentsView was already heavily polished (bezel
+fills, `Eyebrow`, magnetic hover, accent glows from EOAS–EOBC), so this was a gap-finding pass —
+three genuine remaining gaps, not churn:
+
+1. **Stock `.bordered` "Send" button → filled circular `CircleIconButton`** (`arrow.up`): the one
+   generic macOS control left in the view, replaced with the app's composer send affordance
+   (brand-gradient fill, accent glow, symbol transition, proper disabled state). The skill bans
+   generic bordered buttons; this was the last one here.
+2. **Direct-command field focus glow:** the field had no focus affordance despite its sibling
+   filter field having one (and a `// Focus drives a subtle accent glow` comment promising it).
+   Added `commandFocused` `@FocusState` → accent-gradient stroke + soft glow + brightened chevron
+   on focus, matching the filter field and chat composer.
+3. **Filter no-match empty state:** bare centered text → icon-in-soft-circle + text, matching the
+   app's other premium empty states; scale+opacity transition.
+
+**Files:** `Views/AgentsView.swift`.
+
+**Verify:** full-fidelity `swiftc -emit-module -swift-version 6 -default-isolation MainActor
+-enable-upcoming-feature NonisolatedNonsendingByDefault` over all 97 app sources → **0 errors / 0
+warnings**. Live-screenshot confirmation is batched across the next few slices to amortize the
+Xcode rebuild cost — all three changes reuse already-shipping DS patterns (`CircleIconButton`
+filled-send, the filter field's focus glow, the standard empty-state ZStack).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

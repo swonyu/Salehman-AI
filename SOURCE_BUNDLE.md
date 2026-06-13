@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 20:58 +03 · Swift files: 160 · Swift LOC: 36903_
+_Generated: 2026-06-13 21:10 +03 · Swift files: 160 · Swift LOC: 36926_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13642,7 +13642,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (585 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (608 lines) =====
 ```swift
 import SwiftUI
 
@@ -13656,6 +13656,8 @@ struct AgentsView: View {
     /// Focus drives a subtle accent glow on the filter field — consistent with
     /// the app's other text inputs (add-note/composer focus affordance).
     @FocusState private var searchFocused: Bool
+    /// Mirrors the filter field's accent-glow affordance on the direct-command input.
+    @FocusState private var commandFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isRunningAutonomous = false
 
@@ -13855,31 +13857,42 @@ struct AgentsView: View {
                 }
             }
 
-            // Direct command field.
-            HStack {
+            // Direct command field — mini-composer treatment: accent focus glow on
+            // the well + a filled circular send, matching the chat composer's affordance
+            // (replaces the lone stock `.bordered` button — the last generic control here).
+            HStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DS.Palette.accent.opacity(0.70))
+                        .foregroundStyle(DS.Palette.accent.opacity(commandFocused ? 1.0 : 0.70))
                     TextField("Give agents a direct command…", text: $directCommand)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
+                        .focused($commandFocused)
                         .onSubmit { Task { await sendDirectCommand() } }
                         .onKeyPress(.escape) { directCommand = ""; return .handled }
                         .accessibilityLabel("Direct command to agents")
                 }
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(Color.white.opacity(0.08),
+                .background(Color.white.opacity(commandFocused ? 0.10 : 0.08),
                             in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .stroke(commandFocused
+                            ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55),
+                                                                    DS.Palette.accent.opacity(0.15)],
+                                                           startPoint: .top, endPoint: .bottom))
+                            : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(commandFocused ? 0.15 : 0.0), radius: 10, y: 2)
+                .animation(DS.Motion.lux, value: commandFocused)
 
-                Button("Send") {
+                CircleIconButton(systemName: "arrow.up",
+                                 size: 34, iconSize: 14,
+                                 filled: true,
+                                 disabled: directCommand.trimmingCharacters(in: .whitespaces).isEmpty,
+                                 help: "Send command to agents",
+                                 accessibilityLabel: "Send command to agents") {
                     Task { await sendDirectCommand() }
                 }
-                .buttonStyle(.bordered)
-                .tint(DS.Palette.accent)
-                .disabled(directCommand.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(DS.Space.lg)
@@ -13920,10 +13933,20 @@ struct AgentsView: View {
         return VStack(alignment: .leading, spacing: DS.Space.md) {
             agentSearchRow
             if agents.isEmpty {
-                Text("No agents match “\(agentSearch)”.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity).padding(.vertical, 20)
-                    .transition(.opacity)
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.05))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
+                    Text("No agents match “\(agentSearch)”.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
                     ForEach(agents) { spec in
@@ -39511,7 +39534,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5689 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5716 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44097,6 +44120,33 @@ the project's concurrency level, so it's a tooling artifact, not a build error.
 
 **Result:** clean build restored (the last blocker before the visual-polish slices). Standing-notes
 recipe updated below: always pass `-default-isolation MainActor` to swiftc.
+
+---
+
+## 2026-06-13 — EOBE: AgentsView high-end visual pass (loop slice 1/8)
+
+First view slice of the `/loop` polish marathon. AgentsView was already heavily polished (bezel
+fills, `Eyebrow`, magnetic hover, accent glows from EOAS–EOBC), so this was a gap-finding pass —
+three genuine remaining gaps, not churn:
+
+1. **Stock `.bordered` "Send" button → filled circular `CircleIconButton`** (`arrow.up`): the one
+   generic macOS control left in the view, replaced with the app's composer send affordance
+   (brand-gradient fill, accent glow, symbol transition, proper disabled state). The skill bans
+   generic bordered buttons; this was the last one here.
+2. **Direct-command field focus glow:** the field had no focus affordance despite its sibling
+   filter field having one (and a `// Focus drives a subtle accent glow` comment promising it).
+   Added `commandFocused` `@FocusState` → accent-gradient stroke + soft glow + brightened chevron
+   on focus, matching the filter field and chat composer.
+3. **Filter no-match empty state:** bare centered text → icon-in-soft-circle + text, matching the
+   app's other premium empty states; scale+opacity transition.
+
+**Files:** `Views/AgentsView.swift`.
+
+**Verify:** full-fidelity `swiftc -emit-module -swift-version 6 -default-isolation MainActor
+-enable-upcoming-feature NonisolatedNonsendingByDefault` over all 97 app sources → **0 errors / 0
+warnings**. Live-screenshot confirmation is batched across the next few slices to amortize the
+Xcode rebuild cost — all three changes reuse already-shipping DS patterns (`CircleIconButton`
+filled-send, the filter field's focus glow, the standard empty-state ZStack).
 
 ---
 
