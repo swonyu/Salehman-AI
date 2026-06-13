@@ -4835,6 +4835,28 @@ the EOBH macOS-27 real-build verification. Stopping here; re-invoke /loop with a
 
 ---
 
+## 2026-06-14 — EOBP: MarketsView high-end pass (non-tab surface; high-end mode ON)
+
+`/high-end-visual-design on` re-engaged the Vanguard bar interactively. Surveyed the remaining non-tab
+surfaces (TodayView, MarketsView, ShortcutsView, CopilotSignInView); MarketsView (769 lines, Chat A
+lane) had the only two genuine gaps:
+1. **Add-holding fields had no focus affordance** — the 3 fields (Symbol/Shares/Cost) share a `field()`
+   helper with a stroke but no focus glow. Added an `AddField` focus enum + `@FocusState`; the helper
+   now applies the app's primary-input focus treatment (accent-gradient stroke + soft glow) to the
+   focused field.
+2. **"Check now" alerts button was stock `.bordered`** (the one generic control here) → the app's
+   secondary-pill treatment (white-fill capsule + gradient hairline + `LuxPressStyle`).
+
+**Files:** `Views/MarketsView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**;
+0 `.bordered` left in MarketsView.
+
+**Next (owner directive):** deep research Swift 6 UI design + macOS 27 design (done SOLO via WebSearch
+— Workflow forbidden), then a /loop polish pass applying the findings app-wide.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -16,6 +16,10 @@ struct MarketsView: View {
     @State private var newSymbol = ""
     @State private var newShares = ""
     @State private var newCost = ""
+    /// Focus identity for the three add-holding fields → accent focus glow,
+    /// matching the app's other primary inputs.
+    private enum AddField: Hashable { case symbol, shares, cost }
+    @FocusState private var focusedAddField: AddField?
     // Alerts (wired to StockSageMonitor — strong-signal Mac notifications).
     @State private var monitoring = false
     @State private var alertSignals: [StockSageSignal] = []
@@ -175,16 +179,23 @@ struct MarketsView: View {
                     HStack(spacing: 6) {
                         Group {
                             if checkingAlerts { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.clockwise") }
+                            else { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)) }
                         }
                         .transition(.opacity)
                         .animation(DS.Motion.smooth, value: checkingAlerts)
                         Text(checkingAlerts ? "Checking…" : "Check now")
+                            .font(.system(size: 11.5, weight: .semibold))
                             .contentTransition(.opacity)
                             .animation(DS.Motion.smooth, value: checkingAlerts)
                     }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 11).padding(.vertical, 5)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
-                .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
+                .buttonStyle(LuxPressStyle()).disabled(checkingAlerts)
             }
             .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
@@ -353,9 +364,9 @@ struct MarketsView: View {
 
     private var addPositionForm: some View {
         HStack(spacing: 8) {
-            field($newSymbol, "Symbol", width: 84)
-            field($newShares, "Shares", width: 66)
-            field($newCost, "Cost/sh", width: 72)
+            field($newSymbol, "Symbol", width: 84, focus: .symbol)
+            field($newShares, "Shares", width: 66, focus: .shares)
+            field($newCost, "Cost/sh", width: 72, focus: .cost)
             Button {
                 portfolio.add(symbol: newSymbol, shares: Double(newShares) ?? 0, costBasis: Double(newCost) ?? 0)
                 newSymbol = ""; newShares = ""; newCost = ""
@@ -369,13 +380,20 @@ struct MarketsView: View {
         }
     }
 
-    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat) -> some View {
-        TextField(placeholder, text: text)
+    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat, focus: AddField) -> some View {
+        let active = focusedAddField == focus
+        return TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
+            .focused($focusedAddField, equals: focus)
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .background(Color.white.opacity(active ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .stroke(active
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(active ? 0.15 : 0.0), radius: 8, y: 2)
+            .animation(DS.Motion.lux, value: active)
             .accessibilityLabel(placeholder)
     }
 

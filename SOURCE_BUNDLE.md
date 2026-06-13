@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 22:45 +03 · Swift files: 160 · Swift LOC: 37039_
+_Generated: 2026-06-14 00:01 +03 · Swift files: 160 · Swift LOC: 37057_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22805,7 +22805,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (769 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (787 lines) =====
 ```swift
 import SwiftUI
 
@@ -22825,6 +22825,10 @@ struct MarketsView: View {
     @State private var newSymbol = ""
     @State private var newShares = ""
     @State private var newCost = ""
+    /// Focus identity for the three add-holding fields → accent focus glow,
+    /// matching the app's other primary inputs.
+    private enum AddField: Hashable { case symbol, shares, cost }
+    @FocusState private var focusedAddField: AddField?
     // Alerts (wired to StockSageMonitor — strong-signal Mac notifications).
     @State private var monitoring = false
     @State private var alertSignals: [StockSageSignal] = []
@@ -22984,16 +22988,23 @@ struct MarketsView: View {
                     HStack(spacing: 6) {
                         Group {
                             if checkingAlerts { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.clockwise") }
+                            else { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)) }
                         }
                         .transition(.opacity)
                         .animation(DS.Motion.smooth, value: checkingAlerts)
                         Text(checkingAlerts ? "Checking…" : "Check now")
+                            .font(.system(size: 11.5, weight: .semibold))
                             .contentTransition(.opacity)
                             .animation(DS.Motion.smooth, value: checkingAlerts)
                     }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 11).padding(.vertical, 5)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
-                .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
+                .buttonStyle(LuxPressStyle()).disabled(checkingAlerts)
             }
             .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
@@ -23162,9 +23173,9 @@ struct MarketsView: View {
 
     private var addPositionForm: some View {
         HStack(spacing: 8) {
-            field($newSymbol, "Symbol", width: 84)
-            field($newShares, "Shares", width: 66)
-            field($newCost, "Cost/sh", width: 72)
+            field($newSymbol, "Symbol", width: 84, focus: .symbol)
+            field($newShares, "Shares", width: 66, focus: .shares)
+            field($newCost, "Cost/sh", width: 72, focus: .cost)
             Button {
                 portfolio.add(symbol: newSymbol, shares: Double(newShares) ?? 0, costBasis: Double(newCost) ?? 0)
                 newSymbol = ""; newShares = ""; newCost = ""
@@ -23178,13 +23189,20 @@ struct MarketsView: View {
         }
     }
 
-    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat) -> some View {
-        TextField(placeholder, text: text)
+    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat, focus: AddField) -> some View {
+        let active = focusedAddField == focus
+        return TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
+            .focused($focusedAddField, equals: focus)
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .background(Color.white.opacity(active ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .stroke(active
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(active ? 0.15 : 0.0), radius: 8, y: 2)
+            .animation(DS.Motion.lux, value: active)
             .accessibilityLabel(placeholder)
     }
 
@@ -39647,7 +39665,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5947 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5969 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44482,6 +44500,28 @@ sites already respect the setting automatically.
 **Loop wind-down:** both /loop goals are met — (1) the 8-view high-end visual list (EOBE–EOBM) and
 (2) the app-wide Reduce-Motion a11y pass (EOBN–EOBO) — plus the EOBD build-warning/flag-parity fix and
 the EOBH macOS-27 real-build verification. Stopping here; re-invoke /loop with a new directive for more.
+
+---
+
+## 2026-06-14 — EOBP: MarketsView high-end pass (non-tab surface; high-end mode ON)
+
+`/high-end-visual-design on` re-engaged the Vanguard bar interactively. Surveyed the remaining non-tab
+surfaces (TodayView, MarketsView, ShortcutsView, CopilotSignInView); MarketsView (769 lines, Chat A
+lane) had the only two genuine gaps:
+1. **Add-holding fields had no focus affordance** — the 3 fields (Symbol/Shares/Cost) share a `field()`
+   helper with a stroke but no focus glow. Added an `AddField` focus enum + `@FocusState`; the helper
+   now applies the app's primary-input focus treatment (accent-gradient stroke + soft glow) to the
+   focused field.
+2. **"Check now" alerts button was stock `.bordered`** (the one generic control here) → the app's
+   secondary-pill treatment (white-fill capsule + gradient hairline + `LuxPressStyle`).
+
+**Files:** `Views/MarketsView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**;
+0 `.bordered` left in MarketsView.
+
+**Next (owner directive):** deep research Swift 6 UI design + macOS 27 design (done SOLO via WebSearch
+— Workflow forbidden), then a /loop polish pass applying the findings app-wide.
 
 ---
 
