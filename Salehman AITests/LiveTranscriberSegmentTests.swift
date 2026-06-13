@@ -71,3 +71,43 @@ struct LiveTranscriberSegmentTests {
             minInterval: interval) == true)
     }
 }
+
+// MARK: - LiveTranscriptionView.answerPrompt — LLM prompt contract
+//
+// answerPrompt builds the prompt sent to the LLM when the user taps "Ask" after
+// a live-capture session. Its key invariants:
+//   • The captured transcript appears verbatim so the model sees the right text.
+//   • Key structural markers ("TRANSCRIPT:", "web_search") must survive edits.
+//   • Even an empty transcript must produce a non-empty, well-formed prompt.
+//
+// LiveTranscriptionView is inferred @MainActor (View protocol), so tests are
+// marked @MainActor — answerPrompt is pure but lives on a @MainActor type.
+
+@MainActor
+struct LiveTranscriptionViewPromptTests {
+
+    @Test func transcriptAppearsVerbatimInPrompt() {
+        let sample = "Can you explain what a mutex is?\nAlso, what is a semaphore?"
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: sample)
+        #expect(prompt.contains(sample),
+                "the raw transcript must appear verbatim so the model sees the correct text")
+    }
+
+    @Test func promptContainsKeyStructuralMarkers() {
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: "hello")
+        #expect(prompt.contains("TRANSCRIPT:"),
+                "prompt must contain the TRANSCRIPT: header that precedes the injected text")
+        #expect(prompt.contains("web_search"),
+                "prompt must instruct the model to use web_search for current facts")
+    }
+
+    @Test func emptyTranscriptProducesNonEmptyPrompt() {
+        // Even with no captured audio the model still gets the instruction set —
+        // it falls back to "give a concise summary" when there are no questions.
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: "")
+        #expect(!prompt.isEmpty,
+                "empty transcript must still produce the instruction prompt")
+        #expect(prompt.contains("TRANSCRIPT:"),
+                "the TRANSCRIPT: section must be present even for empty capture")
+    }
+}

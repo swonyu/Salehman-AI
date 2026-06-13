@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 07:04 +03 · Swift files: 160 · Swift LOC: 36579_
+_Generated: 2026-06-13 07:08 +03 · Swift files: 160 · Swift LOC: 36619_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -32976,7 +32976,7 @@ struct KnowledgeSortTests {
 }
 ```
 
-===== FILE: Salehman AITests/LiveTranscriberSegmentTests.swift (73 lines) =====
+===== FILE: Salehman AITests/LiveTranscriberSegmentTests.swift (113 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -33049,6 +33049,46 @@ struct LiveTranscriberSegmentTests {
         #expect(LiveTranscriber.shouldPublishPartial(
             text: "new", lastPublished: "old", now: 1.0 + interval, lastPublishAt: 1.0,
             minInterval: interval) == true)
+    }
+}
+
+// MARK: - LiveTranscriptionView.answerPrompt — LLM prompt contract
+//
+// answerPrompt builds the prompt sent to the LLM when the user taps "Ask" after
+// a live-capture session. Its key invariants:
+//   • The captured transcript appears verbatim so the model sees the right text.
+//   • Key structural markers ("TRANSCRIPT:", "web_search") must survive edits.
+//   • Even an empty transcript must produce a non-empty, well-formed prompt.
+//
+// LiveTranscriptionView is inferred @MainActor (View protocol), so tests are
+// marked @MainActor — answerPrompt is pure but lives on a @MainActor type.
+
+@MainActor
+struct LiveTranscriptionViewPromptTests {
+
+    @Test func transcriptAppearsVerbatimInPrompt() {
+        let sample = "Can you explain what a mutex is?\nAlso, what is a semaphore?"
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: sample)
+        #expect(prompt.contains(sample),
+                "the raw transcript must appear verbatim so the model sees the correct text")
+    }
+
+    @Test func promptContainsKeyStructuralMarkers() {
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: "hello")
+        #expect(prompt.contains("TRANSCRIPT:"),
+                "prompt must contain the TRANSCRIPT: header that precedes the injected text")
+        #expect(prompt.contains("web_search"),
+                "prompt must instruct the model to use web_search for current facts")
+    }
+
+    @Test func emptyTranscriptProducesNonEmptyPrompt() {
+        // Even with no captured audio the model still gets the instruction set —
+        // it falls back to "give a concise summary" when there are no questions.
+        let prompt = LiveTranscriptionView.answerPrompt(transcript: "")
+        #expect(!prompt.isEmpty,
+                "empty transcript must still produce the instruction prompt")
+        #expect(prompt.contains("TRANSCRIPT:"),
+                "the TRANSCRIPT: section must be present even for empty capture")
     }
 }
 ```
@@ -39187,7 +39227,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4932 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4946 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43028,6 +43068,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 **Files:** `Salehman AITests/AgentPipelineHelpersTests.swift` (new)
 
 **Result:** All 6 function signatures confirmed via grep. All Brain enum cases verified. Pure deterministic assertions with no model calls.
+
+---
+
+## 2026-06-13 — marathon EOX: test coverage — LiveTranscriptionView.answerPrompt (Chat A)
+
+**What changed:** Added 3 new tests in a new `@MainActor` struct `LiveTranscriptionViewPromptTests` at the end of `Salehman AITests/LiveTranscriberSegmentTests.swift`:
+
+- `transcriptAppearsVerbatimInPrompt` — the raw transcript string must be present verbatim in the generated prompt (pins the `\(transcript)` interpolation)
+- `promptContainsKeyStructuralMarkers` — `"TRANSCRIPT:"` header and `"web_search"` tool instruction must survive refactors
+- `emptyTranscriptProducesNonEmptyPrompt` — empty capture still delivers the full instruction set to the model
+
+**Files:** `Salehman AITests/LiveTranscriberSegmentTests.swift`  
+**Why:** `LiveTranscriptionView.answerPrompt` was completely untested — a silent regression (e.g. accidentally omitting `\(transcript)`) would cause the model to answer without seeing the captured audio, with no build error or test failure. `@MainActor` annotation required because `LiveTranscriptionView: View` is inferred `@MainActor` in Xcode 14+.  
+**Result:** 5 tests total in file (was 2 active + 3 disabled stubs). API signature confirmed via grep.
 
 ---
 

@@ -3841,6 +3841,20 @@ Uses the same `ToolPolicyTestLock` save/restore pattern as the existing `ToolPol
 
 ---
 
+## 2026-06-13 — marathon EOX: test coverage — LiveTranscriptionView.answerPrompt (Chat A)
+
+**What changed:** Added 3 new tests in a new `@MainActor` struct `LiveTranscriptionViewPromptTests` at the end of `Salehman AITests/LiveTranscriberSegmentTests.swift`:
+
+- `transcriptAppearsVerbatimInPrompt` — the raw transcript string must be present verbatim in the generated prompt (pins the `\(transcript)` interpolation)
+- `promptContainsKeyStructuralMarkers` — `"TRANSCRIPT:"` header and `"web_search"` tool instruction must survive refactors
+- `emptyTranscriptProducesNonEmptyPrompt` — empty capture still delivers the full instruction set to the model
+
+**Files:** `Salehman AITests/LiveTranscriberSegmentTests.swift`  
+**Why:** `LiveTranscriptionView.answerPrompt` was completely untested — a silent regression (e.g. accidentally omitting `\(transcript)`) would cause the model to answer without seeing the captured audio, with no build error or test failure. `@MainActor` annotation required because `LiveTranscriptionView: View` is inferred `@MainActor` in Xcode 14+.  
+**Result:** 5 tests total in file (was 2 active + 3 disabled stubs). API signature confirmed via grep.
+
+---
+
 ## 2026-06-13 — marathon EOW: test coverage — ScratchpadList.markdownList + ageLabel (Chat A)
 
 **What changed:** Added 8 new tests to `Salehman AITests/ScratchpadListTests.swift`:
