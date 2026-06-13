@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 07:45 +03 · Swift files: 160 · Swift LOC: 36631_
+_Generated: 2026-06-13 08:20 +03 · Swift files: 160 · Swift LOC: 36639_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22548,7 +22548,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (742 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (750 lines) =====
 ```swift
 import SwiftUI
 
@@ -22904,7 +22904,7 @@ struct MarketsView: View {
             } label: {
                 Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Add holding").accessibilityLabel("Add holding")
             .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty || (Double(newShares) ?? 0) <= 0)
             Spacer()
@@ -22916,6 +22916,8 @@ struct MarketsView: View {
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
             .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .accessibilityLabel(placeholder)
     }
 
@@ -23217,8 +23219,14 @@ struct MarketsView: View {
                         : .easeOut(duration: 1.8)
                 }
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(DS.Palette.accent.opacity(0.80))
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(DS.Palette.accent)
+                    .frame(width: 50, height: 50)
+                    .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.18), DS.Palette.accent.opacity(0.05)],
+                                               center: .center, startRadius: 0, endRadius: 25), in: Circle())
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                                                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    .shadow(color: DS.Palette.accent.opacity(0.26), radius: 14, y: 3)
             }
             Text("No symbols tracked yet.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -39239,7 +39247,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4974 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4988 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43150,6 +43158,20 @@ Visual design marathon — second polish pass on MemoryView.
 **Files:** `Salehman AI/Views/MemoryView.swift`  
 **Why:** MemoryView was the only sheet view using the flat `codeSurface` with no ambient glow, unlike `AboutView`/`OnboardingView` which both carry a subtle accent orb for depth. The "Add" button inconsistency was spotted while aligning with ScratchpadView's EOY improvements.  
 **Result:** Glow circle confirmed at line 67, `allowsHitTesting(false)` at line 71, `LuxPressStyle()` at line 350. SourceKit "Cannot find DS in scope" diagnostics are the known module-resolution false positives.
+
+---
+
+### 2026-06-13 — EOAA: MarketsView polish — field borders, add button press, glass-circle empty state
+Visual design marathon — third-pass polish on MarketsView (Chat A lane).
+
+**Changes:**
+1. **`field()` helper** (shared by Symbol/Shares/Cost-per-share inputs): added `.overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))`. One change, three fields corrected — they were the only text fields in the app missing the hairline border that every other field carries (ScratchpadView, MemoryView, KnowledgeView all have it).
+2. **`addPositionForm` plus button**: changed `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())`. Matches the same upgrade applied to ScratchpadView (EOY) and MemoryView (EOZ).
+3. **`emptyState` icon**: upgraded from bare icon to glass-circle treatment — `RadialGradient` background (accent 0.18 → 0.05), `Circle().stroke()` top-lit edge highlight (white 0.16 → 0.04), `shadow(DS.Palette.accent.opacity(0.26), radius:14)`. Also lightened weight from `.semibold` to `.light` and increased size 20→22 to match ScratchpadView's emptyState icon style.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`  
+**Why:** The `field()` helper was a shared gap — a single missing overlay line affected all three portfolio input fields. Empty state icon was the only one in a main tab view without the glass-circle treatment (all other views have it: KnowledgeView, ScratchpadView, MemoryView, AgentsView). Add button inconsistency matched the pattern fixed in EOY/EOZ.  
+**Result:** 3 field overlays at line 368 + surroundings, LuxPressStyle at line 355, RadialGradient empty state at line 670. API changes confirmed via grep.
 
 ---
 

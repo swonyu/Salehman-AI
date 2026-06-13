@@ -352,7 +352,7 @@ struct MarketsView: View {
             } label: {
                 Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Add holding").accessibilityLabel("Add holding")
             .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty || (Double(newShares) ?? 0) <= 0)
             Spacer()
@@ -364,6 +364,8 @@ struct MarketsView: View {
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
             .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .accessibilityLabel(placeholder)
     }
 
@@ -665,8 +667,14 @@ struct MarketsView: View {
                         : .easeOut(duration: 1.8)
                 }
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(DS.Palette.accent.opacity(0.80))
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(DS.Palette.accent)
+                    .frame(width: 50, height: 50)
+                    .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.18), DS.Palette.accent.opacity(0.05)],
+                                               center: .center, startRadius: 0, endRadius: 25), in: Circle())
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                                                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    .shadow(color: DS.Palette.accent.opacity(0.26), radius: 14, y: 3)
             }
             Text("No symbols tracked yet.")
                 .font(.callout).foregroundStyle(.secondary)

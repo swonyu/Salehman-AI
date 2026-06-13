@@ -3911,6 +3911,20 @@ Visual design marathon — second polish pass on MemoryView.
 
 ---
 
+### 2026-06-13 — EOAA: MarketsView polish — field borders, add button press, glass-circle empty state
+Visual design marathon — third-pass polish on MarketsView (Chat A lane).
+
+**Changes:**
+1. **`field()` helper** (shared by Symbol/Shares/Cost-per-share inputs): added `.overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))`. One change, three fields corrected — they were the only text fields in the app missing the hairline border that every other field carries (ScratchpadView, MemoryView, KnowledgeView all have it).
+2. **`addPositionForm` plus button**: changed `.buttonStyle(.plain)` → `.buttonStyle(LuxPressStyle())`. Matches the same upgrade applied to ScratchpadView (EOY) and MemoryView (EOZ).
+3. **`emptyState` icon**: upgraded from bare icon to glass-circle treatment — `RadialGradient` background (accent 0.18 → 0.05), `Circle().stroke()` top-lit edge highlight (white 0.16 → 0.04), `shadow(DS.Palette.accent.opacity(0.26), radius:14)`. Also lightened weight from `.semibold` to `.light` and increased size 20→22 to match ScratchpadView's emptyState icon style.
+
+**Files:** `Salehman AI/Views/MarketsView.swift`  
+**Why:** The `field()` helper was a shared gap — a single missing overlay line affected all three portfolio input fields. Empty state icon was the only one in a main tab view without the glass-circle treatment (all other views have it: KnowledgeView, ScratchpadView, MemoryView, AgentsView). Add button inconsistency matched the pattern fixed in EOY/EOZ.  
+**Result:** 3 field overlays at line 368 + surroundings, LuxPressStyle at line 355, RadialGradient empty state at line 670. API changes confirmed via grep.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
