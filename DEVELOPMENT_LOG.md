@@ -5072,6 +5072,26 @@ genuine, if sparse, fixes rather than pure churn.)
 
 ---
 
+## 2026-06-14 — EOBZ: animation-perf / idle-CPU audit (dimension e) — no gap
+
+Audited every continuous animator (PhaseAnimator / repeatForever / repeating `symbolEffect` /
+TimelineView) for idle frame-burn. ALL are properly gated to run only when relevant — no always-on
+chrome animator:
+- **Generating:** BrainStatusDot, Unrestricted halo, TypingIndicator, `.symbolEffect(.pulse, isActive:
+  vm.isRunning)`, StreamingBubble, PulsingDot — all gated on isRunning/streaming.
+- The one perf-sensitive `TimelineView(.periodic by: 1)` (Code elapsed clock) is mounted ONLY inside
+  `if isRunning, let t0 = progress.startedAt` — no per-second redraw when idle.
+- **Market halo:** gated on `market.session.isOpen` (+ the Markets tab is currently hidden anyway).
+- **Recording:** LiveTranscription LIVE dot gated on `live.isRunning`; Voice orb on listening/speaking.
+- **Empty-state glows** (Agents/Knowledge/Memory/Scratchpad/Code/ChatHistory): only while the list is
+  empty. **Active-tab/transient ambient** (Today greeting, Copilot sheet): only while visible.
+All also reduceMotion-gated (EOBO). Perf was already a design concern (the BrainStatusDot comment cites
+"idle CPU/GPU + battery drain in Low Power Mode"). **No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
