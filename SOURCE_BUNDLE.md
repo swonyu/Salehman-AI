@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 21:56 +03 · Swift files: 160 · Swift LOC: 36974_
+_Generated: 2026-06-13 22:06 +03 · Swift files: 160 · Swift LOC: 36979_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25158,7 +25158,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1514 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1519 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25332,6 +25332,7 @@ struct SettingsView: View {
                                 .autocorrectionDisabled(true)
                                 .padding(8)
                                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -25936,6 +25937,7 @@ struct SettingsView: View {
                 .autocorrectionDisabled(true)
                 .padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
@@ -25956,6 +25958,7 @@ struct SettingsView: View {
                 .autocorrectionDisabled(true)
                 .padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -26011,6 +26014,7 @@ struct SettingsView: View {
                 .autocorrectionDisabled(true)
                 .padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
@@ -26031,6 +26035,7 @@ struct SettingsView: View {
                 .autocorrectionDisabled(true)
                 .padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -39582,7 +39587,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5816 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5838 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44286,6 +44291,28 @@ glyphs, drag-reorder lists, inline edit, focus glows, magnetic rows). Two genuin
 
 **Verify:** switched to `swiftc -typecheck` (per the EOBH lesson — it runs the function-body
 diagnostics `-emit-module` skips), full isolation flags, all 97 sources → **0 errors / 0 warnings**.
+
+---
+
+## 2026-06-13 — EOBJ: SettingsView field-stroke consistency (loop slice 5/8)
+
+SettingsView (1514 lines, Chat B's lane) was already restyled to the design language (board #14). A
+high-end pass found it largely complete; the genuine, contained gap: its 5 box-style text inputs
+(custom Ollama model name; Unsloth Studio + vLLM endpoint/model fields) had a fill but **no border
+stroke**, while every other text field in the app carries a `surfaceStroke` hairline — so they read as
+faintly unfinished. Added the `surfaceStroke` overlay to all 5 (lineWidth 1), matching the app.
+
+Deliberately NOT changed (judgment, not oversight): the 17 `.buttonStyle(.bordered)` controls are
+conventional and appropriate for a settings/config panel (native utility feel); the 3 API-key
+`SecureField`s are intentionally compact trailing inline fields. Wholesale "premium pill" conversion
+would make Settings read as LESS native, not more — the hero tabs carry the full treatment.
+
+Cross-lane note: additive cosmetic only (a border stroke), non-conflicting with the brain/UI logic.
+
+**Files:** `Views/SettingsView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**;
+stroke overlay present on exactly 5 fields.
 
 ---
 

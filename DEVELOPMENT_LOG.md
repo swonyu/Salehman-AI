@@ -4704,6 +4704,28 @@ diagnostics `-emit-module` skips), full isolation flags, all 97 sources → **0 
 
 ---
 
+## 2026-06-13 — EOBJ: SettingsView field-stroke consistency (loop slice 5/8)
+
+SettingsView (1514 lines, Chat B's lane) was already restyled to the design language (board #14). A
+high-end pass found it largely complete; the genuine, contained gap: its 5 box-style text inputs
+(custom Ollama model name; Unsloth Studio + vLLM endpoint/model fields) had a fill but **no border
+stroke**, while every other text field in the app carries a `surfaceStroke` hairline — so they read as
+faintly unfinished. Added the `surfaceStroke` overlay to all 5 (lineWidth 1), matching the app.
+
+Deliberately NOT changed (judgment, not oversight): the 17 `.buttonStyle(.bordered)` controls are
+conventional and appropriate for a settings/config panel (native utility feel); the 3 API-key
+`SecureField`s are intentionally compact trailing inline fields. Wholesale "premium pill" conversion
+would make Settings read as LESS native, not more — the hero tabs carry the full treatment.
+
+Cross-lane note: additive cosmetic only (a border stroke), non-conflicting with the brain/UI logic.
+
+**Files:** `Views/SettingsView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**;
+stroke overlay present on exactly 5 fields.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
