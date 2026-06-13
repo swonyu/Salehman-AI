@@ -840,7 +840,9 @@ struct ContentView: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }

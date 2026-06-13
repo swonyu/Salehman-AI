@@ -3228,6 +3228,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 
 ---
 
+## 2026-06-13 — Marathon EFF: ContentView welcome shortcut badge gradient stroke
+
+**What changed:** Upgraded `welcomeShortcutHint()` flat stroke `Color.white.opacity(0.16)` → top-lit gradient `[white@0.28, white@0.06]` on the chat welcome screen's keyboard shortcut chips (⌘N / ⌘F / ⌘J). Now matches every other keyboard shortcut badge in the app: CommandPalette esc badge `[white@0.28, white@0.06]`, CodeView shortcutHint `[white@0.28, white@0.07]`, BottomShortcutBar `[white@0.28, white@0.04]`, ShortcutsView key badge `[white@0.45, white@0.04]`.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** The chat welcome state was the only surface using a flat badge stroke — inconsistency visible at first-launch or new-chat. The terminal command block (`Color.black.opacity(0.4)` at `RoundedRectangle(cornerRadius: DS.Radius.chip)` in the run-command dialog) correctly stays flat — code/terminal display blocks are intentionally neutral.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

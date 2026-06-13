@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:05 +03 · Swift files: 150 · Swift LOC: 34245_
+_Generated: 2026-06-13 03:10 +03 · Swift files: 150 · Swift LOC: 34247_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17743,7 +17743,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2866 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2868 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18587,7 +18587,9 @@ struct ContentView: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
@@ -36813,7 +36815,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4271 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4283 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40039,6 +40041,18 @@ Both use the standard slow-pulse spring/easeOut cadence matching ChatHistoryView
 **Files:** `Salehman AI/DesignSystem/DesignSystem.swift`
 
 **Why:** `SuggestionCard` is used on the Today tab and any surface rendering suggestions — its icon well missing the standard depth stroke was the last gap in the app-wide icon-well consistency pass.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFF: ContentView welcome shortcut badge gradient stroke
+
+**What changed:** Upgraded `welcomeShortcutHint()` flat stroke `Color.white.opacity(0.16)` → top-lit gradient `[white@0.28, white@0.06]` on the chat welcome screen's keyboard shortcut chips (⌘N / ⌘F / ⌘J). Now matches every other keyboard shortcut badge in the app: CommandPalette esc badge `[white@0.28, white@0.06]`, CodeView shortcutHint `[white@0.28, white@0.07]`, BottomShortcutBar `[white@0.28, white@0.04]`, ShortcutsView key badge `[white@0.45, white@0.04]`.
+
+**Files:** `Salehman AI/Views/ContentView.swift`
+
+**Why:** The chat welcome state was the only surface using a flat badge stroke — inconsistency visible at first-launch or new-chat. The terminal command block (`Color.black.opacity(0.4)` at `RoundedRectangle(cornerRadius: DS.Radius.chip)` in the run-command dialog) correctly stays flat — code/terminal display blocks are intentionally neutral.
 
 **Result:** Build exit 0, 0 real Swift errors.
 
