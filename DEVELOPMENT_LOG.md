@@ -4476,6 +4476,24 @@ follow-up. Geometry-preserving; behavior changes only when the OS setting is on.
 
 ---
 
+## 2026-06-13 — EOBA: Reduce Motion slice 4 — LiveTranscription + Today header bounces
+
+**What changed:** Gated the header brand-tile `KeyframeAnimator` bounce-in on
+`accessibilityReduceMotion` in LiveTranscriptionView (waveform.and.mic) and TodayView
+(greetingIcon) — both already carried the env value, so gate-only. Reduce Motion ON → static
+icon at settled scale.
+
+**Why:** continuing the brand-tile bounce gating (EOAZ) across the app. These two were the
+remaining headers that already had `reduceMotion` wired, so they were the cleanest next batch.
+
+**Files:** `Views/LiveTranscriptionView.swift`, `Views/TodayView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Remaining
+brand-tile bounces (AgentsView, ScratchpadView, MarketsView, AboutView, ShortcutsView,
+CopilotSignInView, SettingsView, VoiceModeView, OnboardingView) need `@Environment` added — next.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

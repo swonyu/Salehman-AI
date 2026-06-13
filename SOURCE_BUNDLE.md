@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 16:44 +03 · Swift files: 160 · Swift LOC: 36787_
+_Generated: 2026-06-13 16:52 +03 · Swift files: 160 · Swift LOC: 36801_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21856,7 +21856,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (345 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (352 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21934,16 +21934,23 @@ struct LiveTranscriptionView: View {
                                                    startPoint: .top, endPoint: .bottom),
                                     lineWidth: 0.75)
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: "waveform.and.mic")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "waveform.and.mic")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -26993,7 +27000,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (397 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (404 lines) =====
 ```swift
 import SwiftUI
 
@@ -27107,16 +27114,23 @@ struct TodayView: View {
                                 lineWidth: 0.75
                             )
                     )
-                KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
                     Image(systemName: greetingIcon)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.white)
-                        .scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        LinearKeyframe(0.60, duration: 0.07)
-                        SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                        SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: greetingIcon)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
                 }
             }
@@ -39395,7 +39409,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5570 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5588 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43871,6 +43885,24 @@ follow-up. Geometry-preserving; behavior changes only when the OS setting is on.
 **Files:** `Views/MemoryView.swift`, `Views/KnowledgeView.swift`, `Views/ChatHistoryView.swift`.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
+## 2026-06-13 — EOBA: Reduce Motion slice 4 — LiveTranscription + Today header bounces
+
+**What changed:** Gated the header brand-tile `KeyframeAnimator` bounce-in on
+`accessibilityReduceMotion` in LiveTranscriptionView (waveform.and.mic) and TodayView
+(greetingIcon) — both already carried the env value, so gate-only. Reduce Motion ON → static
+icon at settled scale.
+
+**Why:** continuing the brand-tile bounce gating (EOAZ) across the app. These two were the
+remaining headers that already had `reduceMotion` wired, so they were the cleanest next batch.
+
+**Files:** `Views/LiveTranscriptionView.swift`, `Views/TodayView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Remaining
+brand-tile bounces (AgentsView, ScratchpadView, MarketsView, AboutView, ShortcutsView,
+CopilotSignInView, SettingsView, VoiceModeView, OnboardingView) need `@Environment` added — next.
 
 ---
 
