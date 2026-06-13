@@ -3372,6 +3372,32 @@ in the Brain grid. Unsloth/VLLM rows and state vars also kept (still rendered).
 
 ---
 
+## 2026-06-13 — Marathon EOP: strip `<think>` from agent pipeline streaming + MissionMemory
+
+**What changed:** Two secondary exposure paths for reasoning-model `<think>` blocks
+were fixed in `AgentPipeline.swift`:
+
+1. **MissionMemory pollution** — Intermediate agent outputs were stored raw into
+   `MissionMemory` before this fix. When a reasoning model (QwQ/DeepSeek-R1) was
+   used as the brain, every intermediate agent's chain-of-thought (potentially
+   thousands of tokens) would pollute downstream agents' context via
+   `memory.buildContext(for:)`. Fixed: apply `Self.stripNarration(rawOutput)` before
+   `memory.recordAgentOutput(...)` in the phase-result loop.
+
+2. **Streaming display** — The live streaming bubble (`MissionProgress.shared.stream`)
+   received the raw cumulative text including `<think>` blocks. Users would see raw
+   reasoning during streaming; the committed message was already clean. Fixed: apply
+   `Self.stripNarration(partial)` inside the `isFinal` stream callback. Since
+   `onUpdate` passes the cumulative string, `stripNarration` correctly removes closed
+   blocks immediately when `</think>` appears.
+
+**Files:** `Salehman AI/Agents/AgentPipeline.swift`
+
+**Result:** 0 real Swift errors. Full `<think>` coverage: user-facing reply (existing),
+streaming display (new), agent context (new).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

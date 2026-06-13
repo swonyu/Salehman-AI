@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 04:04 +03 · Swift files: 150 · Swift LOC: 33746_
+_Generated: 2026-06-13 04:07 +03 · Swift files: 150 · Swift LOC: 33755_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (828 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (837 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -632,8 +632,14 @@ enum AgentPipeline {
                     let stream: @Sendable (String) -> Void
                     if spec.isFinal {
                         stream = { (partial: String) in
+                            // Strip reasoning blocks from the live stream so users
+                            // never see raw <think>…</think> in the streaming bubble.
+                            // onUpdate passes the cumulative string, so stripNarration
+                            // works correctly: closed blocks vanish immediately, and
+                            // an open block hides only if content existed before it.
+                            let visible = Self.stripNarration(partial)
                             Task { @MainActor in
-                                MissionProgress.shared.stream(partial)
+                                MissionProgress.shared.stream(visible)
                             }
                         }
                     } else {
@@ -669,8 +675,11 @@ enum AgentPipeline {
             let results = phaseResults
 
             // Fold this phase's outputs into MissionMemory (in spec order).
-            for (i, output) in results.sorted(by: { $0.0 < $1.0 }) {
+            // Strip reasoning-model think blocks before recording so they don't
+            // pollute downstream agents' context with thousands of reasoning tokens.
+            for (i, rawOutput) in results.sorted(by: { $0.0 < $1.0 }) {
                 let spec = specs[i]
+                let output = Self.stripNarration(rawOutput)
                 memory.recordAgentOutput(name: spec.name, output: output)
                 if spec.usesTools {
                     reasoning = output
@@ -36314,7 +36323,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4415 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4441 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -39686,6 +39695,32 @@ in the Brain grid. Unsloth/VLLM rows and state vars also kept (still rendered).
 **Files:** `Salehman AI/Views/SettingsView.swift`
 
 **Result:** 0 real Swift errors; file reduced from ~2100 lines to ~1650 lines.
+
+---
+
+## 2026-06-13 — Marathon EOP: strip `<think>` from agent pipeline streaming + MissionMemory
+
+**What changed:** Two secondary exposure paths for reasoning-model `<think>` blocks
+were fixed in `AgentPipeline.swift`:
+
+1. **MissionMemory pollution** — Intermediate agent outputs were stored raw into
+   `MissionMemory` before this fix. When a reasoning model (QwQ/DeepSeek-R1) was
+   used as the brain, every intermediate agent's chain-of-thought (potentially
+   thousands of tokens) would pollute downstream agents' context via
+   `memory.buildContext(for:)`. Fixed: apply `Self.stripNarration(rawOutput)` before
+   `memory.recordAgentOutput(...)` in the phase-result loop.
+
+2. **Streaming display** — The live streaming bubble (`MissionProgress.shared.stream`)
+   received the raw cumulative text including `<think>` blocks. Users would see raw
+   reasoning during streaming; the committed message was already clean. Fixed: apply
+   `Self.stripNarration(partial)` inside the `isFinal` stream callback. Since
+   `onUpdate` passes the cumulative string, `stripNarration` correctly removes closed
+   blocks immediately when `</think>` appears.
+
+**Files:** `Salehman AI/Agents/AgentPipeline.swift`
+
+**Result:** 0 real Swift errors. Full `<think>` coverage: user-facing reply (existing),
+streaming display (new), agent context (new).
 
 ---
 

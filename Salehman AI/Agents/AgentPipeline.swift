@@ -538,8 +538,14 @@ enum AgentPipeline {
                     let stream: @Sendable (String) -> Void
                     if spec.isFinal {
                         stream = { (partial: String) in
+                            // Strip reasoning blocks from the live stream so users
+                            // never see raw <think>…</think> in the streaming bubble.
+                            // onUpdate passes the cumulative string, so stripNarration
+                            // works correctly: closed blocks vanish immediately, and
+                            // an open block hides only if content existed before it.
+                            let visible = Self.stripNarration(partial)
                             Task { @MainActor in
-                                MissionProgress.shared.stream(partial)
+                                MissionProgress.shared.stream(visible)
                             }
                         }
                     } else {
@@ -575,8 +581,11 @@ enum AgentPipeline {
             let results = phaseResults
 
             // Fold this phase's outputs into MissionMemory (in spec order).
-            for (i, output) in results.sorted(by: { $0.0 < $1.0 }) {
+            // Strip reasoning-model think blocks before recording so they don't
+            // pollute downstream agents' context with thousands of reasoning tokens.
+            for (i, rawOutput) in results.sorted(by: { $0.0 < $1.0 }) {
                 let spec = specs[i]
+                let output = Self.stripNarration(rawOutput)
                 memory.recordAgentOutput(name: spec.name, output: output)
                 if spec.usesTools {
                     reasoning = output
