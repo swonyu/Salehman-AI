@@ -364,6 +364,19 @@ extension View {
     func dsShadow(_ e: (color: Color, radius: CGFloat, y: CGFloat)) -> some View {
         shadow(color: e.color, radius: e.radius, y: e.y)
     }
+
+    /// RTL-aware block layout for PLAIN-text LLM output: when `text` contains
+    /// Arabic script, flips to right-to-left + trailing alignment (mirrors the
+    /// verified `LiveTranscriptionView.lineView` pattern — the outer `.frame`
+    /// resolves `.trailing` in the parent LTR context = the right edge, while the
+    /// inner layoutDirection gives the text correct RTL bidi). Latin/English is a
+    /// pure no-op (LTR + leading). NOT for Markdown/code surfaces — those need
+    /// structural bidi (code blocks must stay LTR), handled separately.
+    func rtlAware(_ text: String) -> some View {
+        let rtl = text.range(of: "\\p{Arabic}", options: .regularExpression) != nil
+        return environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+            .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
+    }
 }
 
 // MARK: - SuperGrok (added for Upgrade to SuperGrok + Anthropic migration)

@@ -195,6 +195,7 @@ struct KnowledgeView: View {
                 VStack(alignment: .leading, spacing: 0) {
                 Text(answer).font(.callout).foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .rtlAware(answer)
                 if !sources.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("SOURCES").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
@@ -634,7 +635,7 @@ private struct DocDetailSheet: View {
                         .transition(.opacity)
                     } else {
                         Text(summary).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(summary)
                             .transition(.opacity)
                     }
 
@@ -642,7 +643,7 @@ private struct DocDetailSheet: View {
                         Divider().overlay(DS.Palette.hairline)
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(answer)
                         HStack(spacing: 16) {
                             Button {
                                 NSPasteboard.general.clearContents()

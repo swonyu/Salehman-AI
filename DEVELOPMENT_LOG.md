@@ -5138,6 +5138,35 @@ and clear on Esc (`onKeyPress(.escape)` in Knowledge/Memory/Scratchpad/Agents/Li
 
 ---
 
+## 2026-06-14 — EOCD: RTL/Arabic layout (dimension b) — fixed Knowledge + Scratchpad; ROTATION 1 COMPLETE
+
+Final dimension of the first deeper rotation. Genuine gap: `\p{Arabic}` → RTL layout was handled ONLY in
+LiveTranscriptionView — the other PLAIN-text LLM-output surfaces rendered Arabic left-aligned LTR. Added
+a reusable `rtlAware(_ text:)` View modifier (DesignSystem) mirroring LiveTranscription's verified
+pattern: `.environment(\.layoutDirection, .rightToLeft)` + `.frame(maxWidth: .infinity, alignment:
+.trailing)` when Arabic is detected; pure no-op (LTR + leading) for Latin/English. Applied to the 4
+plain-`Text` outputs:
+- KnowledgeView: ask-card answer, DocDetailSheet summary + per-doc answer.
+- ScratchpadView: Organize/Summarize AI result.
+
+**Deliberately NOT applied to chat/code `MarkdownText`** — those mix Arabic + English + CODE BLOCKS,
+which must stay LTR; a blanket flip would break code rendering. Proper bidi for mixed markdown+code is a
+separate, deliberate task (flagged for owner; needs visual verification).
+
+**Verify:** `swiftc -typecheck` (full isolation flags) → 0/0. ⚠️ The headless loop can't render-verify
+layout — the change is English-safe (no-op) but the owner should eyeball an Arabic answer in
+Knowledge/Scratchpad to confirm the right-alignment reads well.
+
+**🏁 FIRST DEEPER-DIMENSION ROTATION COMPLETE.** All 7 dimensions audited (b–g; a = deliberate
+trade-off): only TWO real fixes found total — (c) Onboarding "Skip" contrast (EOBY) and (b) RTL for
+Knowledge/Scratchpad (this entry). (d) VoiceOver, (e) anim-perf, (f) keyboard, (g) empty/error/loading
+were all already at the bar. The app is exhaustively polished; a 2nd rotation will be almost entirely
+no-gap — owner redirect to higher-value work strongly recommended (see below / response).
+
+**Files:** `DesignSystem/DesignSystem.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

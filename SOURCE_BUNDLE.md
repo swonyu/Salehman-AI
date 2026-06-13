@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 01:40 +03 · Swift files: 160 · Swift LOC: 37094_
+_Generated: 2026-06-14 02:16 +03 · Swift files: 160 · Swift LOC: 37109_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -2171,7 +2171,7 @@ struct Salehman_AIApp: App {
 }
 ```
 
-===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (475 lines) =====
+===== FILE: Salehman AI/DesignSystem/DesignSystem.swift (488 lines) =====
 ```swift
 import SwiftUI
 
@@ -2538,6 +2538,19 @@ struct SuggestionCard: View {
 extension View {
     func dsShadow(_ e: (color: Color, radius: CGFloat, y: CGFloat)) -> some View {
         shadow(color: e.color, radius: e.radius, y: e.y)
+    }
+
+    /// RTL-aware block layout for PLAIN-text LLM output: when `text` contains
+    /// Arabic script, flips to right-to-left + trailing alignment (mirrors the
+    /// verified `LiveTranscriptionView.lineView` pattern — the outer `.frame`
+    /// resolves `.trailing` in the parent LTR context = the right edge, while the
+    /// inner layoutDirection gives the text correct RTL bidi). Latin/English is a
+    /// pure no-op (LTR + leading). NOT for Markdown/code surfaces — those need
+    /// structural bidi (code blocks must stay LTR), handled separately.
+    func rtlAware(_ text: String) -> some View {
+        let rtl = text.range(of: "\\p{Arabic}", options: .regularExpression) != nil
+        return environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+            .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
     }
 }
 
@@ -21254,7 +21267,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (752 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (753 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21453,6 +21466,7 @@ struct KnowledgeView: View {
                 VStack(alignment: .leading, spacing: 0) {
                 Text(answer).font(.callout).foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .rtlAware(answer)
                 if !sources.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("SOURCES").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
@@ -21892,7 +21906,7 @@ private struct DocDetailSheet: View {
                         .transition(.opacity)
                     } else {
                         Text(summary).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(summary)
                             .transition(.opacity)
                     }
 
@@ -21900,7 +21914,7 @@ private struct DocDetailSheet: View {
                         Divider().overlay(DS.Palette.hairline)
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(answer)
                         HStack(spacing: 16) {
                             Button {
                                 NSPasteboard.general.clearContents()
@@ -24382,7 +24396,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (705 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (706 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -25023,6 +25037,7 @@ struct ScratchpadView: View {
             }
             Text(aiResult).font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                .rtlAware(aiResult)
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -39786,7 +39801,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6184 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6279 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44858,6 +44873,101 @@ Previously-documented dim spots (chat live partials @0.66 ≈ 5.7:1, tab pills @
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 (Encouraging: the contrast dimension surfaced a real gap — the deeper-dimension rotation IS finding
 genuine, if sparse, fixes rather than pure churn.)
+
+---
+
+## 2026-06-14 — EOBZ: animation-perf / idle-CPU audit (dimension e) — no gap
+
+Audited every continuous animator (PhaseAnimator / repeatForever / repeating `symbolEffect` /
+TimelineView) for idle frame-burn. ALL are properly gated to run only when relevant — no always-on
+chrome animator:
+- **Generating:** BrainStatusDot, Unrestricted halo, TypingIndicator, `.symbolEffect(.pulse, isActive:
+  vm.isRunning)`, StreamingBubble, PulsingDot — all gated on isRunning/streaming.
+- The one perf-sensitive `TimelineView(.periodic by: 1)` (Code elapsed clock) is mounted ONLY inside
+  `if isRunning, let t0 = progress.startedAt` — no per-second redraw when idle.
+- **Market halo:** gated on `market.session.isOpen` (+ the Markets tab is currently hidden anyway).
+- **Recording:** LiveTranscription LIVE dot gated on `live.isRunning`; Voice orb on listening/speaking.
+- **Empty-state glows** (Agents/Knowledge/Memory/Scratchpad/Code/ChatHistory): only while the list is
+  empty. **Active-tab/transient ambient** (Today greeting, Copilot sheet): only while visible.
+All also reduceMotion-gated (EOBO). Perf was already a design concern (the BrainStatusDot comment cites
+"idle CPU/GPU + battery drain in Low Power Mode"). **No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCA: VoiceOver labels/traits audit (dimension d) — no gap
+
+Swept all icon-only `Button`s app-wide: every one of the 13 inline `label: { Image(...) }` controls has
+an explicit `.accessibilityLabel` (and most also `.help`) — CodeView search/jump/attach/reload, Settings
+copy/recheck, LiveTranscription + Scratchpad clear/dismiss. The shared `CircleIconButton` component
+always supplies a label (explicit or `help` fallback). Selectable-state traits are present where needed:
+TabSwitcherBar pills `.isSelected` + hint, FileTree files `.isSelected` (EOBV) + folders announce
+expanded/collapsed, CommandPalette rows synthesize title+subtitle. Decorative elements are hidden
+(ApprovalCard terminal icon, TabSwitcherBar divider) and color-only states are labelled (FileTree
+AI-changed dot, pending-task + unread badges). **No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCB: keyboard nav / focus-order audit (dimension f) — no gap
+
+All chrome sheets (CommandPalette, Shortcuts, About, Voice, Settings, Memory, LiveTranscription,
+ChatHistory) are presented via SwiftUI `.sheet` (`Salehman_AIApp` / ContentView) → macOS gives
+Escape-to-dismiss for free; the CommandPalette "esc" badge (shown in a daily-driver app) confirms it
+works in practice. The one custom overlay, ApprovalCard (ZStack scrim, not a sheet), correctly wires
+explicit `.keyboardShortcut(.cancelAction)` + `.defaultAction`. Onboarding CTA has `.defaultAction`;
+CommandPalette has ↑/↓ arrow-nav + onSubmit + autofocus; search/add fields autofocus where expected
+and clear on Esc (`onKeyPress(.escape)` in Knowledge/Memory/Scratchpad/Agents/LiveTranscription).
+**No gap.**
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCC: empty / error / loading-state audit (dimension g) — no gap
+
+- **EMPTY:** uniform across the app (icon-in-soft-circle + text; CommandPalette was the last, EOBU).
+- **LOADING:** `ProgressView` affordances on every async surface — Knowledge (×4: ingest/ask/summarize),
+  Settings (×5: brain tests), Markets (×2), Code (×2), Agents, Scratchpad, ChatHistory, Copilot,
+  ContentView — each wired to its in-flight flag (`ingesting`/`asking`/`working`/`checkingAlerts`/…).
+- **ERROR:** surfaced, not silent or bare — Markets `monitorError` (warningSoft), LiveTranscription
+  status Label + accent permission banner, Knowledge/Scratchpad on-device-unavailable fallback
+  messages, Copilot "Couldn't reach GitHub" status, chat bubbles' offMessage→unavailable substitution.
+  All styled to the app's status/caption convention. **No gap** (view layer; logic-layer error handling
+  is out of visual-polish scope).
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCD: RTL/Arabic layout (dimension b) — fixed Knowledge + Scratchpad; ROTATION 1 COMPLETE
+
+Final dimension of the first deeper rotation. Genuine gap: `\p{Arabic}` → RTL layout was handled ONLY in
+LiveTranscriptionView — the other PLAIN-text LLM-output surfaces rendered Arabic left-aligned LTR. Added
+a reusable `rtlAware(_ text:)` View modifier (DesignSystem) mirroring LiveTranscription's verified
+pattern: `.environment(\.layoutDirection, .rightToLeft)` + `.frame(maxWidth: .infinity, alignment:
+.trailing)` when Arabic is detected; pure no-op (LTR + leading) for Latin/English. Applied to the 4
+plain-`Text` outputs:
+- KnowledgeView: ask-card answer, DocDetailSheet summary + per-doc answer.
+- ScratchpadView: Organize/Summarize AI result.
+
+**Deliberately NOT applied to chat/code `MarkdownText`** — those mix Arabic + English + CODE BLOCKS,
+which must stay LTR; a blanket flip would break code rendering. Proper bidi for mixed markdown+code is a
+separate, deliberate task (flagged for owner; needs visual verification).
+
+**Verify:** `swiftc -typecheck` (full isolation flags) → 0/0. ⚠️ The headless loop can't render-verify
+layout — the change is English-safe (no-op) but the owner should eyeball an Arabic answer in
+Knowledge/Scratchpad to confirm the right-alignment reads well.
+
+**🏁 FIRST DEEPER-DIMENSION ROTATION COMPLETE.** All 7 dimensions audited (b–g; a = deliberate
+trade-off): only TWO real fixes found total — (c) Onboarding "Skip" contrast (EOBY) and (b) RTL for
+Knowledge/Scratchpad (this entry). (d) VoiceOver, (e) anim-perf, (f) keyboard, (g) empty/error/loading
+were all already at the bar. The app is exhaustively polished; a 2nd rotation will be almost entirely
+no-gap — owner redirect to higher-value work strongly recommended (see below / response).
+
+**Files:** `DesignSystem/DesignSystem.swift`, `Views/KnowledgeView.swift`, `Views/ScratchpadView.swift`.
 
 ---
 

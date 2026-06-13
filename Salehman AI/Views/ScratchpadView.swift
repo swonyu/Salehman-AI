@@ -637,6 +637,7 @@ struct ScratchpadView: View {
             }
             Text(aiResult).font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                .rtlAware(aiResult)
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
