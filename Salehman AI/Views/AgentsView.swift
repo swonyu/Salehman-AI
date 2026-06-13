@@ -7,6 +7,9 @@ struct AgentsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var directCommand: String = ""
     @State private var agentSearch: String = ""
+    /// Focus drives a subtle accent glow on the filter field — consistent with
+    /// the app's other text inputs (add-note/composer focus affordance).
+    @FocusState private var searchFocused: Bool
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -285,6 +288,7 @@ struct AgentsView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Filter agents…", text: $agentSearch)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { agentSearch = ""; return .handled }
                 .accessibilityLabel("Filter agents")
             if !agentSearch.isEmpty {
@@ -295,10 +299,12 @@ struct AgentsView: View {
                 .transition(.opacity)
             }
         }
-        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     // MARK: Run history

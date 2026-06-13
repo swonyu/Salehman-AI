@@ -5,6 +5,8 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    /// Focus glow on the transcript search — consistent with the app's text inputs.
+    @FocusState private var searchFocused: Bool
     @State private var copied = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     var onAsk: (String) -> Void
@@ -182,6 +184,7 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .focused($searchFocused)
                 .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
@@ -191,9 +194,11 @@ struct LiveTranscriptionView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: searchText.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     // MARK: Transcript (speaker bubbles + live partials)

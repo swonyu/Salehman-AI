@@ -31,6 +31,8 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    /// Focus glow on the doc-filter field — consistent with the app's text inputs.
+    @FocusState private var filterFocused: Bool
     @State private var hoveredDocID: UUID?
     /// Pulses briefly after "Save to Notes" to confirm the action.
     @State private var answerSaved = false
@@ -347,6 +349,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($filterFocused)
                 .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
@@ -358,9 +361,11 @@ struct KnowledgeView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(filterFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: docFilter.isEmpty)
+        .animation(DS.Motion.lux, value: filterFocused)
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {

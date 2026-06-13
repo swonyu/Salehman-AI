@@ -55,6 +55,8 @@ struct MemoryView: View {
     @State private var newFact = ""
     @State private var copiedFact: String?
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field.
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack {
@@ -239,6 +241,7 @@ struct MemoryView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { query = ""; return .handled }
                 .accessibilityLabel("Search memories")
             if !query.isEmpty {
@@ -252,7 +255,9 @@ struct MemoryView: View {
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
         .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: query.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var sortMenu: some View {

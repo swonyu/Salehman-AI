@@ -13,6 +13,8 @@ struct ScratchpadView: View {
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field below.
+    @FocusState private var searchFocused: Bool
     /// Inline edit: which note/task is being renamed and its live draft text.
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
@@ -208,6 +210,7 @@ struct ScratchpadView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { search = ""; return .handled }
                 .accessibilityLabel("Search scratchpad")
             if !search.isEmpty {
@@ -219,9 +222,11 @@ struct ScratchpadView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: search.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var noMatch: some View {

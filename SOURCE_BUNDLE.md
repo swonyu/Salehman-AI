@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 13:01 +03 · Swift files: 160 · Swift LOC: 36650_
+_Generated: 2026-06-13 13:23 +03 · Swift files: 160 · Swift LOC: 36676_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13634,7 +13634,7 @@ struct AboutView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/AgentsView.swift (557 lines) =====
+===== FILE: Salehman AI/Views/AgentsView.swift (563 lines) =====
 ```swift
 import SwiftUI
 
@@ -13645,6 +13645,9 @@ struct AgentsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var directCommand: String = ""
     @State private var agentSearch: String = ""
+    /// Focus drives a subtle accent glow on the filter field — consistent with
+    /// the app's other text inputs (add-note/composer focus affordance).
+    @FocusState private var searchFocused: Bool
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -13923,6 +13926,7 @@ struct AgentsView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Filter agents…", text: $agentSearch)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { agentSearch = ""; return .handled }
                 .accessibilityLabel("Filter agents")
             if !agentSearch.isEmpty {
@@ -13933,10 +13937,12 @@ struct AgentsView: View {
                 .transition(.opacity)
             }
         }
-        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     // MARK: Run history
@@ -21080,7 +21086,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (701 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (706 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21115,6 +21121,8 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    /// Focus glow on the doc-filter field — consistent with the app's text inputs.
+    @FocusState private var filterFocused: Bool
     @State private var hoveredDocID: UUID?
     /// Pulses briefly after "Save to Notes" to confirm the action.
     @State private var answerSaved = false
@@ -21431,6 +21439,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($filterFocused)
                 .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
@@ -21442,9 +21451,11 @@ struct KnowledgeView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(filterFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: docFilter.isEmpty)
+        .animation(DS.Motion.lux, value: filterFocused)
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
@@ -21785,7 +21796,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (331 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (336 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -21794,6 +21805,8 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    /// Focus glow on the transcript search — consistent with the app's text inputs.
+    @FocusState private var searchFocused: Bool
     @State private var copied = false
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     var onAsk: (String) -> Void
@@ -21971,6 +21984,7 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .focused($searchFocused)
                 .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
@@ -21980,9 +21994,11 @@ struct LiveTranscriptionView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: searchText.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     // MARK: Transcript (speaker bubbles + live partials)
@@ -23334,7 +23350,7 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MemoryView.swift (384 lines) =====
+===== FILE: Salehman AI/Views/MemoryView.swift (389 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -23393,6 +23409,8 @@ struct MemoryView: View {
     @State private var newFact = ""
     @State private var copiedFact: String?
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field.
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack {
@@ -23577,6 +23595,7 @@ struct MemoryView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { query = ""; return .handled }
                 .accessibilityLabel("Search memories")
             if !query.isEmpty {
@@ -23590,7 +23609,9 @@ struct MemoryView: View {
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
         .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: query.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var sortMenu: some View {
@@ -24043,7 +24064,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (671 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (676 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -24060,6 +24081,8 @@ struct ScratchpadView: View {
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field below.
+    @FocusState private var searchFocused: Bool
     /// Inline edit: which note/task is being renamed and its live draft text.
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
@@ -24255,6 +24278,7 @@ struct ScratchpadView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { search = ""; return .handled }
                 .accessibilityLabel("Search scratchpad")
             if !search.isEmpty {
@@ -24266,9 +24290,11 @@ struct ScratchpadView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
         .animation(DS.Motion.magnetic, value: search.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var noMatch: some View {
@@ -39258,7 +39284,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5370 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5394 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43534,6 +43560,30 @@ measurement flagged it, fixed in the same slice.
 **Files:** `Views/MarkdownText.swift`; tests: `Salehman_AITests.swift`, `ChatTranscriptLogicTests.swift`.
 
 **Result:** under `-swift-version 6` (real SDK, Testing plugin) — app **0/0**, tests **0/0**.
+
+---
+
+## 2026-06-13 — EOAR: polish — unified search/filter field focus affordance + fill
+
+**What changed:** Every search/filter field in the Chat A lane now lights up on focus with a
+soft accent glow (`accent.opacity(focused ? 0.15 : 0)`, radius 10) — the same affordance the
+composer / add-note fields already had, so all of the app's text inputs now give consistent
+focus feedback. Also unified the resting capsule fill to `0.07` (three fields were `0.06`).
+Fields: `AgentsView` (filter agents), `ScratchpadView` (search), `KnowledgeView` (find a
+document), `MemoryView` (search memories), `LiveTranscriptionView` (search transcript). Each
+got a dedicated `@FocusState` + `.focused()` + the glow + a `DS.Motion.lux` animation on the
+focus change.
+
+**Why:** the search fields had no focus affordance (only the system cursor) and a split fill
+opacity — a small but real consistency/UX gap against the established input pattern. The change
+only adds a shadow + nudges a fill alpha; it never alters geometry, so it's safe to land without
+a pixel render (xcodebuild can't run in this sandbox). Left non-search capsule pills and Chat B's
+ContentView/SettingsView search bars untouched (different component / other lane).
+
+**Files:** `Views/AgentsView.swift`, `ScratchpadView.swift`, `KnowledgeView.swift`,
+`MemoryView.swift`, `LiveTranscriptionView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 
 ---
 

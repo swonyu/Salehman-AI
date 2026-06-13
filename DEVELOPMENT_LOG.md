@@ -4276,6 +4276,30 @@ measurement flagged it, fixed in the same slice.
 
 ---
 
+## 2026-06-13 — EOAR: polish — unified search/filter field focus affordance + fill
+
+**What changed:** Every search/filter field in the Chat A lane now lights up on focus with a
+soft accent glow (`accent.opacity(focused ? 0.15 : 0)`, radius 10) — the same affordance the
+composer / add-note fields already had, so all of the app's text inputs now give consistent
+focus feedback. Also unified the resting capsule fill to `0.07` (three fields were `0.06`).
+Fields: `AgentsView` (filter agents), `ScratchpadView` (search), `KnowledgeView` (find a
+document), `MemoryView` (search memories), `LiveTranscriptionView` (search transcript). Each
+got a dedicated `@FocusState` + `.focused()` + the glow + a `DS.Motion.lux` animation on the
+focus change.
+
+**Why:** the search fields had no focus affordance (only the system cursor) and a split fill
+opacity — a small but real consistency/UX gap against the established input pattern. The change
+only adds a shadow + nudges a fill alpha; it never alters geometry, so it's safe to land without
+a pixel render (xcodebuild can't run in this sandbox). Left non-search capsule pills and Chat B's
+ContentView/SettingsView search bars untouched (different component / other lane).
+
+**Files:** `Views/AgentsView.swift`, `ScratchpadView.swift`, `KnowledgeView.swift`,
+`MemoryView.swift`, `LiveTranscriptionView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
