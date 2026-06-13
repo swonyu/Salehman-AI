@@ -4248,6 +4248,34 @@ it, Swift-6-only errors silently downgrade to warnings.
 
 ---
 
+## 2026-06-13 — EOAQ: MarkdownText parsing layer → `nonisolated` (proper fix for EOAP workaround)
+
+**What changed:** `MarkdownText` is a SwiftUI View, so under default-MainActor isolation ALL its
+static members were `@MainActor` — including the pure parsers. EOAP worked around the resulting
+`#ActorIsolatedCall` test warnings by marking 3 test suites `@MainActor`. This is the real fix:
+marked the pure data layer `nonisolated` so it's callable from anywhere (and off-main):
+- Methods: `segments(for:)`, `parseSegments`, `inlineMarkdown`, `highlighted(_:query:)`,
+  `blocks(for:)`, `heading`, `bullet`, `blockquote`, `numbered`, `isTableRow`,
+  `isTableSeparator`, `tableCells`.
+- Statics they touch: `cacheLock` (NSLock, Sendable), `maxCacheEntries` (Int) → `nonisolated`
+  (the `segmentCache`/`attributedCache` were already `nonisolated(unsafe)` + lock-guarded).
+- View-producing members (`body`, `lineView`, `tableView`) correctly STAY `@MainActor`.
+- Removed the now-unnecessary (and now-false) `@MainActor` annotations from the 3 test suites
+  (`MarkdownTextTests`, `MarkdownTextBlockTests`, `MarkdownHighlightTests`).
+
+**Why:** pure parsers have no business being actor-bound — `nonisolated` is the correct design,
+removes the test workaround, and unlocks off-main markdown pre-parsing if ever wanted. Adding
+`nonisolated` can never break a caller (any context may call it); every target is pure string
+work + the already-thread-safe lock-guarded caches. Caught (and self-corrected) an intermediate
+slip: the first pass left `cacheLock`/`maxCacheEntries` @MainActor, producing 12 app warnings —
+measurement flagged it, fixed in the same slice.
+
+**Files:** `Views/MarkdownText.swift`; tests: `Salehman_AITests.swift`, `ChatTranscriptLogicTests.swift`.
+
+**Result:** under `-swift-version 6` (real SDK, Testing plugin) — app **0/0**, tests **0/0**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

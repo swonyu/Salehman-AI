@@ -90,9 +90,6 @@ struct ShellToolTests {
 
 // MARK: - MarkdownText caching + parsing
 
-// @MainActor: MarkdownText is a SwiftUI View type, so its static parsing methods
-// are main-actor-isolated; the synchronous calls below must run on the main actor.
-@MainActor
 struct MarkdownTextTests {
     @Test func splitsCodeAndText() throws {
         let body = """
@@ -178,8 +175,6 @@ struct ChatMessageCodecTests {
 
 // MARK: - MarkdownText.blocks — table detection and block splitting
 
-// @MainActor: see MarkdownTextTests — the static parsing methods are main-actor-isolated.
-@MainActor
 struct MarkdownTextBlockTests {
 
     @Test func plainLinesReturnSingleLinesBlock() {

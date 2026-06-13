@@ -51,12 +51,12 @@ struct MarkdownText: View {
     // Cache parsed segments + attributed strings so each MessageBubble redraw
     // doesn't re-parse the same body. Cap entries so the cache doesn't grow
     // without bound when the chat is long.
-    private static let cacheLock = NSLock()
+    nonisolated private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var segmentCache: [String: [Segment]] = [:]
     nonisolated(unsafe) private static var attributedCache: [String: AttributedString] = [:]
-    private static let maxCacheEntries = 200
+    nonisolated private static let maxCacheEntries = 200
 
-    static func segments(for text: String) -> [Segment] {
+    nonisolated static func segments(for text: String) -> [Segment] {
         cacheLock.lock()
         if let cached = segmentCache[text] {
             cacheLock.unlock()
@@ -75,7 +75,7 @@ struct MarkdownText: View {
         return parsed
     }
 
-    private static func parseSegments(_ text: String) -> [Segment] {
+    nonisolated private static func parseSegments(_ text: String) -> [Segment] {
         var result: [Segment] = []
         let lines = text.components(separatedBy: "\n")
         var inCode = false
@@ -109,7 +109,7 @@ struct MarkdownText: View {
         return result
     }
 
-    static func inlineMarkdown(_ s: String) -> AttributedString {
+    nonisolated static func inlineMarkdown(_ s: String) -> AttributedString {
         cacheLock.lock()
         if let hit = attributedCache[s] {
             cacheLock.unlock()
@@ -132,14 +132,14 @@ struct MarkdownText: View {
     /// Amber wash painted behind find-in-conversation matches. Deliberately NOT
     /// the red brand accent — red reads as "error/active brain" in this UI and
     /// would muddy the meaning of a match. Amber is the universal "found it" cue.
-    private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
+    nonisolated private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
 
     /// Overlay a search highlight on an already-rendered (and cached) attributed
     /// string. Applied AFTER the markdown cache so the parse cache stays
     /// query-independent — only this cheap O(text) attribute pass re-runs as the
     /// query changes. Highlights EVERY case-insensitive occurrence, not just the
     /// first. Returns `base` untouched when `query` is blank (the hot path).
-    static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
+    nonisolated static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return base }
         var out = base
@@ -203,7 +203,7 @@ struct MarkdownText: View {
     }
 
     /// `#`/`##`/`###` heading → (level, text).
-    private static func heading(_ s: String) -> (level: Int, text: String)? {
+    nonisolated private static func heading(_ s: String) -> (level: Int, text: String)? {
         for level in [3, 2, 1] {
             let hashes = String(repeating: "#", count: level) + " "
             if s.hasPrefix(hashes) { return (level, String(s.dropFirst(hashes.count))) }
@@ -211,18 +211,18 @@ struct MarkdownText: View {
         return nil
     }
     /// `- ` / `* ` / `• ` bullet → item text.
-    private static func bullet(_ s: String) -> String? {
+    nonisolated private static func bullet(_ s: String) -> String? {
         for p in ["- ", "* ", "• "] where s.hasPrefix(p) { return String(s.dropFirst(p.count)) }
         return nil
     }
     /// `> ` blockquote → quoted text (`>` alone → empty quoted line).
-    private static func blockquote(_ s: String) -> String? {
+    nonisolated private static func blockquote(_ s: String) -> String? {
         if s == ">" { return "" }
         if s.hasPrefix("> ") { return String(s.dropFirst(2)) }
         return nil
     }
     /// `12. ` numbered → (marker "12.", text). Won't match decimals like "3.14".
-    private static func numbered(_ s: String) -> (marker: String, text: String)? {
+    nonisolated private static func numbered(_ s: String) -> (marker: String, text: String)? {
         guard let dot = s.firstIndex(of: ".") else { return nil }
         let numPart = s[s.startIndex..<dot]
         let afterDot = s.index(after: dot)
@@ -242,7 +242,7 @@ struct MarkdownText: View {
 
     /// Split a text body into table blocks + plain-line runs. A table is a `|…|`
     /// row immediately followed by a `|---|` separator, then zero+ `|…|` rows.
-    static func blocks(for body: String) -> [Block] {
+    nonisolated static func blocks(for body: String) -> [Block] {
         let lines = body.components(separatedBy: "\n")
         var blocks: [Block] = []
         var lineBuf: [String] = []
@@ -266,12 +266,12 @@ struct MarkdownText: View {
         return blocks
     }
 
-    private static func isTableRow(_ s: String) -> Bool {
+    nonisolated private static func isTableRow(_ s: String) -> Bool {
         let t = s.trimmingCharacters(in: .whitespaces)
         return t.hasPrefix("|") && t.dropFirst().contains("|")
     }
     /// A `|---|:--:|` separator line: every cell is only dashes/colons.
-    private static func isTableSeparator(_ s: String) -> Bool {
+    nonisolated private static func isTableSeparator(_ s: String) -> Bool {
         let cells = tableCells(s)
         guard !cells.isEmpty else { return false }
         return cells.allSatisfy { cell in
@@ -279,7 +279,7 @@ struct MarkdownText: View {
             return !c.isEmpty && c.allSatisfy { $0 == "-" || $0 == ":" }
         }
     }
-    private static func tableCells(_ s: String) -> [String] {
+    nonisolated private static func tableCells(_ s: String) -> [String] {
         var t = s.trimmingCharacters(in: .whitespaces)
         if t.hasPrefix("|") { t.removeFirst() }
         if t.hasSuffix("|") { t.removeLast() }
