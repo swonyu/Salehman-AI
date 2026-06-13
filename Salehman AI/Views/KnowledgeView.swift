@@ -644,7 +644,7 @@ private struct DocDetailSheet: View {
                     }
                     .transition(.opacity)
                 }
-                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document")
+                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document").help("Ask about this document")
                 .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }

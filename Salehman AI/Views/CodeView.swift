@@ -1189,10 +1189,10 @@ struct CodeView: View {
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Previous match")
+                .accessibilityLabel("Previous match").help("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Next match")
+                .accessibilityLabel("Next match").help("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Close search")
@@ -2171,9 +2171,9 @@ struct CodeView: View {
                     .contentTransition(.numericText())
                     .animation(DS.Motion.smooth, value: searchIndex)
                 Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match").help("Previous match")
                 Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match").help("Next match")
                 Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }

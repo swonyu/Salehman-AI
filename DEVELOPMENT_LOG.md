@@ -4328,6 +4328,27 @@ change), valuable, and measurable (the `axScan` enforces labels; the token grep 
 
 ---
 
+## 2026-06-13 — EOAT: hover tooltips on ambiguous-icon / terse controls
+
+**What changed:** Added `.help()` tooltips to icon/terse controls whose meaning isn't
+self-evident (so they previously had a VoiceOver label but no hover tooltip — an inconsistency
+with the app's row-action buttons, which all carry `.help`):
+- Find-nav chevrons ▲▼ in both CodeView find bars (conversation + file): "Previous/Next match".
+- KnowledgeView ask-send button (`arrow.up.circle.fill`): "Ask about this document".
+- SettingsView "Use :8000" endpoint-fill buttons (Unsloth + vLLM): the terse label now shows the
+  full "Fill with …'s default localhost URL" on hover.
+
+**Why:** these are the controls where a tooltip earns its place — a bare chevron or terse
+"Use :8000" doesn't convey intent. Deliberately did NOT blanket-add `.help` to self-evident
+clear/close ✕ buttons (a "Close" tooltip on an ✕ is noise). Safe (additive modifier, no
+geometry) and measurable (the scan listed which icon-only buttons had a label but no help).
+
+**Files:** `Views/CodeView.swift`, `KnowledgeView.swift`, `SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

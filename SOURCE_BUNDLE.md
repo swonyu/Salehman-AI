@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 13:31 +03 · Swift files: 160 · Swift LOC: 36679_
+_Generated: 2026-06-13 14:10 +03 · Swift files: 160 · Swift LOC: 36681_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -16207,10 +16207,10 @@ struct CodeView: View {
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Previous match")
+                .accessibilityLabel("Previous match").help("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Next match")
+                .accessibilityLabel("Next match").help("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Close search")
@@ -17189,9 +17189,9 @@ struct CodeView: View {
                     .contentTransition(.numericText())
                     .animation(DS.Motion.smooth, value: searchIndex)
                 Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match").help("Previous match")
                 Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match").help("Next match")
                 Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
@@ -21737,7 +21737,7 @@ private struct DocDetailSheet: View {
                     }
                     .transition(.opacity)
                 }
-                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document")
+                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document").help("Ask about this document")
                 .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -24920,7 +24920,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1502 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1504 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25694,6 +25694,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with Unsloth Studio's default localhost URL")
+            .help("Fill with Unsloth Studio's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -25768,6 +25769,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with vLLM's default localhost URL")
+            .help("Fill with vLLM's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -39287,7 +39289,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5422 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5443 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43615,6 +43617,27 @@ change), valuable, and measurable (the `axScan` enforces labels; the token grep 
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings; 0 icon-well
 `cornerRadius: 6` literals remain in SettingsView.
+
+---
+
+## 2026-06-13 — EOAT: hover tooltips on ambiguous-icon / terse controls
+
+**What changed:** Added `.help()` tooltips to icon/terse controls whose meaning isn't
+self-evident (so they previously had a VoiceOver label but no hover tooltip — an inconsistency
+with the app's row-action buttons, which all carry `.help`):
+- Find-nav chevrons ▲▼ in both CodeView find bars (conversation + file): "Previous/Next match".
+- KnowledgeView ask-send button (`arrow.up.circle.fill`): "Ask about this document".
+- SettingsView "Use :8000" endpoint-fill buttons (Unsloth + vLLM): the terse label now shows the
+  full "Fill with …'s default localhost URL" on hover.
+
+**Why:** these are the controls where a tooltip earns its place — a bare chevron or terse
+"Use :8000" doesn't convey intent. Deliberately did NOT blanket-add `.help` to self-evident
+clear/close ✕ buttons (a "Close" tooltip on an ✕ is noise). Safe (additive modifier, no
+geometry) and measurable (the scan listed which icon-only buttons had a label but no help).
+
+**Files:** `Views/CodeView.swift`, `KnowledgeView.swift`, `SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
 
 ---
 

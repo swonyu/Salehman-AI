@@ -770,6 +770,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with Unsloth Studio's default localhost URL")
+            .help("Fill with Unsloth Studio's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -844,6 +845,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with vLLM's default localhost URL")
+            .help("Fill with vLLM's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
