@@ -4930,6 +4930,44 @@ LiveTranscriptionView ×2 (un-audited surface — candidate for a future slice).
 
 ---
 
+## 2026-06-14 — EOBT: ShortcutsView audit (complete) + LiveTranscriptionView footer pills — PHASE 3 DONE
+
+**ShortcutsView audit — already at the bar, no change:** brand tile + `Eyebrow` (gated bounce), ambient
+glow, bezel group cards, dimensional top-lit key badges with hover brighten, magnetic rows, staggered
+entrance, AND per-row VoiceOver grouping (`.accessibilityElement(children: .combine)`). Complete — no churn.
+
+**LiveTranscriptionView — genuine gaps fixed:** the footer's "Copy" and "Summarize" were stock
+`.bordered` beside the custom accent "Answer the questions" pill. Converted both to the app's
+secondary-pill treatment (white-fill capsule + gradient hairline + `LuxPressStyle`, metrics matched to
+the accent pill — 12.5pt / 12h / 6v) → clean secondary/secondary/primary footer hierarchy; Copy also
+gains a success-tint on "Copied!". (The rest was already excellent: gated brand bounce + gated LIVE
+recording-dot pulse, focus glow, RTL-aware transcript with documented WCAG-AA contrast, accent
+permission banner.) 0 `.bordered` left in the file.
+
+**Files:** `Views/LiveTranscriptionView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**🏁 PHASE 3 COMPLETE — and with it the full high-end + macOS-27 design marathon (2026-06-13→14):**
+- **8-view high-end pass** (EOBE–EOBM): Agents, Knowledge, Memory, Scratchpad, Settings, Voice, About,
+  Onboarding — each a gap-finding slice (composer-style sends, focus glows, premium empty states, the
+  hero-CTA kinetic tension, etc.).
+- **App-wide Reduce-Motion a11y pass** (EOBK Voice orb, EOBN CodeView, EOBO ContentView): every
+  continuous/looping animation now has a static, geometry-preserving fallback.
+- **macOS-27 "Golden Gate" research** (EOBQ → `DESIGN_RESEARCH_macOS27.md`): concluded the branded
+  crimson flat-dark DS is principle-valid → selective alignment, NOT wholesale Liquid Glass.
+- **macOS-27 alignment** (EOBR continuous corners app-wide; EOBS static-control sweep clean +
+  TodayView/Copilot; EOBT Shortcuts/LiveTranscription) + **MarketsView** (EOBP).
+- **Build verified on macOS 27** (EOBH) + the **swiftc flag-parity fix** (EOBD) underpinning every
+  0/0 verification.
+- Discipline held throughout: no manufactured churn — audited-complete logged where surfaces already
+  met the bar; the only flagged-for-owner item is an optional Liquid-Glass ⌘K palette touchpoint.
+
+Stopping the loop here (both the design list and the a11y/macOS-27 work are complete). Re-run `/loop`
+with a new directive for deeper passes (e.g. the ⌘K-palette glass experiment, or Chat/Code micro-polish).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

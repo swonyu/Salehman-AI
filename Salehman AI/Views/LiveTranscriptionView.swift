@@ -287,8 +287,15 @@ struct LiveTranscriptionView: View {
                 Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: copied)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(copied ? DS.Palette.successSoft : .white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(LuxPressStyle())
             .disabled(live.combinedText.isEmpty)
 
             Button {
@@ -296,9 +303,18 @@ struct LiveTranscriptionView: View {
                 guard !text.isEmpty else { return }
                 onAsk("Here is a live transcript of system audio (a call, video, or lecture). Summarize the key points and list any action items or decisions:\n\n\(text)")
                 dismiss()
-            } label: { Label("Summarize", systemImage: "list.bullet.rectangle") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Summarize", systemImage: "list.bullet.rectangle")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText

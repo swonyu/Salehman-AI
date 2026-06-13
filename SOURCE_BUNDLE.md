@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 00:23 +03 · Swift files: 160 · Swift LOC: 37066_
+_Generated: 2026-06-14 00:31 +03 · Swift files: 160 · Swift LOC: 37082_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22000,7 +22000,7 @@ private struct DocDetailSheet: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (352 lines) =====
+===== FILE: Salehman AI/Views/LiveTranscriptionView.swift (368 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22291,8 +22291,15 @@ struct LiveTranscriptionView: View {
                 Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                     .contentTransition(.symbolEffect(.replace))
                     .animation(DS.Motion.smooth, value: copied)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(copied ? DS.Palette.successSoft : .white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(LuxPressStyle())
             .disabled(live.combinedText.isEmpty)
 
             Button {
@@ -22300,9 +22307,18 @@ struct LiveTranscriptionView: View {
                 guard !text.isEmpty else { return }
                 onAsk("Here is a live transcript of system audio (a call, video, or lecture). Summarize the key points and list any action items or decisions:\n\n\(text)")
                 dismiss()
-            } label: { Label("Summarize", systemImage: "list.bullet.rectangle") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Summarize", systemImage: "list.bullet.rectangle")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText
@@ -39758,7 +39774,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6042 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6080 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44688,6 +44704,44 @@ neutral/accent hierarchy.
 **Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
 Remaining `.bordered`: SettingsView ×17 (deliberate — conventional for a config panel, EOBJ) +
 LiveTranscriptionView ×2 (un-audited surface — candidate for a future slice).
+
+---
+
+## 2026-06-14 — EOBT: ShortcutsView audit (complete) + LiveTranscriptionView footer pills — PHASE 3 DONE
+
+**ShortcutsView audit — already at the bar, no change:** brand tile + `Eyebrow` (gated bounce), ambient
+glow, bezel group cards, dimensional top-lit key badges with hover brighten, magnetic rows, staggered
+entrance, AND per-row VoiceOver grouping (`.accessibilityElement(children: .combine)`). Complete — no churn.
+
+**LiveTranscriptionView — genuine gaps fixed:** the footer's "Copy" and "Summarize" were stock
+`.bordered` beside the custom accent "Answer the questions" pill. Converted both to the app's
+secondary-pill treatment (white-fill capsule + gradient hairline + `LuxPressStyle`, metrics matched to
+the accent pill — 12.5pt / 12h / 6v) → clean secondary/secondary/primary footer hierarchy; Copy also
+gains a success-tint on "Copied!". (The rest was already excellent: gated brand bounce + gated LIVE
+recording-dot pulse, focus glow, RTL-aware transcript with documented WCAG-AA contrast, accent
+permission banner.) 0 `.bordered` left in the file.
+
+**Files:** `Views/LiveTranscriptionView.swift`.
+
+**Verify:** `swiftc -typecheck` (full isolation flags), all 97 sources → **0 errors / 0 warnings**.
+
+**🏁 PHASE 3 COMPLETE — and with it the full high-end + macOS-27 design marathon (2026-06-13→14):**
+- **8-view high-end pass** (EOBE–EOBM): Agents, Knowledge, Memory, Scratchpad, Settings, Voice, About,
+  Onboarding — each a gap-finding slice (composer-style sends, focus glows, premium empty states, the
+  hero-CTA kinetic tension, etc.).
+- **App-wide Reduce-Motion a11y pass** (EOBK Voice orb, EOBN CodeView, EOBO ContentView): every
+  continuous/looping animation now has a static, geometry-preserving fallback.
+- **macOS-27 "Golden Gate" research** (EOBQ → `DESIGN_RESEARCH_macOS27.md`): concluded the branded
+  crimson flat-dark DS is principle-valid → selective alignment, NOT wholesale Liquid Glass.
+- **macOS-27 alignment** (EOBR continuous corners app-wide; EOBS static-control sweep clean +
+  TodayView/Copilot; EOBT Shortcuts/LiveTranscription) + **MarketsView** (EOBP).
+- **Build verified on macOS 27** (EOBH) + the **swiftc flag-parity fix** (EOBD) underpinning every
+  0/0 verification.
+- Discipline held throughout: no manufactured churn — audited-complete logged where surfaces already
+  met the bar; the only flagged-for-owner item is an optional Liquid-Glass ⌘K palette touchpoint.
+
+Stopping the loop here (both the design list and the a11y/macOS-27 work are complete). Re-run `/loop`
+with a new directive for deeper passes (e.g. the ⌘K-palette glass experiment, or Chat/Code micro-polish).
 
 ---
 
