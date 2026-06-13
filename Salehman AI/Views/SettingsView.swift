@@ -364,6 +364,8 @@ struct SettingsView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(1.2)
                 .foregroundStyle(DS.Palette.textSecondary)
+                // `.isHeader` lets VoiceOver users jump between sections via the rotor.
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.system(size: 11))

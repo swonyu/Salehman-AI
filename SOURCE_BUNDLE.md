@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 14:10 +03 · Swift files: 160 · Swift LOC: 36681_
+_Generated: 2026-06-13 14:48 +03 · Swift files: 160 · Swift LOC: 36685_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24920,7 +24920,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1504 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1506 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25288,6 +25288,8 @@ struct SettingsView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(1.2)
                 .foregroundStyle(DS.Palette.textSecondary)
+                // `.isHeader` lets VoiceOver users jump between sections via the rotor.
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.system(size: 11))
@@ -26900,7 +26902,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (384 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (386 lines) =====
 ```swift
 import SwiftUI
 
@@ -27082,7 +27084,9 @@ struct TodayView: View {
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
+            // `.isHeader` lets VoiceOver users jump between sections via the rotor.
             Eyebrow(text: title)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
     }
@@ -39289,7 +39293,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5443 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5463 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43638,6 +43642,26 @@ geometry) and measurable (the scan listed which icon-only buttons had a label bu
 **Files:** `Views/CodeView.swift`, `KnowledgeView.swift`, `SettingsView.swift`.
 
 **Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings.
+
+---
+
+## 2026-06-13 — EOAU: VoiceOver heading navigation on section headers
+
+**What changed:** Added `.accessibilityAddTraits(.isHeader)` to the two centralized `section()`
+helpers — TodayView (`Eyebrow`) and SettingsView (uppercased title `Text`). One edit per helper
+marks EVERY section header in those screens as a VoiceOver heading, so rotor users can jump
+between sections (SettingsView especially — brains/voice/privacy/endpoints/… are many sections).
+
+**Why:** `.isHeader` was used only once app-wide (ContentView:1648); section headers had no
+heading trait, so VoiceOver's heading-rotor navigation didn't work on the multi-section screens.
+Pure trait addition — zero visual change, safe without a pixel render, measurable (grep for
+`.isHeader`). Single-title screens (Agents/Knowledge/…) were left — one heading offers no
+rotor navigation, so the trait there is marginal.
+
+**Files:** `Views/TodayView.swift`, `Views/SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Also re-ran
+the full app+tests checkpoint this round: both 0/0 (no regression from EOAR/EOAS/EOAT).
 
 ---
 

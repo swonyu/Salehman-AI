@@ -178,7 +178,9 @@ struct TodayView: View {
 
     @ViewBuilder private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
+            // `.isHeader` lets VoiceOver users jump between sections via the rotor.
             Eyebrow(text: title)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
     }

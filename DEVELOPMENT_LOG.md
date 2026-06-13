@@ -4349,6 +4349,26 @@ geometry) and measurable (the scan listed which icon-only buttons had a label bu
 
 ---
 
+## 2026-06-13 — EOAU: VoiceOver heading navigation on section headers
+
+**What changed:** Added `.accessibilityAddTraits(.isHeader)` to the two centralized `section()`
+helpers — TodayView (`Eyebrow`) and SettingsView (uppercased title `Text`). One edit per helper
+marks EVERY section header in those screens as a VoiceOver heading, so rotor users can jump
+between sections (SettingsView especially — brains/voice/privacy/endpoints/… are many sections).
+
+**Why:** `.isHeader` was used only once app-wide (ContentView:1648); section headers had no
+heading trait, so VoiceOver's heading-rotor navigation didn't work on the multi-section screens.
+Pure trait addition — zero visual change, safe without a pixel render, measurable (grep for
+`.isHeader`). Single-title screens (Agents/Knowledge/…) were left — one heading offers no
+rotor navigation, so the trait there is marginal.
+
+**Files:** `Views/TodayView.swift`, `Views/SettingsView.swift`.
+
+**Result:** app module `swiftc -emit-module -swift-version 6` → 0 errors / 0 warnings. Also re-ran
+the full app+tests checkpoint this round: both 0/0 (no regression from EOAR/EOAS/EOAT).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
