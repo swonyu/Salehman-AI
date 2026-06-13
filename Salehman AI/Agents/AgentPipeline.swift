@@ -669,6 +669,10 @@ enum AgentPipeline {
             "cool", "nice", "great", "good", "got it", "gotcha", "perfect",
             "awesome", "test", "ping", "hello there", "how are you",
             "how's it going", "whats up", "what's up", "wassup",
+            // Farewells — 3+ words that hit none of the other trivial guards.
+            "see you later", "see you soon", "see you tomorrow", "catch you later",
+            "talk to you later", "take care now", "have a good day", "have a nice day",
+            "good luck", "take it easy", "later gator", "bye for now",
         ]
         if greetings.contains(normalized) { return true }
 

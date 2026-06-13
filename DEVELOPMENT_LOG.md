@@ -3302,6 +3302,21 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 
 ---
 
+## 2026-06-13 — Marathon EFL: image picker differentiation + farewell trivial phrases
+
+**What & why:**
+Two targeted functional improvements in one slice:
+
+1. **`AttachmentLoader.pickImages()` + UTType filtering** (`Salehman AI/Persistence/Attachments.swift`): The `+` menu's "Attach image" option was an exact duplicate of "Attach file" — both called `pickFiles()`, which opens an all-types panel. Added `pickImages()` that sets `allowedContentTypes` to the UTType list derived from the existing `imageExts` set (via `compactMap { UTType(filenameExtension: $0) }`), so the two stay in sync automatically. Wired `ContentView.attachImage()` to call the new method. Now "Attach image" opens an image-only picker. Also added `import UniformTypeIdentifiers` to Attachments.swift.
+
+2. **Farewell phrases in `isTrivialMission`** (`Salehman AI/Agents/AgentPipeline.swift`): "see you later", "see you soon", "catch you later", "have a good day", "talk to you later", "take care now", etc. are 3+ words, so they fell through the 1–2-word trivial guard and triggered the full pipeline (unnecessary latency). Added them to the explicit `greetings` Set. Added a `farewellsAreTrivial()` test in `TrivialMissionTests.swift`.
+
+**Files:** `Salehman AI/Persistence/Attachments.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AITests/TrivialMissionTests.swift`
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

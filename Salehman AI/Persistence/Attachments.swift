@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 @preconcurrency import Vision   // VNImageRequestHandler/VNRecognizeTextRequest aren't Sendable
 import PDFKit
 
@@ -56,6 +57,24 @@ enum AttachmentLoader {
         panel.message = "Choose files to attach"
         return panel.runModal() == .OK ? panel.urls : []
     }
+
+    /// Image-only open panel — restricts the picker to the same extensions
+    /// AttachmentLoader recognises as images so the two surfaces stay in sync.
+    @MainActor
+    static func pickImages() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = "Choose images to attach"
+        panel.allowedContentTypes = imageUTTypes
+        return panel.runModal() == .OK ? panel.urls : []
+    }
+
+    /// UTType list derived from `imageExts` — the two stay in sync automatically
+    /// so the picker only shows files that `load(url:)` treats as images.
+    private static let imageUTTypes: [UTType] =
+        imageExts.compactMap { UTType(filenameExtension: $0) }
 
     /// Turn a file URL into an Attachment, extracting its text appropriately.
     static func load(url: URL) async -> Attachment {

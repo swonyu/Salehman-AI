@@ -1451,7 +1451,7 @@ struct ContentView: View {
     }
 
     @MainActor private func attachImage() async {
-        let urls = AttachmentLoader.pickFiles()
+        let urls = AttachmentLoader.pickImages()
         guard !urls.isEmpty else { return }
         attachmentLoads += 1
         for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }

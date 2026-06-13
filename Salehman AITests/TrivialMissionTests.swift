@@ -25,6 +25,13 @@ struct TrivialMissionTests {
         #expect(AgentPipeline.isTrivialMission("nice job"))
     }
 
+    @Test func farewellsAreTrivial() {
+        for g in ["see you later", "see you soon", "catch you later",
+                  "have a good day", "talk to you later", "take care now"] {
+            #expect(AgentPipeline.isTrivialMission(g), "\"\(g)\" should be trivial")
+        }
+    }
+
     // MARK: should NOT short-circuit (real tasks — the important direction)
 
     @Test func questionsAreNeverTrivial() {

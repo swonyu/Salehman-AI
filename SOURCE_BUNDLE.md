@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:30 +03 · Swift files: 150 · Swift LOC: 34260_
+_Generated: 2026-06-13 03:40 +03 · Swift files: 150 · Swift LOC: 34290_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (805 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (809 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -763,6 +763,10 @@ enum AgentPipeline {
             "cool", "nice", "great", "good", "got it", "gotcha", "perfect",
             "awesome", "test", "ping", "hello there", "how are you",
             "how's it going", "whats up", "what's up", "wassup",
+            // Farewells — 3+ words that hit none of the other trivial guards.
+            "see you later", "see you soon", "see you tomorrow", "catch you later",
+            "talk to you later", "take care now", "have a good day", "have a nice day",
+            "good luck", "take it easy", "later gator", "bye for now",
         ]
         if greetings.contains(normalized) { return true }
 
@@ -9440,10 +9444,11 @@ private nonisolated final class LockedString: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/Attachments.swift (167 lines) =====
+===== FILE: Salehman AI/Persistence/Attachments.swift (186 lines) =====
 ```swift
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 @preconcurrency import Vision   // VNImageRequestHandler/VNRecognizeTextRequest aren't Sendable
 import PDFKit
 
@@ -9500,6 +9505,24 @@ enum AttachmentLoader {
         panel.message = "Choose files to attach"
         return panel.runModal() == .OK ? panel.urls : []
     }
+
+    /// Image-only open panel — restricts the picker to the same extensions
+    /// AttachmentLoader recognises as images so the two surfaces stay in sync.
+    @MainActor
+    static func pickImages() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = "Choose images to attach"
+        panel.allowedContentTypes = imageUTTypes
+        return panel.runModal() == .OK ? panel.urls : []
+    }
+
+    /// UTType list derived from `imageExts` — the two stay in sync automatically
+    /// so the picker only shows files that `load(url:)` treats as images.
+    private static let imageUTTypes: [UTType] =
+        imageExts.compactMap { UTType(filenameExtension: $0) }
 
     /// Turn a file URL into an Attachment, extracting its text appropriately.
     static func load(url: URL) async -> Attachment {
@@ -19206,7 +19229,7 @@ struct ContentView: View {
     }
 
     @MainActor private func attachImage() async {
-        let urls = AttachmentLoader.pickFiles()
+        let urls = AttachmentLoader.pickImages()
         guard !urls.isEmpty else { return }
         attachmentLoads += 1
         for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
@@ -34674,7 +34697,7 @@ struct ToolPolicyTests {
 }
 ```
 
-===== FILE: Salehman AITests/TrivialMissionTests.swift (103 lines) =====
+===== FILE: Salehman AITests/TrivialMissionTests.swift (110 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -34701,6 +34724,13 @@ struct TrivialMissionTests {
     @Test func oneOrTwoPlainWordsAreTrivial() {
         #expect(AgentPipeline.isTrivialMission("yo"))
         #expect(AgentPipeline.isTrivialMission("nice job"))
+    }
+
+    @Test func farewellsAreTrivial() {
+        for g in ["see you later", "see you soon", "catch you later",
+                  "have a good day", "talk to you later", "take care now"] {
+            #expect(AgentPipeline.isTrivialMission(g), "\"\(g)\" should be trivial")
+        }
     }
 
     // MARK: should NOT short-circuit (real tasks — the important direction)
@@ -36828,7 +36858,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4345 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4360 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40128,6 +40158,21 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 **Files:** `Salehman AI/Views/AboutView.swift` (+3 lines, changed `[...]` to `{ var caps = [...]; if hidden... ; return caps }()`)
 
 **Why:** The Markets tab is currently hidden (owner directive). Showing "Markets watcher" in the About sheet when the tab doesn't exist is confusing — users would look for a tab that isn't there.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFL: image picker differentiation + farewell trivial phrases
+
+**What & why:**
+Two targeted functional improvements in one slice:
+
+1. **`AttachmentLoader.pickImages()` + UTType filtering** (`Salehman AI/Persistence/Attachments.swift`): The `+` menu's "Attach image" option was an exact duplicate of "Attach file" — both called `pickFiles()`, which opens an all-types panel. Added `pickImages()` that sets `allowedContentTypes` to the UTType list derived from the existing `imageExts` set (via `compactMap { UTType(filenameExtension: $0) }`), so the two stay in sync automatically. Wired `ContentView.attachImage()` to call the new method. Now "Attach image" opens an image-only picker. Also added `import UniformTypeIdentifiers` to Attachments.swift.
+
+2. **Farewell phrases in `isTrivialMission`** (`Salehman AI/Agents/AgentPipeline.swift`): "see you later", "see you soon", "catch you later", "have a good day", "talk to you later", "take care now", etc. are 3+ words, so they fell through the 1–2-word trivial guard and triggered the full pipeline (unnecessary latency). Added them to the explicit `greetings` Set. Added a `farewellsAreTrivial()` test in `TrivialMissionTests.swift`.
+
+**Files:** `Salehman AI/Persistence/Attachments.swift`, `Salehman AI/Views/ContentView.swift`, `Salehman AI/Agents/AgentPipeline.swift`, `Salehman AITests/TrivialMissionTests.swift`
 
 **Result:** Build exit 0, 0 real Swift errors.
 
