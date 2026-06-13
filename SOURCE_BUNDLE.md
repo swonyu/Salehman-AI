@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 06:14 +03 · Swift files: 156 · Swift LOC: 35672_
+_Generated: 2026-06-13 06:27 +03 · Swift files: 157 · Swift LOC: 35833_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -28039,6 +28039,131 @@ struct AgentPipelineBuildPromptTests {
 }
 ```
 
+===== FILE: Salehman AITests/AttachmentMergeTests.swift (121 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Attachment.merged — message-send collapse contract
+//
+// `merged` sits on the hot path of every message send: the composer's attachment
+// list is passed through it right before the pipeline runs. Three behaviours:
+//
+//   1. Empty list → nil  (nothing to send)
+//   2. Single item → identity pass-through — fileURL and isImage are PRESERVED
+//      so the cloud-vision path still fires on that one image attachment.
+//   3. Multiple items → text-only collapsed attachment:
+//        name  = comma-joined names
+//        kind  = "files"
+//        icon  = "doc.on.doc"
+//        extractedText = "––– name (kind) –––\ntext\n\n––– …" sections
+//        fileURL / isImage reset to defaults (nil / false) — multi-merge is
+//        always text-only; the image bytes can't be sent for more than one file.
+//
+// All paths are `nonisolated static`, pure, and synchronous — no AppKit, no
+// file I/O, so these tests run in any environment.
+
+struct AttachmentMergeTests {
+
+    private func makeAttachment(name: String, kind: String = "file",
+                                text: String = "content",
+                                url: URL? = nil,
+                                isImage: Bool = false) -> Attachment {
+        var a = Attachment(name: name, kind: kind, icon: "doc",
+                           extractedText: text)
+        a.fileURL  = url
+        a.isImage  = isImage
+        return a
+    }
+
+    // MARK: empty
+
+    @Test func mergedEmptyListReturnsNil() {
+        #expect(Attachment.merged([]) == nil,
+                "empty list must return nil — nothing to attach")
+    }
+
+    // MARK: single-item identity
+
+    @Test func mergedSingleItemIsPassThrough() {
+        let url = URL(fileURLWithPath: "/tmp/photo.png")
+        let a = makeAttachment(name: "photo.png", kind: "image",
+                               text: "OCR text here", url: url, isImage: true)
+        let result = Attachment.merged([a])
+        guard let r = result else { Issue.record("merged([a]) must not be nil"); return }
+        // Name, kind, extractedText must be verbatim — this is a pure pass-through.
+        #expect(r.name == "photo.png",       "single item: name must be preserved")
+        #expect(r.kind == "image",           "single item: kind must be preserved")
+        #expect(r.extractedText == "OCR text here",
+                "single item: extractedText must be preserved")
+        // Vision-path fields must survive the pass-through.
+        #expect(r.fileURL == url,            "single item: fileURL must be preserved for cloud vision")
+        #expect(r.isImage == true,           "single item: isImage must be preserved for cloud vision")
+    }
+
+    // MARK: multi-item merge
+
+    @Test func mergedMultipleCollapsesCombinedName() {
+        let a = makeAttachment(name: "a.txt")
+        let b = makeAttachment(name: "b.py")
+        let c = makeAttachment(name: "c.md")
+        guard let r = Attachment.merged([a, b, c]) else {
+            Issue.record("merged([a,b,c]) must not be nil"); return
+        }
+        #expect(r.name == "a.txt, b.py, c.md",
+                "multi-merge: name must be the comma-joined input names")
+    }
+
+    @Test func mergedMultipleUsesFilesKindAndIcon() {
+        let a = makeAttachment(name: "x.swift", kind: "file")
+        let b = makeAttachment(name: "y.pdf",   kind: "PDF")
+        guard let r = Attachment.merged([a, b]) else {
+            Issue.record("merged must not be nil for two-item list"); return
+        }
+        #expect(r.kind == "files",         "multi-merge: kind must be 'files'")
+        #expect(r.icon == "doc.on.doc",    "multi-merge: icon must be 'doc.on.doc'")
+    }
+
+    @Test func mergedMultipleFormatsExtractedTextAsSections() {
+        // Expected body:
+        //   "––– x.swift (file) –––\ncode text\n\n––– readme.md (file) –––\nmd text"
+        let a = makeAttachment(name: "x.swift", kind: "file", text: "code text")
+        let b = makeAttachment(name: "readme.md", kind: "file", text: "md text")
+        guard let r = Attachment.merged([a, b]) else {
+            Issue.record("merged must not be nil for two-item list"); return
+        }
+        #expect(r.extractedText.contains("––– x.swift (file) –––"),
+                "multi-merge: first section header must be present")
+        #expect(r.extractedText.contains("code text"),
+                "multi-merge: first file's text must be present")
+        #expect(r.extractedText.contains("––– readme.md (file) –––"),
+                "multi-merge: second section header must be present")
+        #expect(r.extractedText.contains("md text"),
+                "multi-merge: second file's text must be present")
+        // Sections are separated by \n\n.
+        let separator = "\n\n––– readme.md"
+        #expect(r.extractedText.contains(separator),
+                "multi-merge: sections must be separated by a blank line (\\n\\n)")
+    }
+
+    @Test func mergedMultipleResetsVisionFieldsToDefaults() {
+        // A multi-merge is always text-only — the pipeline cannot fan out image
+        // bytes for multiple files, so fileURL and isImage must be nil/false.
+        let url = URL(fileURLWithPath: "/tmp/photo.png")
+        let a = makeAttachment(name: "photo.png", kind: "image",
+                               text: "vision text", url: url, isImage: true)
+        let b = makeAttachment(name: "other.png", kind: "image",
+                               text: "other text", url: url, isImage: true)
+        guard let r = Attachment.merged([a, b]) else {
+            Issue.record("merged must not be nil for two-image list"); return
+        }
+        #expect(r.fileURL == nil,    "multi-merge: fileURL must be nil — text-only result")
+        #expect(r.isImage == false,  "multi-merge: isImage must be false — no cloud vision on merged blobs")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/BrainAdapterTests.swift (116 lines) =====
 ```swift
 import Testing
@@ -33662,7 +33787,7 @@ struct QAGeometryTests {
 }
 ```
 
-===== FILE: Salehman AITests/RepoPackerTests.swift (80 lines) =====
+===== FILE: Salehman AITests/RepoPackerTests.swift (120 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -33742,6 +33867,46 @@ struct RepoPackerTests {
         let r = RepoPacker.pack(rootPath: root.path, maxFileBytes: 1_000)
         #expect(r.fileCount == 0)
         #expect(r.skippedCount >= 1)
+    }
+}
+
+// MARK: - RepoPacker.byteString
+//
+// Three-branch size formatter: raw bytes / KB / MB.
+// Not in the serialized suite above — it's purely computational, so it runs
+// in parallel with other test suites and adds no I/O latency.
+//
+// Boundary points:
+//   < 1 024           → "N B"
+//   1 024 – 1 048 575 → "N KB"  (%.0f rounds)
+//   ≥ 1 048 576       → "N.N MB" (%.1f)
+
+struct RepoPackerByteStringTests {
+
+    @Test func bytesPath() {
+        #expect(RepoPacker.byteString(0)    == "0 B",    "zero bytes must format as '0 B'")
+        #expect(RepoPacker.byteString(512)  == "512 B",  "sub-kilobyte must stay in bytes")
+        #expect(RepoPacker.byteString(1023) == "1023 B", "1023 is the last value in the bytes range")
+    }
+
+    @Test func kilobytesBoundaryAndRange() {
+        // 1023 → bytes; 1024 → first KB value.
+        #expect(RepoPacker.byteString(1023) == "1023 B",
+                "1023 must use bytes path (strict less-than 1024)")
+        #expect(RepoPacker.byteString(1024) == "1 KB",
+                "1024 is the first value formatted as KB")
+        // 512 × 1024 = 524 288 → exactly 512 KB.
+        #expect(RepoPacker.byteString(524_288) == "512 KB",
+                "512 × 1024 must format as '512 KB'")
+    }
+
+    @Test func megabytesBoundaryAndRange() {
+        // 1_048_576 = 2^20 is the first value that crosses into MB.
+        #expect(RepoPacker.byteString(1_048_576) == "1.0 MB",
+                "exactly 1 MiB (2^20) must show as '1.0 MB'")
+        // 2 621 440 = 2.5 × 1 048 576 → "2.5 MB".
+        #expect(RepoPacker.byteString(2_621_440) == "2.5 MB",
+                "2.5 × 1 MiB must format as '2.5 MB'")
     }
 }
 ```
@@ -38264,7 +38429,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4884 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4889 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -43144,6 +43309,11 @@ permission classifier blocked the first attempt.
 **What:** Three targeted improvements. (1) `MarketsView` price-direction arrow: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: up)` so `arrow.up.right`↔`arrow.down.right` crossfades when a tracked symbol crosses zero. (2) `KnowledgeView` doc-row hover icon: `.contentTransition(.symbolEffect(.replace)) + .animation(DS.Motion.smooth, value: hovered)` so `sparkles`↔`arrow.up.right` crossfades on hover. (3) `BottomShortcutBar`: fixed `Hint.id` from `UUID()` (unstable — new UUID each render) to `var id: String { keys }` (stable, correct ForEach identity); added `.transition(.scale(0.75, anchor: .leading).combined(with: .opacity))` on each hint button so the "⌘. Stop" hint scales in/out when generation starts/stops; `.animation(DS.Motion.smooth, value: app.aiIsRunning)` on the outer HStack provides the animation context.
 **Files:** `Views/MarketsView.swift`, `Views/KnowledgeView.swift`, `Views/BottomShortcutBar.swift`.
 **Commit:** `153ff1d`
+
+## 2026-06-13 — marathon EOR: test coverage — RepoPacker.byteString + Attachment.merged (Chat A)
+**What:** Two new test structs plugging the last clearly-identified pure-function gaps after a full survey of Chat A's lane. (1) `RepoPackerByteStringTests` (3 tests, appended to `RepoPackerTests.swift`) — covers all three branches of `RepoPacker.byteString`: bytes path (0, 512, 1023 B), KB boundary (1023 B / 1024 KB crossover, 512 KB), MB boundary (1 048 576 = 1.0 MB, 2 621 440 = 2.5 MB). (2) `AttachmentMergeTests` (new file, 6 tests) — covers `Attachment.merged`'s three-case collapse contract: empty list → nil, single item → identity pass-through with fileURL+isImage preserved for cloud vision, multiple items → text-only merged attachment with combined name, kind="files", icon="doc.on.doc", `––– name (kind) –––\ntext` section format, and fileURL/isImage reset to nil/false. Confirmed via API-signature grep (DerivedData sandbox blocked xcodebuild). Full survey of remaining pure-function statics in Agents/*, Tools/*, LLM/*, Intelligence/*, Media/*, Persistence/* confirmed all other pure helpers are already covered.
+**Files:** `Salehman AITests/RepoPackerTests.swift`, `Salehman AITests/AttachmentMergeTests.swift`.
+**Result:** 3 new tests + 1 new file (6 tests) added; API signatures verified; SOURCE_BUNDLE.md regenerated.
 
 ## 2026-06-12 — marathon CM: isolated entry/exit animations (Chat A)
 **What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.

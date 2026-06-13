@@ -78,3 +78,43 @@ struct RepoPackerTests {
         #expect(r.skippedCount >= 1)
     }
 }
+
+// MARK: - RepoPacker.byteString
+//
+// Three-branch size formatter: raw bytes / KB / MB.
+// Not in the serialized suite above — it's purely computational, so it runs
+// in parallel with other test suites and adds no I/O latency.
+//
+// Boundary points:
+//   < 1 024           → "N B"
+//   1 024 – 1 048 575 → "N KB"  (%.0f rounds)
+//   ≥ 1 048 576       → "N.N MB" (%.1f)
+
+struct RepoPackerByteStringTests {
+
+    @Test func bytesPath() {
+        #expect(RepoPacker.byteString(0)    == "0 B",    "zero bytes must format as '0 B'")
+        #expect(RepoPacker.byteString(512)  == "512 B",  "sub-kilobyte must stay in bytes")
+        #expect(RepoPacker.byteString(1023) == "1023 B", "1023 is the last value in the bytes range")
+    }
+
+    @Test func kilobytesBoundaryAndRange() {
+        // 1023 → bytes; 1024 → first KB value.
+        #expect(RepoPacker.byteString(1023) == "1023 B",
+                "1023 must use bytes path (strict less-than 1024)")
+        #expect(RepoPacker.byteString(1024) == "1 KB",
+                "1024 is the first value formatted as KB")
+        // 512 × 1024 = 524 288 → exactly 512 KB.
+        #expect(RepoPacker.byteString(524_288) == "512 KB",
+                "512 × 1024 must format as '512 KB'")
+    }
+
+    @Test func megabytesBoundaryAndRange() {
+        // 1_048_576 = 2^20 is the first value that crosses into MB.
+        #expect(RepoPacker.byteString(1_048_576) == "1.0 MB",
+                "exactly 1 MiB (2^20) must show as '1.0 MB'")
+        // 2 621 440 = 2.5 × 1 048 576 → "2.5 MB".
+        #expect(RepoPacker.byteString(2_621_440) == "2.5 MB",
+                "2.5 × 1 MiB must format as '2.5 MB'")
+    }
+}
