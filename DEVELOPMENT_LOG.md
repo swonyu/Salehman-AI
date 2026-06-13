@@ -3290,6 +3290,18 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 
 ---
 
+## 2026-06-13 — Marathon EFK: AboutView gates Markets capability row behind AppTab.hidden
+
+**What:** Converted `AboutView.capabilities` from a static `let` array to an immediately-invoked-closure `let` (same pattern as `ShortcutsView.groups.NAVIGATION`). When `AppTab.hidden.contains(.markets)`, the "Markets watcher" capability row is filtered out before the view renders — consistent with ShortcutsView hiding ⌘5 and CommandPalette hiding the "Go to Markets" command.
+
+**Files:** `Salehman AI/Views/AboutView.swift` (+3 lines, changed `[...]` to `{ var caps = [...]; if hidden... ; return caps }()`)
+
+**Why:** The Markets tab is currently hidden (owner directive). Showing "Markets watcher" in the About sheet when the tab doesn't exist is confusing — users would look for a tab that isn't there.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

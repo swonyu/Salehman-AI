@@ -20,23 +20,27 @@ struct AboutView: View {
         let body: String
     }
 
-    private let capabilities: [Capability] = [
-        .init(icon: "lock.shield.fill",
-              title: "Fully private, on this Mac",
-              body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
-        .init(icon: "brain.head.profile",
-              title: "Your model, your identity",
-              body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
-        .init(icon: "wrench.and.screwdriver.fill",
-              title: "Real tools, with approval",
-              body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
-        .init(icon: "chart.line.uptrend.xyaxis",
-              title: "Markets watcher",
-              body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
-        .init(icon: "command",
-              title: "⌘K everywhere",
-              body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
-    ]
+    private let capabilities: [Capability] = {
+        var caps: [Capability] = [
+            .init(icon: "lock.shield.fill",
+                  title: "Fully private, on this Mac",
+                  body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
+            .init(icon: "brain.head.profile",
+                  title: "Your model, your identity",
+                  body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
+            .init(icon: "wrench.and.screwdriver.fill",
+                  title: "Real tools, with approval",
+                  body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
+            .init(icon: "chart.line.uptrend.xyaxis",
+                  title: "Markets watcher",
+                  body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
+            .init(icon: "command",
+                  title: "⌘K everywhere",
+                  body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
+        ]
+        if AppTab.hidden.contains(.markets) { caps.removeAll { $0.icon == "chart.line.uptrend.xyaxis" } }
+        return caps
+    }()
 
     private var appVersion: String {
         let info = Bundle.main.infoDictionary

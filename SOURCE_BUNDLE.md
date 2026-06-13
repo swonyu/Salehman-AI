@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 03:27 +03 · Swift files: 150 · Swift LOC: 34256_
+_Generated: 2026-06-13 03:30 +03 · Swift files: 150 · Swift LOC: 34260_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13314,7 +13314,7 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
 
 ```
 
-===== FILE: Salehman AI/Views/AboutView.swift (190 lines) =====
+===== FILE: Salehman AI/Views/AboutView.swift (194 lines) =====
 ```swift
 import SwiftUI
 
@@ -13338,23 +13338,27 @@ struct AboutView: View {
         let body: String
     }
 
-    private let capabilities: [Capability] = [
-        .init(icon: "lock.shield.fill",
-              title: "Fully private, on this Mac",
-              body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
-        .init(icon: "brain.head.profile",
-              title: "Your model, your identity",
-              body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
-        .init(icon: "wrench.and.screwdriver.fill",
-              title: "Real tools, with approval",
-              body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
-        .init(icon: "chart.line.uptrend.xyaxis",
-              title: "Markets watcher",
-              body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
-        .init(icon: "command",
-              title: "⌘K everywhere",
-              body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
-    ]
+    private let capabilities: [Capability] = {
+        var caps: [Capability] = [
+            .init(icon: "lock.shield.fill",
+                  title: "Fully private, on this Mac",
+                  body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
+            .init(icon: "brain.head.profile",
+                  title: "Your model, your identity",
+                  body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
+            .init(icon: "wrench.and.screwdriver.fill",
+                  title: "Real tools, with approval",
+                  body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
+            .init(icon: "chart.line.uptrend.xyaxis",
+                  title: "Markets watcher",
+                  body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
+            .init(icon: "command",
+                  title: "⌘K everywhere",
+                  body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
+        ]
+        if AppTab.hidden.contains(.markets) { caps.removeAll { $0.icon == "chart.line.uptrend.xyaxis" } }
+        return caps
+    }()
 
     private var appVersion: String {
         let info = Bundle.main.infoDictionary
@@ -36824,7 +36828,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (4333 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (4345 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -40112,6 +40116,18 @@ Also completed an exhaustive cross-codebase audit of all remaining flat `Color.w
 **Files:** `Salehman AI/Views/TodayView.swift` (+5 lines)
 
 **Why:** Surface parity — users had "New Task" in the Command Palette but not on the home dashboard. Notes (free-form text) and Tasks (checkboxes) are meaningfully distinct modes in ScratchpadView; having both quick actions avoids navigating away just to switch mode.
+
+**Result:** Build exit 0, 0 real Swift errors.
+
+---
+
+## 2026-06-13 — Marathon EFK: AboutView gates Markets capability row behind AppTab.hidden
+
+**What:** Converted `AboutView.capabilities` from a static `let` array to an immediately-invoked-closure `let` (same pattern as `ShortcutsView.groups.NAVIGATION`). When `AppTab.hidden.contains(.markets)`, the "Markets watcher" capability row is filtered out before the view renders — consistent with ShortcutsView hiding ⌘5 and CommandPalette hiding the "Go to Markets" command.
+
+**Files:** `Salehman AI/Views/AboutView.swift` (+3 lines, changed `[...]` to `{ var caps = [...]; if hidden... ; return caps }()`)
+
+**Why:** The Markets tab is currently hidden (owner directive). Showing "Markets watcher" in the About sheet when the tab doesn't exist is confusing — users would look for a tab that isn't there.
 
 **Result:** Build exit 0, 0 real Swift errors.
 
