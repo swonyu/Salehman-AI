@@ -275,3 +275,141 @@ struct IsErrorReplyTests {
         #expect(!AgentPipeline.isErrorReply("[DONE] All tests passed."))
     }
 }
+
+// MARK: - withConversationContext (mission + rolling history wrapper)
+//
+// Every AgentPipeline.run call uses this to inject conversation context into
+// the single-string mission that gets handed to the local brain. A bug here
+// either drops the history (model sees each turn in isolation) or garbles
+// the mission/history ordering (model "answers" the history instead of the ask).
+struct WithConversationContextTests {
+
+    @Test func emptyHistoryReturnsMissionUnchanged() {
+        let m = AgentPipeline.withConversationContext("What is 2+2?", history: "")
+        #expect(m == "What is 2+2?")
+    }
+
+    @Test func whitespaceHistoryReturnsMissionUnchanged() {
+        let m = AgentPipeline.withConversationContext("tell me more", history: "   \n\t  ")
+        #expect(m == "tell me more")
+    }
+
+    @Test func nonEmptyHistoryWrapsInContextAndMissionLabels() {
+        let m = AgentPipeline.withConversationContext("follow-up", history: "User: hi\nAI: hello")
+        #expect(m.contains("Conversation so far"))
+        #expect(m.contains("New message from the user"))
+        #expect(m.contains("follow-up"))
+        #expect(m.contains("User: hi\nAI: hello"))
+    }
+
+    @Test func historyAppearsBeforeMissionInOutput() {
+        let m = AgentPipeline.withConversationContext("the actual ask", history: "User: prior turn")
+        let historyRange  = m.range(of: "User: prior turn")!
+        let missionRange  = m.range(of: "the actual ask")!
+        #expect(historyRange.lowerBound < missionRange.lowerBound,
+                "history must appear before the new mission in the wrapped string")
+    }
+
+    @Test func hugeHistoryIsTrimmmedForLocalBrain() {
+        // SalehmanEngine.hasAnyCloud is hardcoded false → diet always applies.
+        // A history larger than localHistoryCharBudget (9000) must be trimmed.
+        let bigHistory = String(repeating: "User: padding turn\n", count: 600)  // ~12k chars
+        let m = AgentPipeline.withConversationContext("ask", history: bigHistory)
+        #expect(m.contains("(earlier context trimmed)"),
+                "over-budget history must carry the trim marker")
+    }
+}
+
+// MARK: - isSerialLocalBrain (OOM-prevention gate)
+//
+// `isSerialLocalBrain` is the canonical list of brains that run SERIALLY —
+// any brain missing from this list would silently fan out concurrent Ollama
+// calls and risk OOM-crashing WindowServer. Adding `.vllm` or `.unslothStudio`
+// requires them to appear here; this test catches the omission before it ships.
+struct IsSerialLocalBrainTests {
+
+    @Test func serialBrainsAreExactlyTheFourLocalModels() {
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        for b in serial {
+            #expect(AgentPipeline.isSerialLocalBrain(b), "\(b) must be serial")
+        }
+    }
+
+    @Test func cloudAndEnsembleBrainsAreNotSerial() {
+        let nonSerial: [LocalLLM.Brain] = [.groq, .gemini, .cerebras, .mistral, .ensemble, .freeAuto, .freeCoding, .claudeHaiku, .none]
+        for b in nonSerial {
+            #expect(!AgentPipeline.isSerialLocalBrain(b), "\(b) must not be serial")
+        }
+    }
+
+    @Test func effectiveCapMirrosIsSerialLocalBrain() {
+        // Sanity guard: effectiveCap must force serial (cap==1) for every brain
+        // that isSerialLocalBrain returns true for — the two must agree.
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        for b in serial {
+            #expect(AgentPipeline.effectiveCap(brain: b, baseCap: 8) == 1,
+                    "\(b) effectiveCap must be 1 even with baseCap 8")
+        }
+    }
+}
+
+// MARK: - buildPrompt (per-agent prompt assembly)
+//
+// `buildPrompt` wires every agent's identity (name, role), user request,
+// conversation context, and length rule into the single string that is sent
+// to the LLM. A bug here affects every agent in the pipeline — wrong spec.name
+// would make the model answer as a different persona; missing history means the
+// model answers blind; wrong length rule (full vs terse) floods the chat with
+// long parallel answers or truncates a full-answer agent mid-thought.
+struct BuildPromptTests {
+
+    private static let terseSpec = AgentSpec(
+        name: "Test Analyst", icon: "star",
+        role: "analyse the request for correctness", full: false
+    )
+    private static let fullSpec = AgentSpec(
+        name: "Summarizer", icon: "doc",
+        role: "write a complete summary", full: true
+    )
+
+    @Test func containsSpecNameAndRole() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Test Analyst"))
+        #expect(p.contains("analyse the request for correctness"))
+    }
+
+    @Test func containsMission() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "What is 42?", history: "", context: "")
+        #expect(p.contains("What is 42?"))
+    }
+
+    @Test func emptyHistoryProducesNoConversationHeader() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(!p.contains("Recent conversation:"))
+    }
+
+    @Test func nonEmptyHistoryAppearsUnderRecentConversation() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q",
+                                          history: "User: hi\nAI: hey", context: "")
+        #expect(p.contains("Recent conversation:"))
+        #expect(p.contains("User: hi\nAI: hey"))
+    }
+
+    @Test func nonEmptyContextAppearsInOutput() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "",
+                                          context: "File context: foo.swift")
+        #expect(p.contains("File context: foo.swift"))
+    }
+
+    @Test func fullSpecGetsCompleteResponseRule() {
+        let p = AgentPipeline.buildPrompt(spec: Self.fullSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Write a complete, well-structured response."))
+        #expect(!p.contains("Be concise:"))
+    }
+
+    @Test func terseSpecGetsConciseRule() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Be concise:"))
+        #expect(!p.contains("Write a complete, well-structured response."))
+    }
+}

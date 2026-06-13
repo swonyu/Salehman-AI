@@ -3633,6 +3633,21 @@ Added `SalehmanLeaderTests.swift` with 14 tests across 3 structs: `IsMostlyCodeT
 
 ---
 
+## 2026-06-13 — EOD: withConversationContext + isSerialLocalBrain + buildPrompt tests
+
+**What:** Added three test structs to `Salehman AITests/ToolLoopTests.swift` (+95 lines):
+- `WithConversationContextTests` (5 tests) — empty/whitespace history bypass, non-empty history format (context + mission labels, correct ordering), and local-diet truncation guard (`hasAnyCloud == false` → diet always applied).
+- `IsSerialLocalBrainTests` (3 tests) — pins the four serial brains (ollamaCoder, salehman, unslothStudio, vllm), verifies cloud/ensemble brains are NOT serial, and crosschecks that effectiveCap mirrors isSerialLocalBrain for all serial cases.
+- `BuildPromptTests` (7 tests) — name/role injection, mission injection, empty/non-empty history guard, context passthrough, concise vs full length-rule selection.
+
+**Why:** All three are pure functions used on every `AgentPipeline.run` call. `withConversationContext` dropping history makes the model answer blind; `isSerialLocalBrain` missing a brain causes concurrent local-model load (OOM risk); `buildPrompt` wrong length rule floods the UI with verbose parallel answers.
+
+**Files:** `Salehman AITests/ToolLoopTests.swift`
+
+**Result:** Enum cases and function signatures verified via grep; patterns consistent with existing test suite.
+
+---
+
 ## 2026-06-13 — EOC: freeCoderModel priority tests + applyUnrestricted toggle tests
 
 **What:** Added two test structs to `Salehman AITests/FreeAutoTests.swift` (+90 lines):
