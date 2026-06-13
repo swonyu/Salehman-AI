@@ -4613,6 +4613,31 @@ filled-send, the filter field's focus glow, the standard empty-state ZStack).
 
 ---
 
+## 2026-06-13 — EOBF: KnowledgeView high-end visual pass (loop slice 2/8)
+
+Same gap-finding approach as EOBE (the view was already heavily polished). Five genuine
+consistency gaps closed across the main view and its `DocDetailSheet`:
+
+1. **"Paste text" stock `.bordered` icon button → `CircleIconButton`** — its sibling "Add file"
+   is a brand pill, so the paste control was the lone generic button here. Now a subtle icon well
+   (primary/secondary hierarchy preserved).
+2. **Primary ask field had no focus affordance** despite the secondary doc-filter field having
+   one. Added `askFocused` → accent-gradient stroke + soft glow + brightened magnifyingglass.
+3. **Doc-filter no-match empty state:** bare text → icon-in-soft-circle + text (matches the EOBE
+   AgentsView fix and the app's other empty states).
+4. **Paste-sheet title field** was missing the hairline stroke its sibling body editor has — added.
+5. **DocDetailSheet per-document ask field** got the same focus glow (its own `askFocused`), so
+   both ask inputs in the feature behave identically.
+
+**Files:** `Views/KnowledgeView.swift`.
+
+**Verify:** full-fidelity recipe (Swift 6 / `-default-isolation MainActor` /
+`NonisolatedNonsendingByDefault`) over all 97 app sources → **0 errors / 0 warnings**.
+Live-screenshot sweep batched — planned right after the MemoryView slice (rebuild once, capture
+AgentsView + KnowledgeView + MemoryView together).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

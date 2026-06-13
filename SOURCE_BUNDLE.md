@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-13 21:10 +03 · Swift files: 160 · Swift LOC: 36926_
+_Generated: 2026-06-13 21:21 +03 · Swift files: 160 · Swift LOC: 36956_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -21186,7 +21186,7 @@ struct FileTreeRow: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/KnowledgeView.swift (722 lines) =====
+===== FILE: Salehman AI/Views/KnowledgeView.swift (752 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -21223,6 +21223,8 @@ struct KnowledgeView: View {
     @State private var docFilter = ""
     /// Focus glow on the doc-filter field — consistent with the app's text inputs.
     @FocusState private var filterFocused: Bool
+    /// Focus glow on the primary ask field (the view's main input).
+    @FocusState private var askFocused: Bool
     @State private var hoveredDocID: UUID?
     /// Pulses briefly after "Save to Notes" to confirm the action.
     @State private var answerSaved = false
@@ -21321,9 +21323,11 @@ struct KnowledgeView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                .accessibilityLabel("Paste text").disabled(ingesting)
+            CircleIconButton(systemName: "doc.on.clipboard",
+                             size: 30, iconSize: 13,
+                             disabled: ingesting,
+                             help: "Paste text",
+                             accessibilityLabel: "Paste text") { showPaste = true }
             Button(action: addFile) {
                 HStack(spacing: 6) {
                     Group {
@@ -21349,9 +21353,11 @@ struct KnowledgeView: View {
     private var askCard: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(askFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
                 TextField("Ask your documents…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 15))
+                    .focused($askFocused)
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
@@ -21366,8 +21372,14 @@ struct KnowledgeView: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(askFocused ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous)
+                .stroke(askFocused
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(askFocused ? 0.15 : 0.0), radius: 10, y: 2)
+            .animation(DS.Motion.lux, value: askFocused)
 
             if !answer.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
@@ -21519,10 +21531,18 @@ struct KnowledgeView: View {
                         .transition(.opacity)
                 }
                 if shown.isEmpty {
-                    Text("No documents match “\(docFilter)”.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 20)
-                        .transition(.opacity)
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 18, weight: .light))
+                                .foregroundStyle(.secondary.opacity(0.7))
+                        }
+                        Text("No documents match “\(docFilter)”.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 28)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 } else {
                     VStack(spacing: 1) {
                         ForEach(shown) { doc in
@@ -21685,6 +21705,7 @@ struct KnowledgeView: View {
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
@@ -21773,6 +21794,8 @@ private struct DocDetailSheet: View {
     @State private var answer = ""
     @State private var asking = false
     @State private var answerSaved = false
+    /// Focus glow on the per-document ask field — matches the main vault input.
+    @FocusState private var askFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -21841,6 +21864,7 @@ private struct DocDetailSheet: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Ask about this document…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 14))
+                    .focused($askFocused)
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
@@ -21855,8 +21879,14 @@ private struct DocDetailSheet: View {
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(askFocused ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous)
+                .stroke(askFocused
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(askFocused ? 0.15 : 0.0), radius: 10, y: 2)
+            .animation(DS.Motion.lux, value: askFocused)
         }
         .padding(DS.Space.xl)
         .frame(width: 520, height: 540)
@@ -39534,7 +39564,7 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
-===== FILE: DEVELOPMENT_LOG.md (5716 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (5741 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -44147,6 +44177,31 @@ three genuine remaining gaps, not churn:
 warnings**. Live-screenshot confirmation is batched across the next few slices to amortize the
 Xcode rebuild cost — all three changes reuse already-shipping DS patterns (`CircleIconButton`
 filled-send, the filter field's focus glow, the standard empty-state ZStack).
+
+---
+
+## 2026-06-13 — EOBF: KnowledgeView high-end visual pass (loop slice 2/8)
+
+Same gap-finding approach as EOBE (the view was already heavily polished). Five genuine
+consistency gaps closed across the main view and its `DocDetailSheet`:
+
+1. **"Paste text" stock `.bordered` icon button → `CircleIconButton`** — its sibling "Add file"
+   is a brand pill, so the paste control was the lone generic button here. Now a subtle icon well
+   (primary/secondary hierarchy preserved).
+2. **Primary ask field had no focus affordance** despite the secondary doc-filter field having
+   one. Added `askFocused` → accent-gradient stroke + soft glow + brightened magnifyingglass.
+3. **Doc-filter no-match empty state:** bare text → icon-in-soft-circle + text (matches the EOBE
+   AgentsView fix and the app's other empty states).
+4. **Paste-sheet title field** was missing the hairline stroke its sibling body editor has — added.
+5. **DocDetailSheet per-document ask field** got the same focus glow (its own `askFocused`), so
+   both ask inputs in the feature behave identically.
+
+**Files:** `Views/KnowledgeView.swift`.
+
+**Verify:** full-fidelity recipe (Swift 6 / `-default-isolation MainActor` /
+`NonisolatedNonsendingByDefault`) over all 97 app sources → **0 errors / 0 warnings**.
+Live-screenshot sweep batched — planned right after the MemoryView slice (rebuild once, capture
+AgentsView + KnowledgeView + MemoryView together).
 
 ---
 
