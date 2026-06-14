@@ -5308,6 +5308,44 @@ Re-arming the loop regardless.
 
 ---
 
+## 2026-06-14 — EOCL: MarkdownText RTL-bidi implementation PLAN (read-only prep — no edit)
+
+Read-only analysis of `Views/MarkdownText.swift` to make the one known remaining UI gap (Arabic in
+chat/code rendering LTR) ready for an owner-greenlit, visually-verified fix. **No code changed.**
+
+**Structure (it separates text from code cleanly):** `body` → `segments(for:)` →
+`[.text(String) | .code(language,code)]`. `.code` → `CodeBlock`; `.text` → VStack of `blocks(for:)` →
+`.table(header,rows)` | `.lines(chunk)`, where `.lines` renders each line via `lineView(raw, highlight:)`.
+CODE is already an isolated segment → it stays LTR with zero effort. Call sites: chat `assistantRow`
+(ContentView) + `CodeMessageRow` (CodeView) both pass `MarkdownText(text:)`.
+
+**Plan (English-safe, per-LINE granularity like LiveTranscription):**
+1. Apply the existing `rtlAware(_:)` modifier (DesignSystem, EOCD) at the LINE/BLOCK level inside the
+   `.text` path — NOT to the whole segment (a segment can mix languages; per-line matches
+   LiveTranscription's proven approach and handles mixed English+Arabic):
+   - `.lines(chunk)`: wrap each `lineView(raw, …)` in `.rtlAware(raw)` (detects Arabic in that line).
+   - `.table`: optionally `.rtlAware(<joined cells>)` so an Arabic table flips column order (rare, lower priority).
+2. **CodeBlock untouched** (separate `.code` segment) → stays LTR. ✓ (the whole point.)
+3. Edge cases (handled by Core Text bidi + per-line detect):
+   - inline `code`/links inside an Arabic line → Core Text renders the LTR span within the RTL line (OK);
+   - Arabic lists → markers flip to the right (correct); mixed lines → each gets its own direction;
+   - English → `rtlAware` is a no-op (LTR+leading) → zero change, zero regression risk.
+
+**Risk:** LOW for the code (English no-op; code isolated). The only unknown is RENDER correctness on the
+core chat surface → MUST be visually verified by the owner (the headless loop can't render).
+
+**Visual-verification checklist (owner, when greenlit):** (a) Arabic reply right-aligns + reads RTL in
+Chat AND Code; (b) a code block inside an Arabic reply stays LTR; (c) mixed English+Arabic shows each
+line in its own direction; (d) Arabic bullets sit on the RIGHT; (e) inline `code`/links inside Arabic
+render in place; (f) a normal English reply is visually UNCHANGED.
+
+**Estimated change:** ~2–3 lines in `MarkdownText.body` (wrap `lineView` in `.rtlAware(raw)`; optional
+table). Ready to apply the instant the owner says go — **with eyes on the render.**
+
+**↪︎ Owner:** greenlight this (watch the render) or redirect to ⌘K glass / features / tests / perf.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
