@@ -85,10 +85,30 @@ struct ScratchpadListTests {
     }
 
     @Test func ageLabelShowsHours() {
-        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Anchor `now` at 23:00 local so the sub-24h offsets below stay on the
+        // SAME calendar day. The hours bucket is today-only: a sub-24h date that
+        // has crossed midnight into the previous day reads "yesterday" instead
+        // (covered by ScratchpadAgeLabelTests.yesterdayLabel). ageLabel is now
+        // hermetic — its day checks use the injected `now`, not the real clock.
+        var cal = Calendar.current
+        cal.timeZone = .current
+        let now = cal.date(from: DateComponents(year: 2000, month: 6, day: 15,
+                                                hour: 23, minute: 0))!
         #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-3 * 3600), now: now) == "3h")
-        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-23 * 3600), now: now) == "23h",
-                "23 hours (< 24h) must format as '23h'")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-22 * 3600), now: now) == "22h",
+                "22 hours earlier on the same calendar day must format as '22h'")
+    }
+
+    @Test func ageLabelShowsYesterdayForPreviousCalendarDay() {
+        // Now that ageLabel is hermetic, the "yesterday" branch IS deterministic:
+        // a sub-24h date that crossed midnight into the prior day reads
+        // "yesterday", not "Nh". (At 06:00, a note from 20:00 the night before is
+        // only 10h old but belongs to yesterday.)
+        var cal = Calendar.current
+        cal.timeZone = .current
+        let now = cal.date(from: DateComponents(year: 2000, month: 6, day: 15,
+                                                hour: 6, minute: 0))!
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-10 * 3600), now: now) == "yesterday")
     }
 
     @Test func ageLabelFormatsOldDatesAsMonthDay() {
@@ -106,7 +126,7 @@ struct ScratchpadListTests {
         #expect(!label.isEmpty,           "old date must produce a non-empty formatted string")
     }
 
-    // NOTE: the "yesterday" branch (Calendar.current.isDateInYesterday) uses
-    // the real system clock, not the injected `now`, so it cannot be covered
-    // by a deterministic unit test — exercised manually.
+    // NOTE: ageLabel is hermetic — its day checks (`isDate(_:inSameDayAs:)`)
+    // are computed against the injected `now`, so the "yesterday" branch IS
+    // deterministically covered above and in ScratchpadAgeLabelTests.
 }

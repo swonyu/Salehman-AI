@@ -699,8 +699,18 @@ enum ScratchpadList {
         let interval = now.timeIntervalSince(date)
         if interval < 60 { return "just now" }
         if interval < 3600 { return "\(Int(interval / 60))m" }
-        if interval < 86400 { return "\(Int(interval / 3600))h" }
-        if Calendar.current.isDateInYesterday(date) { return "yesterday" }
+        let cal = Calendar.current
+        // Day-relative buckets, computed against the injected `now` (hermetic):
+        // the hours bucket is TODAY-only, and a date on the previous calendar
+        // day reads "yesterday" even when < 24h has elapsed. The old code used
+        // `interval < 86400` for hours, which mislabelled e.g. yesterday-noon
+        // seen at 5am as "17h" and left the yesterday branch unreachable; it also
+        // mixed injected-now interval math with real-clock calendar checks, so
+        // the yesterday branch couldn't be unit-tested. Using `now` for both
+        // fixes the lie and makes every branch deterministic.
+        if cal.isDate(date, inSameDayAs: now) { return "\(Int(interval / 3600))h" }
+        if let yesterday = cal.date(byAdding: .day, value: -1, to: now),
+           cal.isDate(date, inSameDayAs: yesterday) { return "yesterday" }
         return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }

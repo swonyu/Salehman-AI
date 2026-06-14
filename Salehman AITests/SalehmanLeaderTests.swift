@@ -39,12 +39,16 @@ struct IsMostlyCodeTests {
     }
 
     @Test func halfCodeHalfTextBorderCase() {
-        // Each side is equal length → exactly 50% code → above the 40% threshold.
-        let code = "let x = 1"   // 9 chars
-        let prose = "Nine chars"  // 9 chars
+        // `isMostlyCode` weighs the chars BETWEEN the fences (incl. the inner
+        // newlines) against the WHOLE reply — the ``` markers count toward the
+        // total but NOT the code tally. So a roughly even code/prose reply clears
+        // the 40% bar only once the fenced side is the slight majority. (A literal
+        // 50/50 inner split lands ~39% because the six marker chars inflate only
+        // the denominator — the original example mis-counted that and never ran.)
+        let code = "let x = 1"   // "\nlet x = 1\n" → 11 chars counted as code
+        let prose = "Done"       // shorter prose keeps the fenced side on top
         let text = "```\n\(code)\n```\n\(prose)"
-        // fenced portion ≥ 40% of total → true
-        #expect(SalehmanLeader.isMostlyCode(text))
+        #expect(SalehmanLeader.isMostlyCode(text))   // 11 / 22 = 50% ≥ 40% → true
     }
 
     @Test func multipleSmallFencesCanCrossThreshold() {

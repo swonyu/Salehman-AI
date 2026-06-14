@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 02:38 +03 · Swift files: 160 · Swift LOC: 37110_
+_Generated: 2026-06-14 05:14 +03 · Swift files: 160 · Swift LOC: 37148_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -24396,7 +24396,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ScratchpadView.swift (706 lines) =====
+===== FILE: Salehman AI/Views/ScratchpadView.swift (716 lines) =====
 ```swift
 import AppKit
 import SwiftUI
@@ -25099,8 +25099,18 @@ enum ScratchpadList {
         let interval = now.timeIntervalSince(date)
         if interval < 60 { return "just now" }
         if interval < 3600 { return "\(Int(interval / 60))m" }
-        if interval < 86400 { return "\(Int(interval / 3600))h" }
-        if Calendar.current.isDateInYesterday(date) { return "yesterday" }
+        let cal = Calendar.current
+        // Day-relative buckets, computed against the injected `now` (hermetic):
+        // the hours bucket is TODAY-only, and a date on the previous calendar
+        // day reads "yesterday" even when < 24h has elapsed. The old code used
+        // `interval < 86400` for hours, which mislabelled e.g. yesterday-noon
+        // seen at 5am as "17h" and left the yesterday branch unreachable; it also
+        // mixed injected-now interval math with real-clock calendar checks, so
+        // the yesterday branch couldn't be unit-tested. Using `now` for both
+        // fixes the lie and makes every branch deterministic.
+        if cal.isDate(date, inSameDayAs: now) { return "\(Int(interval / 3600))h" }
+        if let yesterday = cal.date(byAdding: .day, value: -1, to: now),
+           cal.isDate(date, inSameDayAs: yesterday) { return "yesterday" }
         return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }
@@ -29009,7 +29019,7 @@ struct BrainRoutingDispatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/ChatComposerLogicTests.swift (834 lines) =====
+===== FILE: Salehman AITests/ChatComposerLogicTests.swift (838 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -29812,7 +29822,11 @@ struct ScratchpadAgeLabelTests {
     @Test func hoursLabel() {
         let now = Date()
         let d = now.addingTimeInterval(-7200)   // 2 hours ago
-        #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+        // The hours bucket is today-only; in the ~midnight window "2h ago" lands
+        // on the previous calendar day and correctly reads "yesterday" instead.
+        if Calendar.current.isDateInToday(d) {
+            #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+        }
     }
 
     @Test func yesterdayLabel() {
@@ -35177,7 +35191,7 @@ struct RestoreSnapshotTests {
 }
 ```
 
-===== FILE: Salehman AITests/SalehmanLeaderTests.swift (148 lines) =====
+===== FILE: Salehman AITests/SalehmanLeaderTests.swift (152 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -35220,12 +35234,16 @@ struct IsMostlyCodeTests {
     }
 
     @Test func halfCodeHalfTextBorderCase() {
-        // Each side is equal length → exactly 50% code → above the 40% threshold.
-        let code = "let x = 1"   // 9 chars
-        let prose = "Nine chars"  // 9 chars
+        // `isMostlyCode` weighs the chars BETWEEN the fences (incl. the inner
+        // newlines) against the WHOLE reply — the ``` markers count toward the
+        // total but NOT the code tally. So a roughly even code/prose reply clears
+        // the 40% bar only once the fenced side is the slight majority. (A literal
+        // 50/50 inner split lands ~39% because the six marker chars inflate only
+        // the denominator — the original example mis-counted that and never ran.)
+        let code = "let x = 1"   // "\nlet x = 1\n" → 11 chars counted as code
+        let prose = "Done"       // shorter prose keeps the fenced side on top
         let text = "```\n\(code)\n```\n\(prose)"
-        // fenced portion ≥ 40% of total → true
-        #expect(SalehmanLeader.isMostlyCode(text))
+        #expect(SalehmanLeader.isMostlyCode(text))   // 11 / 22 = 50% ≥ 40% → true
     }
 
     @Test func multipleSmallFencesCanCrossThreshold() {
@@ -35693,7 +35711,7 @@ struct MarkdownTextBlockTests {
 }
 ```
 
-===== FILE: Salehman AITests/ScratchpadListTests.swift (112 lines) =====
+===== FILE: Salehman AITests/ScratchpadListTests.swift (132 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -35782,10 +35800,30 @@ struct ScratchpadListTests {
     }
 
     @Test func ageLabelShowsHours() {
-        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Anchor `now` at 23:00 local so the sub-24h offsets below stay on the
+        // SAME calendar day. The hours bucket is today-only: a sub-24h date that
+        // has crossed midnight into the previous day reads "yesterday" instead
+        // (covered by ScratchpadAgeLabelTests.yesterdayLabel). ageLabel is now
+        // hermetic — its day checks use the injected `now`, not the real clock.
+        var cal = Calendar.current
+        cal.timeZone = .current
+        let now = cal.date(from: DateComponents(year: 2000, month: 6, day: 15,
+                                                hour: 23, minute: 0))!
         #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-3 * 3600), now: now) == "3h")
-        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-23 * 3600), now: now) == "23h",
-                "23 hours (< 24h) must format as '23h'")
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-22 * 3600), now: now) == "22h",
+                "22 hours earlier on the same calendar day must format as '22h'")
+    }
+
+    @Test func ageLabelShowsYesterdayForPreviousCalendarDay() {
+        // Now that ageLabel is hermetic, the "yesterday" branch IS deterministic:
+        // a sub-24h date that crossed midnight into the prior day reads
+        // "yesterday", not "Nh". (At 06:00, a note from 20:00 the night before is
+        // only 10h old but belongs to yesterday.)
+        var cal = Calendar.current
+        cal.timeZone = .current
+        let now = cal.date(from: DateComponents(year: 2000, month: 6, day: 15,
+                                                hour: 6, minute: 0))!
+        #expect(ScratchpadList.ageLabel(for: now.addingTimeInterval(-10 * 3600), now: now) == "yesterday")
     }
 
     @Test func ageLabelFormatsOldDatesAsMonthDay() {
@@ -35803,9 +35841,9 @@ struct ScratchpadListTests {
         #expect(!label.isEmpty,           "old date must produce a non-empty formatted string")
     }
 
-    // NOTE: the "yesterday" branch (Calendar.current.isDateInYesterday) uses
-    // the real system clock, not the injected `now`, so it cannot be covered
-    // by a deterministic unit test — exercised manually.
+    // NOTE: ageLabel is hermetic — its day checks (`isDate(_:inSameDayAs:)`)
+    // are computed against the injected `now`, so the "yesterday" branch IS
+    // deterministically covered above and in ScratchpadAgeLabelTests.
 }
 ```
 
@@ -39802,7 +39840,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6340 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6507 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -45030,6 +45068,173 @@ are accurate design-history rationale, not staleness).
 **↪︎ Redirect:** rotation 2 now has 1 fix (this stale comment) — still strongly recommend the owner
 redirect (⌘K glass / features / tests / perf / MarkdownText RTL); the loop's yield is now sparse
 comment-drift.
+
+---
+
+## 2026-06-14 — EOCH: dead-code audit (rotation 2, angle k) — no gap; ROTATION 2 COMPLETE
+
+No `#if false`, no commented-out code blocks, and no private func/var defined-but-unreferenced in any
+view file (every private member has ≥2 refs = defined + used). The earlier dead-code purge (board #1–3,
+06-11) holds; Views are clean. **No gap.**
+
+**🟡 ROTATION 2 COMPLETE.** (h) microcopy, (i) magic-numbers, (k) dead-code = clean; (j) stale-comments
+= 1 fix ("13 brains"). Combined with rotation 1 (contrast + RTL fixes; rest clean): **~3 small fixes
+across 11 audit passes.** The app is exhaustively polished; the loop's yield is now very sparse.
+
+**🔴 STRONG REDIRECT RECOMMENDATION (escalated):** continued pure-audit rotations are deep diligence
+with near-zero yield + rising churn risk. The ONE remaining KNOWN genuine gap is the chat/code
+`MarkdownText` **RTL bidi** (Arabic in markdown/code surfaces still renders LTR — deferred because mixed
+Arabic+code needs structural bidi, not a blanket flip, and visual verification). That, or any of: ⌘K
+Liquid-Glass palette experiment · feature work · test coverage · perf profiling — would be far
+higher-value than more audits. **Owner: please redirect.** Re-arming forever as instructed regardless.
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCI: banned/default-easing audit (rotation 3, angle l) — no gap
+
+The high-end skill bans `.linear`/`.easeInOut` transitions. App-wide:
+- **ZERO `.easeInOut`** and ZERO linear EASING. (The one `.linear` is `.progressViewStyle(.linear)` — a
+  horizontal progress-bar STYLE, not an easing curve.)
+- The `.easeIn`/`.easeOut` uses are all PhaseAnimator breathing-glow phase timing (inhale/exhale) —
+  intentional + correct for organic pulsing, not banned transitions. Left as-is per directive.
+- 5 bare `withAnimation { proxy.scrollTo(…) }` (CommandPalette + CodeView) use SwiftUI's DEFAULT spring
+  (not a banned curve) for scroll positioning — conventional + acceptable; tokenizing scroll-tos to a DS
+  curve would be marginal churn (springy scroll feels right), left as-is.
+The app's motion already follows the skill: custom `.timingCurve`/spring everywhere, no banned easing.
+**No gap.**
+
+**Files:** none (audit only — no source change). ↪︎ Redirect still strongly recommended (loop yield near-zero).
+
+---
+
+## 2026-06-14 — EOCJ: hardcoded off-token color audit (rotation 3, angle m) — no gap
+
+Grepped all named-color uses (`Color.red/.blue/.green/…` + shorthand) in Views. Every one is deliberate
+/ semantic (the directive's own exclusions):
+- FileTree file-type icon colors + CodeSyntax highlight colors (deliberate, excluded).
+- CodeSyntaxView `Color.yellow.opacity(…)` ×2 — SEARCH-MATCH highlighting; yellow is the universal
+  find-highlight convention (crimson accent would be semantically wrong). Correct.
+- SettingsView `.tint(.red)` ×3 — DESTRUCTIVE (delete-key) bordered buttons; `.red` is the system
+  destructive semantic AND equals `DS.Palette.danger`'s value, on the stock settings buttons (left
+  conventional per EOBJ). Leave.
+- ContentView `.foregroundStyle(.green)` — a SUCCESS checkmark (semantic success). Per directive, leave
+  (could be `DS.Palette.successSoft` for brand-softness, but that's a deliberate-vs-token judgment).
+No off-brand hardcoded chrome color that should be a DS token. Color discipline is thorough. **No gap.**
+
+**Files:** none (audit only — no source change). ↪︎ Redirect still strongly recommended.
+
+---
+
+## 2026-06-14 — EOCK: hover/tooltip-coverage audit (rotation 3, angle n) — no gap; ROTATION 3 COMPLETE
+
+No `CircleIconButton` has a blank `help` param. The non-obvious icon controls (attach/paperclip, reload,
+regenerate, jump-to-match, copy) all carry `.help` (confirmed in the EOCA sweep). The handful of inline
+icon buttons WITHOUT `.help` are all self-evident X/clear/dismiss (`xmark`/`xmark.circle.fill`) — obvious
+to sighted users + already `.accessibilityLabel`'d for VoiceOver. Per "non-obvious controls," **no gap**.
+
+**🟡 ROTATION 3 COMPLETE.** (l) banned-easing, (m) hardcoded-colors, (n) tooltips = all clean. Across
+rotations 1–3 (15 audit passes total): ~3 genuine fixes (contrast, RTL plain-Text, stale comment); the
+rest confirmed already at the bar.
+
+**🔴 PROPOSAL — the one genuinely valuable remaining UI task:** the chat/code `MarkdownText` **RTL bidi**.
+Arabic in chat (`assistantRow`) and Code (`CodeMessageRow`) still renders LTR because MarkdownText wasn't
+given per-block Arabic handling (it can't take the blanket `rtlAware` flip — code blocks MUST stay LTR).
+Doing it right: detect Arabic per TEXT block, apply RTL to those while leaving `CodeBlock` LTR, and
+VISUALLY VERIFY (the 14B answers in Arabic; CodeMessageRow's gallery even has an Arabic sample). This is
+the CORE chat surface → it warrants owner-watched visual verification, NOT a blind autonomous-loop edit.
+**Recommend: owner greenlight this (eyes on it), or redirect to ⌘K glass / features / tests / perf.**
+Re-arming the loop regardless.
+
+**Files:** none (audit only — no source change).
+
+---
+
+## 2026-06-14 — EOCL: MarkdownText RTL-bidi implementation PLAN (read-only prep — no edit)
+
+Read-only analysis of `Views/MarkdownText.swift` to make the one known remaining UI gap (Arabic in
+chat/code rendering LTR) ready for an owner-greenlit, visually-verified fix. **No code changed.**
+
+**Structure (it separates text from code cleanly):** `body` → `segments(for:)` →
+`[.text(String) | .code(language,code)]`. `.code` → `CodeBlock`; `.text` → VStack of `blocks(for:)` →
+`.table(header,rows)` | `.lines(chunk)`, where `.lines` renders each line via `lineView(raw, highlight:)`.
+CODE is already an isolated segment → it stays LTR with zero effort. Call sites: chat `assistantRow`
+(ContentView) + `CodeMessageRow` (CodeView) both pass `MarkdownText(text:)`.
+
+**Plan (English-safe, per-LINE granularity like LiveTranscription):**
+1. Apply the existing `rtlAware(_:)` modifier (DesignSystem, EOCD) at the LINE/BLOCK level inside the
+   `.text` path — NOT to the whole segment (a segment can mix languages; per-line matches
+   LiveTranscription's proven approach and handles mixed English+Arabic):
+   - `.lines(chunk)`: wrap each `lineView(raw, …)` in `.rtlAware(raw)` (detects Arabic in that line).
+   - `.table`: optionally `.rtlAware(<joined cells>)` so an Arabic table flips column order (rare, lower priority).
+2. **CodeBlock untouched** (separate `.code` segment) → stays LTR. ✓ (the whole point.)
+3. Edge cases (handled by Core Text bidi + per-line detect):
+   - inline `code`/links inside an Arabic line → Core Text renders the LTR span within the RTL line (OK);
+   - Arabic lists → markers flip to the right (correct); mixed lines → each gets its own direction;
+   - English → `rtlAware` is a no-op (LTR+leading) → zero change, zero regression risk.
+
+**Risk:** LOW for the code (English no-op; code isolated). The only unknown is RENDER correctness on the
+core chat surface → MUST be visually verified by the owner (the headless loop can't render).
+
+**Visual-verification checklist (owner, when greenlit):** (a) Arabic reply right-aligns + reads RTL in
+Chat AND Code; (b) a code block inside an Arabic reply stays LTR; (c) mixed English+Arabic shows each
+line in its own direction; (d) Arabic bullets sit on the RIGHT; (e) inline `code`/links inside Arabic
+render in place; (f) a normal English reply is visually UNCHANGED.
+
+**Estimated change:** ~2–3 lines in `MarkdownText.body` (wrap `lineView` in `.rtlAware(raw)`; optional
+table). Ready to apply the instant the owner says go — **with eyes on the render.**
+
+**↪︎ Owner:** greenlight this (watch the render) or redirect to ⌘K glass / features / tests / perf.
+
+---
+
+## 2026-06-14 — EOCM: spacing-rhythm scan (angle o) — no gap
+
+Padding literals in Views span 2–20 (most common 10/14/11/8/6/5/7/4/12). `DS.Space` tokens
+(4/8/10/14/18/24/32) are represented, but the many in-between values (5/6/7/9/11/12) are deliberate
+per-element micro-tuning that no token matches — same conclusion as the magic-numbers audit (EOCF).
+Tokenizing would be churn. **No gap.**
+
+↪︎ **Owner: greenlight the MarkdownText RTL fix (EOCL) or redirect** — the audit loop has nothing
+genuine left to find (3 rotations + plan: ~3 fixes / 17 passes). **Files:** none (audit only).
+
+---
+
+## 2026-06-14 — EOCN: ran the FULL build + test suite + QA harness by MEASUREMENT — fixed 2 real test failures the audit-only loop couldn't see
+
+The EOBE–EOCM marathon verified by `swiftc -typecheck` + code-reasoning only and repeatedly flagged that
+xcodebuild, the test suite, and render-level QA "could not be run" (headless/sandbox), recommending an
+owner redirect to "tests / perf". This session ran all three for real on the owner's Mac. **Typecheck-green
+≠ tests-green:** the suite had **2 genuine failures** hiding behind a clean compile (06-13 coverage tests
+that were authored but never executed):
+
+1. **[PROD BUG] `ScratchpadList.ageLabel` mislabelled "yesterday".** The `interval < 86400` ("Nh") bucket
+   sat BEFORE the `isDateInYesterday` check → a note from yesterday-noon seen at 5am returned "17h" and the
+   yesterday branch was unreachable for the whole sub-24h window. The fn was also non-hermetic (interval
+   used injected `now`; calendar checks used the real clock — the author's own note lamented the yesterday
+   branch "cannot be unit-tested"). Fixed: day-relative buckets computed against `now`
+   (`isDate(_:inSameDayAs:)` + `now − 1 day`). **Identical in-app behavior** (now == Date()); now deterministic.
+2. **[TEST BUG] `IsMostlyCodeTests.halfCodeHalfTextBorderCase`** asserted a "50% → ≥40%" case that was
+   actually 11/28 = 39.3% (mis-counted "Nine chars" as 9 chars; it's 10). Production logic is sound (other
+   5 tests pass). Corrected to a true code-majority example (11/22 = 50%) + honest comment.
+3. **[SPEC CONTRADICTION] reconciled** two overlapping suites: `ScratchpadListTests.ageLabelShowsHours`
+   asserted "23h → 23h" while `ScratchpadAgeLabelTests.yesterdayLabel` asserted "yesterday-noon → yesterday"
+   — 23h-ago IS calendar-yesterday, so both could never hold (invisible because tests never ran). Resolved
+   toward the intended calendar-aware contract: anchored `ageLabelShowsHours` `now` at 23:00 so offsets stay
+   same-day; added deterministic `ageLabelShowsYesterdayForPreviousCalendarDay`; fixed the now-false comment.
+
+**QA harness (first render-level run since the marathon):** 24/24 surfaces render OK; ALL geometry +
+contrast + colour-vision (deuter/protan) checks PASS → render-side confirmation of the saturation claim.
+BUT the diff **baselines are STALE** — app-wide Δ30–76%, 2 over the 2% budget (`chat_samples` 8.74%,
+`code_samples` 4.22%) from accumulated marathon design changes never re-adopted. NOT this change (logic/test
+only, zero visual delta — verified via blank `chat_samples_diff` + healthy contact sheet). **Owner action:
+`bash tools/qa.sh --adopt` to re-bless the current all-checks-pass UI and restore the harness's
+regression-catching power** — left to the owner since it blesses 24×3 references.
+
+**Files:** `Views/ScratchpadView.swift`, `Salehman AITests/{ScratchpadListTests,ChatComposerLogicTests,SalehmanLeaderTests}.swift`.
+**Result:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **` — **831 pass / 0 fail**. The "leave it green"
+invariant now holds by MEASUREMENT, not typecheck inference. SOURCE_BUNDLE regenerated.
 
 ---
 

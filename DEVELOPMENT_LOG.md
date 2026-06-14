@@ -5358,6 +5358,43 @@ genuine left to find (3 rotations + plan: ~3 fixes / 17 passes). **Files:** none
 
 ---
 
+## 2026-06-14 — EOCN: ran the FULL build + test suite + QA harness by MEASUREMENT — fixed 2 real test failures the audit-only loop couldn't see
+
+The EOBE–EOCM marathon verified by `swiftc -typecheck` + code-reasoning only and repeatedly flagged that
+xcodebuild, the test suite, and render-level QA "could not be run" (headless/sandbox), recommending an
+owner redirect to "tests / perf". This session ran all three for real on the owner's Mac. **Typecheck-green
+≠ tests-green:** the suite had **2 genuine failures** hiding behind a clean compile (06-13 coverage tests
+that were authored but never executed):
+
+1. **[PROD BUG] `ScratchpadList.ageLabel` mislabelled "yesterday".** The `interval < 86400` ("Nh") bucket
+   sat BEFORE the `isDateInYesterday` check → a note from yesterday-noon seen at 5am returned "17h" and the
+   yesterday branch was unreachable for the whole sub-24h window. The fn was also non-hermetic (interval
+   used injected `now`; calendar checks used the real clock — the author's own note lamented the yesterday
+   branch "cannot be unit-tested"). Fixed: day-relative buckets computed against `now`
+   (`isDate(_:inSameDayAs:)` + `now − 1 day`). **Identical in-app behavior** (now == Date()); now deterministic.
+2. **[TEST BUG] `IsMostlyCodeTests.halfCodeHalfTextBorderCase`** asserted a "50% → ≥40%" case that was
+   actually 11/28 = 39.3% (mis-counted "Nine chars" as 9 chars; it's 10). Production logic is sound (other
+   5 tests pass). Corrected to a true code-majority example (11/22 = 50%) + honest comment.
+3. **[SPEC CONTRADICTION] reconciled** two overlapping suites: `ScratchpadListTests.ageLabelShowsHours`
+   asserted "23h → 23h" while `ScratchpadAgeLabelTests.yesterdayLabel` asserted "yesterday-noon → yesterday"
+   — 23h-ago IS calendar-yesterday, so both could never hold (invisible because tests never ran). Resolved
+   toward the intended calendar-aware contract: anchored `ageLabelShowsHours` `now` at 23:00 so offsets stay
+   same-day; added deterministic `ageLabelShowsYesterdayForPreviousCalendarDay`; fixed the now-false comment.
+
+**QA harness (first render-level run since the marathon):** 24/24 surfaces render OK; ALL geometry +
+contrast + colour-vision (deuter/protan) checks PASS → render-side confirmation of the saturation claim.
+BUT the diff **baselines are STALE** — app-wide Δ30–76%, 2 over the 2% budget (`chat_samples` 8.74%,
+`code_samples` 4.22%) from accumulated marathon design changes never re-adopted. NOT this change (logic/test
+only, zero visual delta — verified via blank `chat_samples_diff` + healthy contact sheet). **Owner action:
+`bash tools/qa.sh --adopt` to re-bless the current all-checks-pass UI and restore the harness's
+regression-catching power** — left to the owner since it blesses 24×3 references.
+
+**Files:** `Views/ScratchpadView.swift`, `Salehman AITests/{ScratchpadListTests,ChatComposerLogicTests,SalehmanLeaderTests}.swift`.
+**Result:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **` — **831 pass / 0 fail**. The "leave it green"
+invariant now holds by MEASUREMENT, not typecheck inference. SOURCE_BUNDLE regenerated.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

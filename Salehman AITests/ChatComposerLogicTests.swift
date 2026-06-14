@@ -799,7 +799,11 @@ struct ScratchpadAgeLabelTests {
     @Test func hoursLabel() {
         let now = Date()
         let d = now.addingTimeInterval(-7200)   // 2 hours ago
-        #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+        // The hours bucket is today-only; in the ~midnight window "2h ago" lands
+        // on the previous calendar day and correctly reads "yesterday" instead.
+        if Calendar.current.isDateInToday(d) {
+            #expect(ScratchpadList.ageLabel(for: d, now: now) == "2h")
+        }
     }
 
     @Test func yesterdayLabel() {
