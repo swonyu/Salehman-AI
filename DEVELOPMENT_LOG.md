@@ -5284,6 +5284,30 @@ No off-brand hardcoded chrome color that should be a DS token. Color discipline 
 
 ---
 
+## 2026-06-14 — EOCK: hover/tooltip-coverage audit (rotation 3, angle n) — no gap; ROTATION 3 COMPLETE
+
+No `CircleIconButton` has a blank `help` param. The non-obvious icon controls (attach/paperclip, reload,
+regenerate, jump-to-match, copy) all carry `.help` (confirmed in the EOCA sweep). The handful of inline
+icon buttons WITHOUT `.help` are all self-evident X/clear/dismiss (`xmark`/`xmark.circle.fill`) — obvious
+to sighted users + already `.accessibilityLabel`'d for VoiceOver. Per "non-obvious controls," **no gap**.
+
+**🟡 ROTATION 3 COMPLETE.** (l) banned-easing, (m) hardcoded-colors, (n) tooltips = all clean. Across
+rotations 1–3 (15 audit passes total): ~3 genuine fixes (contrast, RTL plain-Text, stale comment); the
+rest confirmed already at the bar.
+
+**🔴 PROPOSAL — the one genuinely valuable remaining UI task:** the chat/code `MarkdownText` **RTL bidi**.
+Arabic in chat (`assistantRow`) and Code (`CodeMessageRow`) still renders LTR because MarkdownText wasn't
+given per-block Arabic handling (it can't take the blanket `rtlAware` flip — code blocks MUST stay LTR).
+Doing it right: detect Arabic per TEXT block, apply RTL to those while leaving `CodeBlock` LTR, and
+VISUALLY VERIFY (the 14B answers in Arabic; CodeMessageRow's gallery even has an Arabic sample). This is
+the CORE chat surface → it warrants owner-watched visual verification, NOT a blind autonomous-loop edit.
+**Recommend: owner greenlight this (eyes on it), or redirect to ⌘K glass / features / tests / perf.**
+Re-arming the loop regardless.
+
+**Files:** none (audit only — no source change).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
