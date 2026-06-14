@@ -29,7 +29,15 @@ struct MarkdownText: View {
                             case .lines(let chunk):
                                 VStack(alignment: .leading, spacing: 5) {
                                     ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
+                                        // Per-line RTL/bidi: Arabic prose lines flip to
+                                        // right-to-left + trailing (list bullets, numbers
+                                        // and quote rails move to the right with the
+                                        // flipped HStack); Latin/English is a no-op in a
+                                        // full-width leading column, so the assistant flow
+                                        // is unchanged. Applied here on PROSE only — code
+                                        // (CodeBlock) and tables stay LTR as required.
                                         MarkdownText.lineView(raw, highlight: highlight)
+                                            .rtlAware(raw)
                                     }
                                 }
                             }

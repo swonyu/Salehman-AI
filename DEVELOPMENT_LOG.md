@@ -5416,6 +5416,39 @@ hardening.
 
 ---
 
+## 2026-06-14 — EOCP: MarkdownText RTL-bidi fix APPLIED (EOCL plan executed; owner "go") — verified by typecheck
+
+Executed the EOCL plan after the owner greenlit ("go") a high-end-visual-design redirect. `MarkdownText.body`'s
+`.lines(chunk)` prose case now wraps each `MarkdownText.lineView(raw, …)` in `.rtlAware(raw)` (the modifier
+added EOCD, already shipping at 4 Knowledge/Scratchpad call sites). Arabic prose lines flip to RTL + trailing —
+list bullets/numbers and the blockquote rail move to the right with the flipped `HStack`; English/Latin is a
+**true no-op** because every assistant surface is already a full-width leading column (`frame(maxWidth:.infinity,
+alignment:.leading)` — confirmed at ContentView:2388 assistantRow, CodeView:2521 CodeMessageRow, CodeView
+streaming, and the gallery row), so the `maxWidth:.infinity` the modifier adds changes nothing for English.
+`CodeBlock` and `tableView` are deliberately NOT wrapped → code + tables stay LTR as required.
+
+**Verified by MEASUREMENT:** full-target Swift 6 typecheck at the project's exact isolation settings
+(`-swift-version 6 -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault`, all
+97 app files, `-target arm64-apple-macos26.0`) → **EXIT 0, 0 errors / 0 warnings.**
+
+**Sandbox recipe (NEW, important):** this session's sandbox denies `swiftc`'s internal `xcrun` spawn (it tries
+to create `xcrun_db-*` under the Darwin per-user temp dir `/var/folders/.../T/` → `errno=Operation not
+permitted`; `TMPDIR`/`XCRUN_CACHE_ENABLED`/`XCRUN_DB_PATH` overrides are all ignored, and
+`dangerouslyDisableSandbox` is policy-disabled). **Workaround that worked:** invoke the swiftc binary directly
+(`SWIFTC=$(xcrun --find swiftc)`) with `-tools-directory "$(dirname "$(xcrun --find clang)")"` so swiftc never
+spawns `xcrun` for clang. Standalone `xcrun --find/--show-sdk-path` succeed (read-only); only the compile-time
+spawn's cache *create* was blocked. This unblocks `-typecheck` verification in a sandbox that previously
+appeared to forbid it entirely (cf. the effort/grok "EPERM pre-compile" note).
+
+**Honest caveat:** compile is verified; the actual Arabic right-align *rendering* is NOT yet eyeball-confirmed
+(typecheck-clean ≠ pixels-correct). It mirrors `LiveTranscriptionView.lineView`'s shipping RTL pattern, so
+confidence is high, but the owner should glance at one live Arabic reply. **Instantly revertible**
+(`git checkout` the one file) if it renders wrong.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift` (one functional line + comment). SOURCE_BUNDLE regenerated.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

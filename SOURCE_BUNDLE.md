@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 09:42 +03 · Swift files: 161 · Swift LOC: 37279_
+_Generated: 2026-06-14 17:50 +03 · Swift files: 161 · Swift LOC: 37287_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -22396,7 +22396,7 @@ struct LiveTranscriptionView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarkdownText.swift (424 lines) =====
+===== FILE: Salehman AI/Views/MarkdownText.swift (432 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -22429,7 +22429,15 @@ struct MarkdownText: View {
                             case .lines(let chunk):
                                 VStack(alignment: .leading, spacing: 5) {
                                     ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
+                                        // Per-line RTL/bidi: Arabic prose lines flip to
+                                        // right-to-left + trailing (list bullets, numbers
+                                        // and quote rails move to the right with the
+                                        // flipped HStack); Latin/English is a no-op in a
+                                        // full-width leading column, so the assistant flow
+                                        // is unchanged. Applied here on PROSE only — code
+                                        // (CodeBlock) and tables stay LTR as required.
                                         MarkdownText.lineView(raw, highlight: highlight)
+                                            .rtlAware(raw)
                                     }
                                 }
                             }
