@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 05:14 +03 · Swift files: 160 · Swift LOC: 37148_
+_Generated: 2026-06-14 09:42 +03 · Swift files: 161 · Swift LOC: 37279_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -33756,6 +33756,141 @@ struct LooksRiskyDelegationTests {
 }
 ```
 
+===== FILE: Salehman AITests/MarkdownParsingTests.swift (131 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - MarkdownText parsing — segments (fenced code) + blocks (tables)
+//
+// MarkdownText renders EVERY chat/code reply, yet its two pure parsers had no
+// coverage. These exercise the real contracts: code fences split correctly and
+// preserve whitespace (code must not be trimmed), prose is trimmed, and GFM
+// tables are recognised only when a `|---|` separator follows the header row.
+// Added EOCO (2026-06-14) during the measurement-driven bug-hunt.
+
+private func textOf(_ s: MarkdownText.Segment) -> String? {
+    if case .text(let t) = s { return t }
+    return nil
+}
+private func codeOf(_ s: MarkdownText.Segment) -> (lang: String, code: String)? {
+    if case .code(let l, let c) = s { return (l, c) }
+    return nil
+}
+
+struct MarkdownSegmentTests {
+
+    @Test func plainTextIsOneTextSegment() {
+        let segs = MarkdownText.segments(for: "Just plain prose.")
+        #expect(segs.count == 1)
+        #expect(textOf(segs[0]) == "Just plain prose.")
+    }
+
+    @Test func emptyStringYieldsNoSegments() {
+        #expect(MarkdownText.segments(for: "").isEmpty)
+    }
+
+    @Test func fencedCodeExtractsLanguageAndBody() {
+        let segs = MarkdownText.segments(for: "```swift\nlet x = 1\n```")
+        #expect(segs.count == 1)
+        #expect(codeOf(segs[0])?.lang == "swift")
+        #expect(codeOf(segs[0])?.code == "let x = 1")
+    }
+
+    @Test func textCodeTextKeepsOrder() {
+        let segs = MarkdownText.segments(for: "before\n```\ncode\n```\nafter")
+        #expect(segs.count == 3)
+        #expect(textOf(segs[0]) == "before")
+        #expect(codeOf(segs[1])?.code == "code")
+        #expect(textOf(segs[2]) == "after")
+    }
+
+    @Test func codePreservesIndentationButProseIsTrimmed() {
+        // Code whitespace is significant → must NOT be trimmed.
+        let code = MarkdownText.segments(for: "```\n    indented\n```")
+        #expect(codeOf(code[0])?.code == "    indented")
+        // Surrounding blank lines around prose ARE trimmed.
+        let prose = MarkdownText.segments(for: "\n\nhello\n\n")
+        #expect(prose.count == 1)
+        #expect(textOf(prose[0]) == "hello")
+    }
+
+    @Test func unclosedFenceStillBecomesCode() {
+        // Model cut off mid-block: the remainder is treated as a code segment.
+        let segs = MarkdownText.segments(for: "```\nunfinished code")
+        #expect(segs.count == 1)
+        #expect(codeOf(segs[0])?.code == "unfinished code")
+    }
+
+    @Test func tripleBacktickMidLineIsNotAFence() {
+        // A line must START with ``` (after trimming) to toggle a fence.
+        let segs = MarkdownText.segments(for: "use ``` carefully in prose")
+        #expect(segs.count == 1)
+        #expect(textOf(segs[0]) == "use ``` carefully in prose")
+    }
+}
+
+struct MarkdownBlockTests {
+
+    @Test func plainLinesAreOneLinesBlock() {
+        let blocks = MarkdownText.blocks(for: "line one\nline two")
+        #expect(blocks.count == 1)
+        if case .lines(let s) = blocks[0] { #expect(s == "line one\nline two") }
+        else { Issue.record("expected .lines") }
+    }
+
+    @Test func validTableParsesHeaderAndRows() {
+        let blocks = MarkdownText.blocks(for: "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |")
+        #expect(blocks.count == 1)
+        guard case .table(let header, let rows) = blocks[0] else {
+            Issue.record("expected .table"); return
+        }
+        #expect(header == ["A", "B"])
+        #expect(rows.count == 2)
+        #expect(rows[0] == ["1", "2"])
+        #expect(rows[1] == ["3", "4"])
+    }
+
+    @Test func pipeRowWithoutSeparatorIsNotATable() {
+        // A `|…|` row is only a table when a `|---|` separator follows it.
+        let blocks = MarkdownText.blocks(for: "| A | B |\nnot a separator line")
+        #expect(blocks.count == 1)
+        if case .lines = blocks[0] {} else { Issue.record("expected .lines, not a table") }
+    }
+
+    @Test func tableIsBracketedByProse() {
+        let body = "intro paragraph\n| H |\n|---|\n| v |\noutro paragraph"
+        let blocks = MarkdownText.blocks(for: body)
+        #expect(blocks.count == 3)
+        if case .lines(let a) = blocks[0] { #expect(a == "intro paragraph") } else { Issue.record("0=.lines") }
+        if case .table(let h, let r) = blocks[1] { #expect(h == ["H"]); #expect(r == [["v"]]) } else { Issue.record("1=.table") }
+        if case .lines(let z) = blocks[2] { #expect(z == "outro paragraph") } else { Issue.record("2=.lines") }
+    }
+
+    @Test func alignmentSeparatorWithColonsIsRecognised() {
+        // GFM alignment markers (:--, :-:, --:) are valid separators.
+        let blocks = MarkdownText.blocks(for: "| L | C | R |\n| :-- | :-: | --: |\n| a | b | c |")
+        guard case .table(let header, let rows) = blocks[0] else {
+            Issue.record("expected .table with colon-alignment separator"); return
+        }
+        #expect(header == ["L", "C", "R"])
+        #expect(rows[0] == ["a", "b", "c"])
+    }
+
+    @Test func raggedRowWithFewerCellsIsKeptAsIs() {
+        // Lenient by design: a short row renders fewer cells (the Grid renderer
+        // iterates each row's own cells, so this never indexes out of range).
+        let blocks = MarkdownText.blocks(for: "| A | B |\n|---|---|\n| 1 |")
+        guard case .table(let header, let rows) = blocks[0] else {
+            Issue.record("expected .table"); return
+        }
+        #expect(header.count == 2)
+        #expect(rows[0] == ["1"])   // one cell, not padded to header width
+    }
+}
+```
+
 ===== FILE: Salehman AITests/MarketSortTests.swift (55 lines) =====
 ```swift
 import Testing
@@ -39840,7 +39975,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6507 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6528 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -45235,6 +45370,27 @@ regression-catching power** — left to the owner since it blesses 24×3 referen
 **Files:** `Views/ScratchpadView.swift`, `Salehman AITests/{ScratchpadListTests,ChatComposerLogicTests,SalehmanLeaderTests}.swift`.
 **Result:** `** BUILD SUCCEEDED **` · `** TEST SUCCEEDED **` — **831 pass / 0 fail**. The "leave it green"
 invariant now holds by MEASUREMENT, not typecheck inference. SOURCE_BUNDLE regenerated.
+
+---
+
+## 2026-06-14 — EOCO: MarkdownText parser test coverage (bug-hunt cont.) — parsers verified correct, +13 tests
+
+Continued the measurement-driven bug-hunt into untested pure-logic (owner: "keep bug-hunting").
+`MarkdownText` renders EVERY chat/code reply but its two parsers had ZERO coverage: `segments` (fenced
+```code``` split) and `blocks` (GFM table detection). Read both adversarially + added
+`MarkdownParsingTests.swift` (13 tests): fence language/body extraction, text↔code ordering,
+code-whitespace-preserved vs prose-trimmed, unclosed fence, mid-line ``` not-a-fence, table header/rows,
+colon-alignment separators, separator-required gating, prose-bracketed tables, ragged rows. **All pass on
+first run → the parsers are CORRECT on the common + boundary cases (no bug found).**
+
+Two esoteric, low-incidence edge limitations noted but **NOT fixed** (near-zero real-world rate; editing a
+well-tuned hot path = churn/regression risk): (1) `tableCells` splits naively on `|`, so a backslash-escaped
+`\|` inside a cell is mis-split; (2) `MediaTranscribe.videoID` matches the substring `v=`, so a param key
+ending in 'v' (e.g. `rv=`) appearing before the real `v=` could be picked. Flagged for owner if ever worth
+hardening.
+
+**Files:** `Salehman AITests/MarkdownParsingTests.swift` (new).
+**Result:** `** TEST SUCCEEDED **` — **844 pass / 0 fail** (+13). Build green. SOURCE_BUNDLE regenerated.
 
 ---
 

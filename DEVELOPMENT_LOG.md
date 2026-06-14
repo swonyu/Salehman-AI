@@ -5395,6 +5395,27 @@ invariant now holds by MEASUREMENT, not typecheck inference. SOURCE_BUNDLE regen
 
 ---
 
+## 2026-06-14 — EOCO: MarkdownText parser test coverage (bug-hunt cont.) — parsers verified correct, +13 tests
+
+Continued the measurement-driven bug-hunt into untested pure-logic (owner: "keep bug-hunting").
+`MarkdownText` renders EVERY chat/code reply but its two parsers had ZERO coverage: `segments` (fenced
+```code``` split) and `blocks` (GFM table detection). Read both adversarially + added
+`MarkdownParsingTests.swift` (13 tests): fence language/body extraction, text↔code ordering,
+code-whitespace-preserved vs prose-trimmed, unclosed fence, mid-line ``` not-a-fence, table header/rows,
+colon-alignment separators, separator-required gating, prose-bracketed tables, ragged rows. **All pass on
+first run → the parsers are CORRECT on the common + boundary cases (no bug found).**
+
+Two esoteric, low-incidence edge limitations noted but **NOT fixed** (near-zero real-world rate; editing a
+well-tuned hot path = churn/regression risk): (1) `tableCells` splits naively on `|`, so a backslash-escaped
+`\|` inside a cell is mis-split; (2) `MediaTranscribe.videoID` matches the substring `v=`, so a param key
+ending in 'v' (e.g. `rv=`) appearing before the real `v=` could be picked. Flagged for owner if ever worth
+hardening.
+
+**Files:** `Salehman AITests/MarkdownParsingTests.swift` (new).
+**Result:** `** TEST SUCCEEDED **` — **844 pass / 0 fail** (+13). Build green. SOURCE_BUNDLE regenerated.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
