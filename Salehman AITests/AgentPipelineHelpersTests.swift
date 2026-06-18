@@ -227,30 +227,18 @@ struct AgentPipelineRecentTailTests {
 struct AgentPipelineIsSerialLocalBrainTests {
 
     @Test func serialBrainsReturnTrue() {
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for brain in serial {
             #expect(AgentPipeline.isSerialLocalBrain(brain),
                     "\(brain) must be serial — shared-RAM server cannot handle parallel requests")
         }
     }
 
-    @Test func cloudBrainsReturnFalse() {
-        let cloud: [LocalLLM.Brain] = [.cerebras, .gemini, .grok, .groq, .claudeHaiku,
-                                       .codex, .copilot, .openRouter, .mistral]
-        for brain in cloud {
-            #expect(!AgentPipeline.isSerialLocalBrain(brain),
-                    "\(brain) is a cloud brain and must NOT be classified as serial")
-        }
-    }
-
-    @Test func orchestrationModesReturnFalse() {
-        // ensemble, freeAuto, freeCoding, cloudCoding, none are pipeline modes,
-        // not single-instance local servers.
-        let modes: [LocalLLM.Brain] = [.ensemble, .freeAuto, .freeCoding, .cloudCoding, .none]
-        for brain in modes {
-            #expect(!AgentPipeline.isSerialLocalBrain(brain),
-                    "\(brain) is an orchestration mode — must not be serial")
-        }
+    @Test func noneBrainReturnsFalse() {
+        // After the app went local-only, every real brain is a serial local
+        // model; `.none` (no brain reachable) is the only non-serial case.
+        #expect(!AgentPipeline.isSerialLocalBrain(.none),
+                ".none is not a single-instance local server — must not be serial")
     }
 }
 

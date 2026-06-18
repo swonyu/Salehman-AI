@@ -1,17 +1,21 @@
 import Foundation
 import Security
 
-/// macOS Keychain storage for sensitive credentials (currently just the xAI
-/// Grok API key). Source files in this project must NEVER contain key
-/// material — the only place the actual characters of a key live is
+/// macOS Keychain storage for sensitive credentials. The app is local-only,
+/// so the surviving entries are local/endpoint credentials (a self-hosted
+/// vLLM bearer token, an Unsloth Studio token used only for a Settings
+/// copy-snippet, a Hugging Face token used by the external cloud-GPU notebook,
+/// and the NVIDIA NIM key for the free DeepSeek route). Source files in this
+/// project must NEVER contain key material — the only place the actual
+/// characters of a key live is
 ///   (1) the `Data` parameter handed to `SecItemAdd` when the user types it
 ///       into the Settings panel, and
-///   (2) the `Authorization: Bearer …` HTTP header that `GrokClient` builds
+///   (2) the `Authorization: Bearer …` HTTP header the matching client builds
 ///       at request time.
 ///
 /// The Keychain entry is service-scoped to this app's bundle identifier and
-/// account-scoped per credential — so a future second key (OpenAI, Anthropic,
-/// etc.) just picks a different account name without colliding.
+/// account-scoped per credential — so each credential just picks a different
+/// account name without colliding.
 ///
 /// Design notes:
 /// * Synchronous because `SecItem*` calls are already cheap (encrypted at
@@ -32,24 +36,14 @@ enum KeychainStore {
     // MARK: - Account identifiers
 
     enum Account: String {
-        case grokAPIKey     = "grok-api-key"
-        case geminiAPIKey   = "gemini-api-key"
-        case groqAPIKey     = "groq-api-key"
-        case mistralAPIKey  = "mistral-api-key"
-        case cerebrasAPIKey = "cerebras-api-key"
-        // ("deepseek-api-key" removed 2026-06-12 — owner: "remove deepseek".
-        // The provider was cut after its key was chat-exposed; the stored
-        // Keychain item was deleted alongside this change.)
+        // Cloud-provider API-key entries (grok, gemini, groq, mistral, cerebras,
+        // anthropic, openAI, openRouter, copilot-github) were removed when the
+        // app went local-only — those providers no longer exist in the app.
+        // ("deepseek-api-key" was removed earlier, 2026-06-12.)
         /// NVIDIA NIM (integrate.api.nvidia.com) — hosts REAL DeepSeek (V4) on a
         /// free tier, OpenAI-compatible. This is the app's "DeepSeek for free"
         /// route since DeepSeek's own API + OpenRouter are paid-only.
         case nvidiaAPIKey   = "nvidia-api-key"
-        case anthropicAPIKey = "anthropic-api-key"
-        case openAIAPIKey   = "openai-api-key"
-        case openRouterAPIKey = "openrouter-api-key"
-        /// GitHub OAuth access token for the Copilot brain (from the device flow).
-        /// The short-lived Copilot token derived from it is cached in memory only.
-        case copilotGitHubToken = "copilot-github-token"
         /// Unsloth API token. NOT required for the app's `.unslothStudio` chat
         /// brain (that talks to a local OpenAI-compatible server with no auth) —
         /// stored only so the "Use this model with Claude Code too" snippet in

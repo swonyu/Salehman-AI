@@ -17,6 +17,9 @@ struct OllamaToolGateTests {
         // is off (Offline mode / "Web access" off).
         #expect(!names.contains("web_search"))
         #expect(!names.contains("fetch_url"))
+        // The media-search tools are also network tools — hidden offline too.
+        #expect(!names.contains("image_search"))
+        #expect(!names.contains("video_search"))
         // On-device tools (no network) ARE available offline: terminal + the
         // knowledge/notes/tasks/memory tools.
         #expect(names.contains("run_terminal_command"))
@@ -27,11 +30,14 @@ struct OllamaToolGateTests {
         #expect(names.contains("pack_repository"))
     }
 
-    @Test func onlineAddsExactlyTheTwoWebTools() {
+    @Test func onlineAddsExactlyTheWebAndMediaTools() {
         let offline = Set(LocalLLM.ollamaToolNames(externalAllowed: false))
         let online = Set(LocalLLM.ollamaToolNames(externalAllowed: true))
-        // Going online adds the two web tools — and nothing else.
-        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
+        // Going online adds exactly the four network tools — web + media — and
+        // nothing else. (image_search / video_search render results in the Chat
+        // tab; like the web tools they must stay hidden while offline.)
+        #expect(online.subtracting(offline)
+                == ["web_search", "fetch_url", "image_search", "video_search"])
         // …and every offline (on-device) tool is still present.
         #expect(offline.isSubset(of: online))
     }

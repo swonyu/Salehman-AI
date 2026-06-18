@@ -28,9 +28,8 @@ enum SalehmanLeader {
         let pref = AppSettings.brainPreferenceCurrent
         // Don't double-pass when the user already pinned Salehman as the brain.
         if pref == .salehman { return false }
-        // Step aside for the dedicated coding modes — a small leader shouldn't
-        // rewrite (and risk breaking) the coder loop's tool-built output.
-        if pref == .cloudCoding || pref == .freeCoding { return false }
+        // (The dedicated cloud/free coding modes the leader used to step aside
+        // for were removed in the 2026-06-18 local-only migration.)
         return true
     }
 

@@ -70,7 +70,6 @@ struct ContentView: View {
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
     @State private var searchQuery = ""
@@ -140,15 +139,6 @@ struct ContentView: View {
                 // chat-only banner was never the real guard). The persistent
                 // mode signal is the pulsing header indicator; its tooltip
                 // carries the warning and clicking it opens Settings.
-                // No-cloud-key notice: the selected brain is silently on the slow
-                // local fallback (or unavailable). Tap "Add key" → Settings.
-                if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                    CloudKeyHintBanner(onAddKey: { showSettings = true },
-                                       onDismiss: {
-                                           withAnimation(DS.Motion.smooth) { dismissedCloudHint = true }
-                                       })
-                        .transition(.opacity.combined(with: .offset(y: -6)))
-                }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
@@ -311,20 +301,8 @@ struct ContentView: View {
                         .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
-                    // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
-                    // when the Grok brain is active. Tapping opens Settings so the
-                    // user can complete the Anthropic→Grok migration or confirm
-                    // the key/model. This surfaces the "Super" path directly in
-                    // the primary chat chrome without cluttering local/Apple modes.
-                    if brainStatus.brain == .grok {
-                        SuperGrokBadge(text: "SUPER GROK") {
-                            app.showSettingsRequested = true
-                        }
-                        .transition(.opacity)
-                    }
                 }
             }
-            .animation(DS.Motion.snappy, value: brainStatus.brain == .grok)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
                 ? "Salehman AI, Unrestricted Mode"
@@ -1690,6 +1668,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Image/video results from a media search this turn, rendered as an inline
+    /// gallery under the reply. Optional so history persisted before this field
+    /// decodes unchanged (same Codable-compat trick as `pinned`/`rating`).
+    var media: [MediaItem]? = nil
     /// Seconds the reply took to generate (assistant messages only; optional
     /// so history persisted before this field decodes unchanged). Surfaced in
     /// the hover pill — zero chrome at rest.
@@ -2383,6 +2365,11 @@ struct MessageBubble: View, @MainActor Equatable {
                 CachedImage(path: path)
                     .frame(maxWidth: 360, maxHeight: 360)
                     .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+            // Inline image/video search results (from image_search / video_search).
+            if let media = message.media, !media.isEmpty {
+                MediaGallery(items: media)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

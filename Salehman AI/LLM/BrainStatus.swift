@@ -1,10 +1,10 @@
 import SwiftUI
 import Combine
 
-/// Live, MainActor-observable reading of which brain (Salehman cloud / Ollama
-/// qwen-coder / a cloud brain / none) is currently answering. The header subtitle
-/// and any other UI that wants to show "where is the response coming from" reads
-/// from this singleton instead of guessing from a static setting.
+/// Live, MainActor-observable reading of which local brain (Salehman / Ollama
+/// qwen-coder / Unsloth Studio / vLLM / uncensored / none) is currently answering.
+/// The header subtitle and any other UI that wants to show "where is the response
+/// coming from" reads from this singleton instead of guessing from a static setting.
 ///
 /// Refresh strategy:
 /// * Polled every `pollInterval` seconds (cheap — `OllamaClient` already
@@ -40,7 +40,7 @@ final class BrainStatus: ObservableObject {
     }
 
     /// Color hint for the status dot. Blue when the Ollama brain is driving,
-    /// brand accent for Salehman, orange when nothing's reachable.
+    /// brand accent for Salehman, and orange when nothing's reachable.
     var dotColor: Color {
         switch brain {
         case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
@@ -48,20 +48,6 @@ final class BrainStatus: ObservableObject {
         case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
         case .vllm:              return Color(red: 0.20, green: 0.78, blue: 0.90)  // vLLM cyan — local high-throughput
         case .uncensored:        return Color(red: 0.90, green: 0.30, blue: 0.45)  // uncensored crimson — unfiltered local
-
-        case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
-        case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
-        case .gemini:            return Color(red: 0.30, green: 0.66, blue: 0.99)  // Google blue
-        case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
-        case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
-        case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
-        case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
-        case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
-        case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
-        case .ensemble:          return Color(red: 0.55, green: 0.85, blue: 0.40)  // multi-brain lime
-        case .freeAuto:          return Color(red: 0.20, green: 0.85, blue: 0.65)  // free-auto mint (unlimited)
-        case .freeCoding:        return Color(red: 0.62, green: 0.40, blue: 0.95)  // FreeCoding violet
-        case .cloudCoding:       return Color(red: 0.40, green: 0.62, blue: 1.00)  // Cloud Coding sky-blue
         case .none:              return .orange
         }
     }
@@ -75,19 +61,6 @@ final class BrainStatus: ObservableObject {
         case .unslothStudio:     return "cpu"
         case .vllm:              return "bolt.horizontal.fill"
         case .uncensored:        return "eye.trianglebadge.exclamationmark.fill"
-        case .claudeHaiku:       return "a.square.fill"
-        case .grok:              return "bolt.fill"
-        case .gemini:            return "sparkle"
-        case .groq:              return "hare.fill"
-        case .mistral:           return "wind"
-        case .cerebras:          return "cpu.fill"
-        case .codex:             return "terminal.fill"
-        case .copilot:           return "person.2.fill"
-        case .openRouter:        return "arrow.triangle.branch"
-        case .ensemble:          return "circle.grid.2x2.fill"
-        case .freeAuto:          return "infinity"
-        case .freeCoding:        return "curlybraces"
-        case .cloudCoding:       return "cloud.fill"
         case .none:              return "exclamationmark.triangle.fill"
         }
     }
@@ -103,10 +76,6 @@ final class BrainStatus: ObservableObject {
         // Refresh immediately when the brain preference moves — without this, the
         // header label sits stale until the next 10s poll tick.
         AppSettings.shared.$brainPreference
-            .removeDuplicates()
-            .sink { [weak self] _ in Task { await self?.refresh() } }
-            .store(in: &cancellables)
-        AppSettings.shared.$grokModel
             .removeDuplicates()
             .sink { [weak self] _ in Task { await self?.refresh() } }
             .store(in: &cancellables)

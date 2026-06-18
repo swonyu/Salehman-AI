@@ -5492,6 +5492,124 @@ to use it; not yet eyeball-tested against a live NSFW query (model not pulled he
 
 ---
 
+## 2026-06-18 · Autonomous image/video search → inline Chat gallery (Uncensored brain)
+**What:** The Uncensored brain (and any tool-calling brain) can now search the web
+for **images and videos** and render them as an **inline gallery** under the reply
+in the Chat tab. Owner request: "let it send me pictures in the chat tab and send
+videos … make the 3b model run alone." The abliterated 3B does it **autonomously** —
+its own system prompt tells it to call the media tools whenever the user wants to
+see pictures/videos, no coaxing.
+
+**Pipeline (text-loop → media side-channel → view):**
+- `Tools/MediaSearch.swift` (new): `MediaItem` (Codable image/video result),
+  `MediaCapture` (@MainActor per-turn side-channel buffer), and DuckDuckGo
+  `i.js`/`v.js` image+video search with SafeSearch **off** (`p=-1`) + a
+  nationality-aware `authenticityBiased` query enhancer (appends the region's
+  native-language term — e.g. saudi → سعودية — to lift authentic results over
+  mis-tagged "fake" ones; general, idempotent, no-op without a known nationality).
+- `LLM/LocalLLM.swift`: `image_search` / `video_search` tool specs (gated like the
+  web tools — network tools, hidden offline); dispatch in BOTH tool loops
+  (Ollama + OpenAI-compat) records media into `MediaCapture` and returns only a
+  text summary to the model; new `uncensoredToolSystem` prompt drives autonomous
+  media-tool use, passed via the `.uncensoredLocal` arm.
+- `Views/ChatViewModel.swift`: resets `MediaCapture` before each turn, drains it
+  into `ChatMessage.media` after.
+- `Views/ContentView.swift`: `ChatMessage.media: [MediaItem]?` (Codable-compat,
+  like `pinned`/`rating`); `assistantRow` renders the gallery.
+- `Views/MediaGallery.swift` (new): premium double-bezel tray + concentric tiles,
+  soft hover lift, button-in-button play well, duration/source chips. Images open
+  in the browser; direct-file videos play inline (AVKit sheet), watch-page videos
+  open their source.
+- `Agents/AgentPipeline.swift`: added `.uncensored` to `isSerialLocalBrain` (it's
+  an Ollama serial brain — was missing → wrong concurrency/diet treatment).
+
+**Files:** new `Tools/MediaSearch.swift`, `Views/MediaGallery.swift`,
+`Salehman AITests/MediaSearchTests.swift`; edited `LLM/LocalLLM.swift`,
+`Views/ContentView.swift`, `Views/ChatViewModel.swift`, `Agents/AgentPipeline.swift`,
+`Salehman AITests/OllamaToolGateTests.swift` (online now adds 4 network tools).
+SOURCE_BUNDLE + PROJECT_CONTEXT regenerated.
+
+**Result:** Full-app `swiftc -typecheck` over all 99 files **clean** (exit 0 / 0
+diagnostics) after one isolation fix (`nativeTerm` → nonisolated). Tests added but
+not runnable in-sandbox (no `Testing` module via single-file swiftc).
+**Honest caveat — unverified end-to-end:** DDG `i.js`/`v.js` are unofficial scraping
+endpoints; I can't reach the network from the sandbox, so whether they actually
+return results today (vs rate-limit/block/shape-change) is **not confirmed**. The
+wiring is complete and compiles; it needs a real run (Xcode ⌘R + `ollama pull
+huihui_ai/llama3.2-abliterate:3b`) to validate the live search. The gallery,
+side-channel, and autonomy prompt are deterministic and will work regardless of
+which search backend feeds them.
+
+## 2026-06-18 · Local-only migration — test suite purge of cloud providers/composite modes
+
+**What:** As part of the owner-directed local-only refactor (delete all 9 cloud LLM
+providers + 4 cloud-only composite modes), brought `Salehman AITests/` to conform to
+the new local-only contract.
+
+**Deleted (entirely cloud/composite suites):** `EnsembleTests.swift`,
+`FreeAutoTests.swift`, `FreeCloudBrainsTests.swift`, `GrokTests.swift`,
+`BrainRoutingDispatchTests.swift`, `CloudClientParsingTests.swift`,
+`CloudErrorDecoderTests.swift`, `GeminiBackoffTests.swift`,
+`GeminiURLEncodingTests.swift`, `OpenRouterTests.swift`,
+`FreeAutoCooldownTests.swift`, `CloudSystemPromptTests.swift`.
+
+**Edited (kept local-brain tests, removed cloud-specific cases/asserts):**
+`BrainAdapterTests.swift` (dropped `.claudeHaiku` adapter test; fallback test now
+uses `.salehman`/`.vllm`/`.uncensored`), `LocalLLMOffMessageTests.swift`
+(`.grok` pin → `.salehman`), `ToolLoopTests.swift` (cloud/composite brains → `.none`;
+removed `paidSetIsExactlyTheFourCloudPaidProviders` + the FreeAuto cooldown seam
+suite; serial sets now include `.uncensored`), `SalehmanLeaderTests.swift`
+(isLeading suite: removed cloud-coding step-aside cases, now `.unslothStudio`/
+`.uncensored` lead), `AgentPipelineConcurrencyTests.swift` +
+`AgentPipelineHelpersTests.swift` (non-serial set → `.none` only),
+`SettingsBrainReadyTests.swift` (rewrote against the already-local-only
+`BrainReadiness`; dropped `.freeAuto`/`.cloudCoding`/`.ensemble`/`AnthropicKeyPresentation`/
+Haiku-error assertions; kept `ActiveBrainProbe`/`BrainPing` coverage).
+
+**Why:** Coupled with the provider/enum deletions, these suites referenced removed
+`BrainPreference`/`LocalLLM.Brain` cases and deleted cloud client classes, so they
+would not compile.
+
+**Files:** the 12 deletions + 7 edits above, all under `Salehman AITests/`.
+
+**Result:** Did NOT build (coupled refactor — orchestrator builds after all agents
+finish). Verified by grep that no removed symbol survives in any remaining test
+code, and that every `LocalLLM.Brain`/`BrainPreference` case used is a surviving
+local case. Cross-file deps flagged for the LocalLLM/SalehmanLeader agents (remove
+orphaned `isStillCooling`/`FreeAutoCooldown`; drop `.cloudCoding`/`.freeCoding` arm
+in `SalehmanLeader.isLeading`; keep `cloudSystemPrompt` for vLLM/Unsloth).
+
+---
+
+## 2026-06-18 · Finished the local-only migration (caller stragglers) → merged tree GREEN + media integrated
+**What:** The parallel local-only refactor stopped mid-way (its own log entry above
+noted "Did NOT build" and flagged the leftovers). Completed the coupled stragglers it
+left so the app compiles, with the image/video media feature folded in:
+- `LLM/SalehmanLeader.swift`: dropped the `.cloudCoding`/`.freeCoding` arm in
+  `isLeading` (those `BrainPreference` cases are gone).
+- `Agents/AgentPipeline.swift`: removed the four short-circuit blocks that called the
+  deleted `LocalLLM` cloud-composite methods (`isEnsembleMode`/`generateEnsemble`,
+  `isFreeAutoMode`/`freeAutoReplyWithTools`/`generateFreeAuto`, `isFreeCodingMode`/
+  `freeCodingReply`, `isCloudCodingMode`/`cloudCodingReply`) + the now-dead
+  `contextualMission`. Every (local) brain now runs the normal multi-agent path.
+- Tests: reconciled the web-tool-count assertions in `ToolLoopTests` +
+  `OllamaToolGateTests` — going online now adds **four** network tools (web_search,
+  fetch_url, image_search, video_search), not two.
+
+**Coordination note:** this tree blends two concurrent sessions — the local-only cloud
+removal (other session) + my Uncensored-brain media search/gallery. They were editing
+the same files simultaneously; verified by sweep that my media wiring
+(`image_search`/`video_search` specs+dispatch, `MediaCapture`, `ChatMessage.media`,
+`MediaGallery`) survived intact and `.uncensored` is kept everywhere.
+
+**Result:** Full-app `swiftc -typecheck` over all 91 files **clean** (exit 0 / 0
+diagnostics). Test target couldn't be executed in-sandbox (no `Testing` module), but
+an exhaustive grep confirms NO remaining test references a deleted symbol (cloud
+clients, cloud `BrainPreference`/`BrainReadiness` fields, `isStillCooling`, or the
+removed `LocalLLM` cloud methods). SOURCE_BUNDLE regenerated.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

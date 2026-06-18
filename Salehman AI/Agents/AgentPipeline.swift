@@ -394,46 +394,10 @@ enum AgentPipeline {
         let brain = await LocalLLM.currentBrain()
         if brain == .none { return LocalLLM.offMessage }
 
-        // The short-circuit modes below bypass the multi-agent team (and the history
-        // handling further down), so fold the recent transcript into the prompt here
-        // so they remember the conversation. No-op on the first turn (empty history).
-        let contextualMission = withConversationContext(mission, history: priorHistory)
-
-        // "All Brains at Once" bypasses the multi-agent team entirely: ensemble
-        // means "ask every reachable brain the raw prompt, show all answers",
-        // not "run the 15-agent pipeline on one brain". The complexity/spec
-        // logic below doesn't apply.
-        if LocalLLM.isEnsembleMode {
-            return await LocalLLM.generateEnsemble(contextualMission)
-        }
-
-        // "Free · Auto" likewise bypasses the multi-agent team: it races the
-        // free brains in parallel for one fast answer (local backstop), not a
-        // 15-agent pipeline. Same short-circuit shape as ensemble above.
-        //
-        // Unrestricted Mode upgrades Free·Auto to a TOOL-capable single brain so
-        // it can actually run terminal commands / search the web (the owner asked
-        // Free·Auto to "do all commands"). With Unrestricted off it stays the fast
-        // no-tool race.
-        if LocalLLM.isFreeAutoMode {
-            if AppSettings.unrestrictedToolsEnabled {
-                return await LocalLLM.freeAutoReplyWithTools(contextualMission)
-            }
-            return await LocalLLM.generateFreeAuto(contextualMission)
-        }
-
-        // FreeCoding: a coding-focused loop over the free coders. Always
-        // tool-capable (coding wants to build/run/test), so it bypasses the
-        // multi-agent team too and routes straight to `freeCodingReply`.
-        if LocalLLM.isFreeCodingMode {
-            return await LocalLLM.freeCodingReply(contextualMission)
-        }
-
-        // Cloud Coding: cloud-only "best coders" loop — same tool-capable bypass,
-        // no local model (zero RAM / no lag).
-        if LocalLLM.isCloudCodingMode {
-            return await LocalLLM.cloudCodingReply(contextualMission)
-        }
+        // (The cloud composite modes — All-Brains ensemble, Free·Auto, FreeCoding,
+        // Cloud Coding — that used to short-circuit the multi-agent team here were
+        // removed in the 2026-06-18 local-only migration. Every remaining brain is
+        // local and runs the normal multi-agent team path below.)
 
         // How many agents run is a function of BOTH the user's response-mode
         // ceiling AND the message's actual complexity. The response mode is a
@@ -648,7 +612,8 @@ enum AgentPipeline {
     /// the adaptTitles skip, and the local context diet, so a new serial brain
     /// added here updates all three behaviors in lockstep.
     nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
-        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio
+            || brain == .vllm || brain == .uncensored
     }
 
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL

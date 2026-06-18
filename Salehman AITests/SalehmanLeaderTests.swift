@@ -82,7 +82,7 @@ struct IsLeadingTests {
     }
 
     @Test func leaderOffMeansNeverLeading() {
-        let result = withSettings(leader: false, pref: .groq) { SalehmanLeader.isLeading }
+        let result = withSettings(leader: false, pref: .unslothStudio) { SalehmanLeader.isLeading }
         #expect(!result)
     }
 
@@ -92,24 +92,13 @@ struct IsLeadingTests {
         #expect(!result)
     }
 
-    @Test func cloudCodingBrainNeverLeads() {
-        // Leader shouldn't rewrite tool-built coder output.
-        let result = withSettings(leader: true, pref: .cloudCoding) { SalehmanLeader.isLeading }
-        #expect(!result)
-    }
-
-    @Test func freeCodingBrainNeverLeads() {
-        let result = withSettings(leader: true, pref: .freeCoding) { SalehmanLeader.isLeading }
-        #expect(!result)
-    }
-
-    @Test func groqBrainLeadsWhenEnabled() {
-        let result = withSettings(leader: true, pref: .groq) { SalehmanLeader.isLeading }
+    @Test func unslothStudioBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .unslothStudio) { SalehmanLeader.isLeading }
         #expect(result)
     }
 
-    @Test func grokBrainLeadsWhenEnabled() {
-        let result = withSettings(leader: true, pref: .grok) { SalehmanLeader.isLeading }
+    @Test func uncensoredBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .uncensored) { SalehmanLeader.isLeading }
         #expect(result)
     }
 }

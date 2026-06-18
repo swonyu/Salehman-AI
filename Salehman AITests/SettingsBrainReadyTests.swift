@@ -10,14 +10,15 @@ import Foundation
 // per body recompute). These tests pin the readiness rules hermetically:
 // no Keychain, no network, no UI.
 //
-// NOTE: the original disabled stubs named a pre-cloud-first model (`.auto`
-// included Apple Intelligence back then). Bodies below pin TODAY's rules;
-// names updated to match. House invariants pinned here:
-//   · `.auto` is local-only — cloud keys must NEVER light it.
-//   · `.freeAuto` never spends — paid-only keys must not light it.
-//   · `.salehman` is cloud-first; its local floor needs a NAMED custom model.
+// Local-only build (2026-06-18): all cloud providers + composite modes were
+// removed, so `BrainReadiness` carries only local engine/endpoint signals and
+// `ready(_:)` classifies just the six local brains. House invariants pinned:
+//   · `.auto` / `.ollama` need the local coder floor (Ollama up + a coder pulled);
+//     a configured local endpoint must NOT light them.
+//   · `.salehman` is local-first: a local endpoint (vLLM / Unsloth) OR the user's
+//     own named Ollama model (server up) lights its floor.
+//   · `.uncensored` needs Ollama up AND the abliterated model pulled.
 //   · A superseded active-brain probe never publishes its verdict.
-//   · The anthropic key subtitle never echoes secret bytes.
 
 @MainActor
 struct SettingsBrainReadyTests {
@@ -31,52 +32,29 @@ struct SettingsBrainReadyTests {
         return f
     }
 
-    /// Every cloud/key/endpoint signal ON, both local signals OFF — the probe
-    /// for "does a local-only mode ignore the entire cloud side."
-    private static var everythingButLocal: BrainReadiness {
+    /// Every endpoint/name signal ON, both local-coder signals OFF — the probe
+    /// for "does the local-coder floor (`.auto`/`.ollama`) ignore the endpoint
+    /// engines and the custom-model name."
+    private static var endpointsButNoCoderFloor: BrainReadiness {
         flags {
             $0.unslothConfigured = true; $0.vllmConfigured = true
-            $0.anthropic = true; $0.grok = true; $0.gemini = true
-            $0.groq = true; $0.mistral = true; $0.cerebras = true
-            $0.openAI = true; $0.copilot = true
-            $0.openRouter = true; $0.nvidia = true
-            $0.customModelNamed = true   // name alone, no ollamaUp
+            $0.customModelNamed = true   // name alone, no ollamaUp/hasCoder
         }
     }
 
     @Test
-    func autoAndOllamaRequireTheLocalCoderFloorAndIgnoreCloudKeys() {
+    func autoAndOllamaRequireTheLocalCoderFloor() {
         // The floor needs BOTH halves: server up AND a coder model pulled.
         #expect(!Self.flags { $0.ollamaUp = true }.ready(.auto))
         #expect(!Self.flags { $0.hasCoder = true }.ready(.auto))
         let floor = Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
         #expect(floor.ready(.auto))
         #expect(floor.ready(.ollama))
-        // Local-first invariant: every cloud signal ON must not light `.auto`
-        // or `.ollama` (.auto never silently reaches for a cloud brain).
-        #expect(!Self.everythingButLocal.ready(.auto))
-        #expect(!Self.everythingButLocal.ready(.ollama))
-    }
-
-    @Test
-    func freeAutoLightsForFreeKeysOrLocalFloorNeverForPaidOnlyKeys() {
-        #expect(!BrainReadiness().ready(.freeAuto))
-        // Paid-only / non-free signals all ON: anthropic, grok, openAI,
-        // copilot, nvidia, and the endpoint engines. None may light freeAuto —
-        // this mode promises to never spend.
-        let paidOnly = Self.flags {
-            $0.anthropic = true; $0.grok = true; $0.openAI = true
-            $0.copilot = true; $0.nvidia = true
-            $0.unslothConfigured = true; $0.vllmConfigured = true
-        }
-        #expect(!paidOnly.ready(.freeAuto))
-        // Each FREE key alone lights it; so does the local floor alone.
-        #expect(Self.flags { $0.groq = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.gemini = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.cerebras = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.mistral = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.openRouter = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }.ready(.freeAuto))
+        // Local-coder invariant: a configured endpoint engine or a named custom
+        // model (the Salehman floor) must NOT light `.auto` / `.ollama` — those
+        // are the pure local-coder floor only.
+        #expect(!Self.endpointsButNoCoderFloor.ready(.auto))
+        #expect(!Self.endpointsButNoCoderFloor.ready(.ollama))
     }
 
     @Test
@@ -88,38 +66,23 @@ struct SettingsBrainReadyTests {
             .ready(.salehman))
         // A name with the server DOWN is not a floor.
         #expect(!Self.flags { $0.customModelNamed = true }.ready(.salehman))
-        // Local-first: cloud API keys alone do NOT light Salehman —
-        // it never contacts third-party clouds.
-        #expect(!Self.flags { $0.gemini = true }.ready(.salehman))
-        #expect(!Self.flags { $0.nvidia = true }.ready(.salehman))
-        #expect(!Self.flags { $0.anthropic = true }.ready(.salehman))
         // Endpoint engines DO light it (the local resolution order).
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.salehman))
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.salehman))
     }
 
     @Test
-    func codingPoolsAndEnsembleMatchTheirDocumentedSets() {
-        // cloudCoding is cloud-ONLY: the local floor must not light it.
-        #expect(!Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
-            .ready(.cloudCoding))
-        #expect(Self.flags { $0.cerebras = true }.ready(.cloudCoding))
-        #expect(!Self.flags { $0.gemini = true }.ready(.cloudCoding))
-        // freeCoding = freeAuto's coding pool + the local floor.
-        #expect(Self.flags { $0.openRouter = true }.ready(.freeCoding))
-        #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
-            .ready(.freeCoding))
-        #expect(!Self.flags { $0.gemini = true }.ready(.freeCoding))
-        // Ensemble: any keyed chat cloud or the local floor — but nvidia /
-        // endpoint engines were never in its set (preserved rule).
-        #expect(Self.flags { $0.anthropic = true }.ready(.ensemble))
-        #expect(Self.flags { $0.copilot = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.nvidia = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.vllmConfigured = true }.ready(.ensemble))
+    func endpointAndUncensoredPinsLightExactlyTheirOwnBrain() {
         // Endpoint engines light exactly their own pin.
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.unslothStudio))
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.vllm))
         #expect(!Self.flags { $0.unslothConfigured = true }.ready(.vllm))
+        #expect(!Self.flags { $0.vllmConfigured = true }.ready(.unslothStudio))
+        // Uncensored is local-only: Ollama up AND the abliterated model pulled.
+        #expect(!Self.flags { $0.ollamaUp = true }.ready(.uncensored))
+        #expect(!Self.flags { $0.hasUncensored = true }.ready(.uncensored))
+        #expect(Self.flags { $0.ollamaUp = true; $0.hasUncensored = true }
+            .ready(.uncensored))
     }
 
     @Test
@@ -127,7 +90,7 @@ struct SettingsBrainReadyTests {
         var probe = ActiveBrainProbe()
         #expect(!probe.testing && probe.working == nil)
 
-        // The local→cloud switch bug the counter was built for: a single
+        // The local→endpoint switch bug the counter was built for: a single
         // superseded run must clear the spinner on exit (no successor will),
         // and must NOT publish its stale verdict.
         probe.begin()
@@ -154,42 +117,14 @@ struct SettingsBrainReadyTests {
     }
 
     @Test
-    func pingVerdictRejectsEmptyOffMessageAndHaikuErrorReplies() {
+    func pingVerdictRejectsEmptyAndOffMessageReplies() {
         let off = "[offline]"
         #expect(!BrainPing.verdict(reply: "", offMessage: off))
         #expect(!BrainPing.verdict(reply: "  \n ", offMessage: off))
         #expect(!BrainPing.verdict(reply: off, offMessage: off))
-        #expect(!BrainPing.verdict(reply: "  [Claude Haiku error: 401]",
-                                   offMessage: off))
         #expect(BrainPing.verdict(reply: "pong", offMessage: off))
         // A real reply that merely MENTIONS the sentinel mid-text still counts
         // (the sentinel rule is full-string equality, not contains).
         #expect(BrainPing.verdict(reply: "not \(off)", offMessage: off))
-    }
-
-    @Test
-    func anthropicSubtitleMasksNonSkAntKeysAndNeverLeaksSecretBytes() {
-        // Wrong-service key: every character past "sk-" is secret material —
-        // none of it may appear in the subtitle, and the row flags orange.
-        let foreign = "xoxb-SECRETBYTES-9f8e7d6c5b4a"
-        let masked = AnthropicKeyPresentation.subtitle(savedKey: foreign)
-        #expect(!masked.contains("xoxb"))
-        #expect(!masked.contains("SECRETBYTES"))
-        #expect(!masked.contains("9f8e7d6c5b4a"))
-        #expect(masked.contains("sk-…"))
-        #expect(AnthropicKeyPresentation.flagsWrongService(savedKey: foreign))
-
-        // Real Anthropic key: exactly the 12-char family prefix shows, the
-        // secret tail never does.
-        let real = "sk-ant-api03-TAILSECRETTAILSECRET"
-        let shown = AnthropicKeyPresentation.subtitle(savedKey: real)
-        #expect(shown.contains("sk-ant-api03"))
-        #expect(!shown.contains("TAILSECRET"))
-        #expect(!AnthropicKeyPresentation.flagsWrongService(savedKey: real))
-
-        // No key saved: the "not configured" hint, no warning tint.
-        #expect(AnthropicKeyPresentation.subtitle(savedKey: nil)
-            == AnthropicKeyPresentation.notConfigured)
-        #expect(!AnthropicKeyPresentation.flagsWrongService(savedKey: nil))
     }
 }

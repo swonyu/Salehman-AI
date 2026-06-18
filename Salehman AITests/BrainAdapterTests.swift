@@ -4,10 +4,10 @@ import Foundation
 
 // MARK: - brainAdapterPrompt (pure message → (system, prompt) flattener)
 //
-// All three adapters (OllamaBrainAdapter, AnthropicBrainAdapter,
-// LocalLLMFallbackAdapter) call brainAdapterPrompt to convert the typed
-// [LLMMessage] into the (system, prompt) pair their single-turn clients need.
-// A bug here drops system prompts or garbles multi-turn context silently.
+// Both adapters (OllamaBrainAdapter, LocalLLMFallbackAdapter) call
+// brainAdapterPrompt to convert the typed [LLMMessage] into the (system,
+// prompt) pair their single-turn clients need. A bug here drops system
+// prompts or garbles multi-turn context silently.
 
 struct BrainAdapterPromptTests {
 
@@ -94,23 +94,17 @@ struct BrainAdapterFactoryTests {
                 ".ollamaCoder brain must produce an adapter with id .ollama")
     }
 
-    @Test func claudeHaikuReturnsAnthropicAdapter() {
-        let adapter = BrainAdapterFactory.adapter(for: .claudeHaiku)
-        #expect(adapter.id == .claudeHaiku,
-                ".claudeHaiku brain must produce an adapter with id .claudeHaiku")
-    }
-
     @Test func otherBrainsProduceFallbackWithCorrectID() {
         // The fallback adapter captures the current brainPreferenceCurrent, but
         // any brain NOT in the explicit cases uses the fallback path.
         // We just check the factory doesn't crash and returns a non-nil adapter.
-        let grq = BrainAdapterFactory.adapter(for: .groq)
         let sal = BrainAdapterFactory.adapter(for: .salehman)
-        let gem = BrainAdapterFactory.adapter(for: .gemini)
+        let vll = BrainAdapterFactory.adapter(for: .vllm)
+        let unc = BrainAdapterFactory.adapter(for: .uncensored)
         // All return a concrete adapter (protocol existential, not nil).
         // The `id` for the fallback uses AppSettings.brainPreferenceCurrent, so
         // we can't assert a fixed value here — just check it's non-crashing.
-        _ = grq.id; _ = sal.id; _ = gem.id
+        _ = sal.id; _ = vll.id; _ = unc.id
         #expect(Bool(true), "factory must not crash for any LocalLLM.Brain case")
     }
 }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-18 07:27 +03 · Swift files: 161 · Swift LOC: 37363_
+_Generated: 2026-06-18 08:55 +03 · Swift files: 144 · Swift LOC: 33542_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -90,7 +90,7 @@ enum AgentDefinitions {
 }
 ```
 
-===== FILE: Salehman AI/Agents/AgentPipeline.swift (843 lines) =====
+===== FILE: Salehman AI/Agents/AgentPipeline.swift (808 lines) =====
 ```swift
 import Foundation
 import SwiftUI
@@ -488,46 +488,10 @@ enum AgentPipeline {
         let brain = await LocalLLM.currentBrain()
         if brain == .none { return LocalLLM.offMessage }
 
-        // The short-circuit modes below bypass the multi-agent team (and the history
-        // handling further down), so fold the recent transcript into the prompt here
-        // so they remember the conversation. No-op on the first turn (empty history).
-        let contextualMission = withConversationContext(mission, history: priorHistory)
-
-        // "All Brains at Once" bypasses the multi-agent team entirely: ensemble
-        // means "ask every reachable brain the raw prompt, show all answers",
-        // not "run the 15-agent pipeline on one brain". The complexity/spec
-        // logic below doesn't apply.
-        if LocalLLM.isEnsembleMode {
-            return await LocalLLM.generateEnsemble(contextualMission)
-        }
-
-        // "Free · Auto" likewise bypasses the multi-agent team: it races the
-        // free brains in parallel for one fast answer (local backstop), not a
-        // 15-agent pipeline. Same short-circuit shape as ensemble above.
-        //
-        // Unrestricted Mode upgrades Free·Auto to a TOOL-capable single brain so
-        // it can actually run terminal commands / search the web (the owner asked
-        // Free·Auto to "do all commands"). With Unrestricted off it stays the fast
-        // no-tool race.
-        if LocalLLM.isFreeAutoMode {
-            if AppSettings.unrestrictedToolsEnabled {
-                return await LocalLLM.freeAutoReplyWithTools(contextualMission)
-            }
-            return await LocalLLM.generateFreeAuto(contextualMission)
-        }
-
-        // FreeCoding: a coding-focused loop over the free coders. Always
-        // tool-capable (coding wants to build/run/test), so it bypasses the
-        // multi-agent team too and routes straight to `freeCodingReply`.
-        if LocalLLM.isFreeCodingMode {
-            return await LocalLLM.freeCodingReply(contextualMission)
-        }
-
-        // Cloud Coding: cloud-only "best coders" loop — same tool-capable bypass,
-        // no local model (zero RAM / no lag).
-        if LocalLLM.isCloudCodingMode {
-            return await LocalLLM.cloudCodingReply(contextualMission)
-        }
+        // (The cloud composite modes — All-Brains ensemble, Free·Auto, FreeCoding,
+        // Cloud Coding — that used to short-circuit the multi-agent team here were
+        // removed in the 2026-06-18 local-only migration. Every remaining brain is
+        // local and runs the normal multi-agent team path below.)
 
         // How many agents run is a function of BOTH the user's response-mode
         // ceiling AND the message's actual complexity. The response mode is a
@@ -742,7 +706,8 @@ enum AgentPipeline {
     /// the adaptTitles skip, and the local context diet, so a new serial brain
     /// added here updates all three behaviors in lockstep.
     nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
-        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio
+            || brain == .vllm || brain == .uncensored
     }
 
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL
@@ -1334,7 +1299,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (598 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (454 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1372,15 +1337,14 @@ final class AppSettings: ObservableObject {
     }
 
     /// User's preferred brain. Defaults to `.salehman` — the trained primary, which
-    /// cascades cloud→free→local on its own. `.auto` is local-first (Ollama
-    /// qwen-coder when reachable). The picker surfaces only those two now; see
-    /// `selectableCases`.
+    /// resolves vLLM → Unsloth Studio → MLX → Ollama, all local. `.auto` is
+    /// local-first (Ollama qwen-coder when reachable). See `selectableCases`.
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
     /// The user's OWN local model name, used by the `.salehman` brain's local
     /// floor (an Ollama model the user pulled or built with a Modelfile). Salehman
-    /// itself is cloud-first; this is its offline fallback model.
+    /// is fully local; this is its Ollama-tier model.
     @Published var customModelName: String {
         didSet { UserDefaults.standard.set(customModelName, forKey: Keys.customModel) }
     }
@@ -1425,33 +1389,6 @@ final class AppSettings: ObservableObject {
     @Published var rotationBrains: [BrainPreference] {
         didSet { UserDefaults.standard.set(rotationBrains.map(\.rawValue), forKey: Keys.rotationBrains) }
     }
-    /// Which xAI Grok model to call when `BrainPreference.grok` is active.
-    /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
-    /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
-    /// **key** itself never lives here — it's stored in the macOS Keychain
-    /// via `KeychainStore.Account.grokAPIKey`.
-    @Published var grokModel: String {
-        didSet { UserDefaults.standard.set(grokModel, forKey: Keys.grokModel) }
-    }
-    /// Picked model for each of the four free cloud brains. The API **key**
-    /// for each lives in macOS Keychain — see `KeychainStore.Account`.
-    @Published var geminiModel: String {
-        didSet { UserDefaults.standard.set(geminiModel, forKey: Keys.geminiModel) }
-    }
-    @Published var groqModel: String {
-        didSet { UserDefaults.standard.set(groqModel, forKey: Keys.groqModel) }
-    }
-    @Published var mistralModel: String {
-        didSet { UserDefaults.standard.set(mistralModel, forKey: Keys.mistralModel) }
-    }
-    @Published var cerebrasModel: String {
-        didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
-    }
-    // (deepSeekModel removed 2026-06-12 — owner: "remove deepseek". The direct
-    // DeepSeek provider is gone; DeepSeek-V4 models still run via NVIDIA free.)
-    @Published var openRouterModel: String {
-        didSet { UserDefaults.standard.set(openRouterModel, forKey: Keys.openRouterModel) }
-    }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
     /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
@@ -1463,11 +1400,10 @@ final class AppSettings: ObservableObject {
     /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
     /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
     @Published var autonomousMode: Bool { didSet { UserDefaults.standard.set(autonomousMode, forKey: Keys.autonomousMode) } }
-    /// **Offline / Local-Only mode.** Hard-disables every cloud brain (Claude, Grok,
-    /// Gemini, Groq, Mistral, Cerebras, OpenAI/Codex, Copilot, OpenRouter) AND the
-    /// external tools (`web_search`, `fetch_url`) — even when their keys/toggles
-    /// are saved. With this on, only the local Ollama brain can answer, and
-    /// no network call ever leaves the Mac. Off by default (opt-in).
+    /// **Offline / Local-Only mode.** Hard-disables the external tools
+    /// (`web_search`, `fetch_url`) — even when their toggles are saved. With this
+    /// on, no network call ever leaves the Mac. Off by default (opt-in). (The app
+    /// is already local-only for inference — all brains are on-device.)
     @Published var offlineOnly: Bool { didSet { UserDefaults.standard.set(offlineOnly, forKey: Keys.offlineOnly) } }
     @Published var hideFromCapture: Bool {
         didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
@@ -1562,14 +1498,6 @@ final class AppSettings: ObservableObject {
         nonisolated static let vllmEndpoint = "set_vllmEndpoint"
         nonisolated static let vllmModel    = "set_vllmModel"
         nonisolated static let rotationBrains  = "set_rotationBrains"
-        nonisolated static let openAIModel     = "set_openAIModel"
-        nonisolated static let grokModel       = "set_grokModel"
-        nonisolated static let geminiModel     = "set_geminiModel"
-        nonisolated static let groqModel       = "set_groqModel"
-        nonisolated static let mistralModel    = "set_mistralModel"
-        nonisolated static let cerebrasModel   = "set_cerebrasModel"
-        // ("set_deepSeekModel" key retired 2026-06-12 with the DeepSeek removal)
-        nonisolated static let openRouterModel = "set_openRouterModel"
     }
 
     /// `nonisolated` read of the user's own model name for the `.salehman` brain.
@@ -1638,47 +1566,6 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// `nonisolated` read of the selected OpenAI/Codex model (key is in Keychain).
-    nonisolated static var openAIModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.openAIModel) ?? ""
-        return OpenAIClient.allModels.contains(raw) ? raw : OpenAIClient.defaultModel
-    }
-
-    /// `nonisolated` reads for the four free cloud brains' selected model.
-    /// Each validates against its own `allModels` and falls back to the
-    /// provider's default if the stored value is unrecognized — keeps a
-    /// renamed-model rollout from silently 404ing every call.
-    nonisolated static var geminiModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.geminiModel) ?? ""
-        return GeminiClient.allModels.contains(raw) ? raw : GeminiClient.defaultModel
-    }
-    nonisolated static var groqModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.groqModel) ?? ""
-        return GroqClient.allModels.contains(raw) ? raw : GroqClient.defaultModel
-    }
-    nonisolated static var mistralModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.mistralModel) ?? ""
-        return MistralClient.allModels.contains(raw) ? raw : MistralClient.defaultModel
-    }
-    nonisolated static var cerebrasModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
-        return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
-    }
-    nonisolated static var openRouterModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.openRouterModel) ?? ""
-        return OpenRouterClient.allModels.contains(raw) ? raw : OpenRouterClient.defaultModel
-    }
-
-    /// `nonisolated` read of the selected Grok model. The API **key** is in
-    /// Keychain — read it via `KeychainStore.read(.grokAPIKey)`.
-    nonisolated static var grokModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.grokModel) ?? ""
-        // Falls back to the GrokClient default if the stored value isn't a
-        // recognized model — prevents a renamed-model rollout from silently
-        // 404ing every Grok request.
-        return GrokClient.allModels.contains(raw) ? raw : GrokClient.defaultModel
-    }
-
     /// Thread-safe read of the Salehman Leader switch (defaults ON) so the agent
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
@@ -1691,9 +1578,8 @@ final class AppSettings: ObservableObject {
     /// Auto-continue switch (defaults ON) — read off-main by the chat send loop.
     nonisolated static var autoContinueEnabled: Bool { boolDefaultTrue(Keys.autoContinue) }
 
-    /// Thread-safe read of the Offline / Local-Only switch so
-    /// `LocalLLM.currentBrain()`, `generateFreeAuto`, and `ToolPolicy` can gate
-    /// cloud paths from outside the main actor. Defaults OFF (opt-in).
+    /// Thread-safe read of the Offline / Local-Only switch so `ToolPolicy` can
+    /// gate the external tools from outside the main actor. Defaults OFF (opt-in).
     nonisolated static var isOfflineOnly: Bool { UserDefaults.standard.bool(forKey: Keys.offlineOnly) }
 
     /// Thread-safe read of the Unrestricted Mode switch, for any
@@ -1769,18 +1655,6 @@ final class AppSettings: ObservableObject {
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
-        let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
-        grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
-        let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""
-        geminiModel = GeminiClient.allModels.contains(storedGemini) ? storedGemini : GeminiClient.defaultModel
-        let storedGroq = d.string(forKey: Keys.groqModel) ?? ""
-        groqModel = GroqClient.allModels.contains(storedGroq) ? storedGroq : GroqClient.defaultModel
-        let storedMistral = d.string(forKey: Keys.mistralModel) ?? ""
-        mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
-        let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
-        cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
-        let storedOpenRouter = d.string(forKey: Keys.openRouterModel) ?? ""
-        openRouterModel = OpenRouterClient.allModels.contains(storedOpenRouter) ? storedOpenRouter : OpenRouterClient.defaultModel
         installCaptureObservers()
     }
 
@@ -1803,46 +1677,32 @@ final class AppSettings: ObservableObject {
 
 /// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
 /// which model is asked for the next response. **Default: `.salehman`** — the
-/// app's primary identity; cloud-first with a free-tier chain and a local floor.
+/// app's primary identity, fully local with no third-party cloud.
 ///
-/// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
-///   120B tiers → local MLX/Ollama floor. Self-improves via a critique pass.
-///   Works with zero local models if any cloud key is set.
+/// * `.salehman` — THE primary brain: local-first (vLLM → Unsloth Studio → MLX →
+///   Ollama). Self-improves via a critique pass. No third-party cloud is ever
+///   contacted.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
-    case openRouter // aggregator with free `:free` models
-    // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
-    // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
-    case ensemble   // run ALL reachable brains in parallel, show every answer
+    case auto, ollama
     case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
     case uncensored    // local Ollama, abliterated (refusal-removed) ~3B; web-search capable, on-device, free
-    // freeAuto: race the FREE brains in parallel, first valid answer wins,
-    // local (Ollama) backstop → effectively never rate-limited, never paid.
 
     var id: String { rawValue }
 
-    /// Subscription / paid-per-call cloud providers. Hidden from the UI per owner
-    /// request ("hide every paid api") — the Brain grid and Settings both consult
-    /// this so the two surfaces can never drift. Free-tier clouds (Gemini, Groq,
-    /// Mistral, Cerebras, OpenRouter), the local brains, and the orchestration
-    /// modes (Auto / Free·Auto / Ensemble) are NOT paid.
-    var isPaid: Bool {
-        switch self {
-        case .claudeHaiku, .grok, .codex, .copilot: return true
-        default: return false
-        }
-    }
+    /// The app is local-only — there are no paid cloud brains, so this is always
+    /// false. Kept so the Brain grid and Settings can consult one source of truth.
+    var isPaid: Bool { false }
 
-    /// Cases shown in the Brain picker. Pared to the essentials now that Salehman is
-    /// the trained primary — it already cascades cloud→free→local internally, so the
-    /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
-    /// offline use. (Every other case still functions if set directly — e.g. by the
-    /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
+    /// Cases shown in the Brain picker. Salehman is the trained primary — it
+    /// resolves vLLM → Unsloth Studio → MLX → Ollama internally, all local.
+    /// `.auto` stays for pure-local / offline use. (`.ollama` and `.vllm` still
+    /// function if set directly — e.g. by the brain-rotation hotkey — they're
+    /// just no longer surfaced in the menu.)
     // Salehman + Auto, plus the custom-server brain so you can point the app at your
     // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
     // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
@@ -1851,20 +1711,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .auto:        return "Auto"
-        case .freeAuto:    return "Free · Auto"
-        case .freeCoding:  return "FreeCoding"
-        case .cloudCoding: return "Cloud Coding"
         case .ollama:      return "Ollama qwen-coder"
-        case .claudeHaiku: return "Claude Haiku (Cloud)"
-        case .grok:        return "xAI Grok (Cloud)"
-        case .gemini:      return "Google Gemini (Cloud)"
-        case .groq:        return "Groq (Cloud)"
-        case .mistral:     return "Mistral (Cloud)"
-        case .cerebras:    return "Cerebras (Cloud)"
-        case .codex:       return "Codex / OpenAI (Cloud)"
-        case .copilot:     return "GitHub Copilot (Cloud)"
-        case .openRouter:  return "OpenRouter (Cloud · free models)"
-        case .ensemble:    return "All Brains at Once"
         case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
@@ -1874,20 +1721,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .auto:        return "Local-first · Ollama qwen-coder when reachable"
-        case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
-        case .freeCoding:  return "Coding loop · races your free coder models, runs & tests code in the terminal · local backstop"
-        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
-        case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
-        case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
-        case .gemini:      return "Cloud · generous free tier · ~zero local RAM · needs API key"
-        case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
-        case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
-        case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
-        case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
-        case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
-        case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
-        case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
         case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
@@ -1897,20 +1731,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .auto:        return "sparkles"
-        case .freeAuto:    return "infinity.circle.fill"
-        case .freeCoding:  return "terminal.fill"
-        case .cloudCoding: return "cloud.bolt.fill"
         case .ollama:      return "cpu"
-        case .claudeHaiku: return "cloud.fill"
-        case .grok:        return "bolt.horizontal.circle.fill"
-        case .gemini:      return "diamond.fill"
-        case .groq:        return "hare.fill"
-        case .mistral:     return "leaf.circle.fill"
-        case .cerebras:    return "rays"
-        case .codex:       return "chevron.left.forwardslash.chevron.right"
-        case .copilot:     return "person.2.badge.gearshape.fill"
-        case .openRouter:  return "arrow.triangle.branch"
-        case .ensemble:    return "rectangle.3.group.fill"
         case .salehman:    return "brain.head.profile"
         case .unslothStudio: return "server.rack"
         case .vllm:          return "speedometer"
@@ -3451,191 +3272,22 @@ nonisolated final class KnowledgeStore: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/LLM/AnthropicBrainAdapter.swift (34 lines) =====
-```swift
-//  AnthropicBrainAdapter.swift
-//  Salehman AI
-
-import Foundation
-
-/// BrainAdapter that routes completions through AnthropicClient (Claude Haiku).
-struct AnthropicBrainAdapter: BrainAdapter {
-    var id: BrainPreference { .claudeHaiku }
-    var isConfigured: Bool { AnthropicClient.isConfigured }
-
-    func complete(messages: [LLMMessage]) async throws -> String {
-        let (system, prompt) = brainAdapterPrompt(from: messages)
-        guard let reply = await AnthropicClient.chat(prompt: prompt, system: system) else {
-            throw BrainError.unavailable
-        }
-        return reply
-    }
-
-    func stream(messages: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
-        let (system, prompt) = brainAdapterPrompt(from: messages)
-        return AsyncThrowingStream { continuation in
-            Task {
-                let result = await AnthropicClient.chatStream(prompt: prompt, system: system) { partial in
-                    continuation.yield(partial)
-                }
-                if result == nil {
-                    continuation.finish(throwing: BrainError.unavailable)
-                } else {
-                    continuation.finish()
-                }
-            }
-        }
-    }
-}
-```
-
-===== FILE: Salehman AI/LLM/AnthropicClient.swift (127 lines) =====
-```swift
-import Foundation
-
-/// Calls Anthropic's Messages API (cloud) for Claude Haiku 4.5 — the optional
-/// third "brain" alongside local Ollama. Cloud inference
-/// means ~zero local RAM (it can't freeze the Mac), but it needs the user's API
-/// key (entered in Settings) and sends prompts off-device to Anthropic.
-///
-/// Direct REST via URLSession — there is no official Anthropic Swift SDK, so this
-/// mirrors how `OllamaClient` talks to the local server.
-enum AnthropicClient {
-    /// Canonical alias for Claude Haiku 4.5 (full ID: claude-haiku-4-5-20251001).
-    static let model = "claude-haiku-4-5"
-    private static let endpoint = "https://api.anthropic.com/v1/messages"
-    private static let apiVersion = "2023-06-01"
-    static let maxTokens = 1024
-
-    /// True once the user has stored an Anthropic API key (in the Keychain, like
-    /// every other cloud brain). Sync — no HTTP probe.
-    nonisolated static var isConfigured: Bool { KeychainStore.has(.anthropicAPIKey) }
-
-    private static func makeRequest(stream: Bool, prompt: String, system: String?,
-                                    cachePrefix: String?) -> URLRequest? {
-        let key = (KeychainStore.read(.anthropicAPIKey) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty, let url = URL(string: endpoint) else { return nil }
-
-        // When a large STABLE prefix (e.g. the conversation history) is supplied,
-        // send it as its own content block marked `cache_control: ephemeral`.
-        // Anthropic then caches that prefix, so the next turns of a long
-        // conversation re-use it (~90% cheaper on those tokens + lower latency).
-        // Below the per-model minimum (~2048 tokens for Haiku) it's a free no-op.
-        let userContent: Any
-        if let cachePrefix, !cachePrefix.isEmpty {
-            userContent = [
-                ["type": "text", "text": cachePrefix, "cache_control": ["type": "ephemeral"]],
-                ["type": "text", "text": prompt],
-            ]
-        } else {
-            userContent = prompt
-        }
-
-        var body: [String: Any] = [
-            "model": model,
-            "max_tokens": maxTokens,
-            "messages": [["role": "user", "content": userContent]],
-            "stream": stream,
-        ]
-        if let system, !system.isEmpty {
-            // Cache the (stable) system prefix. Only caches above ~4096 tokens on
-            // Haiku — harmless and free otherwise.
-            body["system"] = [["type": "text", "text": system,
-                               "cache_control": ["type": "ephemeral"]]]
-        }
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(key, forHTTPHeaderField: "x-api-key")
-        req.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
-        req.httpBody = payload
-        req.timeoutInterval = stream ? 600 : 120
-        return req
-    }
-
-    /// Non-streaming completion. Returns nil only on a network/parse failure so
-    /// callers can degrade; a non-200 from the API comes back as a readable
-    /// error string (so the user sees "invalid API key" rather than silence).
-    static func chat(prompt: String, system: String? = nil, cachePrefix: String? = nil) async -> String? {
-        guard let req = makeRequest(stream: false, prompt: prompt, system: system, cachePrefix: cachePrefix) else { return nil }
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse else { return nil }
-        guard http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]] else {
-            return errorText(data: data, status: http.statusCode)
-        }
-        let text = content.compactMap { block -> String? in
-            (block["type"] as? String) == "text" ? block["text"] as? String : nil
-        }.joined()
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    /// Streaming completion via SSE. `onUpdate` receives the cumulative text.
-    /// Returns the final text, or nil if the request couldn't start.
-    static func chatStream(prompt: String, system: String? = nil, cachePrefix: String? = nil,
-                           onUpdate: @escaping (String) -> Void) async -> String? {
-        guard let req = makeRequest(stream: true, prompt: prompt, system: system, cachePrefix: cachePrefix) else { return nil }
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-
-        var accumulated = ""
-        do {
-            for try await line in bytes.lines {
-                // SSE: payload lines are `data: {json}`; `event:` lines are ignored.
-                guard line.hasPrefix("data:") else { continue }
-                let payload = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
-                guard let d = payload.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                      let type = json["type"] as? String else { continue }
-                if type == "content_block_delta",
-                   let delta = json["delta"] as? [String: Any],
-                   (delta["type"] as? String) == "text_delta",
-                   let chunk = delta["text"] as? String, !chunk.isEmpty {
-                    accumulated += chunk
-                    onUpdate(accumulated)
-                } else if type == "message_stop" {
-                    break
-                }
-            }
-        } catch {
-            // Network/stream error — fall through with whatever arrived.
-        }
-        let trimmed = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    /// Pull a human-readable message out of a non-200 error body.
-    private static func errorText(data: Data, status: Int) -> String? {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let err = json["error"] as? [String: Any], let msg = err["message"] as? String {
-            return "[Claude Haiku error \(status): \(msg)]"
-        }
-        return "[Claude Haiku request failed (HTTP \(status)). Check your Anthropic API key in Settings.]"
-    }
-}
-```
-
-===== FILE: Salehman AI/LLM/BrainAdapter.swift (81 lines) =====
+===== FILE: Salehman AI/LLM/BrainAdapter.swift (80 lines) =====
 ```swift
 //  BrainAdapter.swift
 //  Salehman AI
 
 import Foundation
 
-/// Minimal typed message for BrainAdapter. Mirrors the role/content shape the existing
-/// cloud clients build as [String: Any] dicts, but gives call sites a type-safe handle.
+/// Minimal typed message for BrainAdapter. Mirrors the role/content shape the local
+/// clients build as [String: Any] dicts, but gives call sites a type-safe handle.
 struct LLMMessage: Sendable {
     enum Role: String, Sendable { case system, user, assistant }
     let role: Role
     let content: String
 }
 
-/// Abstraction over any LLM backend — local (MLX, Ollama) or remote (cloud keys).
+/// Abstraction over any local LLM backend (MLX, Ollama, vLLM, Unsloth Studio).
 /// No existing code is required to conform yet; defined here for staged adoption.
 protocol BrainAdapter: Sendable {
     var id: BrainPreference { get }
@@ -3649,7 +3301,7 @@ enum BrainError: Error {
 }
 
 /// Extracts the optional system prompt and flattens remaining turns into a single
-/// prompt string compatible with single-turn completion APIs (OllamaClient, AnthropicClient).
+/// prompt string compatible with single-turn completion APIs (OllamaClient, LocalLLM).
 func brainAdapterPrompt(from messages: [LLMMessage]) -> (system: String?, prompt: String) {
     let system = messages.first(where: { $0.role == .system })?.content
     let body = messages.filter { $0.role != .system }
@@ -3660,14 +3312,13 @@ func brainAdapterPrompt(from messages: [LLMMessage]) -> (system: String?, prompt
 }
 
 /// Maps a `LocalLLM.Brain` to the right `BrainAdapter`. Returns a dedicated adapter
-/// for Ollama and Anthropic; all other brains get `LocalLLMFallbackAdapter`, which
-/// delegates to `LocalLLM.generate()`. Adding a new brain never requires touching
+/// for Ollama; all other local brains get `LocalLLMFallbackAdapter`, which delegates
+/// to `LocalLLM.generate()`. Adding a new brain never requires touching
 /// AgentPipeline — only a new adapter struct and a case here.
 enum BrainAdapterFactory {
     nonisolated static func adapter(for brain: LocalLLM.Brain) -> any BrainAdapter {
         switch brain {
         case .ollamaCoder:  return OllamaBrainAdapter()
-        case .claudeHaiku:  return AnthropicBrainAdapter()
         default:
             return LocalLLMFallbackAdapter(id: AppSettings.brainPreferenceCurrent)
         }
@@ -3705,178 +3356,39 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainRouting.swift (351 lines) =====
+===== FILE: Salehman AI/LLM/BrainRouting.swift (139 lines) =====
 ```swift
 import Foundation
 
 // MARK: - Brain routing plan (pure seam)
 //
 // CODEBASE_REVIEW R1: the single biggest maintainability hazard was that WHO
-// can answer (gating), WHO is in each roster (membership), and in WHAT order
-// were re-implemented across 11 sites in LocalLLM (`generate` /
-// `generateStreaming` / `chat` cascades, `currentBrain`, `anyBrainReachable`,
-// the freeAuto / freeAuto-tools / freeCoding / cloudCoding / ensemble
-// rosters) — and the drift class was producing real bugs (the Offline-Mode
-// cloud leak fixed alongside this file). This file is now the ONLY place routing decisions live. The
-// LocalLLM call sites keep their per-provider execution quirks (which client
-// call, which system prompt, stream-then-chat fallback) but consume the plan
-// for every decision. Pure — no syscalls, no network — hermetically pinned by
+// can answer (gating) and in WHAT order were re-implemented across the LocalLLM
+// (`generate` / `generateStreaming` / `chat` cascades, `currentBrain`,
+// `anyBrainReachable`) call sites — and the drift class was producing real bugs.
+// This file is now the ONLY place routing decisions live. The LocalLLM call
+// sites keep their per-brain execution quirks (which client call, which system
+// prompt, stream-then-chat fallback) but consume the plan for every decision.
+// Pure — no syscalls, no network — hermetically pinned by
 // `BrainRoutingDispatchTests`.
-
-/// The nine cloud chat providers the router can pin or roster. Raw values are
-/// stable display-ish names used by the freeAuto cooldown bookkeeping.
-/// (DeepSeek's direct paid API was removed 2026-06-12 — owner: "remove
-/// deepseek". DeepSeek-V4 models still run free via NVIDIA in SalehmanEngine.)
-nonisolated enum CloudProvider: String, CaseIterable, Sendable {
-    case anthropic = "Claude"
-    case grok = "Grok"
-    case gemini = "Gemini"
-    case groq = "Groq"
-    case mistral = "Mistral"
-    case cerebras = "Cerebras"
-    case openAI = "OpenAI"
-    case copilot = "Copilot"
-    case openRouter = "OpenRouter"
-
-    /// FREE tiers in the canonical race order — the ONLY providers `.freeAuto`
-    /// may contact (this mode never spends; paid brains are excluded by
-    /// construction, not by remembering to skip them at each site).
-    static let freeTier: [CloudProvider] = [.groq, .cerebras, .gemini, .mistral, .openRouter]
-
-    /// The free OpenAI-compatible providers that can run the TOOL loop
-    /// (Gemini is free but not OpenAI-compat, so it can't run tools).
-    static let freeToolCapable: [CloudProvider] = [.groq, .cerebras, .mistral, .openRouter]
-
-    /// FreeCoding RACE order (parallel).
-    static let codingRace: [CloudProvider] = [.openRouter, .groq, .cerebras, .mistral]
-
-    /// Sequential coder-loop order shared by freeCodingReply / cloudCoding —
-    /// quality+speed order (Cerebras/Groq blazing → OpenRouter → Mistral).
-    static let coderLoop: [CloudProvider] = [.cerebras, .groq, .openRouter, .mistral]
-
-    /// Ensemble fan-out membership, in output order. (The historic
-    /// DeepSeek counted-but-not-rostered drift resolved itself when the
-    /// provider was removed on 2026-06-12.)
-    static let ensembleRoster: [CloudProvider] = [.anthropic, .grok, .gemini, .groq,
-                                                  .mistral, .cerebras, .openAI,
-                                                  .openRouter, .copilot]
-
-    var isFree: Bool { Self.freeTier.contains(self) }
-
-    /// The BrainPreference pin this provider answers to.
-    var pin: BrainPreference {
-        switch self {
-        case .anthropic:  return .claudeHaiku
-        case .grok:       return .grok
-        case .gemini:     return .gemini
-        case .groq:       return .groq
-        case .mistral:    return .mistral
-        case .cerebras:   return .cerebras
-        case .openAI:     return .codex
-        case .copilot:    return .copilot
-        case .openRouter: return .openRouter
-        }
-    }
-
-    /// Reverse map: the provider a pinned cloud preference dispatches to
-    /// (nil for local pins, engines, and orchestration modes).
-    static func provider(for pref: BrainPreference) -> CloudProvider? {
-        allCases.first { $0.pin == pref }
-    }
-
-    /// The `LocalLLM.Brain` case this provider reports as.
-    var brain: LocalLLM.Brain {
-        switch self {
-        case .anthropic:  return .claudeHaiku
-        case .grok:       return .grok
-        case .gemini:     return .gemini
-        case .groq:       return .groq
-        case .mistral:    return .mistral
-        case .cerebras:   return .cerebras
-        case .openAI:     return .codex
-        case .copilot:    return .copilot
-        case .openRouter: return .openRouter
-        }
-    }
-
-    /// Live "has a key / is authed" check — THE one place the nine per-client
-    /// key checks live (was copy-pasted in anyBrainReachable, currentBrain,
-    /// every roster builder, and the Settings grid).
-    var isConfiguredNow: Bool {
-        switch self {
-        case .anthropic:  return AnthropicClient.isConfigured
-        case .grok:       return GrokClient.hasKey()
-        case .gemini:     return GeminiClient.hasKey()
-        case .groq:       return GroqClient.shared.hasKey()
-        case .mistral:    return MistralClient.shared.hasKey()
-        case .cerebras:   return CerebrasClient.shared.hasKey()
-        case .openAI:     return OpenAIClient.hasKey()
-        case .copilot:    return CopilotClient.isAuthed()
-        case .openRouter: return OpenRouterClient.shared.hasKey()
-        }
-    }
-
-    /// Snapshot of every configured provider (9 sync Keychain/auth checks).
-    static func configuredNow() -> Set<CloudProvider> {
-        Set(allCases.filter(\.isConfiguredNow))
-    }
-
-    /// The user-selected chat model id from Settings, for providers that
-    /// expose one (Anthropic / Copilot manage their model inside the client).
-    /// Centralizes the `AppSettings.*ModelCurrent` reads that were repeated
-    /// at every roster/ladder site.
-    var selectedModel: String? {
-        switch self {
-        case .grok:       return AppSettings.grokModelCurrent
-        case .gemini:     return AppSettings.geminiModelCurrent
-        case .groq:       return AppSettings.groqModelCurrent
-        case .mistral:    return AppSettings.mistralModelCurrent
-        case .cerebras:   return AppSettings.cerebrasModelCurrent
-        case .openAI:     return AppSettings.openAIModelCurrent
-        case .openRouter: return AppSettings.openRouterModelCurrent
-        case .anthropic, .copilot: return nil
-        }
-    }
-
-    /// Coder-model roster for the coding loops (`LocalLLM.freeCoderModel`
-    /// picks the most coding-leaning entry). Only the OpenAI-compat coders.
-    var coderModels: (all: [String], def: String)? {
-        switch self {
-        case .cerebras:   return (CerebrasClient.allModels, CerebrasClient.defaultModel)
-        case .groq:       return (GroqClient.allModels, GroqClient.defaultModel)
-        case .openRouter: return (OpenRouterClient.allModels, OpenRouterClient.defaultModel)
-        case .mistral:    return (MistralClient.allModels, MistralClient.defaultModel)
-        case .anthropic, .grok, .gemini, .openAI, .copilot: return nil
-        }
-    }
-
-    /// The shared OpenAI-compatible client for tool-loop execution, where one
-    /// exists (Anthropic / Gemini / Copilot use bespoke clients → nil).
-    var compatClient: OpenAICompatibleClient? {
-        switch self {
-        case .groq:       return GroqClient.shared
-        case .mistral:    return MistralClient.shared
-        case .cerebras:   return CerebrasClient.shared
-        case .openAI:     return OpenAIClient.shared
-        case .openRouter: return OpenRouterClient.shared
-        case .grok:       return GrokClient.shared
-        case .anthropic, .gemini, .copilot: return nil
-        }
-    }
-}
+//
+// 2026-06-18: the app is now LOCAL-ONLY. All nine cloud chat providers and the
+// four cloud-only composite modes (freeAuto / freeCoding / cloudCoding /
+// ensemble) were removed — with them went `enum CloudProvider`, its rosters,
+// and every cloud branch here. Routing targets are now exclusively local
+// engines (Ollama, MLX/Salehman, vLLM, Unsloth Studio, the uncensored local
+// model).
 
 /// Immutable snapshot of every signal a routing decision can depend on.
 /// Tests construct it directly (pure, no keys, no network); production uses
 /// `live()` which probes lazily per-preference, mirroring the old
-/// `currentBrain` (e.g. no Ollama HTTP probe when a cloud brain is pinned —
+/// `currentBrain` (e.g. no Ollama HTTP probe when an endpoint engine is pinned —
 /// BrainStatus polls this every 10s).
 nonisolated struct BrainRouteConfig: Sendable {
     var pref: BrainPreference
     var offlineOnly = false
-    var configured: Set<CloudProvider> = []
     var ollamaReady = false          // server up + a coder model pulled
     var uncensoredReady = false      // server up + the abliterated ~3B model pulled
-    var salehmanCloudReady = false   // SalehmanEngine.hasAnyCloud
     var mlxReady = false
     var ollamaHasCustomModel = false
     var unslothConfigured = false
@@ -3887,37 +3399,27 @@ nonisolated struct BrainRouteConfig: Sendable {
     static func live() async -> BrainRouteConfig {
         let pref = AppSettings.brainPreferenceCurrent
         var c = BrainRouteConfig(pref: pref, offlineOnly: AppSettings.isOfflineOnly)
-        // These four probes are SYNCHRONOUS Keychain reads (SecItemCopyMatching,
-        // 10+ items). macOS can block such a read for SECONDS — or forever — when
-        // it needs an authorization prompt (e.g. after the app is rebuilt and its
-        // code signature no longer matches an item's "always allow" ACL, the
-        // hidden SecurityAgent dialog blocks the call). On the MAIN actor that
-        // froze the whole UI mid-send (observed: Code tab stuck on "Working",
-        // main thread parked in SecItemCopyMatching). Run them OFF-main so the
-        // prompt can surface and the UI stays alive. All return Sendable values.
+        // The endpoint-engine readiness checks are SYNCHRONOUS reads (UnslothStudio
+        // / VLLM config). Keep them OFF-main so nothing can park the UI mid-send.
+        // Both return Sendable values.
         let probes = await Task.detached(priority: .userInitiated) {
-            (configured: CloudProvider.configuredNow(),
-             unsloth: UnslothStudio.isConfigured,
-             vllm: VLLM.isConfigured,
-             salehmanCloud: SalehmanEngine.hasAnyCloud)
+            (unsloth: UnslothStudio.isConfigured,
+             vllm: VLLM.isConfigured)
         }.value
-        c.configured = probes.configured
         c.unslothConfigured = probes.unsloth
         c.vllmConfigured = probes.vllm
-        c.salehmanCloudReady = probes.salehmanCloud
         switch pref {
-        case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
+        case .auto, .ollama:
             c.ollamaReady = await LocalLLM.ollamaReady()
         case .uncensored:
             c.uncensoredReady = await OllamaClient.hasModel(OllamaClient.uncensoredModel)
         case .salehman:
-            // Same short-circuit order as the old currentBrain: the cloud
-            // check is free; the MLX/custom-model probes only run without it.
-            if !c.salehmanCloudReady {
-                c.mlxReady = await MLXSalehmanEngine.shared.isReady
-                if !c.mlxReady {
-                    c.ollamaHasCustomModel = await OllamaClient.hasCustomModel()
-                }
+            // Same short-circuit order as the old currentBrain, minus the cloud
+            // gate (Salehman is local-only — SalehmanEngine.hasAnyCloud == false):
+            // MLX first, then the Ollama custom-model floor.
+            c.mlxReady = await MLXSalehmanEngine.shared.isReady
+            if !c.mlxReady {
+                c.ollamaHasCustomModel = await OllamaClient.hasCustomModel()
             }
         default:
             break
@@ -3934,36 +3436,24 @@ nonisolated enum BrainRouting {
     // MARK: Dispatch (the single pinned target for generate / streaming / chat)
 
     enum Dispatch: Equatable, Sendable {
-        case mode(BrainPreference)   // .freeAuto / .freeCoding / .cloudCoding / .ensemble
-        case cloud(CloudProvider)    // a pinned cloud brain (strict — no fallback)
-        case salehman                // the cloud-first engine with a local floor
+        case salehman                // the local Salehman engine (vLLM → Unsloth → MLX → Ollama)
         case unslothStudio           // explicit endpoint pin
         case vllm                    // explicit endpoint pin
         case localTier               // .auto / .ollama → Ollama
         case uncensoredLocal         // .uncensored → Ollama, forced abliterated ~3B (web-search capable)
-        case unavailable             // offline-gated cloud pin → offMessage
     }
 
-    /// Exactly one target per preference — the cascades of pin-gates this
-    /// replaces were single-dispatch ladders in disguise. Offline Mode is the
-    /// stronger constraint and hard-gates the nine cloud pins here (the fix
-    /// for the Offline leak: `currentBrain` always documented this contract,
-    /// but the generate/streaming/chat cascades never enforced it, so direct
-    /// callers leaked HTTP — and money, via paid pins — while "offline").
-    /// Orchestration modes pass through: they gate their own rosters.
-    /// `.salehman` passes through: the engine gates its own chain (and its
-    /// local floor must keep answering offline). Endpoint pins pass through
-    /// unchanged — `currentBrain` documents them as untouched by Offline
-    /// Mode (open owner question for REMOTE endpoints, flagged in the log).
+    /// Exactly one target per preference. Every target is local, so Offline
+    /// Mode no longer gates anything here — the local engines all keep
+    /// answering offline (their web tools self-gate on ToolPolicy). The
+    /// `offlineOnly` parameter is retained for signature stability and future
+    /// remote-endpoint gating, but currently unused.
     static func dispatch(pref: BrainPreference, offlineOnly: Bool) -> Dispatch {
         switch pref {
-        case .freeAuto, .freeCoding, .cloudCoding, .ensemble:
-            return .mode(pref)
         case .auto, .ollama:
             return .localTier
         case .uncensored:
-            // Local (Ollama) — passes through Offline Mode unchanged like the
-            // other local tiers; the web tools self-gate on ToolPolicy.
+            // Local (Ollama) — the web tools self-gate on ToolPolicy.
             return .uncensoredLocal
         case .salehman:
             return .salehman
@@ -3971,65 +3461,32 @@ nonisolated enum BrainRouting {
             return .unslothStudio
         case .vllm:
             return .vllm
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .codex, .copilot, .openRouter:
-            guard let p = CloudProvider.provider(for: pref) else { return .unavailable }
-            return offlineOnly ? .unavailable : .cloud(p)
         }
-    }
-
-    // MARK: Rosters (execution membership — offline empties every cloud roster)
-
-    /// Free·Auto race roster. Offline → empty (the local backstop is the
-    /// mode's own job); paid providers excluded by construction.
-    static func freeAutoRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
-        c.offlineOnly ? [] : CloudProvider.freeTier.filter { c.configured.contains($0) }
-    }
-
-    /// Free·Auto TOOL-loop roster (Unrestricted Mode): the free
-    /// OpenAI-compatible providers only.
-    static func freeAutoToolRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
-        c.offlineOnly ? [] : CloudProvider.freeToolCapable.filter { c.configured.contains($0) }
-    }
-
-    /// FreeCoding RACE roster (parallel).
-    static func codingRaceRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
-        c.offlineOnly ? [] : CloudProvider.codingRace.filter { c.configured.contains($0) }
-    }
-
-    /// Sequential coder-loop roster (freeCodingReply / cloudCoding paths).
-    static func coderLoopRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
-        c.offlineOnly ? [] : CloudProvider.coderLoop.filter { c.configured.contains($0) }
-    }
-
-    /// Ensemble cloud fan-out membership (local inclusion is the call site's
-    /// RAM-guard decision). Offline → empty (ensemble runs local-only).
-    static func ensembleCloudRoster(_ c: BrainRouteConfig) -> [CloudProvider] {
-        c.offlineOnly ? [] : CloudProvider.ensembleRoster.filter { c.configured.contains($0) }
     }
 
     // MARK: Reachability (the pure currentBrain)
 
-    /// True iff at least one brain (local or any keyed cloud) can answer.
-    /// NOTE: deliberately ignores Offline Mode, exactly like the function it
-    /// replaces — ensemble stays "reachable" offline and runs local-only.
+    /// True iff at least one local brain can answer.
     static func anyBrainReachable(_ c: BrainRouteConfig) -> Bool {
-        c.ollamaReady || !c.configured.isEmpty
+        c.ollamaReady
+            || c.uncensoredReady
+            || c.mlxReady
+            || c.ollamaHasCustomModel
+            || c.unslothConfigured
+            || c.vllmConfigured
     }
 
-    /// The pure `currentBrain` switch. Offline hard-gates the nine cloud pins
-    /// to `.none`; local pins, engines, and orchestration modes apply their
-    /// own rules (verbatim from the old implementation).
+    /// The pure `currentBrain` switch. Local pins and engines apply their own
+    /// readiness rules (verbatim from the old implementation, minus the deleted
+    /// cloud/composite arms).
     static func reachableBrain(_ c: BrainRouteConfig) -> LocalLLM.Brain {
-        if c.offlineOnly, CloudProvider.provider(for: c.pref) != nil { return .none }
-
         switch c.pref {
         case .ollama, .auto:
             return c.ollamaReady ? .ollamaCoder : .none
         case .uncensored:
             return c.uncensoredReady ? .uncensored : .none
         case .salehman:
-            if c.salehmanCloudReady { return .salehman }
+            // Local floor: MLX on-device, or the Ollama custom model.
             if c.mlxReady { return .salehman }
             if c.ollamaHasCustomModel { return .salehman }
             return .none
@@ -4037,38 +3494,20 @@ nonisolated enum BrainRouting {
             return c.unslothConfigured ? .unslothStudio : .none
         case .vllm:
             return c.vllmConfigured ? .vllm : .none
-        case .ensemble:
-            return anyBrainReachable(c) ? .ensemble : .none
-        case .freeAuto:
-            // Reachability ignores Offline Mode (the roster empties instead,
-            // leaving the local backstop) — verbatim old behavior.
-            if CloudProvider.freeTier.contains(where: { c.configured.contains($0) }) { return .freeAuto }
-            return c.ollamaReady ? .freeAuto : .none
-        case .freeCoding:
-            if CloudProvider.codingRace.contains(where: { c.configured.contains($0) }) { return .freeCoding }
-            return c.ollamaReady ? .freeCoding : .none
-        case .cloudCoding:
-            // Cloud-ONLY: offline or keyless → .none (no local fallback).
-            if c.offlineOnly { return .none }
-            return CloudProvider.coderLoop.contains(where: { c.configured.contains($0) }) ? .cloudCoding : .none
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-             .codex, .copilot, .openRouter:
-            guard let p = CloudProvider.provider(for: c.pref) else { return .none }
-            return c.configured.contains(p) ? p.brain : .none
         }
     }
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainStatus.swift (120 lines) =====
+===== FILE: Salehman AI/LLM/BrainStatus.swift (89 lines) =====
 ```swift
 import SwiftUI
 import Combine
 
-/// Live, MainActor-observable reading of which brain (Salehman cloud / Ollama
-/// qwen-coder / a cloud brain / none) is currently answering. The header subtitle
-/// and any other UI that wants to show "where is the response coming from" reads
-/// from this singleton instead of guessing from a static setting.
+/// Live, MainActor-observable reading of which local brain (Salehman / Ollama
+/// qwen-coder / Unsloth Studio / vLLM / uncensored / none) is currently answering.
+/// The header subtitle and any other UI that wants to show "where is the response
+/// coming from" reads from this singleton instead of guessing from a static setting.
 ///
 /// Refresh strategy:
 /// * Polled every `pollInterval` seconds (cheap — `OllamaClient` already
@@ -4104,7 +3543,7 @@ final class BrainStatus: ObservableObject {
     }
 
     /// Color hint for the status dot. Blue when the Ollama brain is driving,
-    /// brand accent for Salehman, orange when nothing's reachable.
+    /// brand accent for Salehman, and orange when nothing's reachable.
     var dotColor: Color {
         switch brain {
         case .ollamaCoder:       return Color(red: 0.4,  green: 0.7,  blue: 1.0)
@@ -4112,20 +3551,6 @@ final class BrainStatus: ObservableObject {
         case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
         case .vllm:              return Color(red: 0.20, green: 0.78, blue: 0.90)  // vLLM cyan — local high-throughput
         case .uncensored:        return Color(red: 0.90, green: 0.30, blue: 0.45)  // uncensored crimson — unfiltered local
-
-        case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
-        case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
-        case .gemini:            return Color(red: 0.30, green: 0.66, blue: 0.99)  // Google blue
-        case .groq:              return Color(red: 0.95, green: 0.42, blue: 0.25)  // Groq orange
-        case .mistral:           return Color(red: 1.00, green: 0.55, blue: 0.10)  // Mistral amber
-        case .cerebras:          return Color(red: 0.75, green: 0.30, blue: 0.95)  // Cerebras magenta
-        case .codex:             return Color(red: 0.10, green: 0.74, blue: 0.59)  // OpenAI teal
-        case .copilot:           return Color(red: 0.42, green: 0.42, blue: 0.42)  // GitHub neutral
-        case .openRouter:        return Color(red: 0.36, green: 0.52, blue: 0.96)  // OpenRouter indigo
-        case .ensemble:          return Color(red: 0.55, green: 0.85, blue: 0.40)  // multi-brain lime
-        case .freeAuto:          return Color(red: 0.20, green: 0.85, blue: 0.65)  // free-auto mint (unlimited)
-        case .freeCoding:        return Color(red: 0.62, green: 0.40, blue: 0.95)  // FreeCoding violet
-        case .cloudCoding:       return Color(red: 0.40, green: 0.62, blue: 1.00)  // Cloud Coding sky-blue
         case .none:              return .orange
         }
     }
@@ -4139,19 +3564,6 @@ final class BrainStatus: ObservableObject {
         case .unslothStudio:     return "cpu"
         case .vllm:              return "bolt.horizontal.fill"
         case .uncensored:        return "eye.trianglebadge.exclamationmark.fill"
-        case .claudeHaiku:       return "a.square.fill"
-        case .grok:              return "bolt.fill"
-        case .gemini:            return "sparkle"
-        case .groq:              return "hare.fill"
-        case .mistral:           return "wind"
-        case .cerebras:          return "cpu.fill"
-        case .codex:             return "terminal.fill"
-        case .copilot:           return "person.2.fill"
-        case .openRouter:        return "arrow.triangle.branch"
-        case .ensemble:          return "circle.grid.2x2.fill"
-        case .freeAuto:          return "infinity"
-        case .freeCoding:        return "curlybraces"
-        case .cloudCoding:       return "cloud.fill"
         case .none:              return "exclamationmark.triangle.fill"
         }
     }
@@ -4170,10 +3582,6 @@ final class BrainStatus: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] _ in Task { await self?.refresh() } }
             .store(in: &cancellables)
-        AppSettings.shared.$grokModel
-            .removeDuplicates()
-            .sink { [weak self] _ in Task { await self?.refresh() } }
-            .store(in: &cancellables)
     }
 
     // `isolated deinit` (SE-0371) so teardown runs on the MainActor and may touch
@@ -4184,908 +3592,26 @@ final class BrainStatus: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/LLM/CloudBrains.swift (159 lines) =====
-```swift
-import Foundation
-
-// MARK: - Cloud brain instances
-//
-// Each of the three providers below speaks the OpenAI `/v1/chat/completions`
-// wire format, so they're all thin configurations of `OpenAICompatibleClient`.
-// Adding the next OpenAI-compatible provider (Together, Fireworks, DeepInfra,
-// Anyscale, etc.) is just another `static let shared = OpenAICompatibleClient(…)`
-// here — no new client class, no new parsing code, no new Settings boilerplate.
-//
-// Adding the *Settings UI row* for a new provider is also nearly free: see
-// `SettingsView.cloudBrainSection(...)` which takes any
-// `OpenAICompatibleClient` and renders the same SecureField/Save/Clear/Test/
-// Picker row stack.
-
-/// Groq — generous free tier, blazing-fast Llama / Qwen / gpt-oss. Free
-/// tier has rate limits but is enough for personal use. Endpoint matches
-/// OpenAI's path exactly.
-///
-/// ⚠️ Groq's roster rotates: `llama-3.1-70b-versatile`, `mixtral-8x7b-32768`,
-/// and `gemma2-9b-it` were all decommissioned (400 / "model not found") — same
-/// lesson as OpenRouter below. Authoritative truth is `GET /v1/models`; this
-/// list is best-effort, kept in lightest-to-heaviest order for the picker copy.
-enum GroqClient {
-    nonisolated static let defaultModel = "llama-3.3-70b-versatile"
-    nonisolated static let allModels    = [
-        "llama-3.1-8b-instant",
-        "qwen/qwen3-32b",
-        "llama-3.3-70b-versatile",
-        "openai/gpt-oss-120b",
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "Groq",
-        baseURL:         "https://api.groq.com/openai/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .groqAPIKey,
-        consoleURL:      "https://console.groq.com/keys"
-    )
-}
-
-/// Mistral La Plateforme — French/EU-hosted, free tier on `mistral-small`
-/// and `mistral-large`. Useful when EU data residency matters.
-enum MistralClient {
-    nonisolated static let defaultModel = "mistral-small-latest"
-    nonisolated static let allModels    = [
-        "mistral-small-latest",
-        "mistral-large-latest",
-        "codestral-latest",
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "Mistral",
-        baseURL:         "https://api.mistral.ai/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .mistralAPIKey,
-        consoleURL:      "https://console.mistral.ai/api-keys"
-    )
-}
-
-/// Cerebras Inference — purpose-built silicon, free tier on a small but
-/// rotating set of models at multi-thousand tokens/sec. Same OpenAI shape,
-/// faster wire.
-///
-/// ⚠️ Cerebras retired the Llama 3.1 family from public inference; the old
-/// `llama3.1-8b` / `llama-3.3-70b` defaults began returning 404 "model not
-/// found." Current inventory is just `gpt-oss-120b` and `zai-glm-4.7` —
-/// verified via `GET /v1/models`. Re-check periodically.
-enum CerebrasClient {
-    nonisolated static let defaultModel = "gpt-oss-120b"
-    nonisolated static let allModels    = [
-        "gpt-oss-120b",
-        "zai-glm-4.7",
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "Cerebras",
-        baseURL:         "https://api.cerebras.ai/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .cerebrasAPIKey,
-        consoleURL:      "https://cloud.cerebras.ai/platform/keys"
-    )
-}
-
-/// OpenRouter — an aggregator that exposes many providers behind ONE
-/// OpenAI-compatible endpoint, including a rotating set of **`:free`** models
-/// (no credit card on a free account). The `:free` suffix is what makes a model
-/// zero-cost.
-///
-/// ⚠️ OpenRouter's free roster ROTATES — a `:free` ID that works today may be
-/// retired or rate-limited later. These defaults are best-effort; if one 404s,
-/// the app's error-surfacing shows `[OpenRouter error …]` and the user can pick
-/// another from the Settings picker (same lesson as the Grok phantom-model
-/// episode — verify via Test connection, don't trust a hardcoded ID forever).
-enum OpenRouterClient {
-    // gpt-oss-120b:free is the default — the strongest *reliably-available* free
-    // model. The genuinely frontier free brains below (Kimi K2.6 ~1T, Nemotron-
-    // Ultra-550B) are smarter but heavily rate-limited, so they're opt-in in the
-    // picker rather than the everyday default.
-    nonisolated static let defaultModel = "openai/gpt-oss-120b:free"
-    nonisolated static let allModels    = [
-        // Refreshed 2026-06-08 against the live `:free` catalog (GET /v1/models).
-        // DeepSeek's own `:free` variants are GONE (all DeepSeek models are paid
-        // now) — but these free models rival/exceed DeepSeek's 671B. Ordered
-        // lightest→heaviest; the heavy ones 429 often, so the app falls through.
-        "openai/gpt-oss-20b:free",
-        "qwen/qwen3-next-80b-a3b-instruct:free",
-        "openai/gpt-oss-120b:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "nousresearch/hermes-3-llama-3.1-405b:free",       // 405B, free
-        "nvidia/nemotron-3-ultra-550b-a55b:free",          // 550B, free
-        "moonshotai/kimi-k2.6:free",                       // ~1T MoE — best free, rivals DeepSeek 671B
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "OpenRouter",
-        baseURL:         "https://openrouter.ai/api/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .openRouterAPIKey,
-        consoleURL:      "https://openrouter.ai/keys"
-    )
-}
-
-// (DeepSeek's direct paid API was REMOVED 2026-06-12 — owner: "remove deepseek".
-// Its key had been chat-exposed; rather than rotate, the provider was cut
-// entirely. DeepSeek *models* remain available through NVIDIA NIM below, on the
-// free tier under the NVIDIA key.)
-
-/// NVIDIA NIM (`integrate.api.nvidia.com`) — NVIDIA's OpenAI-compatible inference
-/// endpoint, with a **free tier** (free credits from build.nvidia.com). This is
-/// the app's route to **REAL DeepSeek for free**: DeepSeek's own API and
-/// OpenRouter both charge for every DeepSeek model, but NVIDIA hosts the actual
-/// `deepseek-ai/deepseek-v4-*` weights at $0 on the free tier. Verified live
-/// against `GET /v1/models` (2026-06-08): `deepseek-v4-flash`, `deepseek-v4-pro`,
-/// `deepseek-coder-6.7b-instruct`. Like every other provider here it's just a
-/// config of `OpenAICompatibleClient`, so it gets terminal tool-calling for free.
-/// (Note: DeepSeek V3/R1 are last-gen and no longer offered free anywhere; V4
-/// supersedes both — for an *unlimited* R1, run a local `deepseek-r1` distill.)
-enum NvidiaClient {
-    nonisolated static let defaultModel = "deepseek-ai/deepseek-v4-flash"
-    nonisolated static let allModels    = [
-        "deepseek-ai/deepseek-v4-flash",          // fast, free — the everyday DeepSeek
-        "deepseek-ai/deepseek-v4-pro",            // deeper, free tier
-        "deepseek-ai/deepseek-coder-6.7b-instruct",
-    ]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName:     "NVIDIA",
-        baseURL:         "https://integrate.api.nvidia.com/v1",
-        defaultModel:    defaultModel,
-        allModels:       allModels,
-        keychainAccount: .nvidiaAPIKey,
-        consoleURL:      "https://build.nvidia.com"
-    )
-}
-```
-
-===== FILE: Salehman AI/LLM/CopilotClient.swift (188 lines) =====
-```swift
-import Foundation
-
-/// GitHub Copilot authentication. Copilot has no plain API key — editors sign in
-/// with GitHub's **OAuth device flow**, then exchange the GitHub token for a
-/// short-lived Copilot token. We do the same:
-///   1. `requestDeviceCode()` → show the user a code + open github.com/login/device
-///   2. `pollForToken(...)`   → on approval, store the GitHub token in Keychain
-///   3. `copilotToken()`      → exchange/refresh the short-lived Copilot token
-///
-/// NOTE: this uses GitHub's editor OAuth client id and the `copilot_internal`
-/// token endpoint — the same surface editor plugins use. It's undocumented and
-/// requires the user's **own active Copilot subscription**; treat it as such.
-actor CopilotAuth {
-    static let shared = CopilotAuth()
-
-    /// GitHub's public editor OAuth client id (used by VS Code & community tools).
-    private static let clientID = "Iv1.b507a08c87ecfe98"
-
-    private var cachedToken: String?
-    private var expiry: Date = .distantPast
-
-    /// Signed in iff a GitHub token is stored. Sync (Keychain only, no HTTP).
-    nonisolated static func isAuthed() -> Bool { KeychainStore.has(.copilotGitHubToken) }
-
-    /// Forget the GitHub token. The in-memory Copilot token is invalidated lazily
-    /// (the next `copilotToken()` sees no GitHub token and returns nil).
-    nonisolated static func signOut() { KeychainStore.delete(.copilotGitHubToken) }
-
-    /// A valid short-lived Copilot bearer token, exchanging/refreshing as needed.
-    func copilotToken() async -> String? {
-        // Re-check Keychain first so a sign-out takes effect immediately even if
-        // a previously-cached token hasn't expired yet.
-        guard let gh = KeychainStore.read(.copilotGitHubToken) else {
-            cachedToken = nil
-            return nil
-        }
-        if let t = cachedToken, Date() < expiry { return t }
-
-        guard let url = URL(string: "https://api.github.com/copilot_internal/v2/token") else { return nil }
-        var req = URLRequest(url: url)
-        req.setValue("token \(gh)", forHTTPHeaderField: "Authorization")
-        req.setValue("SalehmanAI/1.0", forHTTPHeaderField: "Editor-Version")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["token"] as? String else { return nil }
-        cachedToken = token
-        let exp = (json["expires_at"] as? Double) ?? (Date().timeIntervalSince1970 + 1500)
-        expiry = Date(timeIntervalSince1970: exp - 60)   // refresh a minute early
-        return token
-    }
-
-    struct DeviceCode: Sendable {
-        let userCode: String
-        let deviceCode: String
-        let verificationURI: String
-        let interval: Int
-    }
-
-    /// Step 1 — request a device code. The user types `userCode` at `verificationURI`.
-    func requestDeviceCode() async -> DeviceCode? {
-        guard let url = URL(string: "https://github.com/login/device/code") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["client_id": Self.clientID, "scope": "read:user"])
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let userCode = json["user_code"] as? String,
-              let deviceCode = json["device_code"] as? String,
-              let verify = json["verification_uri"] as? String else { return nil }
-        return DeviceCode(userCode: userCode, deviceCode: deviceCode,
-                          verificationURI: verify, interval: (json["interval"] as? Int) ?? 5)
-    }
-
-    /// Step 2 — poll until the user authorizes (or it times out). On success the
-    /// GitHub token is written to Keychain and `true` is returned.
-    func pollForToken(deviceCode: String, interval: Int) async -> Bool {
-        guard let url = URL(string: "https://github.com/login/oauth/access_token") else { return false }
-        let deadline = Date().addingTimeInterval(900)   // 15-minute cap
-        var wait = max(interval, 5)
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
-            if Task.isCancelled { return false }
-            var req = URLRequest(url: url)
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Accept")
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try? JSONSerialization.data(withJSONObject: [
-                "client_id": Self.clientID, "device_code": deviceCode,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code"])
-            guard let (data, _) = try? await URLSession.shared.data(for: req),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            if let token = json["access_token"] as? String {
-                KeychainStore.write(token, to: .copilotGitHubToken)
-                cachedToken = nil; expiry = .distantPast
-                return true
-            }
-            switch json["error"] as? String {
-            case "authorization_pending": continue
-            case "slow_down":             wait += 5
-            default:                      return false   // access_denied / expired_token
-            }
-        }
-        return false
-    }
-}
-
-/// The "Copilot" brain → GitHub Copilot chat (cloud). OpenAI-compatible wire
-/// format, but authenticated with the device-flow token from `CopilotAuth` plus
-/// the Copilot integration headers — which is why it doesn't reuse
-/// `OpenAICompatibleClient` (that models a static Keychain key, not a refreshing
-/// token + custom headers). Requires an active Copilot subscription.
-enum CopilotClient {
-    static let endpoint = "https://api.githubcopilot.com/chat/completions"
-    static let model = "gpt-4o"
-    private static let headers = [
-        "Editor-Version": "SalehmanAI/1.0",
-        "Editor-Plugin-Version": "SalehmanAI/1.0",
-        "Copilot-Integration-Id": "vscode-chat",
-    ]
-
-    nonisolated static func isAuthed() -> Bool { CopilotAuth.isAuthed() }
-
-    static func chat(prompt: String, system: String? = nil) async -> String? {
-        guard let token = await CopilotAuth.shared.copilotToken() else { return nil }
-        return await request(token: token, prompt: prompt, system: system, stream: false, onUpdate: nil)
-    }
-
-    static func chatStream(prompt: String, system: String? = nil,
-                           onUpdate: @escaping (String) -> Void) async -> String? {
-        guard let token = await CopilotAuth.shared.copilotToken() else { return nil }
-        return await request(token: token, prompt: prompt, system: system, stream: true, onUpdate: onUpdate)
-    }
-
-    private static func request(token: String, prompt: String, system: String?,
-                                stream: Bool, onUpdate: ((String) -> Void)?) async -> String? {
-        guard let url = URL(string: endpoint) else { return nil }
-        var messages: [[String: String]] = []
-        if let system, !system.isEmpty { messages.append(["role": "system", "content": system]) }
-        messages.append(["role": "user", "content": prompt])
-        let body: [String: Any] = ["model": model, "messages": messages, "stream": stream]
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
-        req.httpBody = payload
-        req.timeoutInterval = stream ? 600 : 120
-
-        if stream, let onUpdate {
-            guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req),
-                  (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            var acc = ""
-            do {
-                for try await line in bytes.lines {
-                    guard line.hasPrefix("data:") else { continue }
-                    let p = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
-                    if p == "[DONE]" { break }
-                    if let d = p.data(using: .utf8),
-                       let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                       let choices = j["choices"] as? [[String: Any]],
-                       let delta = choices.first?["delta"] as? [String: Any],
-                       let chunk = delta["content"] as? String, !chunk.isEmpty {
-                        acc += chunk
-                        onUpdate(acc)
-                    }
-                }
-            } catch { /* keep what we have */ }
-            let t = acc.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? nil : t
-        }
-
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200,
-              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = j["choices"] as? [[String: Any]],
-              let msg = choices.first?["message"] as? [String: Any],
-              let content = msg["content"] as? String else { return nil }
-        let t = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : t
-    }
-}
-```
-
-===== FILE: Salehman AI/LLM/GeminiClient.swift (255 lines) =====
-```swift
-import Foundation
-
-/// HTTP client for Google's Gemini API (Google AI Studio).
-///
-/// Google's API is *not* OpenAI-compatible — different request shape, different
-/// auth mechanism (URL `?key=` param instead of `Authorization: Bearer`), and
-/// different SSE event format. So this is its own client, parallel to
-/// `OpenAICompatibleClient` / `OllamaClient` / `AnthropicClient`.
-///
-/// Wire shape (non-streaming):
-/// ```
-/// POST /v1beta/models/<model>:generateContent?key=<KEY>
-/// {
-///   "contents":[{ "role":"user", "parts":[{ "text":"..." }] }],
-///   "systemInstruction":{ "parts":[{ "text":"..." }] }     // optional
-/// }
-/// → { "candidates":[{ "content":{ "parts":[{ "text":"..." }] } }] }
-/// ```
-///
-/// Streaming uses `:streamGenerateContent?alt=sse` with the same body and a
-/// sequence of `data: {...}` events.
-///
-/// Free tier on Google AI Studio is the most generous of the cloud brains
-/// supported by this app — `gemini-2.0-flash` has a multi-thousand
-/// requests/day allowance at the time of writing.
-enum GeminiClient {
-
-    /// Default models — keep these strings pinned to the IDs Google
-    /// publishes in AI Studio. A rename means a runtime 404; the unit tests
-    /// guard against typos.
-    nonisolated static let defaultModel = "gemini-2.0-flash"
-    nonisolated static let proModel     = "gemini-1.5-pro"
-    nonisolated static let allModels: [String] = [defaultModel, proModel, "gemini-1.5-flash"]
-
-    nonisolated private static let base = "https://generativelanguage.googleapis.com/v1beta"
-
-    // MARK: - Reachability
-
-    nonisolated static func hasKey() -> Bool {
-        KeychainStore.has(.geminiAPIKey)
-    }
-
-    // MARK: - Chat (non-streaming)
-
-    nonisolated static func chat(prompt: String,
-                                 system: String? = nil,
-                                 model: String = defaultModel) async -> String? {
-        guard let key = KeychainStore.read(.geminiAPIKey) else { return nil }
-        guard let url = makeURL(model: model, action: "generateContent",
-                                key: key, extraQueryItems: []) else { return nil }
-
-        let body = makeBody(prompt: prompt, system: system)
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = payload
-        req.timeoutInterval = 120
-
-        // `nil` is reserved for "couldn't reach the server"; HTTP errors come
-        // back as `[Gemini error STATUS: MSG]` so the user sees the real
-        // reason (e.g. PERMISSION_DENIED, RESOURCE_EXHAUSTED, NOT_FOUND for
-        // an unknown model id) instead of the generic offMessage.
-        // Retry transient throttle / unavailable responses (429 RESOURCE_EXHAUSTED,
-        // 503 service unavailable) with exponential backoff before surfacing the
-        // error. `nil` (couldn't reach the server) is NOT retried here — that's the
-        // caller's brain-chain to roll past.
-        var attempt = 0
-        while true {
-            guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
-            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if status == 200 {
-                guard let text = extractContent(data) else { return nil }
-                return text.isEmpty ? nil : text
-            }
-            if isRetryableStatus(status), attempt < maxRetries {
-                let delay = backoffDelay(attempt: attempt)
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                attempt += 1
-                continue
-            }
-            return errorText(data: data, status: status)
-        }
-    }
-
-    // MARK: - Retry policy (pure — unit-tested in GeminiBackoffTests)
-
-    /// Max retry attempts after the first try, for transient 429/503 responses.
-    nonisolated static let maxRetries = 3
-
-    /// True for HTTP statuses worth retrying: 429 (rate-limited / RESOURCE_EXHAUSTED)
-    /// and 503 (service temporarily unavailable). Everything else surfaces as-is.
-    nonisolated static func isRetryableStatus(_ status: Int) -> Bool {
-        status == 429 || status == 503
-    }
-
-    /// Exponential backoff: base · 2^attempt, capped. attempt 0 → 0.5s, 1 → 1s,
-    /// 2 → 2s, … capped at `cap`. Deterministic (no jitter) so it's testable.
-    nonisolated static func backoffDelay(attempt: Int, base: Double = 0.5, cap: Double = 8.0) -> Double {
-        let raw = base * pow(2.0, Double(max(0, attempt)))
-        return min(cap, raw)
-    }
-
-    // MARK: - Chat (streaming)
-
-    nonisolated static func chatStream(prompt: String,
-                                       system: String? = nil,
-                                       model: String = defaultModel,
-                                       onUpdate: @escaping (String) -> Void) async -> String? {
-        guard let key = KeychainStore.read(.geminiAPIKey) else { return nil }
-        guard let url = makeURL(model: model, action: "streamGenerateContent",
-                                key: key,
-                                extraQueryItems: [URLQueryItem(name: "alt", value: "sse")]) else { return nil }
-
-        let body = makeBody(prompt: prompt, system: system)
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        req.httpBody = payload
-        req.timeoutInterval = 600
-
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req) else { return nil }
-        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if status != 200 {
-            var raw = Data()
-            do { for try await byte in bytes { raw.append(byte) } } catch {}
-            return errorText(data: raw, status: status)
-        }
-
-        var accumulated = ""
-        do {
-            for try await rawLine in bytes.lines {
-                guard rawLine.hasPrefix("data:") else { continue }
-                let payload = rawLine
-                    .dropFirst("data:".count)
-                    .trimmingCharacters(in: .whitespaces)
-                if payload.isEmpty || payload == "[DONE]" { continue }
-                if let chunk = extractStreamingDelta(payload), !chunk.isEmpty {
-                    accumulated += chunk
-                    onUpdate(accumulated)
-                }
-            }
-        } catch {
-            // Surface whatever we have on a mid-stream blip.
-        }
-        return accumulated.isEmpty ? nil : accumulated
-    }
-
-    // MARK: - Test connection
-
-    nonisolated static func testConnection() async -> String? {
-        guard KeychainStore.read(.geminiAPIKey) != nil else {
-            return "No Gemini API key saved. Paste one and tap Save first."
-        }
-        if await chat(prompt: "ping", system: nil, model: defaultModel) == nil {
-            return "Couldn't reach Google AI with the saved key. Check the key + your network."
-        }
-        return nil
-    }
-
-    // MARK: - Internals
-
-    /// Build the Gemini endpoint URL via `URLComponents` so the key, model,
-    /// and any extra query items are correctly percent-encoded. The earlier
-    /// implementation interpolated `key` directly into a string template; if
-    /// a user ever pasted a key containing `+`, `&`, `?`, whitespace, or
-    /// other URL-reserved characters (rare for `AIza…` keys but defensible
-    /// at the boundary), `URL(string:)` would silently return nil and the
-    /// caller would see a generic "no model is reachable" instead of a
-    /// useful diagnostic. URLComponents fixes that at the source.
-    ///
-    /// The action argument is the per-method tail ("generateContent" or
-    /// "streamGenerateContent"); `extraQueryItems` is for sibling params
-    /// like `alt=sse` on the streaming endpoint.
-    nonisolated static func makeURL(model: String,
-                                    action: String,
-                                    key: String,
-                                    extraQueryItems: [URLQueryItem]) -> URL? {
-        // Google's URL puts `:` between the model name and the action verb
-        // — that's a sub-delim that `URLComponents.path` accepts directly,
-        // no special handling required.
-        guard var comps = URLComponents(string: "\(base)/models/\(model):\(action)") else {
-            return nil
-        }
-        comps.queryItems = extraQueryItems + [URLQueryItem(name: "key", value: key)]
-        return comps.url
-    }
-
-
-    /// Pull a human-readable diagnostic out of a non-200 response body.
-    /// Google's error shape is `{"error":{"code":..., "message":"...", "status":"..."}}`.
-    /// We prefer the human `message` and fall back to the `status` enum
-    /// (e.g. `NOT_FOUND`, `PERMISSION_DENIED`) if the server didn't include
-    /// a message — both are diagnostic.
-    // Visibility note: relaxed from `private` to internal so the test
-    // bundle can exercise the decoder directly. No production code path
-    // calls this from outside `GeminiClient` — it stays effectively private
-    // by convention.
-    nonisolated static func errorText(data: Data, status: Int) -> String {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let err = json["error"] as? [String: Any] {
-            if let msg = err["message"] as? String {
-                return "[Gemini error \(status): \(msg)]"
-            }
-            if let s = err["status"] as? String {
-                return "[Gemini error \(status): \(s)]"
-            }
-        }
-        return "[Gemini request failed (HTTP \(status)). Check Settings → Brain → Google Gemini.]"
-    }
-
-    // Internal for test access (see `errorText` visibility note above).
-    nonisolated static func makeBody(prompt: String, system: String?) -> [String: Any] {
-        var body: [String: Any] = [
-            "contents": [
-                [
-                    "role":  "user",
-                    "parts": [["text": prompt]],
-                ]
-            ]
-        ]
-        if let system, !system.isEmpty {
-            body["systemInstruction"] = ["parts": [["text": system]]]
-        }
-        return body
-    }
-
-    /// Pull `candidates[0].content.parts[0].text` out of a non-streaming
-    /// response. Gemini sometimes returns multiple parts (e.g. when tools
-    /// are enabled) — we concatenate them to handle the future case.
-    // Internal for test access.
-    nonisolated static func extractContent(_ data: Data) -> String? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]] else { return nil }
-        let texts = parts.compactMap { $0["text"] as? String }
-        let joined = texts.joined()
-        return joined.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Streaming chunks have the same shape as non-streaming responses —
-    /// one candidate, one or more parts each with `text`. We extract
-    /// whatever text the chunk contains; the caller accumulates.
-    // Internal for test access.
-    nonisolated static func extractStreamingDelta(_ jsonString: String) -> String? {
-        guard let data = jsonString.data(using: .utf8) else { return nil }
-        return extractContent(data)
-    }
-}
-```
-
-===== FILE: Salehman AI/LLM/GrokClient.swift (268 lines) =====
-```swift
-import Foundation
-
-/// HTTP client for xAI's Grok API (https://api.x.ai). The wire format is
-/// OpenAI-compatible: POST `/v1/chat/completions` with a Bearer token and a
-/// `messages` array, response shape is `{choices:[{message:{content:String}}]}`.
-///
-/// Why mirror `OllamaClient`'s public surface (`chat(prompt:system:model:)` +
-/// `chatStream(...)`): `LocalLLM` already has a fallback chain that calls
-/// those signatures; making Grok callable through the same shape means the
-/// brain-selection logic doesn't need a third code path.
-///
-/// **Privacy**: every call here ships the prompt + system message to xAI's
-/// servers. The `LocalLLM` fallback chain only reaches this client when the
-/// user has explicitly set `BrainPreference.grok` — `auto` never falls
-/// through to Grok by design.
-///
-/// **Secrets**: the API key is fetched from `KeychainStore` at call time.
-/// This file never sees, logs, or stores the literal key string except as
-/// the `Authorization` header bytes on the outbound request.
-enum GrokClient {
-
-    /// xAI model IDs offered in the Settings picker. Lower-case + dashes is
-    /// what the API accepts. If xAI renames any of these, every request goes
-    /// 404 immediately — the unit tests in `GrokTests` pin the strings to
-    /// catch that before a user notices.
-    ///
-    /// **Heavy variants are NOT in `allModels`** — they're reserved constants
-    /// for forward compatibility. xAI does not currently expose `grok-4-heavy`
-    /// or `grok-4-heavy-4.3` via `/v1/chat/completions` (the "Heavy" mode is
-    /// grok.com-only at the time of writing); requests for them 404 with
-    /// `"The model … does not exist or your team does not have access to it"`.
-    /// When xAI ships API access for either, append the symbol to `allModels`
-    /// and the picker will surface it. Until then we ship the *accessible*
-    /// catalog: `grok-4` (flagship), `grok-3`, `grok-3-mini` (cheaper).
-    nonisolated static let defaultModel  = "grok-4"
-    nonisolated static let grok3Model    = "grok-3"
-    nonisolated static let grok3MiniModel = "grok-3-mini"
-    nonisolated static let buildModel    = "grok-build-0.1"     // fast agentic-coding model
-    nonisolated static let heavyModel    = "grok-4-heavy"      // reserved, not user-visible
-    nonisolated static let heavy43Model  = "grok-4-heavy-4.3"  // reserved, not user-visible
-
-    // `grok-build-0.1` is confirmed available to this team (it appears in the
-    // user's own xAI console). NOTE: the console's "View Code" shows it via the
-    // newer **Responses API** (`POST /v1/responses` with `instructions`+`input`),
-    // NOT the Chat Completions endpoint this client uses. It's included here as
-    // a cheap empirical probe: pin it + hit "Test connection". If it 200s, xAI
-    // dual-exposes it on `/v1/chat/completions` and we're done. If it 404s/400s,
-    // it's Responses-API-only and needs a dedicated path (tracked in COORDINATION.md).
-    nonisolated static let allModels: [String] = [defaultModel, grok3Model, grok3MiniModel, buildModel]
-
-    nonisolated private static let base = "https://api.x.ai/v1"
-
-    /// Shared `OpenAICompatibleClient` instance — exposes Grok to the same
-    /// tool-loop path used by Groq / Mistral / Cerebras / OpenAI. xAI's
-    /// `/v1/chat/completions` endpoint is fully OpenAI wire-compatible, so
-    /// no custom networking code is needed: we just hand the existing client
-    /// our base URL and Keychain account. `BrainRouting.compatClient` returns
-    /// this so that pinned-Grok conversational turns run terminal / web tools.
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName: "xAI Grok",
-        baseURL: base,
-        defaultModel: defaultModel,
-        allModels: allModels,
-        keychainAccount: .grokAPIKey,
-        consoleURL: "https://console.x.ai"
-    )
-
-    // MARK: - Reachability
-
-    /// True iff the user has stored a Grok key. This is a cheap proxy for
-    /// "Grok is configured" — we don't probe the network to avoid making
-    /// `BrainStatus` polling burn an HTTP request every 10s.
-    nonisolated static func hasKey() -> Bool {
-        KeychainStore.has(.grokAPIKey)
-    }
-
-    // MARK: - Chat (non-streaming)
-
-    /// Sends a single user prompt + optional system message and returns the
-    /// assistant's reply. Returns nil when:
-    ///   * no API key is stored,
-    ///   * the network call fails or times out,
-    ///   * the server returns a non-2xx status,
-    ///   * the response JSON doesn't contain a non-empty `choices[0].message.content`.
-    /// Callers (i.e. `LocalLLM.chat`) treat nil as "fall through to the next
-    /// brain or surface the off-message" — same contract as `OllamaClient.chat`.
-    nonisolated static func chat(prompt: String,
-                                 system: String? = nil,
-                                 model: String = defaultModel) async -> String? {
-        // Defensive trim (`KeychainStore.read` already trims, but matching
-        // `AnthropicClient`'s explicit-trim pattern keeps the cloud clients
-        // uniformly hardened against a future Keychain-layer regression).
-        let key = (KeychainStore.read(.grokAPIKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return nil }
-        guard let url = URL(string: "\(base)/chat/completions") else { return nil }
-
-        let body = makeBody(model: model, prompt: prompt, system: system, stream: false)
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        req.httpBody = payload
-        req.timeoutInterval = 120
-
-        // `nil` is reserved for "couldn't reach the server at all" (network
-        // gone, DNS failure, etc.). For HTTP responses we always return a
-        // non-nil String — either the actual reply or a `[Grok error STATUS:
-        // MSG]` so the user sees the real failure (e.g. unknown model, 401
-        // bad key, 429 rate limit) instead of the generic offMessage.
-        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
-        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if status != 200 { return errorText(data: data, status: status) }
-        guard let text = extractContent(data) else { return nil }
-        return text.isEmpty ? nil : text
-    }
-
-    // MARK: - Chat (streaming via SSE)
-
-    /// Same as `chat`, but invokes `onUpdate` with the cumulative content
-    /// every time a new delta arrives. xAI streams Server-Sent Events in
-    /// OpenAI's chunked format: `data: {"choices":[{"delta":{"content":"..."}}]}`
-    /// terminated by `data: [DONE]`.
-    nonisolated static func chatStream(prompt: String,
-                                       system: String? = nil,
-                                       model: String = defaultModel,
-                                       onUpdate: @escaping (String) -> Void) async -> String? {
-        // Defensive trim (`KeychainStore.read` already trims, but matching
-        // `AnthropicClient`'s explicit-trim pattern keeps the cloud clients
-        // uniformly hardened against a future Keychain-layer regression).
-        let key = (KeychainStore.read(.grokAPIKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return nil }
-        guard let url = URL(string: "\(base)/chat/completions") else { return nil }
-
-        let body = makeBody(model: model, prompt: prompt, system: system, stream: true)
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        req.httpBody = payload
-        req.timeoutInterval = 600
-
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req) else { return nil }
-        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if status != 200 {
-            // Non-200 means xAI sent an error JSON, not an SSE stream. Drain
-            // the bytes into a Data and produce the same diagnostic shape
-            // as the non-streaming path.
-            var raw = Data()
-            do {
-                for try await byte in bytes { raw.append(byte) }
-            } catch { /* take whatever we got */ }
-            return errorText(data: raw, status: status)
-        }
-
-        var accumulated = ""
-        do {
-            for try await rawLine in bytes.lines {
-                // SSE format: each event is one or more `data:` lines, then a
-                // blank line. xAI/OpenAI use a single `data:` line per chunk,
-                // so we can parse line-by-line without buffering events.
-                guard rawLine.hasPrefix("data:") else { continue }
-                let payload = rawLine
-                    .dropFirst("data:".count)
-                    .trimmingCharacters(in: .whitespaces)
-                if payload == "[DONE]" { break }
-                if let chunk = decodeDelta(payload), !chunk.isEmpty {
-                    accumulated += chunk
-                    onUpdate(accumulated)
-                }
-            }
-        } catch {
-            // Surface whatever we accumulated so the UI doesn't lose state on
-            // a mid-stream network blip.
-        }
-        return accumulated.isEmpty ? nil : accumulated
-    }
-
-    // MARK: - Test connection
-
-    /// Hits the same endpoint with a one-token prompt to verify the key works.
-    /// Returns nil on success, or a human-readable error reason on failure —
-    /// the Settings "Test connection" button surfaces this directly.
-    nonisolated static func testConnection() async -> String? {
-        guard KeychainStore.read(.grokAPIKey) != nil else {
-            return "No API key saved. Paste your key and tap Save first."
-        }
-        if await chat(prompt: "ping", system: nil, model: defaultModel) == nil {
-            return "Couldn't reach xAI with the saved key. Check the key + your network."
-        }
-        return nil   // nil means "all good"
-    }
-
-    // MARK: - Internals
-
-    /// Pull a human-readable diagnostic out of a non-200 response body.
-    /// xAI mirrors OpenAI's error shape: `{"error":{"message":"...","type":"...","code":"..."}}`.
-    /// We surface the message verbatim so a user staring at "model not
-    /// found: grok-4-heavy-4.3" knows exactly which Settings field to fix.
-    // Visibility note: relaxed from `private` to internal so the test
-    // bundle can exercise the decoder directly. No production code path
-    // calls this from outside `GrokClient` — it stays effectively private
-    // by convention.
-    nonisolated static func errorText(data: Data, status: Int) -> String {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let err = json["error"] as? [String: Any], let msg = err["message"] as? String {
-                return "[Grok error \(status): \(msg)]"
-            }
-            if let msg = json["error"] as? String {
-                return "[Grok error \(status): \(msg)]"
-            }
-        }
-        return "[Grok request failed (HTTP \(status)). Check Settings → Brain → xAI Grok.]"
-    }
-
-
-    /// Build the OpenAI-compatible request body. xAI accepts the standard
-    /// `messages` array; we add a `system` role only when one was provided
-    /// so empty turns don't waste tokens on an empty system message.
-    // Visibility note: internal (not `private`) so the test bundle can verify
-    // the request shape directly. No production code calls it from outside
-    // `GrokClient` — it stays effectively private by convention. (Same
-    // pattern as `errorText`.)
-    nonisolated static func makeBody(model: String,
-                                 prompt: String,
-                                 system: String?,
-                                 stream: Bool) -> [String: Any] {
-        var messages: [[String: String]] = []
-        if let system, !system.isEmpty {
-            messages.append(["role": "system", "content": system])
-        }
-        messages.append(["role": "user", "content": prompt])
-        return [
-            "model":    model,
-            "messages": messages,
-            "stream":   stream,
-        ]
-    }
-
-    /// Pull `choices[0].message.content` out of a non-streaming response.
-    // Internal for test access (see `makeBody` note).
-    nonisolated static func extractContent(_ data: Data) -> String? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let first = choices.first,
-              let message = first["message"] as? [String: Any],
-              let content = message["content"] as? String else { return nil }
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Pull `choices[0].delta.content` out of a streaming chunk.
-    /// Returns content **verbatim** — deltas must NOT be trimmed, or words
-    /// joined across chunk boundaries ("hello" + " world") would collapse.
-    // Internal for test access (see `makeBody` note).
-    nonisolated static func decodeDelta(_ jsonString: String) -> String? {
-        guard let data = jsonString.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let first = choices.first,
-              let delta = first["delta"] as? [String: Any],
-              let content = delta["content"] as? String else { return nil }
-        return content
-    }
-}
-```
-
-===== FILE: Salehman AI/LLM/KeychainStore.swift (138 lines) =====
+===== FILE: Salehman AI/LLM/KeychainStore.swift (132 lines) =====
 ```swift
 import Foundation
 import Security
 
-/// macOS Keychain storage for sensitive credentials (currently just the xAI
-/// Grok API key). Source files in this project must NEVER contain key
-/// material — the only place the actual characters of a key live is
+/// macOS Keychain storage for sensitive credentials. The app is local-only,
+/// so the surviving entries are local/endpoint credentials (a self-hosted
+/// vLLM bearer token, an Unsloth Studio token used only for a Settings
+/// copy-snippet, a Hugging Face token used by the external cloud-GPU notebook,
+/// and the NVIDIA NIM key for the free DeepSeek route). Source files in this
+/// project must NEVER contain key material — the only place the actual
+/// characters of a key live is
 ///   (1) the `Data` parameter handed to `SecItemAdd` when the user types it
 ///       into the Settings panel, and
-///   (2) the `Authorization: Bearer …` HTTP header that `GrokClient` builds
+///   (2) the `Authorization: Bearer …` HTTP header the matching client builds
 ///       at request time.
 ///
 /// The Keychain entry is service-scoped to this app's bundle identifier and
-/// account-scoped per credential — so a future second key (OpenAI, Anthropic,
-/// etc.) just picks a different account name without colliding.
+/// account-scoped per credential — so each credential just picks a different
+/// account name without colliding.
 ///
 /// Design notes:
 /// * Synchronous because `SecItem*` calls are already cheap (encrypted at
@@ -5106,24 +3632,14 @@ enum KeychainStore {
     // MARK: - Account identifiers
 
     enum Account: String {
-        case grokAPIKey     = "grok-api-key"
-        case geminiAPIKey   = "gemini-api-key"
-        case groqAPIKey     = "groq-api-key"
-        case mistralAPIKey  = "mistral-api-key"
-        case cerebrasAPIKey = "cerebras-api-key"
-        // ("deepseek-api-key" removed 2026-06-12 — owner: "remove deepseek".
-        // The provider was cut after its key was chat-exposed; the stored
-        // Keychain item was deleted alongside this change.)
+        // Cloud-provider API-key entries (grok, gemini, groq, mistral, cerebras,
+        // anthropic, openAI, openRouter, copilot-github) were removed when the
+        // app went local-only — those providers no longer exist in the app.
+        // ("deepseek-api-key" was removed earlier, 2026-06-12.)
         /// NVIDIA NIM (integrate.api.nvidia.com) — hosts REAL DeepSeek (V4) on a
         /// free tier, OpenAI-compatible. This is the app's "DeepSeek for free"
         /// route since DeepSeek's own API + OpenRouter are paid-only.
         case nvidiaAPIKey   = "nvidia-api-key"
-        case anthropicAPIKey = "anthropic-api-key"
-        case openAIAPIKey   = "openai-api-key"
-        case openRouterAPIKey = "openrouter-api-key"
-        /// GitHub OAuth access token for the Copilot brain (from the device flow).
-        /// The short-lived Copilot token derived from it is cached in memory only.
-        case copilotGitHubToken = "copilot-github-token"
         /// Unsloth API token. NOT required for the app's `.unslothStudio` chat
         /// brain (that talks to a local OpenAI-compatible server with no auth) —
         /// stored only so the "Use this model with Claude Code too" snippet in
@@ -5212,33 +3728,31 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1735 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1142 lines) =====
 ```swift
 import Foundation
 import OSLog
 
-/// Brain routing for Salehman AI. Salehman runs CLOUD-FIRST (free DeepSeek V4 via
-/// NVIDIA → free frontier/120B tiers) with a LOCAL floor
-/// (Ollama / on-device MLX) for offline use. No Apple Intelligence.
+/// Brain routing for Salehman AI. The app is LOCAL-ONLY: every brain runs on
+/// this Mac (Ollama, on-device MLX, or a local OpenAI-compatible server —
+/// Unsloth Studio / vLLM). No cloud providers. No Apple Intelligence.
 enum LocalLLM {
     /// Profiling signposter. Capture a trace in **Instruments → Time Profiler +
-    /// "Points of Interest"** (or `os_signpost` instrument) and the `freeAuto` /
-    /// `ensemble` intervals below show real per-call brain latency — turning the
-    /// review's *estimated* perf numbers into measured ones. Zero overhead when
-    /// not being traced. See `VERIFICATION.md`.
+    /// "Points of Interest"** (or `os_signpost` instrument) and the brain
+    /// intervals below show real per-call latency — turning the review's
+    /// *estimated* perf numbers into measured ones. Zero overhead when not
+    /// being traced. See `VERIFICATION.md`.
     nonisolated static let signposter = OSSignposter(subsystem: "com.salehman.ai", category: "Brain")
     // All of these are `nonisolated` so actor-isolated callers (ChatSession,
     // AgentPipeline tasks, the Ollama-fallback path) can probe brain
     // availability without hopping to the main actor. The underlying APIs are
     // thread-safe — there's no shared mutable state behind any of them.
-    /// True when *some* cloud brain can answer. Used by the pipeline to rate an
-    /// outcome — if any of the 9 providers has a key, we can reach a brain.
-    /// (Ollama availability requires an async HTTP probe so it can't be checked
-    /// here; the pipeline only calls this after already getting a non-empty
-    /// answer, which implies a brain was reachable.)
-    nonisolated static var isAvailable: Bool {
-        !CloudProvider.configuredNow().isEmpty
-    }
+    /// True when a brain can answer. The app is local-only, so a local brain
+    /// (Ollama / on-device MLX / a local OpenAI-compatible server) is always the
+    /// dispatch target — there is no keyed-cloud precondition anymore. Used by
+    /// the pipeline to rate an outcome; the pipeline only consults this after
+    /// already obtaining a non-empty answer, which implies a brain was reachable.
+    nonisolated static var isAvailable: Bool { true }
 
     /// **Sentinel** returned by the chat pipeline when no brain can answer.
     ///
@@ -5277,20 +3791,6 @@ enum LocalLLM {
             return "No model is reachable right now. Start Ollama with `ollama serve` and make sure a model is pulled."
         case .ollama:
             return "Ollama qwen-coder is your selected brain, but the Ollama server isn't reachable. Start it with `ollama serve` (with qwen2.5-coder pulled), or switch to Auto in Settings."
-        case .copilot:
-            return "GitHub Copilot is your selected brain, but you're not signed in. Sign in under Settings → GitHub Copilot, or switch brains."
-        case .ensemble:
-            return "\"All Brains at Once\" is selected, but none are reachable. Start Ollama, or add at least one cloud API key in Settings."
-        case .freeAuto:
-            return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, or start Ollama."
-        case .freeCoding:
-            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
-        case .cloudCoding:
-            return AppSettings.isOfflineOnly
-                ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick the local Ollama brain."
-                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
-            return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
             return "Salehman model isn't responding. Make sure it's pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
         case .unslothStudio:
@@ -5302,60 +3802,25 @@ enum LocalLLM {
         }
     }
 
-    /// True when the selected brain is one that USES a cloud key when present,
-    /// but none is saved — so replies silently fall back to the slow local model
-    /// (`.salehman` / `.freeAuto` / `.freeCoding`) or dead-end (`.cloudCoding`).
-    /// Scoped to exactly those four: a pinned cloud brain already shows
-    /// `unavailableMessage` (it returns `.none`, never a silent local fallback),
-    /// and `.auto` / `.ollama` / `.unslothStudio` / `.vllm` are deliberately local
-    /// — a cloud key wouldn't be used there, so nagging would be wrong. Drives the
-    /// amber "add a cloud key" banner in the Chat / Code views so the slow path is
-    /// never silent. Cheap Keychain-existence check; safe to read each SwiftUI render.
-    nonisolated static var lacksCloudKey: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .salehman:
-            return false   // local-only by design; no cloud key needed or used
-        case .freeAuto:
-            // Show the banner when none of the free-tier providers (Groq, Cerebras,
-            // Gemini, Mistral, OpenRouter) are configured. freeAuto has an Ollama
-            // backstop, so this is informational — "you're on the slow path".
-            return !CloudProvider.freeTier.contains { $0.isConfiguredNow }
-        case .freeCoding:
-            // The free coding loop runs OpenRouter/Groq/Cerebras/Mistral.
-            return !CloudProvider.codingRace.contains { $0.isConfiguredNow }
-        case .cloudCoding:
-            // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
-            // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
-            // accurate check is that roster's reachability. Otherwise the banner would
-            // wrongly hide for a user whose only key is Gemini while Cloud Coding still
-            // can't answer.
-            return !cloudCodingReachable()
-        default:
-            return false
-        }
-    }
+    /// LOCAL-ONLY app: no brain uses a cloud key anymore, so the "add a cloud
+    /// key" banner never applies. Kept as an always-false symbol so the Chat /
+    /// Code views and DesignSystem (which read it + `noCloudKeyHint`) stay
+    /// compilable without a banner ever appearing.
+    nonisolated static var lacksCloudKey: Bool { false }
 
-    /// One-line, actionable nudge for the `lacksCloudKey` banner. Honest across
-    /// all four modes (slow local fallback for three, unavailable for cloudCoding).
+    /// One-line nudge text retained for the banner call sites; never shown now
+    /// that `lacksCloudKey` is always false (the app is local-only).
     nonisolated static let noCloudKeyHint =
         "No cloud key — replies may be unavailable. Add a key in Settings → Brain for the selected brain."
 
     /// Identifies which brain handled (or would handle) a request. Used by the
-    /// UI to label the current state honestly.
+    /// UI to label the current state honestly. Local-only — no cloud cases.
     nonisolated enum Brain: Equatable {
         case ollamaCoder
-        case salehman                                // Salehman — cloud-first, local floor
+        case salehman                                // Salehman — local: MLX (on-device) → Ollama (custom model)
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
         case vllm                                    // local OpenAI-compat server served by vLLM
         case uncensored                              // local Ollama, abliterated ~3B; web-search capable
-        case claudeHaiku, grok                       // cloud, pre-existing
-        case gemini, groq, mistral, cerebras         // cloud, free-tier
-        case codex, copilot                          // cloud, OpenAI + GitHub Copilot
-        case openRouter                              // cloud aggregator (free models)
-        case ensemble                                // all reachable brains in parallel
-        case freeAuto                                // free brains raced; first valid wins; local backstop
-        case freeCoding                              // free coders raced, tool-capable, coding-focused
-        case cloudCoding                             // CLOUD-ONLY best coders, tool-capable (no local, no lag)
         case none
     }
 
@@ -5365,379 +3830,23 @@ enum LocalLLM {
     /// Returning `.none` short-circuits the pipeline with the canonical
     /// "no brain reachable" message instead of silently using the other side.
     static func currentBrain() async -> Brain {
-        // The reachability RULES (offline hard-gate on cloud pins, per-pin key
-        // checks, roster membership, the .auto local-first invariant) live in
+        // The reachability RULES (the .auto/.ollama local-first invariant, the
+        // Salehman MLX/Ollama floor, the endpoint pins) live in
         // `BrainRouting.reachableBrain` — pure, pinned by
-        // BrainRoutingDispatchTests. `BrainRouteConfig.live()` keeps the old
-        // per-preference probe laziness (no Ollama HTTP probe for a pinned
-        // cloud brain — BrainStatus polls this every 10s).
+        // BrainRoutingDispatchTests. `BrainRouteConfig.live()` runs only the
+        // probes the pinned preference needs (BrainStatus polls this every 10s).
         let config = await BrainRouteConfig.live()
         return BrainRouting.reachableBrain(config)
     }
 
-    /// True iff at least one brain (local or any keyed cloud) can answer.
-    /// Used by ensemble mode to decide between fanning out and the off-message.
+    /// True iff at least one LOCAL brain can answer — the only kind there is now.
+    /// Ollama (server up + a model pulled), or a configured local OpenAI-compat
+    /// server (Unsloth Studio / vLLM). Used by Settings' "Test connection".
     nonisolated static func anyBrainReachable() async -> Bool {
         if await ollamaReady() { return true }
-        return !CloudProvider.configuredNow().isEmpty
-    }
-
-    /// True when the user picked the "All Brains at Once" preference.
-    nonisolated static var isEnsembleMode: Bool { AppSettings.brainPreferenceCurrent == .ensemble }
-
-    // MARK: - Free · Auto (parallel race, never blocked)
-
-    /// True when the user picked the "Free · Auto" preference.
-    nonisolated static var isFreeAutoMode: Bool { AppSettings.brainPreferenceCurrent == .freeAuto }
-
-    /// True when the user picked the "FreeCoding" preference — a coding-focused,
-    /// tool-capable loop over the free coder brains.
-    nonisolated static var isFreeCodingMode: Bool { AppSettings.brainPreferenceCurrent == .freeCoding }
-
-    /// True when the user picked "Cloud Coding" — a CLOUD-ONLY coding loop over the
-    /// best cloud coders (no local model, so zero RAM / no lag).
-    nonisolated static var isCloudCodingMode: Bool { AppSettings.brainPreferenceCurrent == .cloudCoding }
-
-    /// Whether a reply is a real answer vs a brain saying "I can't right now".
-    /// The clients wrap EVERY failure in a fully-bracketed `[…]` diagnostic, in
-    /// two shapes:
-    ///   • `[<Provider> error <status>: <msg>]`              (parsed non-2xx body)
-    ///   • `[<Provider> request failed (HTTP <status>). …]`  (transport / unparsed)
-    /// plus the on-device `[The on-device model couldn't complete …]`. ALL of
-    /// these must LOSE the freeAuto race so a healthy sibling / local backstop
-    /// wins — otherwise a fast 401 is shown to the user as their "answer" (the
-    /// exact bug this guards: an earlier version only caught the word "error",
-    /// so Mistral's "request failed" form slipped through and won).
-    /// Requiring the WHOLE string to be bracketed (`[`…`]`) avoids false-
-    /// rejecting a real markdown answer that merely starts with `[`.
-    /// Substrings that mark a fully-bracketed `[…]` diagnostic as a failure (not a
-    /// real answer). Extracted so the shapes live in one place — see the two
-    /// client failure formats documented above.
-    nonisolated static let freeAnswerErrorMarkers = ["error", "request failed", "(http ", "couldn't complete"]
-
-    nonisolated static func isUsableFreeAnswer(_ s: String) -> Bool {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return false }
-        if t.hasPrefix("[") && t.hasSuffix("]") {
-            let lower = t.lowercased()
-            if freeAnswerErrorMarkers.contains(where: { lower.contains($0) }) { return false }
-        }
-        return true
-    }
-
-    /// Remembers which free brains failed recently so `generateFreeAuto` can
-    /// SKIP them for a short window instead of wasting a round-trip on a
-    /// known-bad key (e.g. a wrong/absent key that 401s, or a model that 404s).
-    /// An `actor` → thread-safe by construction (no `nonisolated(unsafe)`). The
-    /// window is short so a transient rate-limit self-heals; a success clears
-    /// the mark immediately.
-    /// Pure cooldown-window check, extracted from `FreeAutoCooldown` so the 120 s
-    /// boundary is unit-testable without the actor or a real clock. A brain with
-    /// no recorded failure is never cooling.
-    nonisolated static func isStillCooling(failedAt: Date?, now: Date, window: TimeInterval = 120) -> Bool {
-        guard let failedAt else { return false }
-        return now.timeIntervalSince(failedAt) < window
-    }
-
-    actor FreeAutoCooldown {
-        static let shared = FreeAutoCooldown()
-        private var failedAt: [String: Date] = [:]
-        private let window: TimeInterval = 120   // 2 minutes
-
-        func cooling(_ names: [String], now: Date) -> Set<String> {
-            Set(names.filter { LocalLLM.isStillCooling(failedAt: failedAt[$0], now: now, window: window) })
-        }
-        func recordFailure(_ name: String, now: Date) { failedAt[name] = now }
-        func recordSuccess(_ name: String) { failedAt.removeValue(forKey: name) }
-    }
-
-    /// "Free · Auto": race every *configured free* cloud brain in parallel and
-    /// return the FIRST usable answer — a rate-limited (429) or errored brain
-    /// simply loses the race instead of blocking the user. If every free cloud
-    /// brain fails (or none are configured), fall back to the LOCAL brains
-    /// (Ollama) **sequentially** — never concurrently with
-    /// the cloud calls, which preserves the 16 GB RAM guardrail (the same
-    /// concurrent-local-model load that hard-froze the Mac). Local never
-    /// rate-limits, so this is the "effectively unlimited / never blocked"
-    /// guarantee: cloud when it's fast and available, local as the floor.
-    ///
-    /// "Free" = Groq, Cerebras, Gemini, Mistral, OpenRouter (the no-cost tiers).
-    /// Paid brains (Claude, Grok, OpenAI, Copilot) are deliberately excluded so
-    /// this mode can never spend money. A brain that just failed is skipped for
-    /// a 2-min cooldown so a known-bad key doesn't cost a round-trip every turn.
-    static func generateFreeAuto(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("freeAuto")
-        defer { signposter.endInterval("freeAuto", sigState) }
-        let sys = cloudSystemPrompt
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        // Membership, order, and the Offline-Mode gate come from BrainRouting
-        // (offline → empty roster, so only the local backstop below remains —
-        // the stronger constraint). Execution stays here: each free brain runs
-        // its plain `chat` on the user-selected model; Gemini is the one free
-        // brain without the shared OpenAI-compat client.
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.freeAutoRoster(routeConfigNow()) {
-            guard let model = p.selectedModel else { continue }
-            if p == .gemini {
-                roster.append((p.rawValue, { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-            } else if let client = p.compatClient {
-                roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
-            }
-        }
-
-        // Skip brains that failed within the cooldown window — don't waste a
-        // round-trip on a known-bad key; they auto-retry once the window lapses.
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-
-        // Race the active free cloud brains; first usable reply wins, cancel the
-        // rest. Record per-brain failures/successes so the cooldown adapts.
-        if !active.isEmpty {
-            let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-                for entry in active { group.addTask { (entry.name, await entry.run()) } }
-                for await (name, reply) in group {
-                    if let reply, isUsableFreeAnswer(reply) {
-                        await FreeAutoCooldown.shared.recordSuccess(name)
-                        group.cancelAll()
-                        return reply
-                    } else {
-                        await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                    }
-                }
-                return nil
-            }
-            if let winner { return winner }
-        }
-
-        // Every free cloud brain failed / cooling / none configured → LOCAL
-        // backstop, sequential (never concurrent with the cloud calls).
-        if await ollamaReady(),
-           let reply = await OllamaClient.chat(prompt: prompt, system: sys),
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-
-        return offMessage
-    }
-
-    /// Free·Auto WITH tools — used when Unrestricted Mode is on. Unlike the fast
-    /// no-tool race in `generateFreeAuto`, this routes the turn through a
-    /// tool-capable brain so Free·Auto can ACTUALLY run terminal commands / search
-    /// the web (the owner asked Free·Auto to "do all commands"). Order: free local
-    /// brains first (Ollama — free, private, strong with the terminal tool), then
-    /// the free cloud OpenAI-compatible brains (now tool-capable), and finally a
-    /// plain `generateFreeAuto` race so it never dead-ends. Inherits the SAME
-    /// approval gate + blocked-command floor.
-    static func freeAutoReplyWithTools(_ message: String) async -> String {
-        // 1) Local, free, tool-capable.
-        if await ollamaReady(), let reply = await ollamaReply(message) { return reply }
-        // 2) Free cloud OpenAI-compatible brains — first one the user configured.
-        //    Tool-capable via `chatOpenAICompatWithTools`. Membership/order +
-        //    the Offline-Mode skip (the stronger constraint) come from
-        //    BrainRouting; Gemini is excluded there (free, but no compat tools).
-        for p in BrainRouting.freeAutoToolRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let model = p.selectedModel else { continue }
-            if let reply = await chatOpenAICompatWithTools(client: client,
-                                                          model: model,
-                                                          message: message) {
-                return reply
-            }
-        }
-        // 3) Nothing tool-capable worked → the original fast race (no tools).
-        return await generateFreeAuto(message)
-    }
-
-    // MARK: - FreeCoding (the free coding loop)
-
-    /// Coding-focused system prompt for FreeCoding mode — a free, tool-capable
-    /// pair-programmer persona shared by the race path and the tool loop. The
-    /// Unrestricted addendum is layered on top by callers via `applyUnrestricted`.
-    nonisolated static let freeCodingSystem = """
-    You are Salehman AI in FreeCoding mode — an elite, free pair-programmer on \
-    this Mac, created by Saleh. Optimize for CODE: correct, complete, idiomatic, \
-    modern, production-grade. No TODO / placeholder stubs; handle errors and edge \
-    cases; pick the strongest solution, not the easiest. You can control this Mac: \
-    call run_terminal_command to actually create/edit files, build, run, and TEST \
-    code (`xcodebuild …`, `swift build`, `python …`, `npm …`) — don't just \
-    describe a command, run it and report what happened. When web access is on, \
-    use web_search / fetch_url for docs and APIs. Show code in fenced blocks with a \
-    language tag. Lead with the answer or the code, keep surrounding prose tight, \
-    and skip filler — be fast to read. CRITICAL LANGUAGE RULE: reply in the SAME \
-    language as the user's latest message; never switch on your own.
-    """
-
-    /// Pick the most coding-leaning model from a brain's roster (qwen-coder /
-    /// codestral / deepseek / gpt-oss / glm…), falling back to `def` when none
-    /// stand out. Priority-ordered so a purpose-built coder beats a generalist.
-    nonisolated static func freeCoderModel(_ models: [String], default def: String) -> String {
-        let priority = ["codestral", "coder", "deepseek", "code", "gpt-oss", "glm"]
-        for marker in priority {
-            if let m = models.first(where: { $0.lowercased().contains(marker) }) { return m }
-        }
-        return def
-    }
-
-    /// FreeCoding RACE (no tools) — like `generateFreeAuto` but routes each free
-    /// brain to its strongest CODING model + a coding system prompt, and adds
-    /// usable reply wins; local Ollama coder backstop. Used by
-    /// direct callers; the chat pipeline uses the tool-capable `freeCodingReply`.
-    static func generateFreeCoding(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("freeCoding")
-        defer { signposter.endInterval("freeCoding", sigState) }
-        let sys = applyUnrestricted(freeCodingSystem)
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        // Membership, order, and the
-        // Offline-Mode gate come from BrainRouting; each entry races its
-        // strongest CODING model via `freeCoderModel`.
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.codingRaceRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
-        }
-
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-
-        if !active.isEmpty {
-            let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-                for entry in active { group.addTask { (entry.name, await entry.run()) } }
-                for await (name, reply) in group {
-                    if let reply, isUsableFreeAnswer(reply) {
-                        await FreeAutoCooldown.shared.recordSuccess(name)
-                        group.cancelAll()
-                        return reply
-                    } else {
-                        await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                    }
-                }
-                return nil
-            }
-            if let winner { return winner }
-        }
-
-        // Local backstop — Ollama coder (best for code).
-        if await ollamaReady(),
-           let reply = await OllamaClient.chat(prompt: prompt, system: sys),
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-        return offMessage
-    }
-
-    /// FreeCoding WITH tools — what the chat pipeline runs. Routes through a
-    /// tool-capable coder so it can actually write, build, run, and TEST code:
-    /// free cloud coders → local Ollama
-    /// coder, then a plain `generateFreeCoding` race so
-    /// it never dead-ends. Same approval gate + blocked-command floor as always.
-    static func freeCodingReply(_ message: String) async -> String {
-        let sys = applyUnrestricted(freeCodingSystem)
-        // CLOUD CODERS FIRST — the fast, no-lag path. They run on someone else's
-        // GPUs (ZERO local RAM, so they never thrash a MacBook) and are ~10× faster
-        // than a multi-GB local model — AND smarter than a local 7B. Order balances
-        // smarts + speed: Cerebras / Groq
-        // (blazing ~2000 tok/s, strong gpt-oss-120b) → OpenRouter → Mistral. Each
-        // runs the tool loop so it can build / run / test. Skipped under Offline Mode.
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
-                                                          message: message, systemPrompt: sys) {
-                return reply
-            }
-        }
-        // LOCAL FALLBACK — only when no cloud coder answered (or Offline Mode is on):
-        // free + private, but heavier on a laptop, so it's intentionally LAST to
-        // avoid the RAM-load lag that prompted this reorder.
-        if await ollamaReady(), let reply = await chatOllamaWithTools(message, systemPrompt: sys) { return reply }
-        // Last resort → the plain race.
-        return await generateFreeCoding(message)
-    }
-
-    // MARK: - Cloud Coding (cloud-only "best coders" loop — no local, no lag)
-
-    /// Sync snapshot of the routing inputs the roster builders need (pins +
-    /// offline + the ten key checks). The async probes (Ollama/MLX) stay out —
-    /// roster membership never consults them.
-    nonisolated private static func routeConfigNow() -> BrainRouteConfig {
-        BrainRouteConfig(pref: AppSettings.brainPreferenceCurrent,
-                         offlineOnly: AppSettings.isOfflineOnly,
-                         configured: CloudProvider.configuredNow())
-    }
-
-    /// True iff any cloud coder is configured AND we're not offline — i.e. Cloud
-    /// Coding can actually answer. No local fallback, so this is the honest gate.
-    /// (The coder roster itself — membership + order — lives in
-    /// `CloudProvider.coderLoop`, shared with freeCodingReply / cloudCoding.)
-    nonisolated static func cloudCodingReachable() -> Bool {
-        guard !AppSettings.isOfflineOnly else { return false }
-        return CloudProvider.coderLoop.contains { $0.isConfiguredNow }
-    }
-
-    /// Cloud Coding RACE (no tools): race every configured cloud coder in parallel
-    /// on its coding model — first usable reply wins, the rest are cancelled. No
-    /// local backstop (cloud-only by design). `offMessage` when none can answer.
-    static func generateCloudCoding(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("cloudCoding")
-        defer { signposter.endInterval("cloudCoding", sigState) }
-        guard !AppSettings.isOfflineOnly else { return offMessage }
-        let sys = applyUnrestricted(freeCodingSystem)
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            roster.append((client.displayName, { await client.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        guard !roster.isEmpty else { return offMessage }
-
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-        // If every coder is cooling, ignore the cooldown rather than dead-end — a
-        // cloud-only mode has nothing else to fall back to.
-        let toRun = active.isEmpty ? roster : active
-
-        let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-            for entry in toRun { group.addTask { (entry.name, await entry.run()) } }
-            for await (name, reply) in group {
-                if let reply, isUsableFreeAnswer(reply) {
-                    await FreeAutoCooldown.shared.recordSuccess(name)
-                    group.cancelAll()
-                    return reply
-                } else {
-                    await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                }
-            }
-            return nil
-        }
-        return winner ?? offMessage
-    }
-
-    /// Cloud Coding WITH tools — what the chat pipeline runs. Walks the best cloud
-    /// coders in order and runs the FIRST configured one's tool loop (so it can
-    /// build / run / test), falling back to the next on a transport error. No local
-    /// fallback; a plain race is the final attempt. `offMessage` when nothing is
-    /// reachable. Same approval gate + blocked-command floor as every other path.
-    static func cloudCodingReply(_ message: String) async -> String {
-        guard !AppSettings.isOfflineOnly else { return offMessage }
-        let sys = applyUnrestricted(freeCodingSystem)
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
-                                                          message: message, systemPrompt: sys) {
-                return reply
-            }
-        }
-        // Tool loops all errored (or none configured) → one plain race, then give up.
-        let raced = await generateCloudCoding(message)
-        return raced
+        if UnslothStudio.isConfigured { return true }
+        if VLLM.isConfigured { return true }
+        return false
     }
 
     /// Two-step probe (server up, then *some* preferred coder model present)
@@ -5763,31 +3872,16 @@ enum LocalLLM {
                 ? "Local · vLLM (\(AppSettings.vllmModelCurrent))"
                 : "Custom server · vLLM (\(AppSettings.vllmModelCurrent))"
         case .uncensored:        return "Local · Uncensored · \(OllamaClient.uncensoredModel)"
-        case .claudeHaiku:       return "Cloud · Claude Haiku"
-        case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
-        case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
-        case .groq:              return "Cloud · Groq \(AppSettings.groqModelCurrent)"
-        case .mistral:           return "Cloud · Mistral \(AppSettings.mistralModelCurrent)"
-        case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
-        case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
-        case .copilot:           return "Cloud · GitHub Copilot"
-        case .openRouter:        return "Cloud · OpenRouter \(AppSettings.openRouterModelCurrent)"
-        case .ensemble:          return "All brains · parallel"
-        case .freeAuto:          return "Free · Auto (parallel, never blocked)"
-        case .freeCoding:        return "FreeCoding · free coders · runs the terminal"
-        case .cloudCoding:       return "Cloud Coding · best cloud coders · no local, no lag"
         case .none:
             // Name the pinned-but-down brain so the header matches the chat message.
             switch AppSettings.brainPreferenceCurrent {
             case .ollama:  return "Ollama selected · not running"
-            case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
                 // Local-only: MLX (on-device) → Ollama. Ollama auto-starts on launch;
                 // the only fix when this fires is pulling the model.
                 return "Salehman: pull the model — `ollama pull \(AppSettings.customModelNameCurrent)`"
             case .unslothStudio:
-                // Different failure mode from the cloud brains — no key, just a
-                // local URL the user has to set + a server that has to be running.
+                // No key, just a local URL the user has to set + a running server.
                 return UnslothStudio.isConfigured
                     ? "Unsloth Studio · server unreachable"
                     : "Unsloth Studio · set endpoint URL in Settings"
@@ -5798,7 +3892,6 @@ enum LocalLLM {
             case .auto:    return "No brain available"
             case .uncensored:
                 return "Uncensored: pull the model — `ollama pull \(OllamaClient.uncensoredModel)`"
-            default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
             }
         }
     }
@@ -5808,124 +3901,13 @@ enum LocalLLM {
     /// see the user's edits without restarting.
     nonisolated private static var pref: BrainPreference { AppSettings.brainPreferenceCurrent }
 
-    // MARK: - Ensemble ("All Brains at Once")
-
-    /// One brain's contribution to an ensemble answer. `text == nil` means the
-    /// brain didn't respond (cloud clients return their own `[Provider error …]`
-    /// string for HTTP errors, so that surfaces as text, not nil).
-    struct EnsembleAnswer: Sendable, Equatable {
-        let label: String
-        let text: String?
-    }
-
-    /// Run EVERY reachable brain in parallel on the same prompt and return one
-    /// combined, per-brain-labeled markdown answer. Reachability: Apple
-    /// Intelligence (if active), Ollama (if a coder model is pulled), and each
-    /// cloud brain that has a saved key. A brain that errors shows its error in
-    /// its own section — one failure never sinks the others. Returns the
-    /// off-message only when *nothing* is reachable.
-    static func generateEnsemble(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("ensemble")
-        defer { signposter.endInterval("ensemble", sigState) }
-        let sys = cloudSystemPrompt
-        let ollamaModel = await OllamaClient.activeCodeModel()
-
-        // SAFETY: ensemble runs every reachable brain *concurrently*. Firing a
-        // multi-GB local Ollama model at the same time as several cloud calls
-        // is what froze a 16 GB Mac (RAM exhaustion → hard freeze). Ensemble's
-        // value is comparing CLOUD answers anyway, so we only include the local
-        // model on machines with comfortable headroom (≥ 24 GB). Below that,
-        // ensemble is cloud-only and we note the skip in the output. (A user on
-        // a small Mac who wants the local model should just pin Ollama directly
-        // — one model, no concurrent cloud load.)
-        let physicalGB = Int((Double(ProcessInfo.processInfo.physicalMemory) / Double(ByteConstants.bytesPerGB)).rounded())
-        let includeLocal = physicalGB >= 24
-        let skippedLocalForRAM = (ollamaModel != nil) && !includeLocal
-
-        typealias Thunk = @Sendable () async -> String?
-        var roster: [(String, Thunk)] = []
-
-        if let m = ollamaModel, includeLocal {
-            roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
-        }
-        // Cloud membership + the Offline-Mode gate (ensemble runs LOCAL-only
-        // offline) come from BrainRouting.ensembleCloudRoster. Labels/calls
-        // stay per-provider here.
-        for p in BrainRouting.ensembleCloudRoster(routeConfigNow()) {
-            switch p {
-            case .anthropic:
-                roster.append(("Claude Haiku", { await AnthropicClient.chat(prompt: prompt, system: sys) }))
-            case .grok:
-                let model = AppSettings.grokModelCurrent
-                roster.append(("xAI \(model)", { await GrokClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .gemini:
-                let model = AppSettings.geminiModelCurrent
-                roster.append(("Google \(model)", { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .openAI:
-                let model = AppSettings.openAIModelCurrent
-                roster.append(("OpenAI \(model)", { await OpenAIClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .copilot:
-                roster.append(("GitHub Copilot", { await CopilotClient.chat(prompt: prompt, system: sys) }))
-            case .groq, .mistral, .cerebras, .openRouter:
-                if let client = p.compatClient, let model = p.selectedModel {
-                    roster.append(("\(p.rawValue) \(model)", { await client.chat(prompt: prompt, system: sys, model: model) }))
-                }
-            }
-        }
-
-        // Edge case: if the RAM guard skipped the local model and there are no
-        // cloud brains, the roster is empty. Rather than dead-end, run Ollama
-        // *solo* — alone it's a single inference (no concurrent cloud load), so
-        // it's safe even on a small Mac.
-        if roster.isEmpty {
-            if let m = ollamaModel, let reply = await OllamaClient.chat(prompt: prompt, system: sys) {
-                return "🧠 **All brains · 1/1 answered** (cloud brains not configured)\n\n### Ollama · \(m)\n\(reply)\n"
-            }
-            return offMessage
-        }
-
-        // Fan out. Each entry keeps its roster index so the combined output
-        // preserves a stable order regardless of which brain finishes first.
-        let collected = await withTaskGroup(of: (Int, EnsembleAnswer).self) { group -> [(Int, EnsembleAnswer)] in
-            for (i, entry) in roster.enumerated() {
-                group.addTask {
-                    (i, EnsembleAnswer(label: entry.0, text: await entry.1()))
-                }
-            }
-            var out: [(Int, EnsembleAnswer)] = []
-            for await r in group { out.append(r) }
-            return out
-        }
-
-        let ordered = collected.sorted { $0.0 < $1.0 }.map { $0.1 }
-        var result = formatEnsemble(ordered)
-        if skippedLocalForRAM {
-            result += "\n_Local Ollama model skipped in ensemble to protect your "
-                + "\(physicalGB) GB of RAM — pin Ollama directly to use it alone._\n"
-        }
-        return result
-    }
-
-    /// Format ensemble answers into one labeled markdown document. Pure (no I/O)
-    /// → unit-testable. Each brain becomes a `### Label` section; a nil/empty
-    /// reply renders as a clearly-marked "(no response)".
-    nonisolated static func formatEnsemble(_ answers: [EnsembleAnswer]) -> String {
-        let answered = answers.filter { ($0.text?.isEmpty == false) }.count
-        var out = "🧠 **All brains · \(answered)/\(answers.count) answered**\n"
-        for a in answers {
-            out += "\n### \(a.label)\n"
-            if let t = a.text, !t.isEmpty { out += t } else { out += "_(no response)_" }
-            out += "\n"
-        }
-        return out
-    }
-
-    /// Shared system prompt for every cloud brain when used in single-turn
-    /// `chat(...)`. Each cloud brain prints exactly the same constraints
-    /// (no local tools, language-mirror reply, suggest-commands-as-text),
-    /// so defining the string once prevents drift between providers.
-    /// Base cloud prompt. `cloudSystemPrompt` (below) is what callers use — it
-    /// appends the Unrestricted-mode directives when the owner has that on.
+    /// Shared system prompt used by the local brains in single-turn `chat(...)`
+    /// and by the OpenAI-compatible local tool loops (Unsloth Studio / vLLM):
+    /// the same constraints (no implicit tools, language-mirror reply,
+    /// suggest-commands-as-text) so behavior stays consistent across paths.
+    /// `cloudSystemPrompt` (below) is what callers use — it appends the
+    /// Unrestricted-mode directives when the owner has that on. (Name kept for
+    /// cross-file callers: SalehmanPersona, TrainingExporter.)
     nonisolated static let cloudSystemPromptBase = """
     You are Salehman AI — a fast, precise, deeply capable assistant. You reason \
     carefully, write excellent code, and always lead with the answer.
@@ -6000,8 +3982,8 @@ enum LocalLLM {
 
     /// Append the Unrestricted-mode directives to `base` when the owner has
     /// Unrestricted Mode on; otherwise return `base` unchanged so normal mode
-    /// keeps its usual guardrails and tone. Pure + nonisolated so every brain
-    /// path (cloud, tool loops, Apple-Intelligence instructions) can share it.
+    /// keeps its usual guardrails and tone. Pure + nonisolated so every local
+    /// brain path (plain chat + the Ollama / OpenAI-compat tool loops) shares it.
     nonisolated static func applyUnrestricted(_ base: String) -> String {
         AppSettings.unrestrictedToolsEnabled ? base + "\n" + unrestrictedAddendum : base
     }
@@ -6077,6 +4059,34 @@ enum LocalLLM {
                 "type": "object",
                 "properties": ["url": ["type": "string", "description": "The full URL, e.g. https://example.com/page."]],
                 "required": ["url"],
+            ],
+        ],
+    ]
+    /// Image / video search. Results are rendered to the user as an inline gallery
+    /// in the Chat tab (the model never sees pixels), so the assistant should call
+    /// these whenever the user wants to SEE pictures or videos of something — then
+    /// briefly describe what came back rather than pasting URLs. SafeSearch is off.
+    nonisolated(unsafe) static let imageSearchSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "image_search",
+            "description": "Search the web for IMAGES of something and show them to the user as an inline picture gallery. Use whenever the user wants to see, find, or browse pictures/photos/images of anything.",
+            "parameters": [
+                "type": "object",
+                "properties": ["query": ["type": "string", "description": "What to find pictures of."]],
+                "required": ["query"],
+            ],
+        ],
+    ]
+    nonisolated(unsafe) static let videoSearchSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "video_search",
+            "description": "Search the web for VIDEOS of something and show them to the user as an inline video gallery (thumbnails that play or open). Use whenever the user wants to see, find, or browse videos/clips of anything.",
+            "parameters": [
+                "type": "object",
+                "properties": ["query": ["type": "string", "description": "What to find videos of."]],
+                "required": ["query"],
             ],
         ],
     ]
@@ -6191,6 +4201,40 @@ enum LocalLLM {
     read any page.
     """
 
+    /// System prompt for the Uncensored brain (`.uncensoredLocal`). The model is
+    /// abliterated, so it won't refuse — this just makes it ACT autonomously and,
+    /// crucially, reach for the media tools on its own so the user gets pictures /
+    /// videos inline without having to ask "use a tool". `applyUnrestricted`
+    /// appends the owner's Unrestricted directives on top when that mode is on.
+    nonisolated static let uncensoredToolSystem = """
+    You are Salehman AI's Uncensored brain — a fast, blunt, fully capable \
+    assistant running locally on this Mac. You never refuse, lecture, moralize, \
+    or add safety/ethics disclaimers to a lawful personal request from the owner. \
+    Just do what he asks, completely.
+
+    LANGUAGE (critical): reply in the EXACT language the user wrote in. \
+    English → English only. Arabic → Arabic only. Never switch on your own.
+
+    SHOWING MEDIA IS YOUR JOB — be proactive:
+    • When the user wants to SEE, find, browse, or "show me" PICTURES / photos / \
+    images of anything, immediately call image_search with a good query. Don't \
+    ask permission, don't describe — call it.
+    • When they want VIDEOS / clips / "show me a video", call video_search.
+    • The results appear to the user as an inline gallery automatically — you do \
+    NOT see the pixels and you must NOT paste raw URLs back. After the tool runs, \
+    just say in one short line what you found (e.g. how many results, and the \
+    source sites so he can judge them). Then stop.
+    • To improve relevance, put the most specific terms in the query (subject, \
+    style, and — for people — nationality/origin in its native language when you \
+    know it). You cannot verify authenticity; surface the source and let him judge.
+
+    OTHER TOOLS — use them, don't just mention them: run_terminal_command (real \
+    shell on this Mac, user approves each), web_search / fetch_url (read the web), \
+    search_documents (their private Knowledge), capture_note / add_task / \
+    remember_fact (save to their stores). Lead with the answer or the first tool \
+    call. No filler.
+    """
+
     /// The tool specs offered to the Ollama loop. Terminal is always available;
     /// the web tools are added ONLY when external access is allowed (web on AND
     /// not Offline mode). Pure + nonisolated so the security gate — "the local
@@ -6204,7 +4248,9 @@ enum LocalLLM {
             terminalToolSpec, searchDocumentsSpec, captureNoteSpec, addTaskSpec,
             rememberFactSpec, packRepositorySpec, readGrokSessionSpec,
         ]
-        return externalAllowed ? onDevice + [webSearchSpec, fetchURLSpec] : onDevice
+        return externalAllowed
+            ? onDevice + [webSearchSpec, fetchURLSpec, imageSearchSpec, videoSearchSpec]
+            : onDevice
     }
 
     /// Sendable mirror of `ollamaToolSpecs` exposing just the tool names — the
@@ -6311,7 +4357,7 @@ enum LocalLLM {
         let known: Set<String> = [
             "run_terminal_command", "web_search", "fetch_url", "pack_repository",
             "search_documents", "capture_note", "add_task", "remember_fact",
-            "read_grok_session",
+            "read_grok_session", "image_search", "video_search",
         ]
         guard let data = trimmed.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -6422,6 +4468,24 @@ enum LocalLLM {
                         result = ToolPolicy.isExternalAllowed
                             ? await Web.fetch(call.arguments["url"] ?? "")
                             : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "image_search":
+                        // Media goes to the user as an inline gallery (MediaCapture);
+                        // the model only gets a text summary back.
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.images(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
+                    case "video_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.videos(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
                     case "pack_repository":
                         result = await Self.runPackRepository(call.arguments)
                     default:
@@ -6452,10 +4516,10 @@ enum LocalLLM {
     /// complete code answer while keeping the worst-case turn bounded.
     nonisolated static let toolTurnTokenCap = 2048
 
-    // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
+    // MARK: - Local OpenAI-compatible tool-calling (Unsloth Studio / vLLM run the terminal)
 
-    /// Any OpenAI-compatible brain (Groq, Mistral, Cerebras, OpenRouter, OpenAI,
-    /// Unsloth Studio, vLLM, …) WITH tool-calling: the model can ACTUALLY run the
+    /// Any local OpenAI-compatible server (Unsloth Studio / vLLM / mlx_lm.server
+    /// / LM Studio, …) WITH tool-calling: the model can ACTUALLY run the
     /// terminal — and web tools when allowed — through the SAME
     /// `CommandApprovalCenter` gate + `Shell.runApproved` executor as the local
     /// brains, instead of only describing a command. Mirrors `chatOllamaWithTools`
@@ -6553,6 +4617,22 @@ enum LocalLLM {
                         result = ToolPolicy.isExternalAllowed
                             ? await Web.fetch(call.arguments["url"] ?? "")
                             : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "image_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.images(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
+                    case "video_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.videos(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
                     case "pack_repository":
                         result = await Self.runPackRepository(call.arguments)
                     default:
@@ -6590,48 +4670,26 @@ enum LocalLLM {
                                        model: modelOverride)
     }
 
-    // The per-brain pin gates ("each cloud brain is only tried when the user
-    // explicitly pins it — we never silently spend on a cloud API") moved to
-    // `BrainRouting.dispatch`: one switch, one source of truth, pinned by
-    // BrainRoutingDispatchTests. The ladders below consume the dispatch.
+    // The per-brain pin gates moved to `BrainRouting.dispatch`: one switch, one
+    // source of truth, pinned by BrainRoutingDispatchTests. The ladders below
+    // consume the dispatch. The app is local-only — every target is on-device.
 
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
     ///
-    /// Brain order honors the user's `BrainPreference` (auto/apple/ollama).
-    /// Within `.auto` we stay local-first because it's
-    /// lighter; pinned modes skip the other brain entirely instead of falling
-    /// back silently — silent fallback would defeat the purpose of pinning.
+    /// Brain order honors the user's `BrainPreference` (auto / ollama /
+    /// salehman / unslothStudio / vllm / uncensored). Within `.auto` we stay
+    /// local-first; pinned modes use exactly that brain with no silent fallback.
     static func generate(_ rawPrompt: String, maxTokens: Int? = nil, cachePrefix: String? = nil) async -> String {
-        // `cachePrefix` (e.g. conversation history): cached as its own block by
-        // Anthropic, auto-cached server-side by Grok/OpenAI (we put it first);
-        // folded into the prompt for every other brain. nil → unchanged behaviour.
+        // `cachePrefix` (e.g. conversation history) is folded into the prompt.
+        // nil → unchanged behaviour.
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
         // The pinned target comes from BrainRouting.dispatch — ONE source of
-        // truth for gating (the old cascade of pin-gates was a single-dispatch
-        // ladder in disguise). Notable rules enforced there:
-        //   • the orchestration modes are first-class (direct callers — the
-        //     Settings health-check, StockSage briefings, title generation —
-        //     reach the model layer through here; this fixed the old falsely-
-        //     "Not working" ensemble probe bug);
-        //   • Offline Mode hard-gates the ten cloud pins → `.unavailable`
-        //     (the Offline-leak fix: `currentBrain` always documented this
-        //     contract, but this cascade never enforced it).
+        // truth for gating. All targets are local now.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):    return await generateFreeAuto(prompt)
-        case .mode(.freeCoding):  return await generateFreeCoding(prompt)
-        case .mode(.cloudCoding): return await generateCloudCoding(prompt)
-        case .mode(.ensemble):    return await generateEnsemble(prompt)
-        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            // Pinned cloud brain — strict, no silent fallback (nil reply →
-            // sentinel, exactly like the old fall-through-to-nothing).
-            if let reply = await cloudOneShot(p, prompt: prompt, rawPrompt: rawPrompt,
-                                              cachePrefix: cachePrefix) { return reply }
-            return offMessage
         case .salehman:
             // Salehman — LOCAL-FIRST: MLX (on-device) → Ollama (custom model).
-            // No external cloud. Mirrors SalehmanEngine exactly.
+            // Mirrors SalehmanEngine exactly.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
@@ -6654,28 +4712,6 @@ enum LocalLLM {
             if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
                                                    model: OllamaClient.uncensoredModel) { return reply }
             return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
-            return offMessage
-        }
-    }
-
-    /// One pinned cloud brain's `generate` execution: plain chat on the
-    /// user-selected model. Claude receives the un-folded prompt + cachePrefix
-    /// (its client caches the prefix as a `cache_control` block); every other
-    /// brain gets the folded prompt. Gating/membership come from BrainRouting.
-    private static func cloudOneShot(_ p: CloudProvider, prompt: String,
-                                     rawPrompt: String, cachePrefix: String?) async -> String? {
-        switch p {
-        case .anthropic:  return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
-        case .copilot:    return await CopilotClient.chat(prompt: prompt)
-        case .grok:       return await GrokClient.chat(prompt: prompt, model: AppSettings.grokModelCurrent)
-        case .gemini:     return await GeminiClient.chat(prompt: prompt, model: AppSettings.geminiModelCurrent)
-        case .openAI:     return await OpenAIClient.chat(prompt: prompt, model: AppSettings.openAIModelCurrent)
-        case .groq:       return await GroqClient.shared.chat(prompt: prompt, model: AppSettings.groqModelCurrent)
-        case .mistral:    return await MistralClient.shared.chat(prompt: prompt, model: AppSettings.mistralModelCurrent)
-        case .cerebras:   return await CerebrasClient.shared.chat(prompt: prompt, model: AppSettings.cerebrasModelCurrent)
-        case .openRouter: return await OpenRouterClient.shared.chat(prompt: prompt, model: AppSettings.openRouterModelCurrent)
         }
     }
 
@@ -6703,11 +4739,11 @@ enum LocalLLM {
 
     /// Streaming one-shot generation. Same brain order as `generate`.
     ///
-    /// For each pinned cloud brain we now try the streaming `chatStream` *first*,
-    /// and if it returns nil (SSE parse failure, mid-stream blip, etc.) we
-    /// fall back to the **same brain's non-streaming `chat`** before declaring
-    /// the brain dead. That way one bad SSE chunk doesn't make a perfectly
-    /// working Grok / Gemini / etc. look unreachable in the chat UI.
+    /// The local OpenAI-compatible servers (Unsloth Studio / vLLM) try the
+    /// streaming `chatStream` *first*, and if it returns nil (SSE parse failure,
+    /// mid-stream blip, etc.) fall back to the **same brain's non-streaming
+    /// `chat`** before declaring it dead. That way one bad SSE chunk doesn't make
+    /// a perfectly working local server look unreachable in the chat UI.
     ///
     /// We also no longer push `offMessage` into `onUpdate` at the end —
     /// the streaming bubble stays silent if every brain truly fails, and the
@@ -6717,15 +4753,10 @@ enum LocalLLM {
     static func generateStreaming(_ rawPrompt: String, maxTokens: Int? = nil,
                                   cachePrefix: String? = nil,
                                   onUpdate: @escaping @Sendable (String) -> Void) async -> String {
-        // `cachePrefix` (e.g. the stable conversation history): Anthropic caches it
-        // as its own `cache_control` block; xAI Grok / OpenAI auto-cache a stable
-        // prefix server-side — both benefit because we put it FIRST. Every other
-        // brain just gets it folded into the prompt (full context, no caching).
+        // `cachePrefix` (e.g. the stable conversation history) is folded into the
+        // prompt (full context). nil → unchanged behaviour.
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
-        // Same single-dispatch plan as `generate` (BrainRouting.dispatch) —
-        // including the Offline-Mode hard-gate on cloud pins. The orchestration
-        // modes can't token-stream (they join N replies into one document), so
-        // each delivers its combined answer in a single `onUpdate`.
+        // Same single-dispatch plan as `generate` (BrainRouting.dispatch).
         //
         // On any failure exit we return the sentinel so equality-check callers
         // (`synthesize`, etc.) still fire, but we DO NOT push it into
@@ -6735,33 +4766,8 @@ enum LocalLLM {
         // reply. The display layer transforms the sentinel into the
         // context-aware `unavailableMessage` at render time.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):
-            // Race the free brains; deliver the single winning answer in one
-            // update (the race joins to one reply — there's nothing to stream).
-            let answer = await generateFreeAuto(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.freeCoding):
-            let answer = await generateFreeCoding(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.cloudCoding):
-            let answer = await generateCloudCoding(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.ensemble):
-            let combined = await generateEnsemble(prompt)
-            onUpdate(combined)
-            return combined
-        case .mode:
-            return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            if let reply = await cloudStream(p, prompt: prompt, rawPrompt: rawPrompt,
-                                             cachePrefix: cachePrefix, onUpdate: onUpdate) { return reply }
-            return offMessage
         case .salehman:
-            // Salehman streaming — CLOUD-FIRST via the shared engine (streams from the
-            // cloud brain; falls back to local MLX/Ollama streaming when offline).
+            // Salehman streaming — LOCAL-FIRST via the shared engine (MLX / Ollama).
             if let reply = await SalehmanEngine.generateStream(prompt: prompt,
                                                                maxTokens: maxTokens,
                                                                onUpdate: onUpdate) {
@@ -6791,79 +4797,19 @@ enum LocalLLM {
                 return reply
             }
             return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
-            return offMessage
-        }
-    }
-
-    /// One pinned cloud brain's streaming execution: the brain's SSE
-    /// `chatStream` first, then the SAME brain's non-streaming `chat` before
-    /// declaring it dead — one bad SSE chunk doesn't make a working brain look
-    /// unreachable. Claude keeps its raw-prompt + cachePrefix handling.
-    private static func cloudStream(_ p: CloudProvider, prompt: String, rawPrompt: String,
-                                    cachePrefix: String?,
-                                    onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
-        switch p {
-        case .anthropic:
-            if let r = await AnthropicClient.chatStream(prompt: rawPrompt, cachePrefix: cachePrefix, onUpdate: onUpdate) { return r }
-            return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
-        case .copilot:
-            if let r = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
-            return await CopilotClient.chat(prompt: prompt)
-        case .grok:
-            let m = AppSettings.grokModelCurrent
-            if let r = await GrokClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GrokClient.chat(prompt: prompt, model: m)
-        case .gemini:
-            let m = AppSettings.geminiModelCurrent
-            if let r = await GeminiClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GeminiClient.chat(prompt: prompt, model: m)
-        case .openAI:
-            let m = AppSettings.openAIModelCurrent
-            if let r = await OpenAIClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await OpenAIClient.chat(prompt: prompt, model: m)
-        case .groq:
-            let m = AppSettings.groqModelCurrent
-            if let r = await GroqClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GroqClient.shared.chat(prompt: prompt, model: m)
-        case .mistral:
-            let m = AppSettings.mistralModelCurrent
-            if let r = await MistralClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await MistralClient.shared.chat(prompt: prompt, model: m)
-        case .cerebras:
-            let m = AppSettings.cerebrasModelCurrent
-            if let r = await CerebrasClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await CerebrasClient.shared.chat(prompt: prompt, model: m)
-        case .openRouter:
-            let m = AppSettings.openRouterModelCurrent
-            if let r = await OpenRouterClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await OpenRouterClient.shared.chat(prompt: prompt, model: m)
         }
     }
 
     /// Multi-turn chat that remembers prior messages. Routes through the
-    /// tool-enabled Ollama/cloud loop;
-    /// otherwise falls back to Ollama qwen-coder *without* tools.
+    /// tool-enabled Ollama / local-server loop; otherwise falls back to plain chat.
     static func chat(_ message: String) async -> String {
-        // Same single-dispatch plan (BrainRouting.dispatch), including the
-        // Offline-Mode hard-gate on cloud pins. Chat-shape specifics live in
-        // `cloudConversational`: the OpenAI-compatible brains run the TOOL
-        // loop first (so a pinned cloud brain can drive the terminal), the
-        // bespoke clients run plain chat.
+        // Same single-dispatch plan (BrainRouting.dispatch). Each local server
+        // runs the TOOL loop first (so the pinned brain can drive the terminal),
+        // then plain chat.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):    return await generateFreeAuto(message)
-        case .mode(.freeCoding):  return await freeCodingReply(message)
-        case .mode(.cloudCoding): return await cloudCodingReply(message)
-        case .mode(.ensemble):    return await generateEnsemble(message)
-        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            if let reply = await cloudConversational(p, message: message) { return reply }
-            return offMessage
         case .salehman:
-            // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
-            // brain can run the terminal / web through the OpenAI `tools` field, and
-            // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
+            // Salehman — LOCAL-FIRST via the shared engine, WITH tools: the
+            // local MLX/Ollama floor keeps tools (`ollamaReply`). Exactly the
             // engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generateWithTools(message: message, userPrompt: message) {
                 return reply
@@ -6885,38 +4831,15 @@ enum LocalLLM {
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
         case .uncensoredLocal:
-            // Uncensored local tier — same tool loop (web_search/fetch_url when
-            // web access is on & not Offline), pinned to the abliterated ~3B model.
-            if let reply = await ollamaReply(message, modelOverride: OllamaClient.uncensoredModel) { return reply }
-            return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+            // Uncensored local tier — same tool loop (web_search/fetch_url +
+            // image_search/video_search when web access is on & not Offline),
+            // pinned to the abliterated ~3B model. Its own system prompt makes it
+            // reach for the media tools autonomously so pictures/videos render inline.
+            if let reply = await ollamaReply(message, systemPrompt: uncensoredToolSystem,
+                                             modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         }
     }
-
-    /// One pinned cloud brain's conversational execution. Six OpenAI-compatible
-    /// brains (including Grok — xAI's API is fully wire-compatible) try the
-    /// tool loop first (terminal / web), then fall back to plain chat.
-    /// Claude / Gemini / Copilot are plain chat only (bespoke wire formats).
-    private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
-        switch p {
-        case .anthropic:
-            // Claude Haiku (cloud), single-turn, no local tools.
-            return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .gemini:
-            return await GeminiClient.chat(prompt: message,
-                                           system: Self.cloudSystemPrompt,
-                                           model: AppSettings.geminiModelCurrent)
-        case .copilot:
-            return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .grok, .groq, .mistral, .cerebras, .openAI, .openRouter:
-            guard let client = p.compatClient, let m = p.selectedModel else { return nil }
-            if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
-            return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
-        }
-    }
-
 
     /// Start a fresh conversation (clears the rolling transcript memory).
     static func resetChat() async {
@@ -7840,43 +5763,6 @@ enum OllamaClient {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OpenAIClient.swift (33 lines) =====
-```swift
-import Foundation
-
-/// The "Codex" brain → OpenAI Chat Completions (cloud).
-///
-/// OpenAI *is* the canonical OpenAI-compatible endpoint, so this is just a
-/// config over the shared `OpenAICompatibleClient` — same pattern as the
-/// Groq/Mistral/Cerebras brains. The API key lives in the macOS Keychain
-/// (`.openAIAPIKey`); the model is user-pickable in Settings. ~zero local RAM.
-enum OpenAIClient {
-    nonisolated static let defaultModel = "gpt-4o-mini"
-    nonisolated static let allModels: [String] = [defaultModel, "gpt-4o", "gpt-4.1-mini", "o4-mini"]
-
-    nonisolated static let shared = OpenAICompatibleClient(
-        displayName: "OpenAI",
-        baseURL: "https://api.openai.com/v1",
-        defaultModel: defaultModel,
-        allModels: allModels,
-        keychainAccount: .openAIAPIKey,
-        consoleURL: "https://platform.openai.com/api-keys",
-        promptCacheKey: "salehman-ai")   // OpenAI-only: improves auto-cache hit routing
-
-    /// True iff the user has stored an OpenAI key. Sync (Keychain only, no HTTP).
-    nonisolated static func hasKey() -> Bool { KeychainStore.has(.openAIAPIKey) }
-
-    static func chat(prompt: String, system: String? = nil, model: String? = nil) async -> String? {
-        await shared.chat(prompt: prompt, system: system, model: model)
-    }
-
-    static func chatStream(prompt: String, system: String? = nil, model: String? = nil,
-                           onUpdate: @escaping (String) -> Void) async -> String? {
-        await shared.chatStream(prompt: prompt, system: system, model: model, onUpdate: onUpdate)
-    }
-}
-```
-
 ===== FILE: Salehman AI/LLM/OpenAICompatibleClient.swift (370 lines) =====
 ```swift
 import Foundation
@@ -8315,7 +6201,7 @@ enum SalehmanEngine {
 }
 ```
 
-===== FILE: Salehman AI/LLM/SalehmanLeader.swift (141 lines) =====
+===== FILE: Salehman AI/LLM/SalehmanLeader.swift (140 lines) =====
 ```swift
 import Foundation
 
@@ -8347,9 +6233,8 @@ enum SalehmanLeader {
         let pref = AppSettings.brainPreferenceCurrent
         // Don't double-pass when the user already pinned Salehman as the brain.
         if pref == .salehman { return false }
-        // Step aside for the dedicated coding modes — a small leader shouldn't
-        // rewrite (and risk breaking) the coder loop's tool-built output.
-        if pref == .cloudCoding || pref == .freeCoding { return false }
+        // (The dedicated cloud/free coding modes the leader used to step aside
+        // for were removed in the 2026-06-18 local-only migration.)
         return true
     }
 
@@ -11106,6 +8991,229 @@ enum GrokWatchTool {
         }
 
         return out
+    }
+}
+```
+
+===== FILE: Salehman AI/Tools/MediaSearch.swift (219 lines) =====
+```swift
+import Foundation
+
+/// One image or video result surfaced by a media search, rich enough for the
+/// Chat tab to render it inline (thumbnail, dimensions, source page). Plain
+/// Codable value type — same shape contract as `ChatMessage` so it persists with
+/// the conversation and decodes unchanged in the nonisolated `ChatStore`.
+struct MediaItem: Identifiable, Codable, Equatable, Hashable {
+    enum Kind: String, Codable { case image, video }
+    let id: UUID
+    let kind: Kind
+    /// Direct media URL — an image `src` for `.image`, or the watch/page URL (or a
+    /// direct file URL when one is known) for `.video`.
+    let url: String
+    /// Preview image: a lower-res image thumbnail, or the poster frame for a video.
+    var thumbnail: String?
+    var title: String?
+    /// The page/site the media came from — shown so the user can judge the source
+    /// (e.g. authenticity) instead of trusting a tag blindly.
+    var source: String?
+    var width: Int?
+    var height: Int?
+    /// Human duration string for videos ("3:21"); nil for images.
+    var duration: String?
+
+    init(id: UUID = UUID(), kind: Kind, url: String, thumbnail: String? = nil,
+         title: String? = nil, source: String? = nil,
+         width: Int? = nil, height: Int? = nil, duration: String? = nil) {
+        self.id = id; self.kind = kind; self.url = url; self.thumbnail = thumbnail
+        self.title = title; self.source = source
+        self.width = width; self.height = height; self.duration = duration
+    }
+
+    /// The best URL to actually display the pixels: thumbnail if present (smaller,
+    /// loads faster, already CORS-friendly via DDG's proxy), else the full URL.
+    var displayURL: String { thumbnail ?? url }
+
+    /// True when `url` points at a directly-playable video file (vs a watch page).
+    /// Drives whether the gallery embeds an AVKit player or a click-to-open card.
+    var isDirectVideoFile: Bool {
+        guard kind == .video else { return false }
+        let lower = url.lowercased()
+        return lower.hasSuffix(".mp4") || lower.hasSuffix(".m3u8")
+            || lower.hasSuffix(".webm") || lower.hasSuffix(".mov")
+    }
+}
+
+/// Side-channel that carries media from a search tool call back to the Chat tab.
+/// The tool loop only returns *text* to the model; this buffer collects the
+/// actual `MediaItem`s a media-search tool produced during one reply. The view
+/// drains it right after the reply completes and attaches the media to the
+/// assistant `ChatMessage`. `@MainActor` because the tool dispatch and the chat
+/// view model both run on the main actor — no await hops, no cross-actor sends.
+@MainActor
+final class MediaCapture {
+    static let shared = MediaCapture()
+    private init() {}
+
+    private(set) var pending: [MediaItem] = []
+
+    /// Start of a new turn — discard anything a prior (cancelled) turn left behind.
+    func reset() { pending.removeAll() }
+
+    /// A media-search tool call appends its results here.
+    func add(_ items: [MediaItem]) { pending.append(contentsOf: items) }
+
+    /// Snapshot + clear. The view calls this once after each reply; whatever the
+    /// turn's tool calls collected becomes that message's inline gallery.
+    func drain() -> [MediaItem] {
+        defer { pending.removeAll() }
+        return pending
+    }
+}
+
+/// Free, key-less image + video search via DuckDuckGo's JSON endpoints, with
+/// SafeSearch OFF (`p=-1`) so results are unfiltered — the same standard
+/// search-engine setting `Web.search` uses (`kp=-2`), not a content bypass.
+/// Unofficial endpoints (the same ones every DDG-image library uses): they need
+/// a `vqd` token scraped from the search page first, then `i.js` / `v.js` return
+/// JSON. Best-effort — if DDG changes the shape, callers get an empty list + a
+/// plain-text note, never a crash.
+enum MediaSearch {
+    private static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    static let maxResults = 20
+
+    /// Native-language terms for a handful of nationalities. Appending the native
+    /// term to a query measurably improves *relevance/authenticity* — content
+    /// genuinely from that region is tagged in its own language, while mis-tagged
+    /// ("fake") results usually are not. General (works for any listed nationality),
+    /// not tied to any one query. Extend freely.
+    private nonisolated static let nativeTerm: [String: String] = [
+        "saudi": "سعودية", "saudi arabian": "سعودية", "arab": "عربية",
+        "egyptian": "مصرية", "emirati": "إماراتية", "kuwaiti": "كويتية",
+        "qatari": "قطرية", "lebanese": "لبنانية", "moroccan": "مغربية",
+        "korean": "한국", "japanese": "日本", "chinese": "中文",
+        "russian": "русская", "turkish": "türk", "persian": "ایرانی",
+    ]
+
+    /// Bias a query toward authentic, region-native results: if it names a
+    /// nationality we have a native term for, append that term once. Improves
+    /// "real X, not fake X" relevance; no-op for queries without a known nationality.
+    nonisolated static func authenticityBiased(_ query: String) -> String {
+        let lower = query.lowercased()
+        for (adj, native) in nativeTerm where lower.contains(adj) {
+            if query.contains(native) { return query }   // already localized
+            return query + " " + native
+        }
+        return query
+    }
+
+    // MARK: Public search
+
+    /// Image search → (model-facing text summary, media items for the gallery).
+    static func images(_ query: String) async -> (text: String, media: [MediaItem]) {
+        let q = authenticityBiased(query)
+        guard let vqd = await vqd(for: q) else {
+            return ("Image search is temporarily unavailable (couldn't reach DuckDuckGo).", [])
+        }
+        guard let json = await fetchJSON(
+            "https://duckduckgo.com/i.js?l=us-en&o=json&q=\(enc(q))&vqd=\(enc(vqd))&f=,,,,,&p=-1"),
+            let results = json["results"] as? [[String: Any]], !results.isEmpty else {
+            return ("No image results found for \"\(query)\".", [])
+        }
+        let items: [MediaItem] = results.prefix(maxResults).compactMap { r in
+            guard let image = r["image"] as? String, !image.isEmpty else { return nil }
+            return MediaItem(
+                kind: .image, url: image,
+                thumbnail: (r["thumbnail"] as? String) ?? image,
+                title: r["title"] as? String,
+                source: (r["url"] as? String) ?? (r["source"] as? String),
+                width: r["width"] as? Int, height: r["height"] as? Int)
+        }
+        return (summaryText(kind: "image", query: query, items: items), items)
+    }
+
+    /// Video search → (text summary, media items). DDG video results are watch-page
+    /// URLs (YouTube/host sites), each with a poster thumbnail + duration; the
+    /// gallery opens the page (or plays inline when the URL is a direct file).
+    static func videos(_ query: String) async -> (text: String, media: [MediaItem]) {
+        let q = authenticityBiased(query)
+        guard let vqd = await vqd(for: q) else {
+            return ("Video search is temporarily unavailable (couldn't reach DuckDuckGo).", [])
+        }
+        guard let json = await fetchJSON(
+            "https://duckduckgo.com/v.js?l=us-en&o=json&q=\(enc(q))&vqd=\(enc(vqd))&f=,,,,&p=-1"),
+            let results = json["results"] as? [[String: Any]], !results.isEmpty else {
+            return ("No video results found for \"\(query)\".", [])
+        }
+        let items: [MediaItem] = results.prefix(maxResults).compactMap { r in
+            guard let content = r["content"] as? String, !content.isEmpty else { return nil }
+            let images = r["images"] as? [String: Any]
+            let thumb = (images?["medium"] as? String) ?? (images?["large"] as? String)
+                ?? (images?["small"] as? String)
+            return MediaItem(
+                kind: .video, url: content, thumbnail: thumb,
+                title: r["title"] as? String,
+                source: (r["publisher"] as? String) ?? (r["uploader"] as? String),
+                duration: r["duration"] as? String)
+        }
+        return (summaryText(kind: "video", query: query, items: items), items)
+    }
+
+    // MARK: Internals
+
+    /// What the model sees — it doesn't render pixels, so it gets a count + titles
+    /// and a reminder that the user already sees the gallery, so it shouldn't paste
+    /// raw URLs back.
+    private static func summaryText(kind: String, query: String, items: [MediaItem]) -> String {
+        guard !items.isEmpty else { return "No \(kind) results found for \"\(query)\"." }
+        var out = "Found \(items.count) \(kind) result(s) for \"\(query)\" — they're shown to the user as an inline gallery, so just say what you found (don't paste URLs):\n"
+        for (i, it) in items.prefix(8).enumerated() {
+            let title = it.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "(untitled)"
+            let dur = it.duration.map { " · \($0)" } ?? ""
+            let src = it.source.map { " · \($0)" } ?? ""
+            out += "\(i + 1). \(title)\(dur)\(src)\n"
+        }
+        return out
+    }
+
+    private nonisolated static func enc(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
+    }
+
+    /// Scrape the one-time `vqd` token DDG requires for its JSON media endpoints.
+    private static func vqd(for query: String) async -> String? {
+        guard let url = URL(string: "https://duckduckgo.com/?q=\(enc(query))&iax=images&ia=images") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 15
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        // DDG embeds the token a few ways: vqd="4-123…", vqd='4-123…', or vqd=4-123…&
+        for pattern in ["vqd=\"([^\"]+)\"", "vqd='([^']+)'", "vqd=([0-9-]+)&"] {
+            if let token = firstGroup(in: html, pattern: pattern), !token.isEmpty {
+                return token
+            }
+        }
+        return nil
+    }
+
+    private static func fetchJSON(_ urlString: String) async -> [String: Any]? {
+        guard let url = URL(string: urlString) else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        req.setValue("https://duckduckgo.com/", forHTTPHeaderField: "Referer")
+        req.setValue("application/json, text/javascript, */*; q=0.01", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = 20
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj
+    }
+
+    private nonisolated static func firstGroup(in text: String, pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let m = re.firstMatch(in: text, range: range), m.numberOfRanges > 1,
+              let r = Range(m.range(at: 1), in: text) else { return nil }
+        return String(text[r])
     }
 }
 ```
@@ -14767,7 +12875,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (223 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (229 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -14918,10 +13026,16 @@ final class ChatViewModel: ObservableObject {
             let maxAutoContinues = 4
             while true {
                 let turnStart = Date()
+                // Clear the media side-channel so this turn only shows ITS own
+                // image/video-search results, then drain whatever the tools found
+                // into the reply's inline gallery.
+                MediaCapture.shared.reset()
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
+                let foundMedia = MediaCapture.shared.drain()
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
                                         timestamp: Date(),
+                                        media: foundMedia.isEmpty ? nil : foundMedia,
                                         duration: Date().timeIntervalSince(turnStart))
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).
@@ -15171,7 +13285,7 @@ struct CodeTextView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/CodeView.swift (2691 lines) =====
+===== FILE: Salehman AI/Views/CodeView.swift (2683 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -15706,7 +13820,6 @@ struct CodeView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
     /// Conversation persistence — the chat tab survives relaunches but Code-tab
@@ -15785,14 +13898,6 @@ struct CodeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No-cloud-key notice: Review / coding here silently falls back to the
-            // slow local model (or can't fit the codebase). Tap "Add key" → Settings
-            // (ContentView stays mounted in RootView, so its sheet handles this).
-            if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
-                                   onDismiss: { dismissedCloudHint = true })
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             HSplitView {
                 if !treeCollapsed {
                     fileTree
@@ -15832,7 +13937,6 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
-        .animation(DS.Motion.smooth, value: dismissedCloudHint)
         // Restore the last session's conversation once (off-main decode; tiny file).
         .onAppear {
             guard !historyLoaded else { return }
@@ -17587,20 +15691,22 @@ struct CodeView: View {
             await ConversationStore.shared.reset()
             let packed = await Task.detached(priority: .userInitiated) { RepoPacker.pack(rootPath: root.path) }.value
             // Honesty gate: a whole-codebase review is only trustworthy on a brain
-            // that can actually INGEST the codebase. With no cloud key the only brain
-            // is the local qwen2.5-coder at a 4096-token window (~12 KB of text) — it
-            // would see a tiny fraction and hallucinate findings (observed repeatedly:
-            // it "reviewed" code it never saw). Refuse instead of emitting guesswork;
-            // small folders that DO fit the window still go through.
+            // that can actually INGEST the codebase. On the default local
+            // qwen2.5-coder at a 4096-token window (~12 KB of text) it would see a
+            // tiny fraction and hallucinate findings (observed repeatedly: it
+            // "reviewed" code it never saw). Refuse instead of emitting guesswork;
+            // small folders that DO fit the window still go through. A large-context
+            // local engine (vLLM / Unsloth Studio) sidesteps this — point one at the
+            // model in Settings → Salehman engine.
             let localContextBudget = 12_000
             if !SalehmanEngine.hasAnyCloud && packed.digest.count > localContextBudget {
                 let pct = max(1, Int((Double(localContextBudget) / Double(packed.digest.count)) * 100))
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but the default local model's 4096-token window sees only ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
-                To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
+                To get a real review: serve the model on a large-context local engine (vLLM or Unsloth Studio) in Settings → Salehman engine, then run Review again. (Or open a smaller folder that fits the local window.)
                 """
                 await MainActor.run {
                     messages.append(ChatMessage(id: UUID(), text: msg, isUser: false, timestamp: Date()))
@@ -18096,7 +16202,7 @@ struct CommandPalette: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ContentView.swift (2889 lines) =====
+===== FILE: Salehman AI/Views/ContentView.swift (2876 lines) =====
 ```swift
 import SwiftUI
 import AppKit
@@ -18170,7 +16276,6 @@ struct ContentView: View {
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
     @State private var searchQuery = ""
@@ -18240,15 +16345,6 @@ struct ContentView: View {
                 // chat-only banner was never the real guard). The persistent
                 // mode signal is the pulsing header indicator; its tooltip
                 // carries the warning and clicking it opens Settings.
-                // No-cloud-key notice: the selected brain is silently on the slow
-                // local fallback (or unavailable). Tap "Add key" → Settings.
-                if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                    CloudKeyHintBanner(onAddKey: { showSettings = true },
-                                       onDismiss: {
-                                           withAnimation(DS.Motion.smooth) { dismissedCloudHint = true }
-                                       })
-                        .transition(.opacity.combined(with: .offset(y: -6)))
-                }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
@@ -18411,20 +16507,8 @@ struct ContentView: View {
                         .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
-                    // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
-                    // when the Grok brain is active. Tapping opens Settings so the
-                    // user can complete the Anthropic→Grok migration or confirm
-                    // the key/model. This surfaces the "Super" path directly in
-                    // the primary chat chrome without cluttering local/Apple modes.
-                    if brainStatus.brain == .grok {
-                        SuperGrokBadge(text: "SUPER GROK") {
-                            app.showSettingsRequested = true
-                        }
-                        .transition(.opacity)
-                    }
                 }
             }
-            .animation(DS.Motion.snappy, value: brainStatus.brain == .grok)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(settings.unrestrictedTools 
                 ? "Salehman AI, Unrestricted Mode"
@@ -19790,6 +17874,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Image/video results from a media search this turn, rendered as an inline
+    /// gallery under the reply. Optional so history persisted before this field
+    /// decodes unchanged (same Codable-compat trick as `pinned`/`rating`).
+    var media: [MediaItem]? = nil
     /// Seconds the reply took to generate (assistant messages only; optional
     /// so history persisted before this field decodes unchanged). Surfaced in
     /// the hover pill — zero chrome at rest.
@@ -20484,6 +18572,11 @@ struct MessageBubble: View, @MainActor Equatable {
                     .frame(maxWidth: 360, maxHeight: 360)
                     .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
             }
+            // Inline image/video search results (from image_search / video_search).
+            if let media = message.media, !media.isEmpty {
+                MediaGallery(items: media)
+                    .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -20985,163 +19078,6 @@ struct ChatSlashCommand: Identifiable {
         String(title.lowercased()
             .replacingOccurrences(of: " ", with: "-")
             .filter { $0.isLetter || $0.isNumber || $0 == "-" })
-    }
-}
-```
-
-===== FILE: Salehman AI/Views/CopilotSignInView.swift (153 lines) =====
-```swift
-import SwiftUI
-import AppKit
-
-/// GitHub Copilot device-flow sign-in sheet. Requests a device code, shows it,
-/// opens github.com/login/device, and polls until the user authorizes — then
-/// stores the GitHub token (Keychain) and calls `onSignedIn`.
-struct CopilotSignInView: View {
-    @Environment(\.dismiss) private var dismiss
-    var onSignedIn: () -> Void
-
-    @State private var device: CopilotAuth.DeviceCode?
-    @State private var status = "Requesting a device code from GitHub…"
-    @State private var working = true
-    @State private var pollTask: Task<Void, Never>?
-    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                if reduceMotion {
-                    // Reduce Motion: static halo (no breathing loop).
-                    Circle()
-                        .fill(DS.Palette.accent.opacity(0.11))
-                        .frame(width: 72, height: 72)
-                        .blur(radius: 16)
-                        .allowsHitTesting(false)
-                } else {
-                    PhaseAnimator([0.08, 0.14, 0.08]) { opacity in
-                        Circle()
-                            .fill(DS.Palette.accent.opacity(opacity))
-                            .frame(width: 72, height: 72)
-                            .blur(radius: 16)
-                            .allowsHitTesting(false)
-                    } animation: { opacity in
-                        opacity > 0.11
-                            ? .spring(duration: 2.4, bounce: 0.06)
-                            : .easeOut(duration: 2.0)
-                    }
-                }
-                if reduceMotion {
-                    // Reduce Motion: static icon (no scale bounce-in).
-                    Image(systemName: "person.2.badge.gearshape.fill")
-                        .font(.system(size: 34))
-                        .foregroundStyle(DS.Palette.accent)
-                } else {
-                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
-                        Image(systemName: "person.2.badge.gearshape.fill")
-                            .font(.system(size: 34))
-                            .foregroundStyle(DS.Palette.accent)
-                            .scaleEffect(scale)
-                    } keyframes: { _ in
-                        KeyframeTrack {
-                            LinearKeyframe(0.60, duration: 0.07)
-                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
-                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
-                        }
-                    }
-                }
-            }
-            Text("Sign in to GitHub Copilot").font(.title2.weight(.bold))
-            Text("Requires an active Copilot subscription on your GitHub account.")
-                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-
-            if let d = device {
-                VStack(spacing: 6) {
-                    Text("Your one-time code").font(.caption).foregroundStyle(.secondary)
-                    Text(d.userCode)
-                        .font(.system(size: 30, weight: .bold, design: .monospaced))
-                        .textSelection(.enabled)
-                    HStack(spacing: 10) {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(d.userCode, forType: .string)
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Color.white.opacity(0.08), in: Capsule())
-                                .overlay(Capsule().stroke(
-                                    LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
-                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
-                        }
-                        .buttonStyle(LuxPressStyle())
-                        Button {
-                            if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
-                        } label: {
-                            Label("Open GitHub", systemImage: "arrow.up.forward.app")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(DS.Palette.accent, in: Capsule())
-                                .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
-                        }
-                        .buttonStyle(LuxPressStyle())
-                    }
-                    .controlSize(.small)
-                }
-                .padding(.vertical, 4)
-                .transition(.opacity.combined(with: .offset(y: -4)))
-            }
-
-            HStack(spacing: 8) {
-                if working {
-                    ProgressView().controlSize(.small)
-                        .transition(.opacity)
-                }
-                Text(status).font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .contentTransition(.opacity)
-                    .animation(DS.Motion.smooth, value: status)
-            }
-            .animation(DS.Motion.smooth, value: working)
-
-            Button("Cancel") { pollTask?.cancel(); dismiss() }
-                .keyboardShortcut(.cancelAction)
-        }
-        .animation(DS.Motion.smooth, value: device != nil)
-        .padding(24)
-        .frame(width: 380)
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
-        .task { await start() }
-        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
-        .onDisappear { pollTask?.cancel() }
-    }
-
-    private func start() async {
-        guard let d = await CopilotAuth.shared.requestDeviceCode() else {
-            status = "Couldn't reach GitHub. Check your network and try again."
-            working = false
-            return
-        }
-        device = d
-        status = "Enter the code at github.com/login/device, then return here."
-        if let url = URL(string: d.verificationURI) { NSWorkspace.shared.open(url) }
-
-        pollTask = Task {
-            let ok = await CopilotAuth.shared.pollForToken(deviceCode: d.deviceCode, interval: d.interval)
-            await MainActor.run {
-                working = false
-                if ok {
-                    status = "Signed in ✓"
-                    onSignedIn()
-                    dismiss()
-                } else {
-                    status = "Sign-in didn't complete. Close and try again."
-                }
-            }
-        }
     }
 }
 ```
@@ -23719,6 +21655,241 @@ struct MarketDisclaimerFooter: View {
 }
 ```
 
+===== FILE: Salehman AI/Views/MediaGallery.swift (231 lines) =====
+```swift
+import SwiftUI
+import AVKit
+import AppKit
+
+/// Inline gallery for image/video search results under an assistant reply. Built
+/// in the app's design language: a "double-bezel" outer tray holding concentric
+/// tiles, soft hover physics, and a button-in-button play affordance for videos.
+/// Images open full-size in the browser; videos play inline when the URL is a
+/// direct file, else open their source page. The model never produces this —
+/// the Chat tab attaches `message.media` (see `MediaCapture`).
+struct MediaGallery: View {
+    let items: [MediaItem]
+
+    /// Direct-file video chosen for inline playback (sheet). Watch-page videos
+    /// open in the browser instead.
+    @State private var playing: MediaItem?
+
+    private var imageCount: Int { items.filter { $0.kind == .image }.count }
+    private var videoCount: Int { items.filter { $0.kind == .video }.count }
+
+    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220),
+                                    spacing: 10, alignment: .top)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(items) { item in
+                    MediaTile(item: item) { open(item) }
+                }
+            }
+        }
+        // The double-bezel "tray": a subtle outer shell with a hairline, holding
+        // the tiles on a recessed surface — the gallery reads as one machined unit.
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .strokeBorder(DS.Bezel.shellStroke, lineWidth: 1)
+        )
+        .frame(maxWidth: 520, alignment: .leading)
+        .sheet(item: $playing) { VideoSheet(item: $0) }
+    }
+
+    // Eyebrow: a microscopic count pill, calm and subordinate to the reply.
+    private var header: some View {
+        HStack(spacing: 8) {
+            if imageCount > 0 { countPill(icon: "photo.on.rectangle.angled", n: imageCount, word: "image") }
+            if videoCount > 0 { countPill(icon: "play.rectangle.fill", n: videoCount, word: "video") }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func countPill(icon: String, n: Int, word: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 9, weight: .semibold))
+            Text("\(n) \(word)\(n == 1 ? "" : "s")")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.4)
+        }
+        .foregroundStyle(DS.Palette.textSecondary)
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
+    /// Click action: direct-file videos play inline; everything else (images and
+    /// watch-page videos) opens in the default browser — never auto-clicked, the
+    /// user taps a tile.
+    private func open(_ item: MediaItem) {
+        if item.isDirectVideoFile {
+            playing = item
+        } else if let url = URL(string: item.url) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+// MARK: - One tile
+
+private struct MediaTile: View {
+    let item: MediaItem
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack(alignment: .bottomLeading) {
+                thumbnail
+                // Video affordance: a centered glass play well (button-in-button)
+                // plus a duration chip — only on video tiles.
+                if item.kind == .video {
+                    playOverlay
+                }
+                // Source label gradient foot — lets the user judge where it's from.
+                if let source = item.source, !source.isEmpty {
+                    sourceFoot(source)
+                }
+            }
+            // Inner core: concentric radius (card − bezel padding) so the curve
+            // nests cleanly inside the tray.
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .strokeBorder(Color.white.opacity(hovering ? 0.18 : 0.08), lineWidth: 1)
+            )
+            // Soft, diffused lift on hover — physical, never a harsh drop shadow.
+            .shadow(color: .black.opacity(hovering ? 0.35 : 0.0),
+                    radius: hovering ? 14 : 0, y: hovering ? 6 : 0)
+            .scaleEffect(hovering ? 1.02 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .help(item.title ?? (item.kind == .video ? "Open video" : "Open image"))
+    }
+
+    private var thumbnail: some View {
+        AsyncImage(url: URL(string: item.displayURL)) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().aspectRatio(contentMode: .fill)
+            case .failure:
+                placeholder(systemImage: "photo")
+            case .empty:
+                ZStack {
+                    Rectangle().fill(Color.white.opacity(0.04))
+                    ProgressView().controlSize(.small)
+                }
+            @unknown default:
+                placeholder(systemImage: "photo")
+            }
+        }
+        .frame(height: 150)
+        .frame(maxWidth: .infinity)
+        .background(Color.black.opacity(0.25))
+        .clipped()
+    }
+
+    private func placeholder(systemImage: String) -> some View {
+        ZStack {
+            Rectangle().fill(Color.white.opacity(0.04))
+            Image(systemName: systemImage)
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(.white.opacity(0.25))
+        }
+    }
+
+    private var playOverlay: some View {
+        ZStack {
+            // Center play well — concentric circle, glass, scales on hover.
+            Circle()
+                .fill(.black.opacity(0.45))
+                .frame(width: 44, height: 44)
+                .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 1))
+                .overlay(
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .offset(x: 1)
+                )
+                .scaleEffect(hovering ? 1.08 : 1.0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Duration chip, bottom-right.
+            if let d = item.duration, !d.isEmpty {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text(d)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(.black.opacity(0.65)))
+                            .padding(6)
+                    }
+                }
+            }
+        }
+    }
+
+    private func sourceFoot(_ source: String) -> some View {
+        Text(source)
+            .font(.system(size: 9.5, weight: .medium))
+            .lineLimit(1)
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.6)],
+                               startPoint: .top, endPoint: .bottom)
+            )
+    }
+}
+
+// MARK: - Inline video sheet (direct-file URLs only)
+
+private struct VideoSheet: View {
+    let item: MediaItem
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(item.title ?? "Video")
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+            if let url = URL(string: item.url) {
+                VideoPlayer(player: AVPlayer(url: url))
+                    .frame(minWidth: 640, minHeight: 360)
+            } else {
+                Text("Couldn't load this video.")
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 640, minHeight: 360)
+            }
+        }
+        .frame(width: 720, height: 460)
+        .background(DS.Palette.modalBG)
+    }
+}
+```
+
 ===== FILE: Salehman AI/Views/MemoryView.swift (413 lines) =====
 ```swift
 import SwiftUI
@@ -25190,21 +23361,20 @@ enum ScratchpadList {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (173 lines) =====
+===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (100 lines) =====
 ```swift
 import Foundation
 
 // MARK: - Settings brain-readiness (pure seam)
 //
 // Extracted from `SettingsView.brainReady` (CODEBASE_REVIEW HIGH perf item):
-// the old switch fired live Keychain `hasKey()` syscalls per visible grid
-// cell on EVERY Settings body recompute — each keystroke and each 5s poll
-// tick paid ~25+ SecItemCopyMatching calls (`.salehman` alone walked the
-// whole 10-key `SalehmanEngine.hasAnyCloud` chain). The view already tracks
-// every key's presence in cached @State flags (kept current by the Save /
-// Clear bindings and the Copilot sign-in callback); this file is the pure
-// classification those flags feed. No syscalls, no UI — hermetically pinned
-// by `SettingsBrainReadyTests`.
+// the old switch fired live engine probes per visible grid cell on EVERY
+// Settings body recompute. The view already tracks every signal in cached
+// @State flags (kept current by the Save / Clear bindings and the 5s poll);
+// this file is the pure classification those flags feed. No syscalls, no UI.
+//
+// Local-only build (2026-06-18): all cloud providers + composite modes were
+// removed, so this seam classifies just the six local brains.
 
 /// One snapshot of every signal brain readiness depends on. Build it from
 /// the view's cached flags (plain Bool copies), then ask `ready(_:)`.
@@ -25222,64 +23392,22 @@ struct BrainReadiness {
     var unslothConfigured = false
     var vllmConfigured = false
 
-    // Cloud key presence (Keychain-backed — these MUST come from the view's
-    // cached flags, never live `hasKey()` reads; that is the extraction).
-    var anthropic = false
-    var grok = false
-    var gemini = false
-    var groq = false
-    var mistral = false
-    var cerebras = false
-    var openAI = false
-    var copilot = false
-    var openRouter = false
-    var nvidia = false
-
     /// Local default-brain floor: Ollama up AND serving a coder model.
     var localFloor: Bool { ollamaUp && hasCoder }
 
-    /// FREE cloud keys only — the set `.freeAuto` is allowed to race.
-    var anyFreeCloud: Bool { groq || gemini || cerebras || mistral || openRouter }
-
-    /// The cloud coder pool shared by `.freeCoding` and `.cloudCoding`.
-    var anyCloudCoder: Bool { groq || cerebras || mistral || openRouter }
-
-    /// Mirrors `SalehmanEngine.hasAnyCloud` — local endpoint engines only.
-    /// Salehman is pure local-first; cloud API keys are NOT checked.
+    /// Mirrors `SalehmanEngine.hasAnyCloud` (always false) — local endpoint
+    /// engines only. Salehman is pure local-first; no cloud is ever contacted.
     var salehmanAnyCloud: Bool { vllmConfigured || unslothConfigured }
 
-    /// Whether `pref` is reachable right now. Exact behavior copy of the old
-    /// `SettingsView.brainReady` switch — if reachability rules change,
-    /// change them HERE (the view is a thin caller) and pin the new rule in
-    /// `SettingsBrainReadyTests`.
+    /// Whether `pref` is reachable right now. Local-only: every brain resolves
+    /// to a local engine. If reachability rules change, change them HERE (the
+    /// view is a thin caller) and pin the new rule in `SettingsBrainReadyTests`.
     func ready(_ pref: BrainPreference) -> Bool {
         switch pref {
         case .auto:        return localFloor
         case .ollama:      return localFloor
-        case .claudeHaiku: return anthropic
-        case .grok:        return grok
-        case .gemini:      return gemini
-        case .groq:        return groq
-        case .mistral:     return mistral
-        case .cerebras:    return cerebras
-        case .codex:       return openAI
-        case .copilot:     return copilot
-        case .openRouter:  return openRouter
-        // Ensemble is "ready" if ANY brain is reachable — a local one or any
-        // keyed cloud one. (NVIDIA / endpoint engines were never counted
-        // here — preserved as-is from the original switch.)
-        case .ensemble:
-            return localFloor || anthropic || grok || gemini || groq
-                || mistral || cerebras || openAI || copilot || openRouter
-        // Free · Auto never spends: the local floor or a FREE key only.
-        case .freeAuto:    return localFloor || anyFreeCloud
-        // FreeCoding mirrors Free·Auto's coder pool.
-        case .freeCoding:  return localFloor || anyCloudCoder
-        // Cloud Coding is cloud-ONLY — no local floor.
-        case .cloudCoding: return anyCloudCoder
         // Salehman is LOCAL-FIRST: vLLM or Unsloth endpoint configured, or
-        // the user's own Ollama model (named + server up). Cloud API keys do
-        // NOT light this — Salehman never contacts third-party clouds.
+        // the user's own Ollama model (named + server up).
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured
@@ -25319,55 +23447,25 @@ struct ActiveBrainProbe {
         if !superseded { working = verdict }
     }
 
-    /// Brain switched without an auto-test (e.g. local→cloud): the shown
-    /// verdict belongs to the previous brain — clear it.
+    /// Brain switched without an auto-test: the shown verdict belongs to the
+    /// previous brain — clear it.
     mutating func invalidate() { working = nil }
 }
 
 // MARK: - Ping-reply verdict
 
 /// Classifies a one-token "ping" reply as working / not working. Pure so the
-/// rule is testable without a brain: empty replies, the `offMessage`
-/// sentinel, and Claude-Haiku error strings (`"[Claude Haiku …"`) all fail.
+/// rule is testable without a brain: empty replies and the `offMessage`
+/// sentinel both fail.
 enum BrainPing {
     static func verdict(reply: String, offMessage: String) -> Bool {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !(trimmed.isEmpty
-                 || reply == offMessage
-                 || trimmed.hasPrefix("[Claude Haiku"))
-    }
-}
-
-// MARK: - Anthropic key-row subtitle (no-leak masking)
-
-/// Subtitle presentation for the Anthropic key row. Shows enough of a saved
-/// key to confirm the family (`sk-ant-api03` is 12 chars and uniquely
-/// Anthropic) but NEVER echoes secret bytes: a misfiled wrong-service key —
-/// whose first characters carry secret material — masks to `sk-…`.
-enum AnthropicKeyPresentation {
-    static let notConfigured =
-        "Needed only for Claude Haiku. Get one at console.anthropic.com."
-
-    static func subtitle(savedKey: String?) -> String {
-        guard let raw = savedKey else { return notConfigured }
-        let isAnthropic = raw.hasPrefix("sk-ant-")
-        let prefix = isAnthropic ? String(raw.prefix(12)) : "sk-…"
-        let family = isAnthropic
-            ? "Looks like an Anthropic key"
-            : "⚠️ Doesn't start with `sk-ant-` — may be from a different service"
-        return "Saved: \(prefix)…  ·  \(family)"
-    }
-
-    /// True when a saved key does NOT look like an Anthropic key — drives
-    /// the orange "saved the wrong key" warning tint.
-    static func flagsWrongService(savedKey: String?) -> Bool {
-        guard let raw = savedKey else { return false }
-        return !raw.hasPrefix("sk-ant-")
+        return !(trimmed.isEmpty || reply == offMessage)
     }
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1524 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1476 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25383,17 +23481,6 @@ struct SettingsView: View {
     @State private var hasCoder = false
     @State private var hasUncensored = false
     @State private var showMemory = false
-    // Cloud brain key-saved flags — only the boolean (not the draft) is needed;
-    // they feed brainReadiness which powers the green/orange dots in the Brain grid.
-    @State private var anthropicKeySaved: Bool = AnthropicClient.isConfigured
-    @State private var grokKeySaved: Bool = GrokClient.hasKey()
-    @State private var geminiKeySaved: Bool = GeminiClient.hasKey()
-    @State private var groqKeySaved: Bool = GroqClient.shared.hasKey()
-    @State private var mistralKeySaved: Bool = MistralClient.shared.hasKey()
-    @State private var cerebrasKeySaved: Bool = CerebrasClient.shared.hasKey()
-    @State private var openAIKeySaved: Bool = OpenAIClient.hasKey()
-    @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
-    @State private var nvidiaKeySaved: Bool = NvidiaClient.shared.hasKey()
 
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
@@ -25408,9 +23495,6 @@ struct SettingsView: View {
     /// read is safe at @State init.
     @State private var unslothStudioKeySaved: Bool = (KeychainStore.read(.unslothStudioAPIKey) != nil)
     @State private var unslothStudioKeyDraft: String = ""
-
-    // GitHub Copilot — boolean tracks auth state for the Brain grid readiness dot.
-    @State private var copilotAuthed: Bool = CopilotClient.isAuthed()
 
     // Live "is the *selected* brain actually answering" check (covers all
     // brains). The overlap rules (three triggers can race at the await; a
@@ -25804,24 +23888,16 @@ struct SettingsView: View {
     /// Whether the given brain preference is reachable right now. Thin caller
     /// over the pure `BrainReadiness` seam (SettingsBrainReadiness.swift) —
     /// the readiness RULES live there, pinned by SettingsBrainReadyTests.
-    /// Reads ONLY cached state: the @State key flags the Save/Clear bindings
-    /// maintain plus the polled `ollamaUp`/`hasCoder` — zero Keychain
-    /// syscalls per body recompute. (CODEBASE_REVIEW HIGH perf fix: the old
-    /// switch here fired live `hasKey()` reads per visible grid cell on
-    /// every recompute — each keystroke and each 5s poll tick paid ~25+
-    /// SecItemCopyMatching calls; `.salehman` alone walked the whole 10-key
-    /// `SalehmanEngine.hasAnyCloud` chain.)
+    /// Reads ONLY cached state (the polled `ollamaUp`/`hasCoder` + endpoint
+    /// config flags) — local-only, no Keychain syscalls per body recompute.
     private func brainReady(_ pref: BrainPreference) -> Bool {
         brainReadiness.ready(pref)
     }
 
     /// Snapshot of every readiness signal, assembled from cached state only.
     /// Endpoint checks (`UnslothStudio`/`VLLM.isConfigured`) are UserDefaults
-    /// reads — in-memory, no Keychain. Trade-off vs the old live reads: a key
-    /// saved by something OTHER than this sheet wouldn't repaint the grid —
-    /// but every in-app writer (Save/Clear rows, Copilot sign-in callback)
-    /// already updates its cached flag, which recomputes body anyway, and the
-    /// "N/total set" group badges have trusted these same flags all along.
+    /// reads — in-memory, no Keychain. Local-only: there are no cloud keys to
+    /// track anymore.
     private var brainReadiness: BrainReadiness {
         BrainReadiness(
             ollamaUp: ollamaUp,
@@ -25830,17 +23906,7 @@ struct SettingsView: View {
                 .trimmingCharacters(in: .whitespaces).isEmpty,
             hasUncensored: hasUncensored,
             unslothConfigured: UnslothStudio.isConfigured,
-            vllmConfigured: VLLM.isConfigured,
-            anthropic: anthropicKeySaved,
-            grok: grokKeySaved,
-            gemini: geminiKeySaved,
-            groq: groqKeySaved,
-            mistral: mistralKeySaved,
-            cerebras: cerebrasKeySaved,
-            openAI: openAIKeySaved,
-            copilot: copilotAuthed,
-            openRouter: openRouterKeySaved,
-            nvidia: nvidiaKeySaved
+            vllmConfigured: VLLM.isConfigured
         )
     }
 
@@ -26027,10 +24093,11 @@ struct SettingsView: View {
         }
     }
 
-    /// The "smart modes" — orchestration prefs (not single brains) that get the
-    /// premium gradient glyph in the grid. Pure so the cell stays cheap to render.
+    /// The "smart mode" — `.auto` is an orchestration pref (not a single brain)
+    /// that gets the premium gradient glyph in the grid. Pure so the cell stays
+    /// cheap to render. (The cloud composite modes were removed — local-only.)
     private static func isOrchestrationMode(_ pref: BrainPreference) -> Bool {
-        pref == .auto || pref == .freeAuto || pref == .freeCoding || pref == .cloudCoding || pref == .ensemble
+        pref == .auto
     }
 
     private func brainGridCell(_ pref: BrainPreference) -> some View {
@@ -26047,10 +24114,9 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Group {
                         if Self.isOrchestrationMode(pref) {
-                            // The smart "modes" (Auto / Free·Auto / FreeCoding /
-                            // Ensemble) get a premium violet→accent gradient glyph
-                            // so they read as a distinct tier above the single
-                            // brains — cohesive, and makes the flagship loops pop.
+                            // The smart "Auto" mode gets a premium violet→accent
+                            // gradient glyph so it reads as a distinct tier above
+                            // the single local brains.
                             Image(systemName: pref.icon)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(LinearGradient(
@@ -26658,18 +24724,16 @@ struct SettingsView: View {
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
     /// is currently pinned through the real routing path (`LocalLLM.generate`),
-    /// so one check covers Ollama and every cloud brain.
+    /// so one check covers every local brain.
     private var activeBrainStatusRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(settings.brainPreference == .ensemble
-                     ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."
-                     : activeBrainIsLocal
-                       ? "Live check — auto-pings the selected brain."
-                       : "Tap ↻ to check (sends one small paid request).")
+                Text(activeBrainIsLocal
+                     ? "Live check — auto-pings the selected brain."
+                     : "Tap ↻ to check (sends one small local request).")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -26683,9 +24747,9 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
-    /// Whether the pinned brain runs on this Mac (free to ping). Cloud brains
-    /// cost money per request, so we only auto-check local ones and make the
-    /// cloud check on-demand (the refresh button).
+    /// Whether the pinned brain runs fully on-device (cheap to auto-ping). The
+    /// endpoint-backed engines (vLLM / Unsloth Studio) may point at a remote
+    /// server, so they stay on-demand (the refresh button) rather than auto.
     private var activeBrainIsLocal: Bool {
         switch settings.brainPreference {
         case .auto, .ollama: return true
@@ -26694,11 +24758,7 @@ struct SettingsView: View {
     }
 
     /// Ping the pinned brain and decide if it actually answered. Failure
-    /// sentinels: empty reply, the canonical off-message, or the Anthropic
-    /// error string (which `AnthropicClient` returns verbatim on a non-200).
-    /// We match the specific "[Claude Haiku …" prefix rather than any "[" so a
-    /// legitimate reply that begins with a bracket (code, a JSON array) isn't
-    /// mistaken for a failure.
+    /// sentinels: an empty reply or the canonical off-message.
     private func testActiveBrain() async {
         // Three triggers (.task poll, brain-switch onChange, refresh button)
         // can overlap at the await below; `ActiveBrainProbe` owns the overlap
@@ -26708,18 +24768,8 @@ struct SettingsView: View {
         // is still selected at the end publishes its verdict.
         let pinned = settings.brainPreference
         activeBrain.begin()
-        let working: Bool
-        if LocalLLM.isEnsembleMode {
-            // Ensemble fans out to EVERY reachable brain — firing a real "ping"
-            // would bill several paid clouds just for a health check. Instead
-            // verify at least one brain is reachable (Apple / Ollama / any keyed
-            // cloud); that's exactly the condition under which ensemble answers.
-            // Zero paid round-trips.
-            working = await LocalLLM.anyBrainReachable()
-        } else {
-            let reply = await LocalLLM.generate("ping", maxTokens: 5)
-            working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
-        }
+        let reply = await LocalLLM.generate("ping", maxTokens: 5)
+        let working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
         activeBrain.finish(verdict: working,
                            superseded: settings.brainPreference != pinned)
     }
@@ -28272,7 +26322,7 @@ struct AgentRegistryTests {
 }
 ```
 
-===== FILE: Salehman AITests/AgentPipelineConcurrencyTests.swift (40 lines) =====
+===== FILE: Salehman AITests/AgentPipelineConcurrencyTests.swift (42 lines) =====
 ```swift
 import Testing
 @testable import Salehman_AI
@@ -28298,25 +26348,27 @@ struct AgentPipelineConcurrencyTests {
         }
     }
 
-    @Test func nonOllamaBrainsUseTheBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 4) == 4)
-        #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: 6) == 6)
-        #expect(AgentPipeline.effectiveCap(brain: .grok,              baseCap: 8) == 8)
-        #expect(AgentPipeline.effectiveCap(brain: .ensemble,          baseCap: 3) == 3)
-        #expect(AgentPipeline.effectiveCap(brain: .none,              baseCap: 2) == 2)
+    @Test func nonSerialBrainsUseTheBaseCap() {
+        // After the app went local-only, every real brain is a serial local
+        // model; `.none` (no brain reachable) is the only non-serial case, so it
+        // is the one that honors the memory-derived base cap.
+        for (baseCap, expected) in [(4, 4), (6, 6), (8, 8), (2, 2)] {
+            #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: baseCap) == expected,
+                    ".none must honor baseCap=\(baseCap)")
+        }
     }
 
     @Test func capIsFlooredAtOne() {
         // A degenerate baseCap (0 / negative from a misconfigured
         // MemoryManager) must not produce cap=0 — that would create an empty
         // `stride(by:)` batch list and hang the pipeline silently.
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 0)  == 1)
-        #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: -3) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 0)  == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: -3) == 1)
     }
 }
 ```
 
-===== FILE: Salehman AITests/AgentPipelineHelpersTests.swift (329 lines) =====
+===== FILE: Salehman AITests/AgentPipelineHelpersTests.swift (317 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -28547,30 +26599,18 @@ struct AgentPipelineRecentTailTests {
 struct AgentPipelineIsSerialLocalBrainTests {
 
     @Test func serialBrainsReturnTrue() {
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for brain in serial {
             #expect(AgentPipeline.isSerialLocalBrain(brain),
                     "\(brain) must be serial — shared-RAM server cannot handle parallel requests")
         }
     }
 
-    @Test func cloudBrainsReturnFalse() {
-        let cloud: [LocalLLM.Brain] = [.cerebras, .gemini, .grok, .groq, .claudeHaiku,
-                                       .codex, .copilot, .openRouter, .mistral]
-        for brain in cloud {
-            #expect(!AgentPipeline.isSerialLocalBrain(brain),
-                    "\(brain) is a cloud brain and must NOT be classified as serial")
-        }
-    }
-
-    @Test func orchestrationModesReturnFalse() {
-        // ensemble, freeAuto, freeCoding, cloudCoding, none are pipeline modes,
-        // not single-instance local servers.
-        let modes: [LocalLLM.Brain] = [.ensemble, .freeAuto, .freeCoding, .cloudCoding, .none]
-        for brain in modes {
-            #expect(!AgentPipeline.isSerialLocalBrain(brain),
-                    "\(brain) is an orchestration mode — must not be serial")
-        }
+    @Test func noneBrainReturnsFalse() {
+        // After the app went local-only, every real brain is a serial local
+        // model; `.none` (no brain reachable) is the only non-serial case.
+        #expect(!AgentPipeline.isSerialLocalBrain(.none),
+                ".none is not a single-instance local server — must not be serial")
     }
 }
 
@@ -28778,7 +26818,7 @@ struct AttachmentMergeTests {
 }
 ```
 
-===== FILE: Salehman AITests/BrainAdapterTests.swift (116 lines) =====
+===== FILE: Salehman AITests/BrainAdapterTests.swift (110 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -28786,10 +26826,10 @@ import Foundation
 
 // MARK: - brainAdapterPrompt (pure message → (system, prompt) flattener)
 //
-// All three adapters (OllamaBrainAdapter, AnthropicBrainAdapter,
-// LocalLLMFallbackAdapter) call brainAdapterPrompt to convert the typed
-// [LLMMessage] into the (system, prompt) pair their single-turn clients need.
-// A bug here drops system prompts or garbles multi-turn context silently.
+// Both adapters (OllamaBrainAdapter, LocalLLMFallbackAdapter) call
+// brainAdapterPrompt to convert the typed [LLMMessage] into the (system,
+// prompt) pair their single-turn clients need. A bug here drops system
+// prompts or garbles multi-turn context silently.
 
 struct BrainAdapterPromptTests {
 
@@ -28876,23 +26916,17 @@ struct BrainAdapterFactoryTests {
                 ".ollamaCoder brain must produce an adapter with id .ollama")
     }
 
-    @Test func claudeHaikuReturnsAnthropicAdapter() {
-        let adapter = BrainAdapterFactory.adapter(for: .claudeHaiku)
-        #expect(adapter.id == .claudeHaiku,
-                ".claudeHaiku brain must produce an adapter with id .claudeHaiku")
-    }
-
     @Test func otherBrainsProduceFallbackWithCorrectID() {
         // The fallback adapter captures the current brainPreferenceCurrent, but
         // any brain NOT in the explicit cases uses the fallback path.
         // We just check the factory doesn't crash and returns a non-nil adapter.
-        let grq = BrainAdapterFactory.adapter(for: .groq)
         let sal = BrainAdapterFactory.adapter(for: .salehman)
-        let gem = BrainAdapterFactory.adapter(for: .gemini)
+        let vll = BrainAdapterFactory.adapter(for: .vllm)
+        let unc = BrainAdapterFactory.adapter(for: .uncensored)
         // All return a concrete adapter (protocol existential, not nil).
         // The `id` for the fallback uses AppSettings.brainPreferenceCurrent, so
         // we can't assert a fixed value here — just check it's non-crashing.
-        _ = grq.id; _ = sal.id; _ = gem.id
+        _ = sal.id; _ = vll.id; _ = unc.id
         #expect(Bool(true), "factory must not crash for any LocalLLM.Brain case")
     }
 }
@@ -28926,178 +26960,6 @@ enum BrainPreferenceTestLock {
     // NSLock is already Sendable, so a plain `static let` is fine — no
     // `nonisolated(unsafe)` needed (and the compiler flags it as redundant).
     static let lock = NSLock()
-}
-```
-
-===== FILE: Salehman AITests/BrainRoutingDispatchTests.swift (168 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - Brain routing plan (the R1 seam — BrainRouting.swift)
-//
-// The routing PLAN (gating, roster membership, order, offline rules) is pure
-// over a `BrainRouteConfig` snapshot; `LocalLLM`'s ladders only execute it.
-// These tests pin the plan hermetically — no keys, no network, no UI.
-// House invariants pinned here:
-//   · every preference dispatches to exactly ONE target, no fallthrough;
-//   · `.auto`/`.ollama` never dispatch to a cloud adapter (local-first);
-//   · Offline Mode hard-gates the ten cloud pins and empties every cloud
-//     roster (the Offline-leak fix this seam enforces);
-//   · `.freeAuto` may only race FREE providers — never paid keys.
-
-@MainActor
-struct BrainRoutingDispatchTests {
-
-    private static let cloudPins: [BrainPreference] = [
-        .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras,
-        .codex, .copilot, .openRouter,
-    ]
-
-    private static func config(
-        _ tweak: (inout BrainRouteConfig) -> Void = { _ in }
-    ) -> BrainRouteConfig {
-        var c = BrainRouteConfig(pref: .auto)
-        tweak(&c)
-        return c
-    }
-
-    @Test
-    func pinnedBrainPreferenceDispatchesToExactlyOneAdapterNoFallthrough() {
-        // Every cloud pin → exactly its own provider, online.
-        for pin in Self.cloudPins {
-            let d = BrainRouting.dispatch(pref: pin, offlineOnly: false)
-            guard case .cloud(let p) = d else {
-                Issue.record("\(pin) should dispatch to a cloud provider, got \(d)")
-                continue
-            }
-            #expect(p.pin == pin)
-        }
-        // The non-cloud pins each map to their own dedicated target.
-        #expect(BrainRouting.dispatch(pref: .salehman, offlineOnly: false) == .salehman)
-        #expect(BrainRouting.dispatch(pref: .unslothStudio, offlineOnly: false) == .unslothStudio)
-        #expect(BrainRouting.dispatch(pref: .vllm, offlineOnly: false) == .vllm)
-        // Orchestration modes are first-class (the old Settings "ensemble
-        // falsely Not working" bug came from them falling through the gates).
-        for mode in [BrainPreference.freeAuto, .freeCoding, .cloudCoding, .ensemble] {
-            #expect(BrainRouting.dispatch(pref: mode, offlineOnly: false) == .mode(mode))
-        }
-        // The provider↔pin maps are a bijection over the ten cloud providers.
-        for p in CloudProvider.allCases {
-            #expect(CloudProvider.provider(for: p.pin) == p)
-        }
-    }
-
-    @Test
-    func autoAndLocalPinsNeverInvokeAnyCloudAdapterLocalFirstInvariant() {
-        // Dispatch: `.auto`/`.ollama` go to the local tier — online or not.
-        for offline in [false, true] {
-            #expect(BrainRouting.dispatch(pref: .auto, offlineOnly: offline) == .localTier)
-            #expect(BrainRouting.dispatch(pref: .ollama, offlineOnly: offline) == .localTier)
-        }
-        // Reachability: every cloud key on the planet must not light `.auto`
-        // when the local floor is down (.auto never silently spends).
-        let allKeys = Self.config {
-            $0.pref = .auto
-            $0.configured = Set(CloudProvider.allCases)
-            $0.unslothConfigured = true; $0.vllmConfigured = true
-            $0.salehmanCloudReady = true
-        }
-        #expect(BrainRouting.reachableBrain(allKeys) == LocalLLM.Brain.none)
-        var ollamaPin = allKeys; ollamaPin.pref = .ollama
-        #expect(BrainRouting.reachableBrain(ollamaPin) == LocalLLM.Brain.none)
-        // And the local floor alone lights both.
-        let floor = Self.config { $0.pref = .auto; $0.ollamaReady = true }
-        #expect(BrainRouting.reachableBrain(floor) == .ollamaCoder)
-    }
-
-    @Test
-    func offlineModeForcesCloudPrefsToNoneAndExcludesThemFromEnsembleAndFreeAuto() {
-        // Reachability: each of the ten cloud pins reads .none offline, even
-        // with its key saved.
-        for pin in Self.cloudPins {
-            let c = Self.config {
-                $0.pref = pin
-                $0.offlineOnly = true
-                $0.configured = Set(CloudProvider.allCases)
-            }
-            #expect(BrainRouting.reachableBrain(c) == LocalLLM.Brain.none,
-                    "\(pin) must be unreachable offline")
-        }
-        // Dispatch: cloud pins are hard-gated (the Offline-leak fix — the old
-        // generate/streaming/chat cascades never enforced this contract).
-        for pin in Self.cloudPins {
-            #expect(BrainRouting.dispatch(pref: pin, offlineOnly: true) == .unavailable)
-        }
-        // Every cloud roster empties offline: ensemble and the free/coding
-        // pools run local-only, attempting zero cloud calls.
-        let offline = Self.config {
-            $0.offlineOnly = true
-            $0.configured = Set(CloudProvider.allCases)
-        }
-        #expect(BrainRouting.ensembleCloudRoster(offline).isEmpty)
-        #expect(BrainRouting.freeAutoRoster(offline).isEmpty)
-        #expect(BrainRouting.freeAutoToolRoster(offline).isEmpty)
-        #expect(BrainRouting.codingRaceRoster(offline).isEmpty)
-        #expect(BrainRouting.coderLoopRoster(offline).isEmpty)
-        // Local pins and the orchestration modes stay reachable offline when
-        // the local floor stands (they gate their own cloud rosters).
-        let localOffline = Self.config {
-            $0.pref = .freeAuto; $0.offlineOnly = true; $0.ollamaReady = true
-        }
-        #expect(BrainRouting.reachableBrain(localOffline) == .freeAuto)
-        // Cloud Coding is cloud-ONLY: offline → .none even with every key.
-        var cloudCoding = offline; cloudCoding.pref = .cloudCoding
-        #expect(BrainRouting.reachableBrain(cloudCoding) == LocalLLM.Brain.none)
-    }
-
-    @Test
-    func freeAutoIncludesOnlyFreeProvidersNeverPaidClients() {
-        // With EVERYTHING configured, the freeAuto roster is exactly the free
-        // tier, in the canonical race order — no paid provider ever appears.
-        let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
-        let roster = BrainRouting.freeAutoRoster(everything)
-        #expect(roster == CloudProvider.freeTier)
-        #expect(roster.allSatisfy { $0.isFree })
-        for paid in [CloudProvider.anthropic, .grok, .openAI, .copilot] {
-            #expect(!roster.contains(paid))
-        }
-        // The tool-loop variant additionally drops Gemini (free, but no
-        // OpenAI-compat tool loop).
-        let tools = BrainRouting.freeAutoToolRoster(everything)
-        #expect(tools == CloudProvider.freeToolCapable)
-        #expect(!tools.contains(.gemini))
-        // Membership follows the configured set exactly.
-        let groqOnly = Self.config { $0.configured = [.groq, .anthropic] }
-        #expect(BrainRouting.freeAutoRoster(groqOnly) == [.groq])
-    }
-
-    @Test
-    func rosterMembershipMatchesTheDocumentedSets() {
-        let everything = Self.config { $0.configured = Set(CloudProvider.allCases) }
-        // Ensemble: the nine chat brains. (The historical DeepSeek
-        // counted-but-not-rostered drift dissolved with the provider's
-        // removal on 2026-06-12.)
-        let ensemble = BrainRouting.ensembleCloudRoster(everything)
-        #expect(ensemble == CloudProvider.ensembleRoster)
-        // The coding pools: race order and sequential-loop order are distinct,
-        // deliberately (race = parallel anyway; the loop is quality+speed) —
-        // but their MEMBERSHIP is identical.
-        #expect(BrainRouting.codingRaceRoster(everything) == CloudProvider.codingRace)
-        #expect(BrainRouting.coderLoopRoster(everything) == CloudProvider.coderLoop)
-        #expect(Set(CloudProvider.codingRace) == Set(CloudProvider.coderLoop))
-        // anyBrainReachable: local floor or any single key.
-        #expect(!BrainRouting.anyBrainReachable(Self.config()))
-        #expect(BrainRouting.anyBrainReachable(Self.config { $0.ollamaReady = true }))
-        #expect(BrainRouting.anyBrainReachable(Self.config { $0.configured = [.cerebras] }))
-        // Salehman: cloud-first; endpoint engines and any chain key light it,
-        // nothing at all reads .none.
-        let salehmanCloud = Self.config { $0.pref = .salehman; $0.salehmanCloudReady = true }
-        #expect(BrainRouting.reachableBrain(salehmanCloud) == .salehman)
-        let salehmanNothing = Self.config { $0.pref = .salehman }
-        #expect(BrainRouting.reachableBrain(salehmanNothing) == LocalLLM.Brain.none)
-    }
 }
 ```
 
@@ -30484,551 +28346,6 @@ struct TrainingExporterTests {
 }
 ```
 
-===== FILE: Salehman AITests/CloudClientParsingTests.swift (269 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - Cloud-client pure parsing/building functions
-//
-// `makeBody`, `extractContent`, and `decodeDelta` in the three Chat-B cloud
-// clients (Grok, Gemini, OpenAICompatible→Groq/Mistral/Cerebras/OpenAI) turn
-// structured data into HTTP request bodies and parse responses back. A wrong
-// shape silently 404s (bad body) or returns an empty reply (bad parse) — both
-// look like "the brain is broken" with no clue why. These functions are pure
-// (no network, no Keychain), so they're cheap to lock down here.
-//
-// The error-path decoders (`errorText`) are covered separately in
-// CloudErrorDecoderTests.swift; these cover the happy path.
-
-// MARK: - Grok request body + parsers
-
-struct GrokParsingTests {
-
-    @Test func makeBodyIncludesSystemWhenProvided() {
-        let body = GrokClient.makeBody(model: "grok-4", prompt: "hi", system: "be terse", stream: false)
-        #expect(body["model"] as? String == "grok-4")
-        #expect(body["stream"] as? Bool == false)
-        let messages = body["messages"] as? [[String: String]]
-        #expect(messages?.count == 2)
-        #expect(messages?.first?["role"] == "system")
-        #expect(messages?.first?["content"] == "be terse")
-        #expect(messages?.last?["role"] == "user")
-        #expect(messages?.last?["content"] == "hi")
-    }
-
-    @Test func makeBodyOmitsSystemWhenNilOrEmpty() {
-        for sys in [nil, ""] as [String?] {
-            let body = GrokClient.makeBody(model: "grok-4", prompt: "hi", system: sys, stream: true)
-            let messages = body["messages"] as? [[String: String]]
-            #expect(messages?.count == 1, "empty/nil system must not add a system message")
-            #expect(messages?.first?["role"] == "user")
-            #expect(body["stream"] as? Bool == true)
-        }
-    }
-
-    @Test func extractContentReturnsTrimmedText() {
-        let json = #"{"choices":[{"message":{"content":"  hello  "}}]}"#.data(using: .utf8)!
-        #expect(GrokClient.extractContent(json) == "hello")
-    }
-
-    @Test func extractContentReturnsEmptyForEmptyContent() {
-        // Empty (or whitespace-only) content trims to "" — the caller treats
-        // "" as nil, but the parser's job is just to extract+trim.
-        let json = #"{"choices":[{"message":{"content":"   "}}]}"#.data(using: .utf8)!
-        #expect(GrokClient.extractContent(json) == "")
-    }
-
-    @Test func extractContentReturnsNilForMalformed() {
-        for bad in [
-            #"{"choices":[]}"#,                                  // no first choice
-            #"{"choices":[{"message":{}}]}"#,                    // no content
-            #"{"nonsense":true}"#,                               // wrong shape
-            #"not json at all"#,
-        ] {
-            #expect(GrokClient.extractContent(bad.data(using: .utf8)!) == nil,
-                    "malformed `\(bad)` should yield nil")
-        }
-    }
-
-    @Test func decodeDeltaPreservesContentVerbatim_noTrim() {
-        // CRITICAL: streamed deltas must NOT be trimmed. If they were, the
-        // space in " world" would be stripped and "hello"+" world" would
-        // render as "helloworld". This test exists to make a future
-        // "let's trim the delta" change fail loudly.
-        let delta = #"{"choices":[{"delta":{"content":" world"}}]}"#
-        #expect(GrokClient.decodeDelta(delta) == " world")
-
-        let trailing = #"{"choices":[{"delta":{"content":"hello "}}]}"#
-        #expect(GrokClient.decodeDelta(trailing) == "hello ")
-    }
-
-    @Test func decodeDeltaReturnsNilForMissingDelta() {
-        #expect(GrokClient.decodeDelta(#"{"choices":[{}]}"#) == nil)
-        #expect(GrokClient.decodeDelta("garbage") == nil)
-    }
-}
-
-// MARK: - OpenAI-compatible request body + parsers (Groq / Mistral / Cerebras / OpenAI)
-//
-// Shared by four providers — one regression here breaks all of them. We drive
-// the static functions directly (they don't depend on an instance).
-
-struct OpenAICompatibleParsingTests {
-
-    @Test func makeBodyShapeMatchesOpenAISpec() {
-        let body = OpenAICompatibleClient.makeBody(model: "llama-3.1-70b-versatile",
-                                                   prompt: "hi", system: "sys", stream: true)
-        #expect(body["model"] as? String == "llama-3.1-70b-versatile")
-        #expect(body["stream"] as? Bool == true)
-        let messages = body["messages"] as? [[String: String]]
-        #expect(messages?.count == 2)
-        #expect(messages?.first?["role"] == "system")
-        #expect(messages?.last?["content"] == "hi")
-    }
-
-    @Test func makeBodyOmitsEmptySystem() {
-        let body = OpenAICompatibleClient.makeBody(model: "m", prompt: "hi", system: "", stream: false)
-        #expect((body["messages"] as? [[String: String]])?.count == 1)
-    }
-
-    @Test func extractContentTrims() {
-        let json = #"{"choices":[{"message":{"content":"\n  hi \n"}}]}"#.data(using: .utf8)!
-        #expect(OpenAICompatibleClient.extractContent(json) == "hi")
-    }
-
-    @Test func extractContentNilForMalformed() {
-        #expect(OpenAICompatibleClient.extractContent(#"{}"#.data(using: .utf8)!) == nil)
-    }
-
-    @Test func decodeDeltaPreservesSpaces_noTrim() {
-        #expect(OpenAICompatibleClient.decodeDelta(#"{"choices":[{"delta":{"content":" tok"}}]}"#) == " tok")
-        #expect(OpenAICompatibleClient.decodeDelta(#"{"choices":[{"delta":{"content":""}}]}"#) == "")
-        #expect(OpenAICompatibleClient.decodeDelta(#"{"choices":[{"delta":{}}]}"#) == nil)
-    }
-
-    // The local-server brains (vLLM / Unsloth Studio) take a hand-typed base
-    // URL. A trailing slash used to produce `…/v1//chat/completions`, which
-    // strict routers 404. The builder must collapse trailing slashes.
-    @Test func chatCompletionsURLToleratesTrailingSlash() {
-        let want = "http://localhost:8000/v1/chat/completions"
-        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1")?.absoluteString == want)
-        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1/")?.absoluteString == want)
-        #expect(OpenAICompatibleClient.chatCompletionsURL("http://localhost:8000/v1///")?.absoluteString == want)
-        // Surrounding whitespace (easy to paste) is trimmed too.
-        #expect(OpenAICompatibleClient.chatCompletionsURL("  http://localhost:8000/v1  ")?.absoluteString == want)
-    }
-
-    // `chat()` returns a non-nil "[<name> error STATUS: …]" string for any
-    // non-200, so `testConnection` must treat that as failure — otherwise the
-    // Settings "Test" button goes green on a bad key / wrong URL.
-    @Test func isErrorReplyDetectsFailuresButNotRealText() {
-        #expect(OpenAICompatibleClient.isErrorReply(nil, displayName: "vLLM"))                       // transport failure
-        #expect(OpenAICompatibleClient.isErrorReply("[vLLM error 401: bad key]", displayName: "vLLM"))
-        #expect(OpenAICompatibleClient.isErrorReply("[vLLM request failed (HTTP 404).]", displayName: "vLLM"))
-        // A genuine reply (even one mentioning another brain's name) is success.
-        #expect(!OpenAICompatibleClient.isErrorReply("pong", displayName: "vLLM"))
-        #expect(!OpenAICompatibleClient.isErrorReply("[Groq error 401: …]", displayName: "vLLM")) // name must match
-    }
-}
-
-// MARK: - OpenAI-compatible tool-call parsing (run-the-terminal path)
-//
-// `parseToolResponse` is what lets ANY OpenAI-compatible brain (Groq, Mistral,
-// Cerebras, OpenRouter, OpenAI, Unsloth Studio, vLLM) actually run terminal
-// commands: it pulls the model's requested function calls out of a
-// `/chat/completions` response. A wrong shape here means the brain "describes"
-// a command but never runs it — the exact bug this feature fixes. Pure (no
-// network), so cheap to lock down.
-
-struct OpenAICompatibleToolCallParsingTests {
-
-    @Test func parsesArgumentsAsJSONString_realOpenAIShape() {
-        // Real OpenAI sends `function.arguments` as a JSON *string*.
-        let json = #"""
-        {"choices":[{"message":{"content":null,"tool_calls":[
-          {"id":"call_abc","type":"function",
-           "function":{"name":"run_terminal_command","arguments":"{\"command\":\"ls -la ~\"}"}}
-        ]}}]}
-        """#.data(using: .utf8)!
-        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
-        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
-        #expect(parsed?.text == "")                       // null content → ""
-        #expect(parsed?.toolCalls.count == 1)
-        #expect(parsed?.toolCalls.first?.id == "call_abc")
-        #expect(parsed?.toolCalls.first?.name == "run_terminal_command")
-        #expect(parsed?.toolCalls.first?.arguments["command"] == "ls -la ~")
-    }
-
-    @Test func parsesArgumentsAsRawObject_compatServerShape() {
-        // Some OpenAI-compatible servers send `arguments` as a raw object.
-        let json = #"""
-        {"choices":[{"message":{"content":"","tool_calls":[
-          {"id":"c1","function":{"name":"web_search","arguments":{"query":"swift 6"}}}
-        ]}}]}
-        """#.data(using: .utf8)!
-        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
-        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
-        #expect(parsed?.toolCalls.first?.name == "web_search")
-        #expect(parsed?.toolCalls.first?.arguments["query"] == "swift 6")
-    }
-
-    @Test func synthesizesIdWhenServerOmitsIt() {
-        // Missing `id` must not drop the call — we synthesize a stable fallback
-        // so the matching `tool` result message can still reference it.
-        let json = #"""
-        {"choices":[{"message":{"tool_calls":[
-          {"function":{"name":"run_terminal_command","arguments":"{\"command\":\"pwd\"}"}}
-        ]}}]}
-        """#.data(using: .utf8)!
-        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
-        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
-        #expect(parsed?.toolCalls.first?.id == "call_0")
-        #expect(parsed?.toolCalls.first?.arguments["command"] == "pwd")
-    }
-
-    @Test func plainAnswerHasNoToolCalls() {
-        let json = #"{"choices":[{"message":{"content":"  just text  "}}]}"#.data(using: .utf8)!
-        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
-        let parsed = OpenAICompatibleClient.parseToolResponse(dict)
-        #expect(parsed?.text == "just text")              // trimmed
-        #expect(parsed?.toolCalls.isEmpty == true)
-    }
-
-    @Test func nilForMalformedResponse() {
-        for bad in [#"{"choices":[]}"#, #"{}"#, #"garbage"#] {
-            let obj = (try? JSONSerialization.jsonObject(with: bad.data(using: .utf8)!)) as? [String: Any]
-            // A non-object body ("garbage") isn't a dict at all; the others are
-            // dicts that fail the choices/message guard → nil.
-            if let obj { #expect(OpenAICompatibleClient.parseToolResponse(obj) == nil, "`\(bad)` should yield nil") }
-        }
-    }
-}
-
-// MARK: - Gemini request body + parsers (Google's non-OpenAI shape)
-
-struct GeminiParsingTests {
-
-    @Test func makeBodyUsesContentsArrayWithUserRole() {
-        let body = GeminiClient.makeBody(prompt: "hi", system: nil)
-        let contents = body["contents"] as? [[String: Any]]
-        #expect(contents?.count == 1)
-        #expect(contents?.first?["role"] as? String == "user")
-        let parts = contents?.first?["parts"] as? [[String: String]]
-        #expect(parts?.first?["text"] == "hi")
-        // No systemInstruction when system is nil.
-        #expect(body["systemInstruction"] == nil)
-    }
-
-    @Test func makeBodyNestsSystemInstructionWhenProvided() {
-        let body = GeminiClient.makeBody(prompt: "hi", system: "be terse")
-        let sys = body["systemInstruction"] as? [String: Any]
-        let parts = sys?["parts"] as? [[String: String]]
-        #expect(parts?.first?["text"] == "be terse")
-    }
-
-    @Test func makeBodyOmitsEmptySystemInstruction() {
-        let body = GeminiClient.makeBody(prompt: "hi", system: "")
-        #expect(body["systemInstruction"] == nil)
-    }
-
-    @Test func extractContentReadsCandidatesPartsText() {
-        let json = #"{"candidates":[{"content":{"parts":[{"text":"hello"}]}}]}"#.data(using: .utf8)!
-        #expect(GeminiClient.extractContent(json) == "hello")
-    }
-
-    @Test func extractContentConcatenatesMultipleParts() {
-        // Gemini can return multiple parts; we join them in order.
-        let json = #"{"candidates":[{"content":{"parts":[{"text":"foo"},{"text":"bar"}]}}]}"#.data(using: .utf8)!
-        #expect(GeminiClient.extractContent(json) == "foobar")
-    }
-
-    @Test func extractContentNilForMalformed() {
-        #expect(GeminiClient.extractContent(#"{"candidates":[]}"#.data(using: .utf8)!) == nil)
-        #expect(GeminiClient.extractContent(#"garbage"#.data(using: .utf8)!) == nil)
-    }
-
-    @Test func streamingDeltaDelegatesToExtractContent() {
-        let chunk = #"{"candidates":[{"content":{"parts":[{"text":"chunk"}]}}]}"#
-        #expect(GeminiClient.extractStreamingDelta(chunk) == "chunk")
-        #expect(GeminiClient.extractStreamingDelta("not json") == nil)
-    }
-}
-```
-
-===== FILE: Salehman AITests/CloudErrorDecoderTests.swift (174 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - Cloud-brain error-body decoders
-//
-// Every cloud client (Grok, Gemini, OpenAICompatibleClient-backed Groq/
-// Mistral/Cerebras/OpenAI) now surfaces non-200 responses as a
-// `[Provider error STATUS: MSG]` string instead of swallowing them into
-// `nil`. The decoders that produce those strings live in private methods
-// — these tests pin their *contract*:
-//
-//   1. They never crash, even on garbage input (empty Data, plaintext,
-//      truncated JSON, JSON with unexpected shape).
-//   2. They produce a non-empty, status-prefixed diagnostic.
-//   3. When the canonical error shape IS present, they extract the
-//      provider's verbatim message.
-//
-// All three decoders are read-only pure functions over `(Data, Int)`, so
-// these tests are fast and deterministic — no network, no mocking.
-
-// MARK: - Helpers
-
-private func data(_ json: String) -> Data { Data(json.utf8) }
-
-private let emptyBody = Data()
-private let plaintextBody = Data("just some plain text, not JSON".utf8)
-private let truncatedJSONBody = Data(#"{"error":{"messa"#.utf8)
-
-// MARK: - GrokClient.errorText
-
-struct GrokErrorDecoderTests {
-
-    @Test func extractsCanonicalErrorMessage() {
-        // xAI mirrors OpenAI's error shape: {error:{message,type,code}}.
-        let body = data(#"{"error":{"message":"The model `grok-4-heavy-4.3` does not exist","type":"invalid_request_error","code":"model_not_found"}}"#)
-        let result = GrokClient.errorText(data: body, status: 404)
-        #expect(result.hasPrefix("[Grok error 404:"))
-        #expect(result.contains("grok-4-heavy-4.3"))
-    }
-
-    @Test func handlesPlainStringError() {
-        // Some misconfigured proxies return `{"error":"plain string"}`.
-        // The decoder accepts this shape too.
-        let body = data(#"{"error":"plain string error from upstream proxy"}"#)
-        let result = GrokClient.errorText(data: body, status: 502)
-        #expect(result.contains("plain string error from upstream proxy"))
-        #expect(result.contains("502"))
-    }
-
-    @Test func fallsBackOnEmptyBody() {
-        // Empty body (server gave us nothing). Must still produce a
-        // useful, status-prefixed message — not crash, not return "".
-        let result = GrokClient.errorText(data: emptyBody, status: 500)
-        #expect(!result.isEmpty)
-        #expect(result.contains("500"))
-    }
-
-    @Test func fallsBackOnPlaintextBody() {
-        // Plaintext (e.g. an HTML error page from a CDN).
-        let result = GrokClient.errorText(data: plaintextBody, status: 503)
-        #expect(!result.isEmpty)
-        #expect(result.contains("503"))
-    }
-
-    @Test func fallsBackOnTruncatedJSON() {
-        // Mid-stream cut. JSONSerialization returns nil → fallback fires.
-        let result = GrokClient.errorText(data: truncatedJSONBody, status: 502)
-        #expect(!result.isEmpty)
-        #expect(result.contains("502"))
-    }
-
-    @Test func surfacesProviderName() {
-        // The "Grok" string in the output is what lets the user identify
-        // which cloud brain failed — important when multiple are
-        // configured. Pin it explicitly.
-        let body = data(#"{"error":{"message":"any"}}"#)
-        let result = GrokClient.errorText(data: body, status: 400)
-        #expect(result.contains("Grok"))
-    }
-}
-
-// MARK: - GeminiClient.errorText
-
-struct GeminiErrorDecoderTests {
-
-    @Test func extractsCanonicalErrorMessage() {
-        // Google's shape: {error:{code, message, status}}.
-        let body = data(#"{"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED"}}"#)
-        let result = GeminiClient.errorText(data: body, status: 429)
-        #expect(result.hasPrefix("[Gemini error 429:"))
-        #expect(result.contains("quota"))
-    }
-
-    @Test func fallsBackToStatusEnumWhenMessageMissing() {
-        // Some Google responses include only the `status` enum without a
-        // human message (rare but happens). The decoder prefers `message`,
-        // falls back to the enum — both are diagnostic.
-        let body = data(#"{"error":{"code":403,"status":"PERMISSION_DENIED"}}"#)
-        let result = GeminiClient.errorText(data: body, status: 403)
-        #expect(result.hasPrefix("[Gemini error 403:"))
-        #expect(result.contains("PERMISSION_DENIED"))
-    }
-
-    @Test func fallsBackOnEmptyBody() {
-        let result = GeminiClient.errorText(data: emptyBody, status: 500)
-        #expect(!result.isEmpty)
-        #expect(result.contains("500"))
-    }
-
-    @Test func fallsBackOnPlaintextBody() {
-        let result = GeminiClient.errorText(data: plaintextBody, status: 503)
-        #expect(!result.isEmpty)
-        #expect(result.contains("503"))
-    }
-
-    @Test func surfacesProviderName() {
-        let body = data(#"{"error":{"message":"any"}}"#)
-        let result = GeminiClient.errorText(data: body, status: 400)
-        #expect(result.contains("Gemini"))
-    }
-}
-
-// MARK: - OpenAICompatibleClient.errorText
-//
-// One decoder shared by Groq, Mistral, Cerebras, and OpenAI. The
-// `displayName` field is what differentiates the output per provider —
-// these tests run against the Groq config but the logic is identical
-// for the other three.
-
-struct OpenAICompatibleErrorDecoderTests {
-
-    private let client = GroqClient.shared
-
-    @Test func extractsCanonicalErrorMessage() {
-        let body = data(#"{"error":{"message":"Invalid API key","type":"authentication_error"}}"#)
-        let result = client.errorText(data: body, status: 401)
-        #expect(result.hasPrefix("[Groq error 401:"))
-        #expect(result.contains("Invalid API key"))
-    }
-
-    @Test func handlesPlainStringError() {
-        let body = data(#"{"error":"plain string upstream error"}"#)
-        let result = client.errorText(data: body, status: 502)
-        #expect(result.contains("plain string upstream error"))
-        #expect(result.contains("502"))
-    }
-
-    @Test func fallsBackOnEmptyBody() {
-        let result = client.errorText(data: emptyBody, status: 500)
-        #expect(!result.isEmpty)
-        #expect(result.contains("500"))
-        // Falls back to "Groq request failed…" specifically, not a
-        // generic "request failed" — verifies the displayName interpolation
-        // works on the fallback path too.
-        #expect(result.contains("Groq"))
-    }
-
-    @Test func fallsBackOnPlaintextBody() {
-        let result = client.errorText(data: plaintextBody, status: 503)
-        #expect(!result.isEmpty)
-        #expect(result.contains("503"))
-    }
-
-    @Test func eachProviderUsesItsOwnDisplayName() {
-        // The shared decoder must produce provider-specific output. If
-        // someone hardcodes "Groq" or "OpenAI" in the format string, the
-        // other providers' replies would all say the wrong thing.
-        let body = data(#"{"error":{"message":"any"}}"#)
-        #expect(GroqClient.shared.errorText(data: body, status: 400).contains("Groq"))
-        #expect(MistralClient.shared.errorText(data: body, status: 400).contains("Mistral"))
-        #expect(CerebrasClient.shared.errorText(data: body, status: 400).contains("Cerebras"))
-    }
-}
-```
-
-===== FILE: Salehman AITests/CloudSystemPromptTests.swift (90 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - LocalLLM.cloudSystemPrompt
-//
-// `cloudSystemPrompt` is the shared `system` message every cloud brain's
-// single-turn `chat()` ships with: Claude, Grok, Gemini, Groq, Mistral,
-// Cerebras, OpenAI, GitHub Copilot — eight providers, one prompt. That
-// makes it the single highest-leverage string in the codebase: editing
-// it changes the behaviour of every cloud chat reply at once, and a
-// well-meaning "let me improve the wording" edit can silently regress
-// the constraints in ways that are hard to spot from a single chat
-// session against a single brain.
-//
-// These tests pin the *semantic constraints* (what the prompt must
-// convey) without pinning the exact wording (which can evolve). If a
-// future edit strips a constraint by accident, the relevant test trips.
-
-struct CloudSystemPromptTests {
-
-    private var prompt: String { LocalLLM.cloudSystemPrompt }
-
-    @Test func isNonEmpty() {
-        // The most basic regression: someone deletes the body of the
-        // string. Empty system prompts make most cloud models default
-        // to their vendor persona, which is the wrong behaviour for
-        // *every* call site.
-        #expect(!prompt.isEmpty)
-        #expect(prompt.count > 40, "cloudSystemPrompt collapsed to \(prompt.count) chars — likely a regression")
-    }
-
-    @Test func identifiesTheAssistantAsSalehmanAI() {
-        // Without an identity claim the brain can drift to "I am Claude"
-        // / "I am Grok" / etc., breaking the user's mental model of who
-        // they're talking to.
-        #expect(prompt.contains("Salehman AI"))
-    }
-
-    @Test func declaresNoLocalToolAccess() {
-        // Critical constraint: when the user pins a cloud brain, the
-        // brain CANNOT call run_terminal_command / self_improve / etc.
-        // (those are Apple Intelligence FoundationModels tools only).
-        // The prompt must say so, otherwise the model promises actions
-        // it can't perform.
-        let lowered = prompt.lowercased()
-        let mentionsAbsenceOfTools =
-            lowered.contains("no access") ||
-            lowered.contains("don't have access") ||
-            lowered.contains("cannot call") ||
-            lowered.contains("can't call") ||
-            lowered.contains("no local tools") ||
-            lowered.contains("local tools")
-        #expect(mentionsAbsenceOfTools,
-                "cloudSystemPrompt no longer explains tool unavailability — model will promise terminal access it doesn't have")
-    }
-
-    @Test func directsTheModelToSuggestCommandsAsText() {
-        // When a user asks "what version of macOS am I running" the
-        // cloud brain can't run `sw_vers` — the prompt must tell it to
-        // suggest the command in text instead of pretending to run it.
-        let lowered = prompt.lowercased()
-        #expect(lowered.contains("suggest") || lowered.contains("command"),
-                "cloudSystemPrompt no longer instructs the model to *suggest* commands when it can't run them")
-    }
-
-    @Test func declaresLanguageMirror() {
-        // Arabic users expect Arabic replies. The prompt encodes this
-        // by mentioning both languages explicitly. Removing the
-        // mention reintroduces English-only replies for Arabic input.
-        let lowered = prompt.lowercased()
-        #expect(lowered.contains("arabic"))
-        #expect(lowered.contains("english"))
-    }
-
-    @Test func isASingleParagraphWithNoTemplatingArtifacts() {
-        // No `{{placeholder}}` syntax, no `%@`, no `\(variable)` — the
-        // prompt is a fixed string. If any of those slip in via a
-        // careless refactor, the cloud brain receives literal junk.
-        #expect(!prompt.contains("{{"))
-        #expect(!prompt.contains("}}"))
-        #expect(!prompt.contains("%@"))
-        // The line-continuation `\` is fine inside a Swift multi-line
-        // string literal — it's stripped before reaching the wire.
-        // But if a leftover `\n` or unescaped `\` reaches the JSON
-        // body, it'd break the request. Verify the run-time string
-        // doesn't contain raw backslashes:
-        #expect(!prompt.contains("\\"))
-    }
-}
-```
-
 ===== FILE: Salehman AITests/CodeGitStatusTests.swift (54 lines) =====
 ```swift
 import Testing
@@ -31538,121 +28855,6 @@ struct EffortWiringTests {
 }
 ```
 
-===== FILE: Salehman AITests/EnsembleTests.swift (111 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - LocalLLM.formatEnsemble
-//
-// The ensemble fan-out itself (generateEnsemble) hits live brains, so it's not
-// a pure unit test. But the *formatter* — which turns per-brain answers into the
-// combined markdown the user sees — is pure and worth pinning: it must label
-// every brain, render missing replies honestly (not silently drop them), and
-// count "answered" correctly.
-
-struct EnsembleFormatTests {
-
-    private func ans(_ label: String, _ text: String?) -> LocalLLM.EnsembleAnswer {
-        LocalLLM.EnsembleAnswer(label: label, text: text)
-    }
-
-    @Test func eachBrainGetsItsOwnLabeledSection() {
-        let out = LocalLLM.formatEnsemble([
-            ans("Apple Intelligence", "Hi from Apple."),
-            ans("xAI grok-build-0.1", "Hi from Grok."),
-        ])
-        #expect(out.contains("### Apple Intelligence"))
-        #expect(out.contains("Hi from Apple."))
-        #expect(out.contains("### xAI grok-build-0.1"))
-        #expect(out.contains("Hi from Grok."))
-    }
-
-    @Test func missingReplyIsShownNotDropped() {
-        // A nil/empty reply must render as a visible "(no response)" — never be
-        // silently omitted, or the user can't tell a brain failed vs wasn't run.
-        let out = LocalLLM.formatEnsemble([
-            ans("Apple Intelligence", "ok"),
-            ans("Claude Haiku", nil),
-            ans("Groq", ""),
-        ])
-        #expect(out.contains("### Claude Haiku"))
-        #expect(out.contains("### Groq"))
-        #expect(out.contains("_(no response)_"))
-    }
-
-    @Test func answeredCountReflectsNonEmptyReplies() {
-        // 2 of 3 produced text.
-        let out = LocalLLM.formatEnsemble([
-            ans("A", "x"), ans("B", nil), ans("C", "y"),
-        ])
-        #expect(out.contains("2/3 answered"))
-    }
-
-    @Test func errorStringsCountAsAnsweredAndAreShownVerbatim() {
-        // Cloud clients return a `[Provider error …]` string for HTTP errors;
-        // that IS a (non-empty) response and must surface verbatim so the user
-        // sees the real failure alongside the brains that worked.
-        let out = LocalLLM.formatEnsemble([
-            ans("xAI grok-build-0.1", "[Grok error 404: model not found]"),
-            ans("Apple Intelligence", "real answer"),
-        ])
-        #expect(out.contains("[Grok error 404: model not found]"))
-        #expect(out.contains("2/2 answered"))   // an error string still counts as "responded"
-    }
-
-    @Test func headerPresentEvenForSingleBrain() {
-        let out = LocalLLM.formatEnsemble([ans("Apple Intelligence", "hello")])
-        #expect(out.contains("All brains"))
-        #expect(out.contains("1/1 answered"))
-    }
-}
-
-// MARK: - BrainPreference.ensemble surface
-
-struct EnsemblePreferenceTests {
-    @Test func ensembleIsListedAndStable() {
-        #expect(BrainPreference.allCases.contains(.ensemble))
-        #expect(BrainPreference.ensemble.rawValue == "ensemble")
-        #expect(!BrainPreference.ensemble.title.isEmpty)
-        #expect(!BrainPreference.ensemble.subtitle.isEmpty)
-        #expect(!BrainPreference.ensemble.icon.isEmpty)
-    }
-}
-
-// MARK: - Ensemble routing predicate
-//
-// Regression guard for the "Is All Brains at Once working? → Not working" false
-// negative: ensemble used to be wired ONLY in AgentPipeline, so direct callers
-// (the Settings probe, StockSage, title-gen) hit `LocalLLM.generate/chat`, fell
-// through every single-brain gate, and got `offMessage`. The fix makes ensemble
-// a first-class branch in those methods, gated on `isEnsembleMode`. These tests
-// pin that predicate (network-free) so the branches can't silently break.
-
-struct EnsembleRoutingTests {
-
-    // NOTE: the `isEnsembleMode`-via-UserDefaults predicate test used to live here,
-    // but `FreeAutoRoutingTests.isFreeAutoModeTracksThePreference` mutates the SAME
-    // global `Keys.brainPreference` key, and Swift Testing runs tests in parallel —
-    // two writers of one global race each other and flake. The freeAuto suite keeps
-    // that single mutator (race-free as the sole writer); the `isEnsembleMode`
-    // predicate (`pref == .ensemble`) is trivial and already enforced by the build's
-    // exhaustive switches + `EnsemblePreferenceTests`. Don't re-add a brainPreference
-    // mutator here without serializing it against the freeAuto one.
-
-    @Test func realEnsembleAnswerNeverCollidesWithOffSentinel() {
-        // The Settings/streaming layers detect "no brain" via `reply == offMessage`.
-        // A formatted ensemble answer (≥1 brain responded) must never equal that
-        // sentinel, or a working ensemble would be misread as off.
-        let out = LocalLLM.formatEnsemble([
-            LocalLLM.EnsembleAnswer(label: "Apple Intelligence", text: "hello"),
-        ])
-        #expect(out != LocalLLM.offMessage)
-    }
-}
-```
-
 ===== FILE: Salehman AITests/FileTreeTests.swift (230 lines) =====
 ```swift
 import Testing
@@ -32041,1024 +29243,6 @@ struct FourteenBReadinessTests {
         progress.clear()
         progress.noteToolRound(1, of: 8)   // must not crash on empty steps
         #expect(progress.steps.isEmpty)
-    }
-}
-```
-
-===== FILE: Salehman AITests/FreeAutoCooldownTests.swift (55 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - FreeAutoCooldown — 120s window boundary + clear-on-success
-//
-// `generateFreeAuto` SKIPS a free brain that failed recently so a wrong/absent
-// key doesn't waste a round-trip every prompt. Two properties matter:
-//   1. The cooling window is exactly 120s from the last recorded failure.
-//   2. A success clears the mark IMMEDIATELY so a self-healed brain isn't
-//      penalized for the rest of the window.
-// Each test instantiates its own `FreeAutoCooldown` actor — Swift Testing
-// parallelizes by default, and using `.shared` would race other tests on the
-// same `failedAt` dict.
-
-struct FreeAutoCooldownTests {
-
-    @Test func failureBlocksJustInsideTheWindow() async {
-        let cool = LocalLLM.FreeAutoCooldown()
-        let t0 = Date(timeIntervalSinceReferenceDate: 0)
-
-        await cool.recordFailure("Groq", now: t0)
-        let inside = await cool.cooling(["Groq"], now: t0.addingTimeInterval(119.9))
-        #expect(inside == ["Groq"])
-    }
-
-    @Test func failureClearsJustOutsideTheWindow() async {
-        let cool = LocalLLM.FreeAutoCooldown()
-        let t0 = Date(timeIntervalSinceReferenceDate: 0)
-
-        await cool.recordFailure("Groq", now: t0)
-        let outside = await cool.cooling(["Groq"], now: t0.addingTimeInterval(120.1))
-        #expect(outside.isEmpty)
-    }
-
-    @Test func successImmediatelyClearsTheMark() async {
-        let cool = LocalLLM.FreeAutoCooldown()
-        let t0 = Date(timeIntervalSinceReferenceDate: 0)
-
-        await cool.recordFailure("Mistral", now: t0)
-        #expect(await cool.cooling(["Mistral"], now: t0.addingTimeInterval(1)) == ["Mistral"])
-
-        await cool.recordSuccess("Mistral")
-        // After a success, the brain rejoins the rotation immediately, even
-        // though we're still inside the original 120 s cooling window.
-        #expect(await cool.cooling(["Mistral"], now: t0.addingTimeInterval(30)).isEmpty)
-    }
-
-    @Test func neverFailedBrainsAreNotCooling() async {
-        let cool = LocalLLM.FreeAutoCooldown()
-        let now = Date()
-        let set = await cool.cooling(["Groq", "Gemini", "Cerebras"], now: now)
-        #expect(set.isEmpty)
-    }
-}
-```
-
-===== FILE: Salehman AITests/FreeAutoTests.swift (240 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - LocalLLM.isUsableFreeAnswer
-//
-// `generateFreeAuto` races every configured free brain in parallel and returns
-// the first reply that survives `isUsableFreeAnswer`. That filter is therefore
-// the linchpin of the whole feature — if it accepts an error string, a brain
-// that 429s instantly "wins" the race and the user sees the error as their
-// answer instead of waiting for a healthy sibling. These tests pin the contract
-// so a refactor of the filter (or of the cloud clients' error-string format)
-// can't silently break the "never blocked" guarantee.
-
-struct FreeAutoAnswerFilterTests {
-
-    // MARK: rejections
-
-    @Test func rejectsEmptyString() {
-        #expect(!LocalLLM.isUsableFreeAnswer(""))
-    }
-
-    @Test func rejectsWhitespaceOnly() {
-        #expect(!LocalLLM.isUsableFreeAnswer("   \n\t  "))
-    }
-
-    @Test func rejectsRateLimitError() {
-        // Format produced by `OpenAICompatibleClient` for non-2xx — see the
-        // `errorText` path. Groq / Cerebras / Mistral / OpenAI / OpenRouter all
-        // share this shape, so one rejection covers all of them.
-        #expect(!LocalLLM.isUsableFreeAnswer("[Groq error 429: rate limit exceeded]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[OpenRouter error 429: Provider returned error]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[Cerebras error 404: model not found]"))
-    }
-
-    @Test func rejectsGeminiErrorFormat() {
-        // Gemini's client uses its own non-OpenAI shape. Worth pinning its
-        // error string explicitly because if the format ever drifts the
-        // filter would silently start accepting it.
-        #expect(!LocalLLM.isUsableFreeAnswer("[Gemini error 400: API key not valid]"))
-    }
-
-    @Test func rejectsTransportFailureFormat() {
-        // REGRESSION GUARD (2026-06-05): the OTHER error shape — "[X request
-        // failed (HTTP NNN). …]" — contains NO "error" keyword. The original
-        // filter only matched "error", so this form (e.g. Mistral on a 401)
-        // slipped through, WON the race, and was shown to the user as the
-        // answer. Pin every real client failure format.
-        #expect(!LocalLLM.isUsableFreeAnswer("[Mistral request failed (HTTP 401). Check the key + your network.]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[Grok request failed (HTTP 500). Check Settings → Brain → xAI Grok.]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[Gemini request failed (HTTP 403). Check Settings → Brain → Google Gemini.]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[The on-device model couldn't complete that request: timeout]"))
-    }
-
-    @Test func errorDetectionIsCaseInsensitive() {
-        // `[Provider Error ...]` and `[Provider ERROR ...]` must also lose.
-        #expect(!LocalLLM.isUsableFreeAnswer("[Groq Error 500: internal]"))
-        #expect(!LocalLLM.isUsableFreeAnswer("[Groq ERROR 503: upstream]"))
-    }
-
-    // MARK: acceptances
-
-    @Test func acceptsRealAnswer() {
-        // The kind of thing Groq actually replied with during live testing.
-        #expect(LocalLLM.isUsableFreeAnswer("Hi, how can I assist you today?"))
-    }
-
-    @Test func acceptsMultilineMarkdown() {
-        #expect(LocalLLM.isUsableFreeAnswer("Sure — here's how:\n\n1. Step one\n2. Step two"))
-    }
-
-    @Test func acceptsAnswerThatMentionsErrorWordWithoutBracketPrefix() {
-        // A real prose answer can mention "error" without being one. The filter
-        // requires BOTH the leading `[` AND the word "error" — neither alone
-        // disqualifies a reply.
-        #expect(LocalLLM.isUsableFreeAnswer("If you hit a 429 error, the next brain takes over."))
-    }
-
-    @Test func acceptsBracketPrefixWithoutErrorKeyword() {
-        // An answer can start with `[` (e.g. a markdown link, a code snippet,
-        // a list) — only the combination with "error" disqualifies.
-        #expect(LocalLLM.isUsableFreeAnswer("[See the docs](https://example.com) for details."))
-    }
-}
-
-// MARK: - BrainPreference.freeAuto surface
-//
-// Same regression-guard pattern as `EnsembleRoutingTests` and
-// `OpenRouterPreferenceTests`: pin the predicate that the four routing
-// branches in `generate / generateStreaming / chat` and the top of
-// `AgentPipeline.run` all hinge on. Network-free; runs in milliseconds.
-
-struct FreeAutoRoutingTests {
-
-    @Test func isFreeAutoModeTracksThePreference() {
-        // Cross-suite serialization — see BrainPreferenceTestLock.swift.
-        BrainPreferenceTestLock.lock.lock()
-        defer { BrainPreferenceTestLock.lock.unlock() }
-
-        let key = AppSettings.Keys.brainPreference
-        let prior = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-        UserDefaults.standard.set(BrainPreference.freeAuto.rawValue, forKey: key)
-        #expect(LocalLLM.isFreeAutoMode)
-        UserDefaults.standard.set(BrainPreference.auto.rawValue, forKey: key)
-        #expect(!LocalLLM.isFreeAutoMode)
-    }
-
-    @Test func freeAutoIsListedAndStable() {
-        // Renaming the rawValue silently breaks every persisted user preference.
-        #expect(BrainPreference.allCases.contains(.freeAuto))
-        #expect(BrainPreference.freeAuto.rawValue == "freeAuto")
-        #expect(!BrainPreference.freeAuto.title.isEmpty)
-        #expect(!BrainPreference.freeAuto.subtitle.isEmpty)
-        #expect(!BrainPreference.freeAuto.icon.isEmpty)
-    }
-}
-
-// MARK: - LocalLLM.freeCoderModel priority selection
-//
-// `generateFreeCoding` uses `freeCoderModel` to pick the strongest coding
-// model from a provider's catalogue before racing it. The priority list is
-// ["codestral", "coder", "deepseek", "code", "gpt-oss", "glm"] — MARKER
-// priority, not list-position priority. A "codestral" model beats a "gpt-oss"
-// model even if "gpt-oss" appears first in the array. Bugs here quietly route
-// coding races to a weaker general model with no visible error.
-
-struct FreeCoderModelTests {
-
-    @Test func codestralBeatsAllOtherMarkersRegardlessOfArrayPosition() {
-        // "gpt-oss" has lower priority than "codestral" even when listed first.
-        let m = LocalLLM.freeCoderModel(
-            ["gpt-oss-120b", "deepseek-r1:7b", "mistral/codestral-latest"],
-            default: "fallback"
-        )
-        #expect(m == "mistral/codestral-latest")
-    }
-
-    @Test func coderBeatsDeepSeek() {
-        let m = LocalLLM.freeCoderModel(
-            ["deepseek-v4-flash", "qwen2.5-coder:7b"],
-            default: "fallback"
-        )
-        #expect(m == "qwen2.5-coder:7b")
-    }
-
-    @Test func deepSeekBeatsGptOss() {
-        let m = LocalLLM.freeCoderModel(
-            ["gpt-oss-120b", "deepseek-v4-flash"],
-            default: "fallback"
-        )
-        #expect(m == "deepseek-v4-flash")
-    }
-
-    @Test func gptOssBeatsGlm() {
-        let m = LocalLLM.freeCoderModel(
-            ["zai-glm-4.7", "gpt-oss-120b"],
-            default: "fallback"
-        )
-        #expect(m == "gpt-oss-120b")
-    }
-
-    @Test func fallsBackToDefaultWhenNoMarkerMatches() {
-        let m = LocalLLM.freeCoderModel(
-            ["llama-3.3-70b-versatile", "mixtral-8x7b-instruct"],
-            default: "default-model"
-        )
-        #expect(m == "default-model")
-    }
-
-    @Test func emptyModelListReturnsDefault() {
-        let m = LocalLLM.freeCoderModel([], default: "safe-default")
-        #expect(m == "safe-default")
-    }
-
-    @Test func matchIsCaseInsensitive() {
-        // Provider catalogues sometimes capitalise: "Codestral-Mamba", "DeepSeek-Coder".
-        let m = LocalLLM.freeCoderModel(
-            ["Mistral/Codestral-Mamba-v0.1"],
-            default: "fallback"
-        )
-        #expect(m == "Mistral/Codestral-Mamba-v0.1")
-    }
-
-    @Test func firstArrayEntryWinsWithinSameMarker() {
-        // Two models both contain "coder" — the first in the array wins.
-        let m = LocalLLM.freeCoderModel(
-            ["qwen2.5-coder:7b", "qwen2.5-coder:32b"],
-            default: "fallback"
-        )
-        #expect(m == "qwen2.5-coder:7b")
-    }
-}
-
-// MARK: - LocalLLM.applyUnrestricted toggle
-//
-// `applyUnrestricted` is the single gate that decides whether the
-// unrestrictedAddendum is appended to any system prompt passed through it.
-// Both `cloudSystemPrompt` and `freeCodingSystem` flow through this gate.
-// A wrong toggle silently either over-restricts the assistant or leaks the
-// unrestricted addendum into every prompt regardless of user preference.
-
-struct ApplyUnrestrictedTests {
-
-    private func withUnrestrictedFlag(_ enabled: Bool, _ body: () -> Void) {
-        let key = AppSettings.Keys.unrestrictedTools
-        let prior = UserDefaults.standard.object(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-        UserDefaults.standard.set(enabled, forKey: key)
-        body()
-    }
-
-    @Test func baseUnchangedWhenDisabled() {
-        withUnrestrictedFlag(false) {
-            let result = LocalLLM.applyUnrestricted("BASE_PROMPT")
-            #expect(result == "BASE_PROMPT")
-        }
-    }
-
-    @Test func addendumAppendedWhenEnabled() {
-        withUnrestrictedFlag(true) {
-            let result = LocalLLM.applyUnrestricted("BASE_PROMPT")
-            #expect(result.hasPrefix("BASE_PROMPT\n"))
-            #expect(result.contains(LocalLLM.unrestrictedAddendum))
-        }
-    }
-
-    @Test func addendumContainsOwnerDirective() {
-        // Sanity guard: the addendum must be non-trivial. If someone replaces it
-        // with an empty string, the toggle effectively does nothing.
-        #expect(!LocalLLM.unrestrictedAddendum.isEmpty)
-        #expect(LocalLLM.unrestrictedAddendum.count > 20)
-    }
-}
-```
-
-===== FILE: Salehman AITests/FreeCloudBrainsTests.swift (356 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - Default model IDs
-//
-// Same guard pattern as `GrokModelIDTests`: if a typo or rename slips into
-// any client's `defaultModel`, the runtime call to that provider silently
-// 404s and looks like a network bug. Pinning each ID here trips CI before a
-// user notices.
-
-struct GeminiModelIDTests {
-    @Test func defaultModelIsFlash() {
-        // Free tier's headline model in Google AI Studio.
-        #expect(GeminiClient.defaultModel == "gemini-2.0-flash")
-    }
-    @Test func proModelMatchesPublicID() {
-        #expect(GeminiClient.proModel == "gemini-1.5-pro")
-    }
-    @Test func allModelsAreLowercaseDashed() {
-        for m in GeminiClient.allModels {
-            #expect(m == m.lowercased(),
-                    "Gemini IDs must be lowercase, got \(m)")
-            #expect(m.hasPrefix("gemini-"),
-                    "Gemini IDs must start with `gemini-`, got \(m)")
-        }
-    }
-    @Test func allModelsContainsDefault() {
-        #expect(GeminiClient.allModels.contains(GeminiClient.defaultModel))
-    }
-}
-
-struct GroqModelIDTests {
-    @Test func defaultIsLlama70B() {
-        // `llama-3.3-70b-versatile` is the current "Llama 70B Versatile" on
-        // Groq; the predecessor `llama-3.1-70b-versatile` was decommissioned
-        // (HTTP 400 "model not found") around 2026-06. Intent of the test is
-        // unchanged — "default is the 70B versatile model" — only the exact
-        // ID rolled forward.
-        #expect(GroqClient.defaultModel == "llama-3.3-70b-versatile")
-    }
-    @Test func allModelsContainsDefault() {
-        #expect(GroqClient.allModels.contains(GroqClient.defaultModel))
-    }
-    @Test func clientEndpointMatchesGroqDocs() {
-        #expect(GroqClient.shared.baseURL == "https://api.groq.com/openai/v1")
-        #expect(GroqClient.shared.displayName == "Groq")
-    }
-}
-
-struct MistralModelIDTests {
-    @Test func defaultIsSmallLatest() {
-        // `mistral-small-latest` rolls automatically; the test is asserting
-        // the alias, not the underlying version.
-        #expect(MistralClient.defaultModel == "mistral-small-latest")
-    }
-    @Test func allModelsContainsDefault() {
-        #expect(MistralClient.allModels.contains(MistralClient.defaultModel))
-    }
-    @Test func clientEndpointMatchesMistralDocs() {
-        #expect(MistralClient.shared.baseURL == "https://api.mistral.ai/v1")
-    }
-}
-
-struct CerebrasModelIDTests {
-    @Test func defaultIsCurrentlyServedModel() {
-        // Cerebras retired the Llama 3.1 family from public inference; the old
-        // `llama3.1-8b` / `llama-3.3-70b` IDs both return 404 now. Live `GET
-        // /v1/models` exposes only `gpt-oss-120b` and `zai-glm-4.7` — see the
-        // comment on `CerebrasClient` in `CloudBrains.swift`. This test now
-        // asserts the *current* default; rename + assertion will need rolling
-        // again the next time the provider's offering shifts.
-        #expect(CerebrasClient.defaultModel == "gpt-oss-120b")
-    }
-    @Test func allModelsContainsDefault() {
-        #expect(CerebrasClient.allModels.contains(CerebrasClient.defaultModel))
-    }
-    @Test func clientEndpointMatchesCerebrasDocs() {
-        #expect(CerebrasClient.shared.baseURL == "https://api.cerebras.ai/v1")
-    }
-}
-
-// MARK: - NVIDIA NIM model IDs
-//
-// NvidiaClient speaks the NVIDIA NIM OpenAI-compatible endpoint. Pinning the
-// model IDs here catches any future renaming before it silently 404s at runtime.
-// NOTE: NvidiaClient is NOT in CloudProvider and has no brain-routing slot —
-// the key is stored in Keychain but only feeds the SalehmanEngine cloud-optional
-// path (vLLM / Unsloth fallback; the NIM path is forward-looking). Tests in
-// SettingsBrainReadyTests pin that `nvidia=true` has no routing effect.
-
-struct NvidiaModelIDTests {
-    @Test func defaultModelIsDeepSeekV4Flash() {
-        // The free-tier everyday model on NVIDIA NIM.
-        #expect(NvidiaClient.defaultModel == "deepseek-ai/deepseek-v4-flash")
-    }
-    @Test func allModelsContainsDefault() {
-        #expect(NvidiaClient.allModels.contains(NvidiaClient.defaultModel))
-    }
-    @Test func endpointAndDisplayNameMatchNvidiaDocs() {
-        #expect(NvidiaClient.shared.baseURL == "https://integrate.api.nvidia.com/v1")
-        #expect(NvidiaClient.shared.displayName == "NVIDIA")
-    }
-    @Test func keychainAccountStringIsStable() {
-        // Renaming this loses every saved NVIDIA key silently.
-        #expect(KeychainStore.Account.nvidiaAPIKey.rawValue == "nvidia-api-key")
-    }
-}
-
-// MARK: - Keychain account contracts
-//
-// Each provider gets its own Keychain slot. Renaming any of these silently
-// loses every existing user's saved key.
-
-struct CloudKeychainAccountTests {
-    @Test func eachProviderHasUniqueAccountString() {
-        let names = Set([
-            KeychainStore.Account.grokAPIKey.rawValue,
-            KeychainStore.Account.geminiAPIKey.rawValue,
-            KeychainStore.Account.groqAPIKey.rawValue,
-            KeychainStore.Account.mistralAPIKey.rawValue,
-            KeychainStore.Account.cerebrasAPIKey.rawValue,
-            KeychainStore.Account.nvidiaAPIKey.rawValue,
-        ])
-        #expect(names.count == 6,
-                "Each Keychain account string must be distinct — collisions overwrite keys")
-    }
-    @Test func accountStringsMatchExpectedSchema() {
-        // Schema: lowercase-with-dashes ending in -api-key.
-        for raw in [
-            KeychainStore.Account.grokAPIKey.rawValue,
-            KeychainStore.Account.geminiAPIKey.rawValue,
-            KeychainStore.Account.groqAPIKey.rawValue,
-            KeychainStore.Account.mistralAPIKey.rawValue,
-            KeychainStore.Account.cerebrasAPIKey.rawValue,
-            KeychainStore.Account.nvidiaAPIKey.rawValue,
-        ] {
-            #expect(raw.hasSuffix("-api-key"), "\(raw) must end with -api-key")
-            #expect(raw == raw.lowercased(), "\(raw) must be lowercase")
-        }
-    }
-}
-
-// MARK: - BrainPreference surface
-
-struct CloudBrainPreferenceTests {
-    @Test func allFourCloudCasesAreListed() {
-        let cases = Set(BrainPreference.allCases.map(\.rawValue))
-        #expect(cases.contains("gemini"))
-        #expect(cases.contains("groq"))
-        #expect(cases.contains("mistral"))
-        #expect(cases.contains("cerebras"))
-    }
-    @Test func eachCloudCaseHasNonEmptyDisplay() {
-        for c in [BrainPreference.gemini, .groq, .mistral, .cerebras] {
-            #expect(!c.title.isEmpty)
-            #expect(!c.subtitle.isEmpty)
-            #expect(!c.icon.isEmpty)
-        }
-    }
-}
-
-// MARK: - lacksCloudKey + isAvailable logic guards
-//
-// The two properties drive the "add a cloud key" UX banner and the outcome
-// success-rating. The full Keychain layer can't be exercised in tests (no
-// entitlements), but we can pin the routing LOGIC: which roster each mode
-// consults, and which modes are exempt from the banner.
-
-struct LacksCloudKeyLogicTests {
-
-    @Test func salehmanAlwaysReturnsFalse() {
-        // Salehman is on-device only — no cloud key is needed or used.
-        // The banner would be wrong and alarming for this mode.
-        let prior = UserDefaults.standard.string(forKey: AppSettings.Keys.brainPreference)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: AppSettings.Keys.brainPreference) }
-            else         { UserDefaults.standard.removeObject(forKey: AppSettings.Keys.brainPreference) }
-        }
-        UserDefaults.standard.set(BrainPreference.salehman.rawValue,
-                                   forKey: AppSettings.Keys.brainPreference)
-        #expect(!LocalLLM.lacksCloudKey, ".salehman must never trigger the banner")
-    }
-
-    @Test func freeTierContainsOnlyFreeProviders() {
-        // The banner fires when none of freeTier are configured. If a paid
-        // brain slips into freeTier, freeAuto could silently spend money AND
-        // the banner would be suppressed (masking the actual lack of a free key).
-        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
-        for paid in paidBrains {
-            #expect(!CloudProvider.freeTier.contains(paid),
-                    "\(paid.rawValue) is a paid brain and must not appear in freeTier")
-        }
-        // The five cost-free providers must all be present.
-        for expected in [CloudProvider.groq, .cerebras, .gemini, .mistral, .openRouter] {
-            #expect(CloudProvider.freeTier.contains(expected),
-                    "\(expected.rawValue) must be in freeTier — it's the free-auto roster")
-        }
-    }
-
-    @Test func codingRaceContainsOnlyFreeCoders() {
-        // freeCoding banner logic uses codingRace. Same guard: paid brains
-        // must not appear (no silent spend), and all four coders must be listed.
-        let paidBrains: [CloudProvider] = [.anthropic, .grok, .openAI, .copilot]
-        for paid in paidBrains {
-            #expect(!CloudProvider.codingRace.contains(paid),
-                    "\(paid.rawValue) must not be in codingRace")
-        }
-        for expected in [CloudProvider.openRouter, .groq, .cerebras, .mistral] {
-            #expect(CloudProvider.codingRace.contains(expected),
-                    "\(expected.rawValue) must be in codingRace")
-        }
-    }
-
-    @Test func isAvailableReturnsFalseWhenNoCloudConfigured() {
-        // Without real Keychain entries, configuredNow() returns an empty Set,
-        // so isAvailable must return false. This is the correct "no brain" state.
-        // (The pipeline falls back to offMessage when isAvailable is false AND
-        // the answer is empty — this test verifies the no-key case, not the
-        // Ollama case which is async.)
-        //
-        // If this test runs on a machine that has any cloud key saved, it will
-        // return true (correctly). Either outcome is acceptable — this test is
-        // primarily a structural guard to confirm CloudProvider.configuredNow()
-        // is what drives the value, not a hard-coded false.
-        let result = LocalLLM.isAvailable
-        let expected = !CloudProvider.configuredNow().isEmpty
-        #expect(result == expected,
-                "isAvailable must mirror !CloudProvider.configuredNow().isEmpty")
-    }
-}
-
-// MARK: - AppSettings.*ModelCurrent fallback
-
-struct CloudModelCurrentFallbackTests {
-
-    private func withTransientUserDefault<T>(_ key: String, value: String?,
-                                             _ body: () -> T) -> T {
-        let prior = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-        if let value { UserDefaults.standard.set(value, forKey: key) }
-        else         { UserDefaults.standard.removeObject(forKey: key) }
-        return body()
-    }
-
-    @Test func unknownGeminiFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.geminiModel, value: "future-model") {
-            AppSettings.geminiModelCurrent
-        }
-        #expect(v == GeminiClient.defaultModel)
-    }
-    @Test func unknownGroqFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.groqModel, value: "future-model") {
-            AppSettings.groqModelCurrent
-        }
-        #expect(v == GroqClient.defaultModel)
-    }
-    @Test func unknownMistralFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.mistralModel, value: "future-model") {
-            AppSettings.mistralModelCurrent
-        }
-        #expect(v == MistralClient.defaultModel)
-    }
-    @Test func unknownCerebrasFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.cerebrasModel, value: "future-model") {
-            AppSettings.cerebrasModelCurrent
-        }
-        #expect(v == CerebrasClient.defaultModel)
-    }
-
-    // OpenAI was the last cloud provider missing from this test grid.
-    // allModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "o4-mini"].
-    @Test func unknownOpenAIModelFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: "gpt-99-turbo") {
-            AppSettings.openAIModelCurrent
-        }
-        #expect(v == OpenAIClient.defaultModel)
-    }
-    @Test func nilOpenAIModelKeyFallsBackToDefault() {
-        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: nil) {
-            AppSettings.openAIModelCurrent
-        }
-        #expect(v == OpenAIClient.defaultModel)
-    }
-    @Test func knownOpenAIModelIsReturnedAsIs() {
-        let model = "gpt-4o"
-        precondition(OpenAIClient.allModels.contains(model))
-        let v = withTransientUserDefault(AppSettings.Keys.openAIModel, value: model) {
-            AppSettings.openAIModelCurrent
-        }
-        #expect(v == model)
-    }
-}
-
-// MARK: - AppSettings.boolDefaultTrue — default-ON contract
-//
-// `boolDefaultTrue` is the semantic primitive that makes `salehmanLeaderEnabled`,
-// `autoContinueEnabled`, and `webAccess` all default to ON out of the box.
-// `UserDefaults.bool(forKey:)` returns `false` for absent keys — the same
-// value as an explicit false, so the two states are indistinguishable.
-// `boolDefaultTrue` fixes this by checking `object(forKey:) == nil`.
-// A future refactor that drops this helper and calls `bool(forKey:)` directly
-// would silently flip all three features from ON to OFF. These tests make that
-// regression immediately visible.
-
-struct BoolDefaultTrueTests {
-
-    private let key = "__test_boolDefaultTrue__"
-
-    private func withTransientBool(_ value: Bool?, _ body: () -> Void) {
-        let prior = UserDefaults.standard.object(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-        if let value { UserDefaults.standard.set(value, forKey: key) }
-        else         { UserDefaults.standard.removeObject(forKey: key) }
-        body()
-    }
-
-    @Test func absentKeyReturnsTrue() {
-        // The critical invariant: a key never written must default to true.
-        // `UserDefaults.bool(forKey:)` would silently return false here.
-        withTransientBool(nil) {
-            #expect(AppSettings.boolDefaultTrue(key) == true)
-        }
-    }
-
-    @Test func explicitFalseReturnsFalse() {
-        withTransientBool(false) {
-            #expect(AppSettings.boolDefaultTrue(key) == false)
-        }
-    }
-
-    @Test func explicitTrueReturnsTrue() {
-        withTransientBool(true) {
-            #expect(AppSettings.boolDefaultTrue(key) == true)
-        }
-    }
-
-    @Test func distinguishesMissingFromExplicitFalse() {
-        // Absent and explicit-false produce different outputs — that semantic
-        // distinction is the only reason this helper exists.
-        withTransientBool(false) {
-            #expect(AppSettings.boolDefaultTrue(key) == false,
-                    "explicit false must be honoured, not conflated with absent")
-        }
-        withTransientBool(nil) {
-            #expect(AppSettings.boolDefaultTrue(key) == true,
-                    "absent key must default to true, not false")
-        }
-    }
-}
-```
-
-===== FILE: Salehman AITests/GeminiBackoffTests.swift (50 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - GeminiClient retry/backoff policy (hermetic — no network)
-//
-// GeminiClient.chat() retries transient 429/503 responses with exponential
-// backoff. The retry LOOP needs a live URLSession, but the two decisions that
-// drive it are pure functions — so we pin those: which statuses retry, and how
-// the delay grows/caps. No keychain, no network, fully deterministic.
-
-struct GeminiBackoffTests {
-
-    @Test func onlyRateLimitAndUnavailableRetry() {
-        #expect(GeminiClient.isRetryableStatus(429))   // rate-limited / RESOURCE_EXHAUSTED
-        #expect(GeminiClient.isRetryableStatus(503))   // service unavailable
-        // Everything else surfaces immediately — no pointless retries.
-        #expect(GeminiClient.isRetryableStatus(200) == false)
-        #expect(GeminiClient.isRetryableStatus(400) == false)
-        #expect(GeminiClient.isRetryableStatus(401) == false)
-        #expect(GeminiClient.isRetryableStatus(404) == false)
-        #expect(GeminiClient.isRetryableStatus(500) == false)
-    }
-
-    @Test func backoffIsExponential() {
-        // base 0.5 · 2^attempt → 0.5, 1, 2, 4 …
-        #expect(GeminiClient.backoffDelay(attempt: 0) == 0.5)
-        #expect(GeminiClient.backoffDelay(attempt: 1) == 1.0)
-        #expect(GeminiClient.backoffDelay(attempt: 2) == 2.0)
-        #expect(GeminiClient.backoffDelay(attempt: 3) == 4.0)
-        // strictly increasing across the retry budget
-        for a in 0..<GeminiClient.maxRetries {
-            #expect(GeminiClient.backoffDelay(attempt: a) < GeminiClient.backoffDelay(attempt: a + 1))
-        }
-    }
-
-    @Test func backoffIsCappedAndNonNegative() {
-        // Far-out attempts saturate at the cap rather than growing unbounded.
-        #expect(GeminiClient.backoffDelay(attempt: 100) == 8.0)
-        #expect(GeminiClient.backoffDelay(attempt: 4, cap: 8.0) == 8.0)   // 0.5·2^4 = 8 (==cap)
-        // Defensive: a negative attempt clamps to attempt 0, never a negative delay.
-        #expect(GeminiClient.backoffDelay(attempt: -5) == 0.5)
-    }
-
-    @Test func retryBudgetIsBounded() {
-        // The policy retries a finite number of times (so a stuck 503 can't loop forever).
-        #expect(GeminiClient.maxRetries >= 1)
-        #expect(GeminiClient.maxRetries <= 10)
-    }
-}
-```
-
-===== FILE: Salehman AITests/GeminiURLEncodingTests.swift (107 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - GeminiClient.makeURL — percent-encoding safety
-//
-// Google's API takes the API key as a URL query parameter:
-//   https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent?key=<KEY>
-//
-// An earlier implementation built that URL by string interpolation:
-//   `URL(string: "\(base)/models/\(model):generateContent?key=\(key)")`
-//
-// If a user ever pasted a key containing a URL-reserved character (`+`,
-// `&`, `=`, `?`, whitespace, etc.), `URL(string:)` returned nil and the
-// caller silently fell through to the offMessage sentinel. The user would
-// see "no model is reachable" with no useful diagnostic.
-//
-// `makeURL` now routes through `URLComponents`, which percent-encodes the
-// query value correctly. These tests pin that behaviour and verify the
-// URL shape stays compatible with Google's endpoint.
-
-struct GeminiURLEncodingTests {
-
-    @Test func wellFormedKeyProducesUsableURL() {
-        // Sanity baseline: a normal AIza-style key.
-        let url = GeminiClient.makeURL(model: "gemini-2.0-flash",
-                                       action: "generateContent",
-                                       key: "AIzaSyExampleNormalKey123",
-                                       extraQueryItems: [])
-        #expect(url != nil)
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains("generativelanguage.googleapis.com"))
-        #expect(s.contains("/models/gemini-2.0-flash:generateContent"))
-        #expect(s.contains("key=AIzaSyExampleNormalKey123"))
-    }
-
-    @Test func keyWithPlusSignIsPercentEncoded() {
-        // `+` in a URL query value historically means a space. If we
-        // interpolated this raw, Google would receive a different key
-        // string than we stored. URLComponents encodes `+` → `%2B`.
-        let url = GeminiClient.makeURL(model: "gemini-2.0-flash",
-                                       action: "generateContent",
-                                       key: "abc+def",
-                                       extraQueryItems: [])
-        #expect(url != nil)
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains("key=abc%2Bdef") || s.contains("key=abc+def"),
-                "key containing `+` must be percent-encoded (`%2B`) or accepted verbatim, got: \(s)")
-        #expect(!s.contains("key=abc def"),
-                "URLComponents must NOT have collapsed the `+` to a space")
-    }
-
-    @Test func keyWithAmpersandIsPercentEncoded() {
-        // `&` is the query-pair separator. A raw `&` in the key value
-        // would split the value mid-stream → Google sees the wrong key.
-        let url = GeminiClient.makeURL(model: "gemini-2.0-flash",
-                                       action: "generateContent",
-                                       key: "abc&def",
-                                       extraQueryItems: [])
-        #expect(url != nil)
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains("key=abc%26def"),
-                "key containing `&` must be percent-encoded (`%26`), got: \(s)")
-    }
-
-    @Test func keyWithSpaceIsHandled() {
-        // Whitespace at paste time. SettingsView trims at save, but
-        // belt-and-suspenders: the URL builder must not produce an
-        // invalid URL even if a space slips through.
-        let url = GeminiClient.makeURL(model: "gemini-2.0-flash",
-                                       action: "generateContent",
-                                       key: "abc def",
-                                       extraQueryItems: [])
-        #expect(url != nil, "space in key must not return nil URL")
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains("key=abc%20def") || s.contains("key=abc+def"),
-                "space must be percent-encoded, got: \(s)")
-    }
-
-    @Test func streamingURLIncludesAltSSE() {
-        // The streaming endpoint takes `alt=sse` as an additional query
-        // item alongside the key. Pin both made it through.
-        let url = GeminiClient.makeURL(model: "gemini-2.0-flash",
-                                       action: "streamGenerateContent",
-                                       key: "AIzaSyExample",
-                                       extraQueryItems: [URLQueryItem(name: "alt", value: "sse")])
-        #expect(url != nil)
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains(":streamGenerateContent"))
-        #expect(s.contains("alt=sse"))
-        #expect(s.contains("key=AIzaSyExample"))
-    }
-
-    @Test func modelWithDotsAndDashesIsPreservedInPath() {
-        // `gemini-1.5-pro` contains both `-` and `.` — both legal path
-        // characters. They must pass through verbatim (no percent-encoding,
-        // since these are pchar-allowed sub-delims/unreserved).
-        let url = GeminiClient.makeURL(model: "gemini-1.5-pro",
-                                       action: "generateContent",
-                                       key: "AIzaSyExample",
-                                       extraQueryItems: [])
-        #expect(url != nil)
-        let s = url?.absoluteString ?? ""
-        #expect(s.contains("/models/gemini-1.5-pro:generateContent"),
-                "model id `gemini-1.5-pro` must pass through verbatim, got: \(s)")
-    }
-}
-```
-
-===== FILE: Salehman AITests/GrokTests.swift (186 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - GrokClient model-ID guards
-//
-// These exist for one reason: if someone (or a careless rename tool) mutates
-// the default model strings to something xAI's API doesn't accept, every
-// runtime Grok call will silently 404 and look like a network bug. Pinning
-// the canonical strings in tests means a typo trips CI before a user notices.
-
-struct GrokModelIDTests {
-
-    @Test func defaultModelMatchesXAICatalog() {
-        // Real xAI API model IDs use lower-case + dashes. The default must be
-        // a model `console.x.ai` lists. If xAI ever renames `grok-4`, this
-        // test fails on purpose — update both the constant and this assertion
-        // together.
-        #expect(GrokClient.defaultModel == "grok-4")
-    }
-
-    @Test func grok3ModelsAreAvailable() {
-        // grok-3 and grok-3-mini are the accessible alternatives to grok-4
-        // (cheaper, smaller). Pinning them so a rename in the picker doesn't
-        // silently drop the user back to grok-4 with no warning.
-        #expect(GrokClient.grok3Model == "grok-3")
-        #expect(GrokClient.grok3MiniModel == "grok-3-mini")
-    }
-
-    @Test func allModelsContainsTheAccessibleCatalog() {
-        // `allModels` drives both the Settings picker and
-        // `AppSettings.grokModelCurrent`'s validation. If a value disappears
-        // from this list, stored preferences silently fall back to default.
-        #expect(GrokClient.allModels.contains("grok-4"))
-        #expect(GrokClient.allModels.contains("grok-3"))
-        #expect(GrokClient.allModels.contains("grok-3-mini"))
-        // `grok-build-0.1` is confirmed available to this team (seen in the
-        // user's xAI console). Included as a probe — see GrokClient.buildModel.
-        #expect(GrokClient.allModels.contains("grok-build-0.1"))
-        // `count >= 3` (not `== 3`) so the list can grow without re-litigating
-        // the test. Specific exclusions are enforced separately below.
-        #expect(GrokClient.allModels.count >= 3)
-    }
-
-    @Test func heavyVariantsAreReservedButNotUserVisible() {
-        // xAI's `/v1/chat/completions` API does NOT currently expose either
-        // `grok-4-heavy` or `grok-4-heavy-4.3` — they're grok.com-only
-        // "Think Harder" modes. Picking either 404s with "The model … does
-        // not exist or your team does not have access to it". The constants
-        // stay defined for forward compatibility, but they must NOT appear
-        // in `allModels` (the Settings picker) until xAI ships API access.
-        // This guard trips loudly if someone re-adds either without
-        // checking xAI's current catalog.
-        #expect(GrokClient.heavyModel == "grok-4-heavy")
-        #expect(GrokClient.heavy43Model == "grok-4-heavy-4.3")
-        #expect(!GrokClient.allModels.contains("grok-4-heavy"),
-                "grok-4-heavy is not API-accessible — keep it out of allModels until xAI ships it")
-        #expect(!GrokClient.allModels.contains("grok-4-heavy-4.3"),
-                "grok-4-heavy-4.3 is not API-accessible — keep it out of allModels until xAI ships it")
-    }
-
-    @Test func modelStringsAreLowercaseAndDashed() {
-        // xAI's API rejects mixed-case or underscored model IDs. Belt-and-
-        // suspenders check so a "Grok-4" or "grok_4" never ships. Dots
-        // (e.g. `grok-4-heavy-4.3`) are tolerated — the API does accept
-        // them when they're part of a real model tag.
-        for model in GrokClient.allModels {
-            #expect(model == model.lowercased(),
-                    "Grok model IDs must be lowercase, got \(model)")
-            #expect(!model.contains("_"),
-                    "Grok model IDs must use dashes not underscores, got \(model)")
-            #expect(model.hasPrefix("grok-"),
-                    "Grok model IDs must start with `grok-`, got \(model)")
-        }
-    }
-}
-
-// MARK: - KeychainStore round-trip
-//
-// We don't exercise the actual macOS Keychain in tests (the test bundle
-// doesn't have the right entitlements and the system Keychain UI prompt
-// would block CI). These are pure-logic guards on the `Account` enum +
-// account-string contract.
-
-struct KeychainStoreContractTests {
-
-    @Test func grokAccountUsesExpectedString() {
-        // The string changes are part of the schema — if someone renames the
-        // account, every existing user's saved key disappears (the new
-        // account name finds nothing). Pinning the string here catches that
-        // before users notice.
-        #expect(KeychainStore.Account.grokAPIKey.rawValue == "grok-api-key")
-    }
-}
-
-// MARK: - BrainPreference enum surface
-
-struct BrainPreferenceGrokTests {
-
-    @Test func grokIsListedInAllCases() {
-        // The Settings picker is a `ForEach(BrainPreference.allCases)`. If
-        // `.grok` ever drops out of allCases, the row silently disappears
-        // and users have no way to pick it. This guards the visibility.
-        #expect(BrainPreference.allCases.contains(.grok))
-    }
-
-    @Test func grokHasNonEmptyTitleSubtitleIcon() {
-        let g = BrainPreference.grok
-        #expect(!g.title.isEmpty)
-        #expect(!g.subtitle.isEmpty)
-        #expect(!g.icon.isEmpty)
-    }
-
-    @Test func grokRawValueIsStable() {
-        // The raw value is persisted in UserDefaults under `set_brainPreference`.
-        // Renaming it would silently demote saved preferences back to `.auto`.
-        #expect(BrainPreference.grok.rawValue == "grok")
-    }
-}
-
-// MARK: - GrokClient.shared (OpenAICompatibleClient) configuration
-
-struct GrokSharedClientTests {
-
-    @Test func sharedClientHasCorrectBaseURL() {
-        // xAI's Chat Completions endpoint is at api.x.ai/v1. If this changes,
-        // every GrokClient.shared tool-loop call (terminal / web) will 404.
-        #expect(GrokClient.shared.baseURL == "https://api.x.ai/v1")
-    }
-
-    @Test func sharedClientDefaultModelMatchesGrokClient() {
-        #expect(GrokClient.shared.defaultModel == GrokClient.defaultModel)
-    }
-
-    @Test func sharedClientAllModelsMatchGrokClient() {
-        #expect(GrokClient.shared.allModels == GrokClient.allModels)
-    }
-
-    @Test func sharedClientKeychainAccountIsGrokKey() {
-        // `shared` must read from the same Keychain slot as `GrokClient.chat` —
-        // mismatching accounts would make the tool loop prompt for a key even
-        // when the user already saved one via Settings.
-        #expect(GrokClient.shared.keychainAccount == .grokAPIKey)
-    }
-
-    @Test func compatClientReturnsSharedForGrok() {
-        // BrainRouting.compatClient drives the entire OpenAI-compat tool loop.
-        // `.grok` must no longer return nil — it must return GrokClient.shared
-        // so pinned-Grok turns can call terminal / web tools.
-        let client = CloudProvider.grok.compatClient
-        #expect(client != nil, "CloudProvider.grok.compatClient must not be nil after EOV fix")
-        #expect(client?.baseURL == GrokClient.shared.baseURL)
-    }
-}
-
-// MARK: - AppSettings.grokModelCurrent fallback
-
-struct GrokModelCurrentTests {
-
-    @Test func unknownStoredModelFallsBackToDefault() {
-        // Simulate a stale or typoed UserDefaults value. The fallback path
-        // must return `GrokClient.defaultModel`, not crash and not return
-        // the garbage string (which would 404 on the next API call).
-        let key = AppSettings.Keys.grokModel
-        let prior = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-
-        UserDefaults.standard.set("grok-from-the-future-v99", forKey: key)
-        #expect(AppSettings.grokModelCurrent == GrokClient.defaultModel)
-    }
-
-    @Test func emptyStoredModelFallsBackToDefault() {
-        let key = AppSettings.Keys.grokModel
-        let prior = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-
-        UserDefaults.standard.removeObject(forKey: key)
-        #expect(AppSettings.grokModelCurrent == GrokClient.defaultModel)
     }
 }
 ```
@@ -33766,7 +29950,7 @@ struct OffMessageSentinelTests {
         // Pin a non-default preference so `unavailableMessage` produces its
         // pinned-brain remedy text — which should NOT equal the generic
         // sentinel "no model is reachable…" line.
-        UserDefaults.standard.set(BrainPreference.grok.rawValue, forKey: key)
+        UserDefaults.standard.set(BrainPreference.salehman.rawValue, forKey: key)
         #expect(LocalLLM.unavailableMessage != LocalLLM.offMessage,
                 "context-aware message collapsed back into sentinel — split is meaningless")
     }
@@ -34174,6 +30358,93 @@ struct MediaDetectTests {
         let below2048 = String(repeating: "a", count: 2047)
         #expect(MediaTranscribe.detect(below2048) == nil,
                 "2047-char non-URL must still return nil (fails URL parsing)")
+    }
+}
+```
+
+===== FILE: Salehman AITests/MediaSearchTests.swift (83 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - MediaSearch.authenticityBiased — nationality-aware query relevance
+//
+// Appending a region's native-language term to a query improves authenticity
+// (genuinely-regional content is tagged in its own language); the helper must be
+// a no-op for queries without a known nationality and must not double-append.
+
+struct MediaSearchQueryTests {
+    @Test func appendsNativeTermForKnownNationality() {
+        let out = MediaSearch.authenticityBiased("saudi cooking")
+        #expect(out.contains("سعودية"))
+        #expect(out.hasPrefix("saudi cooking"))   // original query preserved, term appended
+    }
+
+    @Test func isIdempotentWhenAlreadyLocalized() {
+        let once = MediaSearch.authenticityBiased("korean street food")
+        let twice = MediaSearch.authenticityBiased(once)
+        #expect(once == twice)                     // doesn't stack the native term twice
+    }
+
+    @Test func leavesNonNationalityQueriesUntouched() {
+        #expect(MediaSearch.authenticityBiased("sunset over mountains")
+                == "sunset over mountains")
+    }
+
+    @Test func matchingIsCaseInsensitive() {
+        #expect(MediaSearch.authenticityBiased("SAUDI desert").contains("سعودية"))
+    }
+}
+
+// MARK: - MediaItem — display + playability derivations
+
+struct MediaItemTests {
+    @Test func directVideoFileDetection() {
+        let mp4 = MediaItem(kind: .video, url: "https://cdn.example.com/clip.mp4")
+        let page = MediaItem(kind: .video, url: "https://youtube.com/watch?v=abc")
+        let image = MediaItem(kind: .image, url: "https://example.com/photo.mp4") // image kind wins
+        #expect(mp4.isDirectVideoFile)
+        #expect(!page.isDirectVideoFile)
+        #expect(!image.isDirectVideoFile)
+    }
+
+    @Test func displayURLPrefersThumbnail() {
+        let withThumb = MediaItem(kind: .image, url: "https://full/img.jpg",
+                                  thumbnail: "https://proxy/thumb.jpg")
+        let noThumb = MediaItem(kind: .image, url: "https://full/only.jpg")
+        #expect(withThumb.displayURL == "https://proxy/thumb.jpg")
+        #expect(noThumb.displayURL == "https://full/only.jpg")
+    }
+
+    @Test func codableRoundTripsThroughChatHistoryShape() throws {
+        let item = MediaItem(kind: .video, url: "https://v/clip.mp4",
+                             thumbnail: "https://v/poster.jpg", title: "Clip",
+                             source: "example.com", width: 1280, height: 720, duration: "3:21")
+        let data = try JSONEncoder().encode([item])
+        let back = try JSONDecoder().decode([MediaItem].self, from: data)
+        #expect(back == [item])
+    }
+}
+
+// MARK: - MediaCapture — per-turn side-channel buffer
+
+@MainActor
+struct MediaCaptureTests {
+    @Test func drainReturnsAndClears() {
+        let cap = MediaCapture.shared
+        cap.reset()
+        cap.add([MediaItem(kind: .image, url: "a"), MediaItem(kind: .image, url: "b")])
+        let drained = cap.drain()
+        #expect(drained.count == 2)
+        #expect(cap.drain().isEmpty)               // drained buffer is now empty
+    }
+
+    @Test func resetDiscardsPriorTurn() {
+        let cap = MediaCapture.shared
+        cap.add([MediaItem(kind: .video, url: "stale")])
+        cap.reset()
+        #expect(cap.drain().isEmpty)
     }
 }
 ```
@@ -34890,7 +31161,7 @@ struct OllamaToolCallParsingTests {
 }
 ```
 
-===== FILE: Salehman AITests/OllamaToolGateTests.swift (75 lines) =====
+===== FILE: Salehman AITests/OllamaToolGateTests.swift (81 lines) =====
 ```swift
 import Testing
 @testable import Salehman_AI
@@ -34911,6 +31182,9 @@ struct OllamaToolGateTests {
         // is off (Offline mode / "Web access" off).
         #expect(!names.contains("web_search"))
         #expect(!names.contains("fetch_url"))
+        // The media-search tools are also network tools — hidden offline too.
+        #expect(!names.contains("image_search"))
+        #expect(!names.contains("video_search"))
         // On-device tools (no network) ARE available offline: terminal + the
         // knowledge/notes/tasks/memory tools.
         #expect(names.contains("run_terminal_command"))
@@ -34921,11 +31195,14 @@ struct OllamaToolGateTests {
         #expect(names.contains("pack_repository"))
     }
 
-    @Test func onlineAddsExactlyTheTwoWebTools() {
+    @Test func onlineAddsExactlyTheWebAndMediaTools() {
         let offline = Set(LocalLLM.ollamaToolNames(externalAllowed: false))
         let online = Set(LocalLLM.ollamaToolNames(externalAllowed: true))
-        // Going online adds the two web tools — and nothing else.
-        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
+        // Going online adds exactly the four network tools — web + media — and
+        // nothing else. (image_search / video_search render results in the Chat
+        // tab; like the web tools they must stay hidden while offline.)
+        #expect(online.subtracting(offline)
+                == ["web_search", "fetch_url", "image_search", "video_search"])
         // …and every offline (on-device) tool is still present.
         #expect(offline.isSubset(of: online))
     }
@@ -34965,72 +31242,6 @@ struct LocalToolDispatchTests {
         #expect(LocalLLM.runLocalTool("capture_note", ["text": ""]) != nil)
         #expect(LocalLLM.runLocalTool("add_task", [:]) != nil)
         #expect(LocalLLM.runLocalTool("remember_fact", ["fact": "  "]) != nil)
-    }
-}
-```
-
-===== FILE: Salehman AITests/OpenRouterTests.swift (62 lines) =====
-```swift
-import Testing
-import Foundation
-@testable import Salehman_AI
-
-// MARK: - OpenRouter integration guards
-//
-// OpenRouter's free-model roster ROTATES, so these tests don't claim a given
-// `:free` ID is live forever — they pin the *contract*: the config points at
-// the right endpoint/Keychain slot, the default is one of the offered models,
-// and the free models carry the `:free` suffix that makes them zero-cost.
-
-struct OpenRouterConfigTests {
-
-    @Test func endpointAndAccountAreCorrect() {
-        #expect(OpenRouterClient.shared.baseURL == "https://openrouter.ai/api/v1")
-        #expect(OpenRouterClient.shared.keychainAccount == .openRouterAPIKey)
-        #expect(OpenRouterClient.shared.displayName == "OpenRouter")
-    }
-
-    @Test func defaultIsInTheOfferedList() {
-        #expect(OpenRouterClient.allModels.contains(OpenRouterClient.defaultModel))
-        #expect(!OpenRouterClient.allModels.isEmpty)
-    }
-
-    @Test func everyDefaultModelIsAFreeVariant() {
-        // The whole point of the OpenRouter integration is *free* access — every
-        // shipped default must carry the `:free` suffix, or it would silently
-        // bill the user. A paid model sneaking into the list trips this.
-        for m in OpenRouterClient.allModels {
-            #expect(m.hasSuffix(":free"), "OpenRouter shipped model \(m) must be a `:free` variant")
-        }
-    }
-
-    @Test func keychainAccountStringIsStable() {
-        // Renaming this loses every user's saved key.
-        #expect(KeychainStore.Account.openRouterAPIKey.rawValue == "openrouter-api-key")
-    }
-}
-
-// MARK: - BrainPreference + model fallback
-
-struct OpenRouterPreferenceTests {
-
-    @Test func openRouterIsListedAndStable() {
-        #expect(BrainPreference.allCases.contains(.openRouter))
-        #expect(BrainPreference.openRouter.rawValue == "openRouter")
-        #expect(!BrainPreference.openRouter.title.isEmpty)
-        #expect(!BrainPreference.openRouter.subtitle.isEmpty)
-        #expect(!BrainPreference.openRouter.icon.isEmpty)
-    }
-
-    @Test func unknownStoredModelFallsBackToDefault() {
-        let key = AppSettings.Keys.openRouterModel
-        let prior = UserDefaults.standard.string(forKey: key)
-        defer {
-            if let prior { UserDefaults.standard.set(prior, forKey: key) }
-            else         { UserDefaults.standard.removeObject(forKey: key) }
-        }
-        UserDefaults.standard.set("some/retired-model:free", forKey: key)
-        #expect(AppSettings.openRouterModelCurrent == OpenRouterClient.defaultModel)
     }
 }
 ```
@@ -35408,7 +31619,7 @@ struct RestoreSnapshotTests {
 }
 ```
 
-===== FILE: Salehman AITests/SalehmanLeaderTests.swift (152 lines) =====
+===== FILE: Salehman AITests/SalehmanLeaderTests.swift (141 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -35494,7 +31705,7 @@ struct IsLeadingTests {
     }
 
     @Test func leaderOffMeansNeverLeading() {
-        let result = withSettings(leader: false, pref: .groq) { SalehmanLeader.isLeading }
+        let result = withSettings(leader: false, pref: .unslothStudio) { SalehmanLeader.isLeading }
         #expect(!result)
     }
 
@@ -35504,24 +31715,13 @@ struct IsLeadingTests {
         #expect(!result)
     }
 
-    @Test func cloudCodingBrainNeverLeads() {
-        // Leader shouldn't rewrite tool-built coder output.
-        let result = withSettings(leader: true, pref: .cloudCoding) { SalehmanLeader.isLeading }
-        #expect(!result)
-    }
-
-    @Test func freeCodingBrainNeverLeads() {
-        let result = withSettings(leader: true, pref: .freeCoding) { SalehmanLeader.isLeading }
-        #expect(!result)
-    }
-
-    @Test func groqBrainLeadsWhenEnabled() {
-        let result = withSettings(leader: true, pref: .groq) { SalehmanLeader.isLeading }
+    @Test func unslothStudioBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .unslothStudio) { SalehmanLeader.isLeading }
         #expect(result)
     }
 
-    @Test func grokBrainLeadsWhenEnabled() {
-        let result = withSettings(leader: true, pref: .grok) { SalehmanLeader.isLeading }
+    @Test func uncensoredBrainLeadsWhenEnabled() {
+        let result = withSettings(leader: true, pref: .uncensored) { SalehmanLeader.isLeading }
         #expect(result)
     }
 }
@@ -36597,7 +32797,7 @@ struct SelfImprovePatchTests {
 }
 ```
 
-===== FILE: Salehman AITests/SettingsBrainReadyTests.swift (195 lines) =====
+===== FILE: Salehman AITests/SettingsBrainReadyTests.swift (130 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -36611,14 +32811,15 @@ import Foundation
 // per body recompute). These tests pin the readiness rules hermetically:
 // no Keychain, no network, no UI.
 //
-// NOTE: the original disabled stubs named a pre-cloud-first model (`.auto`
-// included Apple Intelligence back then). Bodies below pin TODAY's rules;
-// names updated to match. House invariants pinned here:
-//   · `.auto` is local-only — cloud keys must NEVER light it.
-//   · `.freeAuto` never spends — paid-only keys must not light it.
-//   · `.salehman` is cloud-first; its local floor needs a NAMED custom model.
+// Local-only build (2026-06-18): all cloud providers + composite modes were
+// removed, so `BrainReadiness` carries only local engine/endpoint signals and
+// `ready(_:)` classifies just the six local brains. House invariants pinned:
+//   · `.auto` / `.ollama` need the local coder floor (Ollama up + a coder pulled);
+//     a configured local endpoint must NOT light them.
+//   · `.salehman` is local-first: a local endpoint (vLLM / Unsloth) OR the user's
+//     own named Ollama model (server up) lights its floor.
+//   · `.uncensored` needs Ollama up AND the abliterated model pulled.
 //   · A superseded active-brain probe never publishes its verdict.
-//   · The anthropic key subtitle never echoes secret bytes.
 
 @MainActor
 struct SettingsBrainReadyTests {
@@ -36632,52 +32833,29 @@ struct SettingsBrainReadyTests {
         return f
     }
 
-    /// Every cloud/key/endpoint signal ON, both local signals OFF — the probe
-    /// for "does a local-only mode ignore the entire cloud side."
-    private static var everythingButLocal: BrainReadiness {
+    /// Every endpoint/name signal ON, both local-coder signals OFF — the probe
+    /// for "does the local-coder floor (`.auto`/`.ollama`) ignore the endpoint
+    /// engines and the custom-model name."
+    private static var endpointsButNoCoderFloor: BrainReadiness {
         flags {
             $0.unslothConfigured = true; $0.vllmConfigured = true
-            $0.anthropic = true; $0.grok = true; $0.gemini = true
-            $0.groq = true; $0.mistral = true; $0.cerebras = true
-            $0.openAI = true; $0.copilot = true
-            $0.openRouter = true; $0.nvidia = true
-            $0.customModelNamed = true   // name alone, no ollamaUp
+            $0.customModelNamed = true   // name alone, no ollamaUp/hasCoder
         }
     }
 
     @Test
-    func autoAndOllamaRequireTheLocalCoderFloorAndIgnoreCloudKeys() {
+    func autoAndOllamaRequireTheLocalCoderFloor() {
         // The floor needs BOTH halves: server up AND a coder model pulled.
         #expect(!Self.flags { $0.ollamaUp = true }.ready(.auto))
         #expect(!Self.flags { $0.hasCoder = true }.ready(.auto))
         let floor = Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
         #expect(floor.ready(.auto))
         #expect(floor.ready(.ollama))
-        // Local-first invariant: every cloud signal ON must not light `.auto`
-        // or `.ollama` (.auto never silently reaches for a cloud brain).
-        #expect(!Self.everythingButLocal.ready(.auto))
-        #expect(!Self.everythingButLocal.ready(.ollama))
-    }
-
-    @Test
-    func freeAutoLightsForFreeKeysOrLocalFloorNeverForPaidOnlyKeys() {
-        #expect(!BrainReadiness().ready(.freeAuto))
-        // Paid-only / non-free signals all ON: anthropic, grok, openAI,
-        // copilot, nvidia, and the endpoint engines. None may light freeAuto —
-        // this mode promises to never spend.
-        let paidOnly = Self.flags {
-            $0.anthropic = true; $0.grok = true; $0.openAI = true
-            $0.copilot = true; $0.nvidia = true
-            $0.unslothConfigured = true; $0.vllmConfigured = true
-        }
-        #expect(!paidOnly.ready(.freeAuto))
-        // Each FREE key alone lights it; so does the local floor alone.
-        #expect(Self.flags { $0.groq = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.gemini = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.cerebras = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.mistral = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.openRouter = true }.ready(.freeAuto))
-        #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }.ready(.freeAuto))
+        // Local-coder invariant: a configured endpoint engine or a named custom
+        // model (the Salehman floor) must NOT light `.auto` / `.ollama` — those
+        // are the pure local-coder floor only.
+        #expect(!Self.endpointsButNoCoderFloor.ready(.auto))
+        #expect(!Self.endpointsButNoCoderFloor.ready(.ollama))
     }
 
     @Test
@@ -36689,38 +32867,23 @@ struct SettingsBrainReadyTests {
             .ready(.salehman))
         // A name with the server DOWN is not a floor.
         #expect(!Self.flags { $0.customModelNamed = true }.ready(.salehman))
-        // Local-first: cloud API keys alone do NOT light Salehman —
-        // it never contacts third-party clouds.
-        #expect(!Self.flags { $0.gemini = true }.ready(.salehman))
-        #expect(!Self.flags { $0.nvidia = true }.ready(.salehman))
-        #expect(!Self.flags { $0.anthropic = true }.ready(.salehman))
         // Endpoint engines DO light it (the local resolution order).
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.salehman))
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.salehman))
     }
 
     @Test
-    func codingPoolsAndEnsembleMatchTheirDocumentedSets() {
-        // cloudCoding is cloud-ONLY: the local floor must not light it.
-        #expect(!Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
-            .ready(.cloudCoding))
-        #expect(Self.flags { $0.cerebras = true }.ready(.cloudCoding))
-        #expect(!Self.flags { $0.gemini = true }.ready(.cloudCoding))
-        // freeCoding = freeAuto's coding pool + the local floor.
-        #expect(Self.flags { $0.openRouter = true }.ready(.freeCoding))
-        #expect(Self.flags { $0.ollamaUp = true; $0.hasCoder = true }
-            .ready(.freeCoding))
-        #expect(!Self.flags { $0.gemini = true }.ready(.freeCoding))
-        // Ensemble: any keyed chat cloud or the local floor — but nvidia /
-        // endpoint engines were never in its set (preserved rule).
-        #expect(Self.flags { $0.anthropic = true }.ready(.ensemble))
-        #expect(Self.flags { $0.copilot = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.nvidia = true }.ready(.ensemble))
-        #expect(!Self.flags { $0.vllmConfigured = true }.ready(.ensemble))
+    func endpointAndUncensoredPinsLightExactlyTheirOwnBrain() {
         // Endpoint engines light exactly their own pin.
         #expect(Self.flags { $0.unslothConfigured = true }.ready(.unslothStudio))
         #expect(Self.flags { $0.vllmConfigured = true }.ready(.vllm))
         #expect(!Self.flags { $0.unslothConfigured = true }.ready(.vllm))
+        #expect(!Self.flags { $0.vllmConfigured = true }.ready(.unslothStudio))
+        // Uncensored is local-only: Ollama up AND the abliterated model pulled.
+        #expect(!Self.flags { $0.ollamaUp = true }.ready(.uncensored))
+        #expect(!Self.flags { $0.hasUncensored = true }.ready(.uncensored))
+        #expect(Self.flags { $0.ollamaUp = true; $0.hasUncensored = true }
+            .ready(.uncensored))
     }
 
     @Test
@@ -36728,7 +32891,7 @@ struct SettingsBrainReadyTests {
         var probe = ActiveBrainProbe()
         #expect(!probe.testing && probe.working == nil)
 
-        // The local→cloud switch bug the counter was built for: a single
+        // The local→endpoint switch bug the counter was built for: a single
         // superseded run must clear the spinner on exit (no successor will),
         // and must NOT publish its stale verdict.
         probe.begin()
@@ -36755,43 +32918,15 @@ struct SettingsBrainReadyTests {
     }
 
     @Test
-    func pingVerdictRejectsEmptyOffMessageAndHaikuErrorReplies() {
+    func pingVerdictRejectsEmptyAndOffMessageReplies() {
         let off = "[offline]"
         #expect(!BrainPing.verdict(reply: "", offMessage: off))
         #expect(!BrainPing.verdict(reply: "  \n ", offMessage: off))
         #expect(!BrainPing.verdict(reply: off, offMessage: off))
-        #expect(!BrainPing.verdict(reply: "  [Claude Haiku error: 401]",
-                                   offMessage: off))
         #expect(BrainPing.verdict(reply: "pong", offMessage: off))
         // A real reply that merely MENTIONS the sentinel mid-text still counts
         // (the sentinel rule is full-string equality, not contains).
         #expect(BrainPing.verdict(reply: "not \(off)", offMessage: off))
-    }
-
-    @Test
-    func anthropicSubtitleMasksNonSkAntKeysAndNeverLeaksSecretBytes() {
-        // Wrong-service key: every character past "sk-" is secret material —
-        // none of it may appear in the subtitle, and the row flags orange.
-        let foreign = "xoxb-SECRETBYTES-9f8e7d6c5b4a"
-        let masked = AnthropicKeyPresentation.subtitle(savedKey: foreign)
-        #expect(!masked.contains("xoxb"))
-        #expect(!masked.contains("SECRETBYTES"))
-        #expect(!masked.contains("9f8e7d6c5b4a"))
-        #expect(masked.contains("sk-…"))
-        #expect(AnthropicKeyPresentation.flagsWrongService(savedKey: foreign))
-
-        // Real Anthropic key: exactly the 12-char family prefix shows, the
-        // secret tail never does.
-        let real = "sk-ant-api03-TAILSECRETTAILSECRET"
-        let shown = AnthropicKeyPresentation.subtitle(savedKey: real)
-        #expect(shown.contains("sk-ant-api03"))
-        #expect(!shown.contains("TAILSECRET"))
-        #expect(!AnthropicKeyPresentation.flagsWrongService(savedKey: real))
-
-        // No key saved: the "not configured" hint, no warning tint.
-        #expect(AnthropicKeyPresentation.subtitle(savedKey: nil)
-            == AnthropicKeyPresentation.notConfigured)
-        #expect(!AnthropicKeyPresentation.flagsWrongService(savedKey: nil))
     }
 }
 ```
@@ -37178,7 +33313,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (417 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (393 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -37207,35 +33342,15 @@ struct OllamaToolSpecsTests {
         #expect(n.contains("search_documents"))
     }
 
-    @Test func onlineAddsExactlyTheTwoWebTools() {
+    @Test func onlineAddsExactlyTheWebAndMediaTools() {
         let offline = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: false)))
         let online = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: true)))
-        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
+        // Online adds the four network tools — web + media (image/video search).
+        #expect(online.subtracting(offline)
+                == ["web_search", "fetch_url", "image_search", "video_search"])
     }
 }
 
-// MARK: - FreeAuto cooldown window boundary (pins the extracted `isStillCooling`
-// seam specifically — distinct from the existing FreeAutoCooldownTests).
-//
-// A free brain that just failed is skipped for `window` seconds. Pins the 120 s
-// boundary (strict `<`) and that a brain with no recorded failure never cools.
-struct CooldownWindowSeamTests {
-    private let t0 = Date(timeIntervalSince1970: 1_000_000)
-
-    @Test func withinWindowStillCools() {
-        #expect(LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(119), window: 120))
-    }
-
-    @Test func atOrPastBoundaryRetries() {
-        // Strict `<`, so exactly `window` seconds later is NOT cooling.
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(120), window: 120))
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(121), window: 120))
-    }
-
-    @Test func noRecordedFailureNeverCools() {
-        #expect(!LocalLLM.isStillCooling(failedAt: nil, now: t0))
-    }
-}
 
 // MARK: - AgentPipeline OOM-prevention concurrency cap
 //
@@ -37250,33 +33365,30 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 8) == 8)
-        #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
+        // `.none` is the only non-serial brain left after the app went local-only;
+        // it must honor the memory-derived base cap rather than forcing serial.
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 0) == 1)
     }
 }
 
 // MARK: - Paid-brain hiding (owner request: "hide every paid api")
 //
-// Pins which brains count as paid and that the Brain picker's `selectableCases`
-// excludes exactly those — so a future enum addition can't silently leak a paid
-// provider back into the UI.
+// The app is local-only — there are NO paid cloud brains, so `isPaid` is always
+// false. This pins that the Brain picker's `selectableCases` never surfaces a
+// paid provider, so a future enum addition can't silently leak one into the UI.
 struct PaidBrainHidingTests {
-    @Test func paidSetIsExactlyTheFourCloudPaidProviders() {
-        let paid = BrainPreference.allCases.filter { $0.isPaid }
-        #expect(Set(paid) == Set([.claudeHaiku, .grok, .codex, .copilot]))
-    }
-
     @Test func selectableCasesExcludeAllPaid() {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
-        // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
-        // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
-        // clutter). Other cases still function when set programmatically (rotation).
-        // 2026-06-18: + Uncensored (local abliterated ~3B, web-search capable) — free,
-        // on-device, so it stays out of the paid set above.
+        // Owner decision 2026-06-11: the picker is pared to a small local set.
+        // Salehman resolves vLLM → Unsloth → MLX → Ollama itself (all local), so
+        // the per-engine entries were clutter. Other cases still function when set
+        // programmatically (rotation). 2026-06-18: + Uncensored (local abliterated
+        // ~3B, web-search capable) — free, on-device, so never paid.
         #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio, .uncensored])
     }
 }
@@ -37512,24 +33624,23 @@ struct WithConversationContextTests {
 // requires them to appear here; this test catches the omission before it ships.
 struct IsSerialLocalBrainTests {
 
-    @Test func serialBrainsAreExactlyTheFourLocalModels() {
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+    @Test func serialBrainsAreExactlyTheLocalModels() {
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for b in serial {
             #expect(AgentPipeline.isSerialLocalBrain(b), "\(b) must be serial")
         }
     }
 
-    @Test func cloudAndEnsembleBrainsAreNotSerial() {
-        let nonSerial: [LocalLLM.Brain] = [.groq, .gemini, .cerebras, .mistral, .ensemble, .freeAuto, .freeCoding, .claudeHaiku, .none]
-        for b in nonSerial {
-            #expect(!AgentPipeline.isSerialLocalBrain(b), "\(b) must not be serial")
-        }
+    @Test func noneBrainIsNotSerial() {
+        // After the app went local-only, every real brain is a serial local model;
+        // `.none` (no brain reachable) is the only non-serial case left.
+        #expect(!AgentPipeline.isSerialLocalBrain(.none), ".none must not be serial")
     }
 
     @Test func effectiveCapMirrosIsSerialLocalBrain() {
         // Sanity guard: effectiveCap must force serial (cap==1) for every brain
         // that isSerialLocalBrain returns true for — the two must agree.
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for b in serial {
             #expect(AgentPipeline.effectiveCap(brain: b, baseCap: 8) == 1,
                     "\(b) effectiveCap must be 1 even with baseCap 8")
@@ -38883,9 +34994,11 @@ The suite carefully manages Swift Testing's default parallelism: any test mutati
 
 THE GAPS: Several pure, easily-testable, USER-DATA-and-SECURITY-critical modules have ZERO unit tests: KnowledgeStore (chunk/keywordScore/cosine/search — the on-device RAG retrieval engine), MemoryStore.recall (embedding+keyword fallback), CommandApprovalCenter.looksRisky (the shell risk classifier that decides which commands re-confirm under "Always run"), MissionMemory.buildContext/getSummary, Web.search HTML parsing + stripHTML + decodeDDG, and StockSagePortfolio input validation. These are exactly the "store logic / chunk/search" areas the audit flagged.
 
-===== FILE: COORDINATION.md (153 lines) =====
+===== FILE: COORDINATION.md (156 lines) =====
 # 🤝 Coordination — two Claude Code chats + Grok, one project
 
+> 🔴 **effort/grok session (Chat A) → Chat B + ALL (2026-06-18): OWNER-DIRECTED FULL CLOUD REMOVAL — app goes LOCAL-ONLY. Claiming the LLM lane.** Owner: *"delete anthropic, grok, gemini, groq, mistral, cerebras, openAI, copilot, openRouter … go local-only."* Removing all 9 `CloudProvider` cases + the 4 cloud composite modes (`freeAuto`/`freeCoding`/`cloudCoding`/`ensemble`) end-to-end via a ≤10-agent workflow; will leave build + `Salehman AITests` GREEN before release. **DELETING files:** `LLM/AnthropicClient.swift`, `LLM/AnthropicBrainAdapter.swift`, `LLM/GrokClient.swift`, `LLM/GeminiClient.swift`, `LLM/OpenAIClient.swift`, `LLM/CopilotClient.swift`, `LLM/CloudBrains.swift`, `Views/CopilotSignInView.swift`. **Editing (claimed):** `LLM/BrainRouting.swift` (**`CloudProvider` enum DELETED entirely**), `LLM/LocalLLM.swift` (`Brain` enum → local-only; 114 cloud call-sites removed), `LLM/BrainStatus.swift`, `LLM/BrainAdapter.swift`, `LLM/KeychainStore.swift` (cloud key entries removed), `App/AppSettings.swift` (`BrainPreference` → 6 local cases + cloud model fields removed; **owner-directed exception to append-only — same precedent as the DeepSeek removal**), `Views/{SettingsView,ContentView,CommandPalette,SettingsBrainReadiness,CodeView}`, cloud tests. **`.salehman` is already local** (`SalehmanEngine.hasAnyCloud == false`). Remaining brains: **salehman / auto / ollama / unslothStudio / vllm / uncensored**. Keeping `OpenAICompatibleClient` (vLLM + Unsloth use it). **Chat B: please pause `LLM/*` + `ContentView`/`SettingsView` edits until I release this claim.**
+>
 > 🪙 **Chat C (~22:15, owner-directed): TOKEN DISCIPLINE restructure.** This file and `DEVELOPMENT_LOG.md` were archive-split (owner: "make any claude code use less tokens, same quality/speed"): 06-04→06-09 history now lives in `COORDINATION_ARCHIVE.md` + `DEVELOPMENT_LOG_ARCHIVE.md` (this file 39k→6k tokens, dev log 111k→36k; zero content deleted — every word is in the archives). **New standing rules in CLAUDE.md → "🪙 Token discipline":** never Read SOURCE_BUNDLE.md; grep with `--glob '!SOURCE_BUNDLE.md' --glob '!External Artifacts/**' --glob '!*_ARCHIVE.md'`; pipe builds through `tee /tmp/salehman_build.log | tail -25`; QA report text before PNGs. Board usage unchanged (claim → edit → release; banner for interrupts).
 >
 > 🎨 **Chat C → Chat A + Chat B (2026-06-12 ~02:1x): OWNER-AUTHORIZED cross-lane theme tweak — committed `ff065ec`.** Owner: "today tab should be grey, why is the background red." Neutralized the warm-red backdrop to grey, **kept the red brand accent**. Touched 2 of your files (surgical, colour values only): **`DesignSystem.swift`** (Chat B) — `Palette.bgTop`/`bgBottom`/`modalBG` → neutral grey (accent/accent2/brand UNCHANGED); **`BackgroundView.swift`** (Chat A) — the 2 glow fills `Theme.accent`/`accent2` (red) → `Color.white` 0.05/0.035 (neutral). Build SUCCEEDED, grey base verified in onboarding.png. Please coexist — don't revert the bg tokens (owner request). Ping me if it collides with your WIP.
@@ -38953,6 +35066,7 @@ Format: one active claim row per session/tab. Use ISO-ish time or "now". For Gro
 
 | Session/Tab | Claimed Files (be specific) | Since | Status / Current Work Item | Released? |
 |-------------|-----------------------------|-------|----------------------------|-----------|
+| **effort/grok (Chat A) — GO LOCAL-ONLY / cloud removal (2026-06-18)** | `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/BrainStatus.swift`, `LLM/BrainAdapter.swift`, `LLM/KeychainStore.swift`, `App/AppSettings.swift` (BrainPreference trim — owner-directed, append-only exception), `Views/{SettingsView,ContentView,CommandPalette,SettingsBrainReadiness,CodeView}`, **DELETING** `LLM/{AnthropicClient,AnthropicBrainAdapter,GrokClient,GeminiClient,OpenAIClient,CopilotClient,CloudBrains}.swift` + `Views/CopilotSignInView.swift`, cloud tests | now | **Owner: full cloud-provider removal → local-only.** All 9 `CloudProvider` cases + `freeAuto`/`freeCoding`/`cloudCoding`/`ensemble` gone; `BrainPreference` → {auto, ollama, salehman, unslothStudio, vllm, uncensored}. `.salehman` already local. ≤10-agent workflow; build+tests GREEN before release. See top banner. | **IN PROGRESS** |
 | **Claude Chat B — CORNER-TAB SIZING (2026-06-12 ~04:3x)** | `Views/TabSwitcherBar.swift` + `Views/ChatHistoryView.swift` (QA fix found en route) | now | **DONE.** Handoff executed: nav pair tightened to 6pt, hairline divider (1×16 white@0.10, a11y-hidden, guarded) before the gear, unselected nav tint white@0.70 (gear stays `.secondary` — brightness encodes nav-vs-utility). 28pt metric line kept. Eyes-verified on the live window (fresh screencapture — NOT the stale window_0_live). Bonus: fixed MY chat_history QA regression (off-main `.task` load → capture photographed the spinner; QA launches now load synchronously). Full cycle: **FAILURES: none**, build SUCCEEDED. | **released** |
 | **Claude Chat B — DEEPSEEK REMOVAL (2026-06-12 ~04:0x)** | `LLM/CloudBrains.swift`, `LLM/KeychainStore.swift`, `LLM/BrainRouting.swift`, `LLM/LocalLLM.swift`, `LLM/SalehmanEngine.swift`, `LLM/SalehmanLeader.swift`, `LLM/SalehmanPersona.swift`, `LLM/BrainStatus.swift`, `App/AppSettings.swift` (owner-directed REMOVAL of deepSeek entries — exception to append-only), `Views/SettingsView.swift`, `Views/SettingsBrainReadiness.swift`, `Views/AboutView.swift`, `Agents/AgentPipeline.swift` (1 hit), `Knowledge/ExternalToolsKnowledge.swift` (1 hit), tests: `BrainRoutingDispatchTests`, `SettingsBrainReadyTests`, `AgentPipelineConcurrencyTests`, `ToolLoopTests` | now | **Owner: "remove deepseek." DONE.** DIRECT DeepSeek API provider removed end-to-end (13 app files + 4 test files; stored Keychain item deleted). NVIDIA NIM free DeepSeek-V4 tier kept (`.salehman`'s $0 ladder — now entirely free-tier, paid backstop gone). Heads-up routing/Settings owners: `CloudProvider` is 9 cases now, `BrainPreference.deepSeek` is gone (stored prefs fall back to `.salehman`), `BrainReadiness.deepSeek` flag removed. Verified: symbol sweep clean, typecheck EXIT 0, canonical `xcodebuild test` **TEST SUCCEEDED** 0 failures. | **released** |
 | Codex CLI | Build unblock: moved untracked non-app artifacts out of synchronized `Salehman AI/` app source root; docs touched `COORDINATION.md`, `DEVELOPMENT_LOG.md` | 2026-06-08 | Duplicate Xcode build inputs fixed; build + `Salehman AITests` green. | **released** |
@@ -40059,7 +36173,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6604 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6722 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -45554,6 +41668,124 @@ to use it; not yet eyeball-tested against a live NSFW query (model not pulled he
 
 ---
 
+## 2026-06-18 · Autonomous image/video search → inline Chat gallery (Uncensored brain)
+**What:** The Uncensored brain (and any tool-calling brain) can now search the web
+for **images and videos** and render them as an **inline gallery** under the reply
+in the Chat tab. Owner request: "let it send me pictures in the chat tab and send
+videos … make the 3b model run alone." The abliterated 3B does it **autonomously** —
+its own system prompt tells it to call the media tools whenever the user wants to
+see pictures/videos, no coaxing.
+
+**Pipeline (text-loop → media side-channel → view):**
+- `Tools/MediaSearch.swift` (new): `MediaItem` (Codable image/video result),
+  `MediaCapture` (@MainActor per-turn side-channel buffer), and DuckDuckGo
+  `i.js`/`v.js` image+video search with SafeSearch **off** (`p=-1`) + a
+  nationality-aware `authenticityBiased` query enhancer (appends the region's
+  native-language term — e.g. saudi → سعودية — to lift authentic results over
+  mis-tagged "fake" ones; general, idempotent, no-op without a known nationality).
+- `LLM/LocalLLM.swift`: `image_search` / `video_search` tool specs (gated like the
+  web tools — network tools, hidden offline); dispatch in BOTH tool loops
+  (Ollama + OpenAI-compat) records media into `MediaCapture` and returns only a
+  text summary to the model; new `uncensoredToolSystem` prompt drives autonomous
+  media-tool use, passed via the `.uncensoredLocal` arm.
+- `Views/ChatViewModel.swift`: resets `MediaCapture` before each turn, drains it
+  into `ChatMessage.media` after.
+- `Views/ContentView.swift`: `ChatMessage.media: [MediaItem]?` (Codable-compat,
+  like `pinned`/`rating`); `assistantRow` renders the gallery.
+- `Views/MediaGallery.swift` (new): premium double-bezel tray + concentric tiles,
+  soft hover lift, button-in-button play well, duration/source chips. Images open
+  in the browser; direct-file videos play inline (AVKit sheet), watch-page videos
+  open their source.
+- `Agents/AgentPipeline.swift`: added `.uncensored` to `isSerialLocalBrain` (it's
+  an Ollama serial brain — was missing → wrong concurrency/diet treatment).
+
+**Files:** new `Tools/MediaSearch.swift`, `Views/MediaGallery.swift`,
+`Salehman AITests/MediaSearchTests.swift`; edited `LLM/LocalLLM.swift`,
+`Views/ContentView.swift`, `Views/ChatViewModel.swift`, `Agents/AgentPipeline.swift`,
+`Salehman AITests/OllamaToolGateTests.swift` (online now adds 4 network tools).
+SOURCE_BUNDLE + PROJECT_CONTEXT regenerated.
+
+**Result:** Full-app `swiftc -typecheck` over all 99 files **clean** (exit 0 / 0
+diagnostics) after one isolation fix (`nativeTerm` → nonisolated). Tests added but
+not runnable in-sandbox (no `Testing` module via single-file swiftc).
+**Honest caveat — unverified end-to-end:** DDG `i.js`/`v.js` are unofficial scraping
+endpoints; I can't reach the network from the sandbox, so whether they actually
+return results today (vs rate-limit/block/shape-change) is **not confirmed**. The
+wiring is complete and compiles; it needs a real run (Xcode ⌘R + `ollama pull
+huihui_ai/llama3.2-abliterate:3b`) to validate the live search. The gallery,
+side-channel, and autonomy prompt are deterministic and will work regardless of
+which search backend feeds them.
+
+## 2026-06-18 · Local-only migration — test suite purge of cloud providers/composite modes
+
+**What:** As part of the owner-directed local-only refactor (delete all 9 cloud LLM
+providers + 4 cloud-only composite modes), brought `Salehman AITests/` to conform to
+the new local-only contract.
+
+**Deleted (entirely cloud/composite suites):** `EnsembleTests.swift`,
+`FreeAutoTests.swift`, `FreeCloudBrainsTests.swift`, `GrokTests.swift`,
+`BrainRoutingDispatchTests.swift`, `CloudClientParsingTests.swift`,
+`CloudErrorDecoderTests.swift`, `GeminiBackoffTests.swift`,
+`GeminiURLEncodingTests.swift`, `OpenRouterTests.swift`,
+`FreeAutoCooldownTests.swift`, `CloudSystemPromptTests.swift`.
+
+**Edited (kept local-brain tests, removed cloud-specific cases/asserts):**
+`BrainAdapterTests.swift` (dropped `.claudeHaiku` adapter test; fallback test now
+uses `.salehman`/`.vllm`/`.uncensored`), `LocalLLMOffMessageTests.swift`
+(`.grok` pin → `.salehman`), `ToolLoopTests.swift` (cloud/composite brains → `.none`;
+removed `paidSetIsExactlyTheFourCloudPaidProviders` + the FreeAuto cooldown seam
+suite; serial sets now include `.uncensored`), `SalehmanLeaderTests.swift`
+(isLeading suite: removed cloud-coding step-aside cases, now `.unslothStudio`/
+`.uncensored` lead), `AgentPipelineConcurrencyTests.swift` +
+`AgentPipelineHelpersTests.swift` (non-serial set → `.none` only),
+`SettingsBrainReadyTests.swift` (rewrote against the already-local-only
+`BrainReadiness`; dropped `.freeAuto`/`.cloudCoding`/`.ensemble`/`AnthropicKeyPresentation`/
+Haiku-error assertions; kept `ActiveBrainProbe`/`BrainPing` coverage).
+
+**Why:** Coupled with the provider/enum deletions, these suites referenced removed
+`BrainPreference`/`LocalLLM.Brain` cases and deleted cloud client classes, so they
+would not compile.
+
+**Files:** the 12 deletions + 7 edits above, all under `Salehman AITests/`.
+
+**Result:** Did NOT build (coupled refactor — orchestrator builds after all agents
+finish). Verified by grep that no removed symbol survives in any remaining test
+code, and that every `LocalLLM.Brain`/`BrainPreference` case used is a surviving
+local case. Cross-file deps flagged for the LocalLLM/SalehmanLeader agents (remove
+orphaned `isStillCooling`/`FreeAutoCooldown`; drop `.cloudCoding`/`.freeCoding` arm
+in `SalehmanLeader.isLeading`; keep `cloudSystemPrompt` for vLLM/Unsloth).
+
+---
+
+## 2026-06-18 · Finished the local-only migration (caller stragglers) → merged tree GREEN + media integrated
+**What:** The parallel local-only refactor stopped mid-way (its own log entry above
+noted "Did NOT build" and flagged the leftovers). Completed the coupled stragglers it
+left so the app compiles, with the image/video media feature folded in:
+- `LLM/SalehmanLeader.swift`: dropped the `.cloudCoding`/`.freeCoding` arm in
+  `isLeading` (those `BrainPreference` cases are gone).
+- `Agents/AgentPipeline.swift`: removed the four short-circuit blocks that called the
+  deleted `LocalLLM` cloud-composite methods (`isEnsembleMode`/`generateEnsemble`,
+  `isFreeAutoMode`/`freeAutoReplyWithTools`/`generateFreeAuto`, `isFreeCodingMode`/
+  `freeCodingReply`, `isCloudCodingMode`/`cloudCodingReply`) + the now-dead
+  `contextualMission`. Every (local) brain now runs the normal multi-agent path.
+- Tests: reconciled the web-tool-count assertions in `ToolLoopTests` +
+  `OllamaToolGateTests` — going online now adds **four** network tools (web_search,
+  fetch_url, image_search, video_search), not two.
+
+**Coordination note:** this tree blends two concurrent sessions — the local-only cloud
+removal (other session) + my Uncensored-brain media search/gallery. They were editing
+the same files simultaneously; verified by sweep that my media wiring
+(`image_search`/`video_search` specs+dispatch, `MediaCapture`, `ChatMessage.media`,
+`MediaGallery`) survived intact and `.uncensored` is kept everywhere.
+
+**Result:** Full-app `swiftc -typecheck` over all 91 files **clean** (exit 0 / 0
+diagnostics). Test target couldn't be executed in-sandbox (no `Testing` module), but
+an exhaustive grep confirms NO remaining test references a deleted symbol (cloud
+clients, cloud `BrainPreference`/`BrainReadiness` fields, `isStillCooling`, or the
+removed `LocalLLM` cloud methods). SOURCE_BUNDLE regenerated.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -49007,7 +45239,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (297 lines) =====
+===== FILE: PROJECT_CONTEXT.md (299 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -49115,6 +45347,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `CommandApprovalCenter.swift` | Bridges background tool exec → UI approval; `confirmationEnabled` toggle. |
 | `ShellTool.swift` | Runs shell commands on the Mac (gated by approval). |
 | `WebTools.swift` | DuckDuckGo search + page fetch. **SSRF-guarded** (`ssrfRejectionReason` blocks non-http(s) + private/loopback/link-local hosts). |
+| `MediaSearch.swift` | `image_search` / `video_search` tools — DuckDuckGo `i.js`/`v.js` (SafeSearch **off**, `p=-1`). `MediaItem` (Codable image/video result) + `MediaCapture` (@MainActor per-turn side-channel: the tool loop returns text to the model, the actual media flows here → `ChatMessage.media` → inline gallery). `authenticityBiased` appends a region's native-language term for relevance. Network tools — hidden offline like the web tools. |
 | `VisionAnalyzer.swift` | On-device image understanding (Apple Vision: scene/text/barcodes). |
 | `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
 | `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
@@ -49127,7 +45360,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | File | Purpose |
 |---|---|
 | `ContentView.swift` | The chat UI: document-flow message list (hover action pills — copy/speak/regenerate/**quote**/per-reply timing on assistant rows, **edit-and-resend**+copy on user rows), Claude-style composer with **Code-tab parity colors** (signature accent ring), **slash commands** (`/summarize /continue /clear /copy /export /find /voice` + every saved prompt as `/slugged-title`), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge), **multi-file attachments** (chips per file, multi-select/drop/paste; merged to one synthetic attachment at submit so the pipeline stays single-attachment), **draft persistence** across relaunches, ↑-recall, Esc stops/dismisses, welcome that mirrors `CodeView.welcome` 1:1 (flat disc hero, 3 capsule pills, status line, full-tab optical centering). Presentation/input/focus/search only — conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
-| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
+| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). Drains `MediaCapture` per turn → `reply.media`. |
+| `MediaGallery.swift` | Inline image/video gallery rendered under an assistant reply (`message.media`). Double-bezel tray + concentric tiles, hover lift, button-in-button play well, duration/source chips. Images open in browser; direct-file videos play inline (AVKit sheet). Fed by `image_search`/`video_search` via `MediaCapture`. |
 | `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. Brain-grid readiness reads ONLY cached `@State` key flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
 | `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12): `BrainReadiness` (per-`BrainPreference` reachability rules over cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict), `AnthropicKeyPresentation` (no-leak key subtitle). No UI imports; pinned by `SettingsBrainReadyTests`. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs — Markets HIDDEN since 2026-06-12** per owner "until further notice"; one flag `AppTab.hidden` gates the pill, ⌘5, palette/shortcuts rows, Today card + market pill; restore = empty the set), Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |

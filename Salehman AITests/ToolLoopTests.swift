@@ -25,35 +25,15 @@ struct OllamaToolSpecsTests {
         #expect(n.contains("search_documents"))
     }
 
-    @Test func onlineAddsExactlyTheTwoWebTools() {
+    @Test func onlineAddsExactlyTheWebAndMediaTools() {
         let offline = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: false)))
         let online = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: true)))
-        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
+        // Online adds the four network tools — web + media (image/video search).
+        #expect(online.subtracting(offline)
+                == ["web_search", "fetch_url", "image_search", "video_search"])
     }
 }
 
-// MARK: - FreeAuto cooldown window boundary (pins the extracted `isStillCooling`
-// seam specifically — distinct from the existing FreeAutoCooldownTests).
-//
-// A free brain that just failed is skipped for `window` seconds. Pins the 120 s
-// boundary (strict `<`) and that a brain with no recorded failure never cools.
-struct CooldownWindowSeamTests {
-    private let t0 = Date(timeIntervalSince1970: 1_000_000)
-
-    @Test func withinWindowStillCools() {
-        #expect(LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(119), window: 120))
-    }
-
-    @Test func atOrPastBoundaryRetries() {
-        // Strict `<`, so exactly `window` seconds later is NOT cooling.
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(120), window: 120))
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(121), window: 120))
-    }
-
-    @Test func noRecordedFailureNeverCools() {
-        #expect(!LocalLLM.isStillCooling(failedAt: nil, now: t0))
-    }
-}
 
 // MARK: - AgentPipeline OOM-prevention concurrency cap
 //
@@ -68,33 +48,30 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 8) == 8)
-        #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
+        // `.none` is the only non-serial brain left after the app went local-only;
+        // it must honor the memory-derived base cap rather than forcing serial.
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 0) == 1)
     }
 }
 
 // MARK: - Paid-brain hiding (owner request: "hide every paid api")
 //
-// Pins which brains count as paid and that the Brain picker's `selectableCases`
-// excludes exactly those — so a future enum addition can't silently leak a paid
-// provider back into the UI.
+// The app is local-only — there are NO paid cloud brains, so `isPaid` is always
+// false. This pins that the Brain picker's `selectableCases` never surfaces a
+// paid provider, so a future enum addition can't silently leak one into the UI.
 struct PaidBrainHidingTests {
-    @Test func paidSetIsExactlyTheFourCloudPaidProviders() {
-        let paid = BrainPreference.allCases.filter { $0.isPaid }
-        #expect(Set(paid) == Set([.claudeHaiku, .grok, .codex, .copilot]))
-    }
-
     @Test func selectableCasesExcludeAllPaid() {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
-        // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
-        // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
-        // clutter). Other cases still function when set programmatically (rotation).
-        // 2026-06-18: + Uncensored (local abliterated ~3B, web-search capable) — free,
-        // on-device, so it stays out of the paid set above.
+        // Owner decision 2026-06-11: the picker is pared to a small local set.
+        // Salehman resolves vLLM → Unsloth → MLX → Ollama itself (all local), so
+        // the per-engine entries were clutter. Other cases still function when set
+        // programmatically (rotation). 2026-06-18: + Uncensored (local abliterated
+        // ~3B, web-search capable) — free, on-device, so never paid.
         #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio, .uncensored])
     }
 }
@@ -330,24 +307,23 @@ struct WithConversationContextTests {
 // requires them to appear here; this test catches the omission before it ships.
 struct IsSerialLocalBrainTests {
 
-    @Test func serialBrainsAreExactlyTheFourLocalModels() {
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+    @Test func serialBrainsAreExactlyTheLocalModels() {
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for b in serial {
             #expect(AgentPipeline.isSerialLocalBrain(b), "\(b) must be serial")
         }
     }
 
-    @Test func cloudAndEnsembleBrainsAreNotSerial() {
-        let nonSerial: [LocalLLM.Brain] = [.groq, .gemini, .cerebras, .mistral, .ensemble, .freeAuto, .freeCoding, .claudeHaiku, .none]
-        for b in nonSerial {
-            #expect(!AgentPipeline.isSerialLocalBrain(b), "\(b) must not be serial")
-        }
+    @Test func noneBrainIsNotSerial() {
+        // After the app went local-only, every real brain is a serial local model;
+        // `.none` (no brain reachable) is the only non-serial case left.
+        #expect(!AgentPipeline.isSerialLocalBrain(.none), ".none must not be serial")
     }
 
     @Test func effectiveCapMirrosIsSerialLocalBrain() {
         // Sanity guard: effectiveCap must force serial (cap==1) for every brain
         // that isSerialLocalBrain returns true for — the two must agree.
-        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm]
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
         for b in serial {
             #expect(AgentPipeline.effectiveCap(brain: b, baseCap: 8) == 1,
                     "\(b) effectiveCap must be 1 even with baseCap 8")

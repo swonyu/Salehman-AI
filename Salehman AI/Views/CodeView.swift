@@ -531,7 +531,6 @@ struct CodeView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
 
     @State private var messages: [ChatMessage] = []
     /// Conversation persistence — the chat tab survives relaunches but Code-tab
@@ -610,14 +609,6 @@ struct CodeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No-cloud-key notice: Review / coding here silently falls back to the
-            // slow local model (or can't fit the codebase). Tap "Add key" → Settings
-            // (ContentView stays mounted in RootView, so its sheet handles this).
-            if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
-                                   onDismiss: { dismissedCloudHint = true })
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             HSplitView {
                 if !treeCollapsed {
                     fileTree
@@ -657,7 +648,6 @@ struct CodeView: View {
             }
             .animation(DS.Motion.spring, value: approval.pending?.id)
         }
-        .animation(DS.Motion.smooth, value: dismissedCloudHint)
         // Restore the last session's conversation once (off-main decode; tiny file).
         .onAppear {
             guard !historyLoaded else { return }
@@ -2412,20 +2402,22 @@ struct CodeView: View {
             await ConversationStore.shared.reset()
             let packed = await Task.detached(priority: .userInitiated) { RepoPacker.pack(rootPath: root.path) }.value
             // Honesty gate: a whole-codebase review is only trustworthy on a brain
-            // that can actually INGEST the codebase. With no cloud key the only brain
-            // is the local qwen2.5-coder at a 4096-token window (~12 KB of text) — it
-            // would see a tiny fraction and hallucinate findings (observed repeatedly:
-            // it "reviewed" code it never saw). Refuse instead of emitting guesswork;
-            // small folders that DO fit the window still go through.
+            // that can actually INGEST the codebase. On the default local
+            // qwen2.5-coder at a 4096-token window (~12 KB of text) it would see a
+            // tiny fraction and hallucinate findings (observed repeatedly: it
+            // "reviewed" code it never saw). Refuse instead of emitting guesswork;
+            // small folders that DO fit the window still go through. A large-context
+            // local engine (vLLM / Unsloth Studio) sidesteps this — point one at the
+            // model in Settings → Salehman engine.
             let localContextBudget = 12_000
             if !SalehmanEngine.hasAnyCloud && packed.digest.count > localContextBudget {
                 let pct = max(1, Int((Double(localContextBudget) / Double(packed.digest.count)) * 100))
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but the default local model's 4096-token window sees only ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
-                To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
+                To get a real review: serve the model on a large-context local engine (vLLM or Unsloth Studio) in Settings → Salehman engine, then run Review again. (Or open a smaller folder that fits the local window.)
                 """
                 await MainActor.run {
                     messages.append(ChatMessage(id: UUID(), text: msg, isUser: false, timestamp: Date()))

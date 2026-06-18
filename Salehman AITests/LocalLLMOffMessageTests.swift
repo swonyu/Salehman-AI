@@ -82,7 +82,7 @@ struct OffMessageSentinelTests {
         // Pin a non-default preference so `unavailableMessage` produces its
         // pinned-brain remedy text — which should NOT equal the generic
         // sentinel "no model is reachable…" line.
-        UserDefaults.standard.set(BrainPreference.grok.rawValue, forKey: key)
+        UserDefaults.standard.set(BrainPreference.salehman.rawValue, forKey: key)
         #expect(LocalLLM.unavailableMessage != LocalLLM.offMessage,
                 "context-aware message collapsed back into sentinel — split is meaningless")
     }

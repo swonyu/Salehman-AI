@@ -147,10 +147,16 @@ final class ChatViewModel: ObservableObject {
             let maxAutoContinues = 4
             while true {
                 let turnStart = Date()
+                // Clear the media side-channel so this turn only shows ITS own
+                // image/video-search results, then drain whatever the tools found
+                // into the reply's inline gallery.
+                MediaCapture.shared.reset()
                 let result = await Orchestrator.runAndReturnResult(mission: turnPrompt)
                 if Task.isCancelled { return }
+                let foundMedia = MediaCapture.shared.drain()
                 let reply = ChatMessage(id: UUID(), text: result.output, isUser: false,
                                         timestamp: Date(),
+                                        media: foundMedia.isEmpty ? nil : foundMedia,
                                         duration: Date().timeIntervalSince(turnStart))
                 messages.append(reply)
                 // Auto-learn durable facts from this turn (fire-and-forget, never blocks UI).

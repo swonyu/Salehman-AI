@@ -12,17 +12,6 @@ struct SettingsView: View {
     @State private var hasCoder = false
     @State private var hasUncensored = false
     @State private var showMemory = false
-    // Cloud brain key-saved flags — only the boolean (not the draft) is needed;
-    // they feed brainReadiness which powers the green/orange dots in the Brain grid.
-    @State private var anthropicKeySaved: Bool = AnthropicClient.isConfigured
-    @State private var grokKeySaved: Bool = GrokClient.hasKey()
-    @State private var geminiKeySaved: Bool = GeminiClient.hasKey()
-    @State private var groqKeySaved: Bool = GroqClient.shared.hasKey()
-    @State private var mistralKeySaved: Bool = MistralClient.shared.hasKey()
-    @State private var cerebrasKeySaved: Bool = CerebrasClient.shared.hasKey()
-    @State private var openAIKeySaved: Bool = OpenAIClient.hasKey()
-    @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
-    @State private var nvidiaKeySaved: Bool = NvidiaClient.shared.hasKey()
 
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
@@ -37,9 +26,6 @@ struct SettingsView: View {
     /// read is safe at @State init.
     @State private var unslothStudioKeySaved: Bool = (KeychainStore.read(.unslothStudioAPIKey) != nil)
     @State private var unslothStudioKeyDraft: String = ""
-
-    // GitHub Copilot — boolean tracks auth state for the Brain grid readiness dot.
-    @State private var copilotAuthed: Bool = CopilotClient.isAuthed()
 
     // Live "is the *selected* brain actually answering" check (covers all
     // brains). The overlap rules (three triggers can race at the await; a
@@ -433,24 +419,16 @@ struct SettingsView: View {
     /// Whether the given brain preference is reachable right now. Thin caller
     /// over the pure `BrainReadiness` seam (SettingsBrainReadiness.swift) —
     /// the readiness RULES live there, pinned by SettingsBrainReadyTests.
-    /// Reads ONLY cached state: the @State key flags the Save/Clear bindings
-    /// maintain plus the polled `ollamaUp`/`hasCoder` — zero Keychain
-    /// syscalls per body recompute. (CODEBASE_REVIEW HIGH perf fix: the old
-    /// switch here fired live `hasKey()` reads per visible grid cell on
-    /// every recompute — each keystroke and each 5s poll tick paid ~25+
-    /// SecItemCopyMatching calls; `.salehman` alone walked the whole 10-key
-    /// `SalehmanEngine.hasAnyCloud` chain.)
+    /// Reads ONLY cached state (the polled `ollamaUp`/`hasCoder` + endpoint
+    /// config flags) — local-only, no Keychain syscalls per body recompute.
     private func brainReady(_ pref: BrainPreference) -> Bool {
         brainReadiness.ready(pref)
     }
 
     /// Snapshot of every readiness signal, assembled from cached state only.
     /// Endpoint checks (`UnslothStudio`/`VLLM.isConfigured`) are UserDefaults
-    /// reads — in-memory, no Keychain. Trade-off vs the old live reads: a key
-    /// saved by something OTHER than this sheet wouldn't repaint the grid —
-    /// but every in-app writer (Save/Clear rows, Copilot sign-in callback)
-    /// already updates its cached flag, which recomputes body anyway, and the
-    /// "N/total set" group badges have trusted these same flags all along.
+    /// reads — in-memory, no Keychain. Local-only: there are no cloud keys to
+    /// track anymore.
     private var brainReadiness: BrainReadiness {
         BrainReadiness(
             ollamaUp: ollamaUp,
@@ -459,17 +437,7 @@ struct SettingsView: View {
                 .trimmingCharacters(in: .whitespaces).isEmpty,
             hasUncensored: hasUncensored,
             unslothConfigured: UnslothStudio.isConfigured,
-            vllmConfigured: VLLM.isConfigured,
-            anthropic: anthropicKeySaved,
-            grok: grokKeySaved,
-            gemini: geminiKeySaved,
-            groq: groqKeySaved,
-            mistral: mistralKeySaved,
-            cerebras: cerebrasKeySaved,
-            openAI: openAIKeySaved,
-            copilot: copilotAuthed,
-            openRouter: openRouterKeySaved,
-            nvidia: nvidiaKeySaved
+            vllmConfigured: VLLM.isConfigured
         )
     }
 
@@ -656,10 +624,11 @@ struct SettingsView: View {
         }
     }
 
-    /// The "smart modes" — orchestration prefs (not single brains) that get the
-    /// premium gradient glyph in the grid. Pure so the cell stays cheap to render.
+    /// The "smart mode" — `.auto` is an orchestration pref (not a single brain)
+    /// that gets the premium gradient glyph in the grid. Pure so the cell stays
+    /// cheap to render. (The cloud composite modes were removed — local-only.)
     private static func isOrchestrationMode(_ pref: BrainPreference) -> Bool {
-        pref == .auto || pref == .freeAuto || pref == .freeCoding || pref == .cloudCoding || pref == .ensemble
+        pref == .auto
     }
 
     private func brainGridCell(_ pref: BrainPreference) -> some View {
@@ -676,10 +645,9 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Group {
                         if Self.isOrchestrationMode(pref) {
-                            // The smart "modes" (Auto / Free·Auto / FreeCoding /
-                            // Ensemble) get a premium violet→accent gradient glyph
-                            // so they read as a distinct tier above the single
-                            // brains — cohesive, and makes the flagship loops pop.
+                            // The smart "Auto" mode gets a premium violet→accent
+                            // gradient glyph so it reads as a distinct tier above
+                            // the single local brains.
                             Image(systemName: pref.icon)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(LinearGradient(
@@ -1287,18 +1255,16 @@ struct SettingsView: View {
 
     /// Live "is the selected brain actually working" row. Pings whatever brain
     /// is currently pinned through the real routing path (`LocalLLM.generate`),
-    /// so one check covers Ollama and every cloud brain.
+    /// so one check covers every local brain.
     private var activeBrainStatusRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(settings.brainPreference == .ensemble
-                     ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."
-                     : activeBrainIsLocal
-                       ? "Live check — auto-pings the selected brain."
-                       : "Tap ↻ to check (sends one small paid request).")
+                Text(activeBrainIsLocal
+                     ? "Live check — auto-pings the selected brain."
+                     : "Tap ↻ to check (sends one small local request).")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -1312,9 +1278,9 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
-    /// Whether the pinned brain runs on this Mac (free to ping). Cloud brains
-    /// cost money per request, so we only auto-check local ones and make the
-    /// cloud check on-demand (the refresh button).
+    /// Whether the pinned brain runs fully on-device (cheap to auto-ping). The
+    /// endpoint-backed engines (vLLM / Unsloth Studio) may point at a remote
+    /// server, so they stay on-demand (the refresh button) rather than auto.
     private var activeBrainIsLocal: Bool {
         switch settings.brainPreference {
         case .auto, .ollama: return true
@@ -1323,11 +1289,7 @@ struct SettingsView: View {
     }
 
     /// Ping the pinned brain and decide if it actually answered. Failure
-    /// sentinels: empty reply, the canonical off-message, or the Anthropic
-    /// error string (which `AnthropicClient` returns verbatim on a non-200).
-    /// We match the specific "[Claude Haiku …" prefix rather than any "[" so a
-    /// legitimate reply that begins with a bracket (code, a JSON array) isn't
-    /// mistaken for a failure.
+    /// sentinels: an empty reply or the canonical off-message.
     private func testActiveBrain() async {
         // Three triggers (.task poll, brain-switch onChange, refresh button)
         // can overlap at the await below; `ActiveBrainProbe` owns the overlap
@@ -1337,18 +1299,8 @@ struct SettingsView: View {
         // is still selected at the end publishes its verdict.
         let pinned = settings.brainPreference
         activeBrain.begin()
-        let working: Bool
-        if LocalLLM.isEnsembleMode {
-            // Ensemble fans out to EVERY reachable brain — firing a real "ping"
-            // would bill several paid clouds just for a health check. Instead
-            // verify at least one brain is reachable (Apple / Ollama / any keyed
-            // cloud); that's exactly the condition under which ensemble answers.
-            // Zero paid round-trips.
-            working = await LocalLLM.anyBrainReachable()
-        } else {
-            let reply = await LocalLLM.generate("ping", maxTokens: 5)
-            working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
-        }
+        let reply = await LocalLLM.generate("ping", maxTokens: 5)
+        let working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
         activeBrain.finish(verdict: working,
                            superseded: settings.brainPreference != pinned)
     }
