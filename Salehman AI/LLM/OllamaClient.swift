@@ -16,6 +16,12 @@ enum OllamaClient {
     nonisolated static let visionModel     = "qwen2.5vl"
     nonisolated static let codeModel       = "qwen2.5-coder:7b"       // ← sweet-spot default
     nonisolated static let heavyCodeModel  = "qwen2.5-coder:32b"      // opt-in only
+    /// The uncensored brain's model: abliterated (refusal-removed) Llama-3.2-3B-
+    /// Instruct. ~2.2 GB on disk / ~3-4 GB resident — the lightest local model in
+    /// the app. Llama-3.2-Instruct, so it tool-calls (drives web_search). Pull:
+    /// `ollama pull huihui_ai/llama3.2-abliterate:3b`. Single source of truth for
+    /// the `.uncensored` BrainPreference, its readiness probe, and the Settings copy.
+    nonisolated static let uncensoredModel = "huihui_ai/llama3.2-abliterate:3b"
 
     /// Priority list for picking the active code model: lightest first,
     /// heaviest last. The app uses whichever of these is **actually pulled
@@ -310,8 +316,15 @@ enum OllamaClient {
     /// callers with a token budget (agent notes are 110, full replies 700) MUST
     /// cap, or a 14B at ~15 tok/s turns a "terse note" into a minute-long ramble.
     static func chat(prompt: String, system: String? = nil,
-                     gen: Generation? = nil, maxTokens: Int? = nil) async -> String? {
-        guard await isUp(), let model = await activeChatModel() else { return nil }
+                     gen: Generation? = nil, maxTokens: Int? = nil,
+                     model modelOverride: String? = nil) async -> String? {
+        // `modelOverride` forces a specific tag (the uncensored brain pins its own
+        // abliterated model) instead of resolving the pref-based active chat model.
+        guard await isUp() else { return nil }
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await activeChatModel() { model = active }
+        else { return nil }
         var g = gen ?? .tuned(for: model)
         if let cap = maxTokens { g.numPredict = cap }
         return await generate(model: model, prompt: prompt, system: system, gen: g)
@@ -357,8 +370,13 @@ enum OllamaClient {
     /// with the cumulative text after each token chunk. Returns the final
     /// text, or nil if the server/model isn't reachable.
     static func chatStream(prompt: String, system: String? = nil,
+                           model modelOverride: String? = nil,
                            onUpdate: @escaping (String) -> Void) async -> String? {
-        guard await isUp(), let model = await activeChatModel() else { return nil }
+        guard await isUp() else { return nil }
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await activeChatModel() { model = active }
+        else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
         // Same per-model tuning as the non-streaming path: the user's own Salehman
         // model stays warm 5 min with its 4096 context; small models stay RAM-lean.

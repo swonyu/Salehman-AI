@@ -166,6 +166,7 @@ nonisolated struct BrainRouteConfig: Sendable {
     var offlineOnly = false
     var configured: Set<CloudProvider> = []
     var ollamaReady = false          // server up + a coder model pulled
+    var uncensoredReady = false      // server up + the abliterated ~3B model pulled
     var salehmanCloudReady = false   // SalehmanEngine.hasAnyCloud
     var mlxReady = false
     var ollamaHasCustomModel = false
@@ -198,6 +199,8 @@ nonisolated struct BrainRouteConfig: Sendable {
         switch pref {
         case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
             c.ollamaReady = await LocalLLM.ollamaReady()
+        case .uncensored:
+            c.uncensoredReady = await OllamaClient.hasModel(OllamaClient.uncensoredModel)
         case .salehman:
             // Same short-circuit order as the old currentBrain: the cloud
             // check is free; the MLX/custom-model probes only run without it.
@@ -228,6 +231,7 @@ nonisolated enum BrainRouting {
         case unslothStudio           // explicit endpoint pin
         case vllm                    // explicit endpoint pin
         case localTier               // .auto / .ollama → Ollama
+        case uncensoredLocal         // .uncensored → Ollama, forced abliterated ~3B (web-search capable)
         case unavailable             // offline-gated cloud pin → offMessage
     }
 
@@ -248,6 +252,10 @@ nonisolated enum BrainRouting {
             return .mode(pref)
         case .auto, .ollama:
             return .localTier
+        case .uncensored:
+            // Local (Ollama) — passes through Offline Mode unchanged like the
+            // other local tiers; the web tools self-gate on ToolPolicy.
+            return .uncensoredLocal
         case .salehman:
             return .salehman
         case .unslothStudio:
@@ -309,6 +317,8 @@ nonisolated enum BrainRouting {
         switch c.pref {
         case .ollama, .auto:
             return c.ollamaReady ? .ollamaCoder : .none
+        case .uncensored:
+            return c.uncensoredReady ? .uncensored : .none
         case .salehman:
             if c.salehmanCloudReady { return .salehman }
             if c.mlxReady { return .salehman }

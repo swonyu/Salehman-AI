@@ -21,6 +21,8 @@ struct BrainReadiness {
     var hasCoder = false
     /// `settings.customModelName` is non-blank — the `.salehman` local floor.
     var customModelNamed = false
+    /// The abliterated ~3B uncensored model is pulled — the `.uncensored` floor.
+    var hasUncensored = false
 
     // Endpoint-configured engines (UserDefaults-backed, no Keychain).
     var unslothConfigured = false
@@ -87,6 +89,8 @@ struct BrainReadiness {
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured
+        // Uncensored is local-only: Ollama up AND the abliterated model pulled.
+        case .uncensored:  return ollamaUp && hasUncensored
         }
     }
 }

@@ -5449,6 +5449,49 @@ confidence is high, but the owner should glance at one live Arabic reply. **Inst
 
 ---
 
+## 2026-06-18 · Uncensored web-search brain (local abliterated ~3B) added to the Brain picker
+**What:** New `BrainPreference.uncensored` / `LocalLLM.Brain.uncensored` — a small (~3B),
+on-device, FREE, key-less brain that runs an **abliterated** (refusal-removed)
+Llama-3.2-3B-Instruct via Ollama and, because it goes through the existing tool loop,
+can use **web_search/fetch_url** to find anything online (incl. NSFW — DuckDuckGo
+SafeSearch is already off). Owner request ("a model which can search for porn… ~3b"),
+clarified to "Uncensored + web search". Lawful personal use on the owner's own app
+(consistent with the app's existing Unrestricted Mode).
+
+**Model:** `huihui_ai/llama3.2-abliterate:3b` (~2.2 GB, 128K ctx, tool-calling capable —
+needed for web search). Pull to enable: `ollama pull huihui_ai/llama3.2-abliterate:3b`.
+The model is abliterated, so it self-declines nothing — no special system prompt; it
+reuses the default Ollama tool/chat system via a `modelOverride` path.
+
+**How it's wired (single-seam routing, compiler-forced exhaustiveness):**
+- `OllamaClient`: `uncensoredModel` constant; `chat`/`chatStream` gained a `model:` override.
+- `LocalLLM`: `Brain.uncensored` case; `chatOllamaWithTools`/`ollamaReply` gained
+  `modelOverride:`; new `Dispatch.uncensoredLocal` arm in all three exec switches
+  (`generate`/`generateStreaming`/`chat`) pins the abliterated model. Web-search gating
+  is unchanged — it's `ToolPolicy.isExternalAllowed` (web-access on + not Offline),
+  brain-agnostic, so no new gating code.
+- `BrainRouting`: `Dispatch.uncensoredLocal`; `dispatch(.uncensored)→.uncensoredLocal`
+  (passes Offline through like the other local tiers); `reachableBrain` + `BrainRouteConfig.uncensoredReady`
+  + `live()` probe via `OllamaClient.hasModel`.
+- UI/readiness: `AppSettings` case + title/subtitle/icon + `selectableCases` (now 4th pick);
+  `SettingsBrainReadiness.hasUncensored` + `ready` arm; `SettingsView` `@State` + `.task`
+  probe + builder; `BrainStatus` dot-color + symbol. `isPaid` unchanged (local = free).
+
+**Files:** `LLM/OllamaClient.swift`, `LLM/LocalLLM.swift`, `LLM/BrainRouting.swift`,
+`LLM/BrainStatus.swift`, `App/AppSettings.swift`, `Views/SettingsBrainReadiness.swift`,
+`Views/SettingsView.swift`, `Salehman AITests/ToolLoopTests.swift` (selectableCases pin →
+4 cases). SOURCE_BUNDLE regenerated.
+
+**Result:** Full-app typecheck **clean** — `swiftc -typecheck` over all 97 app files via the
+`-tools-directory` sandbox recipe, exit 0 / **0 diagnostics**. Test target couldn't be
+compiled in-sandbox (no `Testing` module via single-file swiftc), but the one test edit is
+a constant equality update mirroring the code, and no `BrainPreference.allCases`-iterating
+test breaks by inspection (`offMessage` sentinel is pref-invariant; the rawValue/contains
+tests use membership semantics). Owner must `ollama pull huihui_ai/llama3.2-abliterate:3b`
+to use it; not yet eyeball-tested against a live NSFW query (model not pulled here).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

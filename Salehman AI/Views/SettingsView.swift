@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var ollamaUp = false
     @State private var hasVision = false
     @State private var hasCoder = false
+    @State private var hasUncensored = false
     @State private var showMemory = false
     // Cloud brain key-saved flags — only the boolean (not the draft) is needed;
     // they feed brainReadiness which powers the green/orange dots in the Brain grid.
@@ -296,7 +297,8 @@ struct SettingsView: View {
                 async let up      = OllamaClient.isUp()
                 async let vision  = OllamaClient.hasModel(OllamaClient.visionModel)
                 async let active  = OllamaClient.activeCodeModel()
-                let (u, v, a) = await (up, vision, active)
+                async let unc     = OllamaClient.hasModel(OllamaClient.uncensoredModel)
+                let (u, v, a, uc) = await (up, vision, active, unc)
                 // The three probes are a suspension point — if Settings was
                 // dismissed while they were in flight, the task is now
                 // cancelled. Bail before writing state so we don't paint one
@@ -305,6 +307,7 @@ struct SettingsView: View {
                 ollamaUp  = u
                 hasVision = v
                 hasCoder  = (a != nil)
+                hasUncensored = uc
                 if !ranActiveBrainTestOnce, activeBrainIsLocal {
                     await testActiveBrain()
                     ranActiveBrainTestOnce = true
@@ -454,6 +457,7 @@ struct SettingsView: View {
             hasCoder: hasCoder,
             customModelNamed: !settings.customModelName
                 .trimmingCharacters(in: .whitespaces).isEmpty,
+            hasUncensored: hasUncensored,
             unslothConfigured: UnslothStudio.isConfigured,
             vllmConfigured: VLLM.isConfigured,
             anthropic: anthropicKeySaved,

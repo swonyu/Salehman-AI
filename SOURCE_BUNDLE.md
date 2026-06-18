@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-14 17:50 +03 · Swift files: 161 · Swift LOC: 37287_
+_Generated: 2026-06-18 07:27 +03 · Swift files: 161 · Swift LOC: 37363_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1334,7 +1334,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (594 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (598 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1820,6 +1820,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
+    case uncensored    // local Ollama, abliterated (refusal-removed) ~3B; web-search capable, on-device, free
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
     // local (Ollama) backstop → effectively never rate-limited, never paid.
 
@@ -1845,7 +1846,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     // Salehman + Auto, plus the custom-server brain so you can point the app at your
     // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
     // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
-    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio] }
+    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio, .uncensored] }
 
     var title: String {
         switch self {
@@ -1867,6 +1868,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
+        case .uncensored:    return "Uncensored (Local · web)"
         }
     }
     var subtitle: String {
@@ -1889,6 +1891,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
+        case .uncensored:    return "Unfiltered local model via Ollama — small (~3B), on-device, free, no key. Can use web search to find anything online (lawful personal use). Pull it: `ollama pull \(OllamaClient.uncensoredModel)`"
         }
     }
     var icon: String {
@@ -1911,6 +1914,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "brain.head.profile"
         case .unslothStudio: return "server.rack"
         case .vllm:          return "speedometer"
+        case .uncensored:    return "eye.trianglebadge.exclamationmark.fill"
         }
     }
 }
@@ -3701,7 +3705,7 @@ private struct LocalLLMFallbackAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainRouting.swift (341 lines) =====
+===== FILE: Salehman AI/LLM/BrainRouting.swift (351 lines) =====
 ```swift
 import Foundation
 
@@ -3871,6 +3875,7 @@ nonisolated struct BrainRouteConfig: Sendable {
     var offlineOnly = false
     var configured: Set<CloudProvider> = []
     var ollamaReady = false          // server up + a coder model pulled
+    var uncensoredReady = false      // server up + the abliterated ~3B model pulled
     var salehmanCloudReady = false   // SalehmanEngine.hasAnyCloud
     var mlxReady = false
     var ollamaHasCustomModel = false
@@ -3903,6 +3908,8 @@ nonisolated struct BrainRouteConfig: Sendable {
         switch pref {
         case .auto, .ollama, .ensemble, .freeAuto, .freeCoding:
             c.ollamaReady = await LocalLLM.ollamaReady()
+        case .uncensored:
+            c.uncensoredReady = await OllamaClient.hasModel(OllamaClient.uncensoredModel)
         case .salehman:
             // Same short-circuit order as the old currentBrain: the cloud
             // check is free; the MLX/custom-model probes only run without it.
@@ -3933,6 +3940,7 @@ nonisolated enum BrainRouting {
         case unslothStudio           // explicit endpoint pin
         case vllm                    // explicit endpoint pin
         case localTier               // .auto / .ollama → Ollama
+        case uncensoredLocal         // .uncensored → Ollama, forced abliterated ~3B (web-search capable)
         case unavailable             // offline-gated cloud pin → offMessage
     }
 
@@ -3953,6 +3961,10 @@ nonisolated enum BrainRouting {
             return .mode(pref)
         case .auto, .ollama:
             return .localTier
+        case .uncensored:
+            // Local (Ollama) — passes through Offline Mode unchanged like the
+            // other local tiers; the web tools self-gate on ToolPolicy.
+            return .uncensoredLocal
         case .salehman:
             return .salehman
         case .unslothStudio:
@@ -4014,6 +4026,8 @@ nonisolated enum BrainRouting {
         switch c.pref {
         case .ollama, .auto:
             return c.ollamaReady ? .ollamaCoder : .none
+        case .uncensored:
+            return c.uncensoredReady ? .uncensored : .none
         case .salehman:
             if c.salehmanCloudReady { return .salehman }
             if c.mlxReady { return .salehman }
@@ -4046,7 +4060,7 @@ nonisolated enum BrainRouting {
 }
 ```
 
-===== FILE: Salehman AI/LLM/BrainStatus.swift (118 lines) =====
+===== FILE: Salehman AI/LLM/BrainStatus.swift (120 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -4097,6 +4111,7 @@ final class BrainStatus: ObservableObject {
         case .salehman:          return DS.Palette.accent                          // the brand's own model
         case .unslothStudio:     return Color(red: 0.45, green: 0.85, blue: 0.55)  // Studio green — local + your weights
         case .vllm:              return Color(red: 0.20, green: 0.78, blue: 0.90)  // vLLM cyan — local high-throughput
+        case .uncensored:        return Color(red: 0.90, green: 0.30, blue: 0.45)  // uncensored crimson — unfiltered local
 
         case .claudeHaiku:       return Color(red: 0.82, green: 0.55, blue: 0.42)  // Claude terracotta
         case .grok:              return Color(red: 0.55, green: 0.45, blue: 0.95)  // xAI violet
@@ -4123,6 +4138,7 @@ final class BrainStatus: ObservableObject {
         case .salehman:          return "crown.fill"
         case .unslothStudio:     return "cpu"
         case .vllm:              return "bolt.horizontal.fill"
+        case .uncensored:        return "eye.trianglebadge.exclamationmark.fill"
         case .claudeHaiku:       return "a.square.fill"
         case .grok:              return "bolt.fill"
         case .gemini:            return "sparkle"
@@ -5196,7 +5212,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1703 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1735 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -5281,6 +5297,8 @@ enum LocalLLM {
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
             return "vLLM is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → vLLM (e.g. http://localhost:8000/v1) and make sure `vllm serve` is running."
+        case .uncensored:
+            return "The Uncensored brain needs its model pulled. Run `ollama pull \(OllamaClient.uncensoredModel)` (and `ollama serve`), or switch to another brain."
         }
     }
 
@@ -5329,6 +5347,7 @@ enum LocalLLM {
         case salehman                                // Salehman — cloud-first, local floor
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
         case vllm                                    // local OpenAI-compat server served by vLLM
+        case uncensored                              // local Ollama, abliterated ~3B; web-search capable
         case claudeHaiku, grok                       // cloud, pre-existing
         case gemini, groq, mistral, cerebras         // cloud, free-tier
         case codex, copilot                          // cloud, OpenAI + GitHub Copilot
@@ -5743,6 +5762,7 @@ enum LocalLLM {
             return VLLM.isLocalLoopback
                 ? "Local · vLLM (\(AppSettings.vllmModelCurrent))"
                 : "Custom server · vLLM (\(AppSettings.vllmModelCurrent))"
+        case .uncensored:        return "Local · Uncensored · \(OllamaClient.uncensoredModel)"
         case .claudeHaiku:       return "Cloud · Claude Haiku"
         case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
         case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
@@ -5776,6 +5796,8 @@ enum LocalLLM {
                     ? "vLLM · server unreachable"
                     : "vLLM · set endpoint URL in Settings"
             case .auto:    return "No brain available"
+            case .uncensored:
+                return "Uncensored: pull the model — `ollama pull \(OllamaClient.uncensoredModel)`"
             default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
             }
         }
@@ -6305,8 +6327,14 @@ enum LocalLLM {
     /// model decides whether to call the tool; if it just answers, we return that
     /// text. Loops propose→approve→run→feed-back up to `maxRounds` so it can chain
     /// steps. `nil` → transport error (caller falls back to plain chat).
-    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil) async -> String? {
-        guard let model = await OllamaClient.activeChatModel() else { return nil }
+    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil,
+                                    modelOverride: String? = nil) async -> String? {
+        // `modelOverride` pins a specific tag (the Uncensored brain forces its
+        // abliterated ~3B) instead of the pref-based active chat model.
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await OllamaClient.activeChatModel() { model = active }
+        else { return nil }
         // The persona is injected by the caller (e.g. `.salehman` passes
         // `SalehmanPersona.systemPrompt`); default keeps the existing
         // tool-aware system prompt for the legacy Ollama path.
@@ -6554,9 +6582,12 @@ enum LocalLLM {
     /// overrides the default for both legs, so the `.salehman` brain can run the
     /// custom Ollama model with the Salehman persona instead of the generic
     /// tool-aware prompt.
-    static func ollamaReply(_ message: String, systemPrompt: String? = nil) async -> String? {
-        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt) { return withTools }
-        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem)
+    static func ollamaReply(_ message: String, systemPrompt: String? = nil,
+                            modelOverride: String? = nil) async -> String? {
+        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt,
+                                                     modelOverride: modelOverride) { return withTools }
+        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem,
+                                       model: modelOverride)
     }
 
     // The per-brain pin gates ("each cloud brain is only tried when the user
@@ -6617,6 +6648,11 @@ enum LocalLLM {
         case .localTier:
             // Local tier (Ollama): free & on-device.
             if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+            return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — forces the abliterated ~3B model.
+            if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                                   model: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
@@ -6748,6 +6784,13 @@ enum LocalLLM {
                 return reply
             }
             return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — streams the abliterated ~3B model.
+            if let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem,
+                                                         model: OllamaClient.uncensoredModel, onUpdate: onUpdate) {
+                return reply
+            }
+            return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
             return offMessage
@@ -6840,6 +6883,11 @@ enum LocalLLM {
         case .localTier:
             // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
             if let reply = await ollamaReply(message) { return reply }
+            return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — same tool loop (web_search/fetch_url when
+            // web access is on & not Offline), pinned to the abliterated ~3B model.
+            if let reply = await ollamaReply(message, modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
@@ -7362,7 +7410,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (408 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (426 lines) =====
 ```swift
 import Foundation
 
@@ -7382,6 +7430,12 @@ enum OllamaClient {
     nonisolated static let visionModel     = "qwen2.5vl"
     nonisolated static let codeModel       = "qwen2.5-coder:7b"       // ← sweet-spot default
     nonisolated static let heavyCodeModel  = "qwen2.5-coder:32b"      // opt-in only
+    /// The uncensored brain's model: abliterated (refusal-removed) Llama-3.2-3B-
+    /// Instruct. ~2.2 GB on disk / ~3-4 GB resident — the lightest local model in
+    /// the app. Llama-3.2-Instruct, so it tool-calls (drives web_search). Pull:
+    /// `ollama pull huihui_ai/llama3.2-abliterate:3b`. Single source of truth for
+    /// the `.uncensored` BrainPreference, its readiness probe, and the Settings copy.
+    nonisolated static let uncensoredModel = "huihui_ai/llama3.2-abliterate:3b"
 
     /// Priority list for picking the active code model: lightest first,
     /// heaviest last. The app uses whichever of these is **actually pulled
@@ -7676,8 +7730,15 @@ enum OllamaClient {
     /// callers with a token budget (agent notes are 110, full replies 700) MUST
     /// cap, or a 14B at ~15 tok/s turns a "terse note" into a minute-long ramble.
     static func chat(prompt: String, system: String? = nil,
-                     gen: Generation? = nil, maxTokens: Int? = nil) async -> String? {
-        guard await isUp(), let model = await activeChatModel() else { return nil }
+                     gen: Generation? = nil, maxTokens: Int? = nil,
+                     model modelOverride: String? = nil) async -> String? {
+        // `modelOverride` forces a specific tag (the uncensored brain pins its own
+        // abliterated model) instead of resolving the pref-based active chat model.
+        guard await isUp() else { return nil }
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await activeChatModel() { model = active }
+        else { return nil }
         var g = gen ?? .tuned(for: model)
         if let cap = maxTokens { g.numPredict = cap }
         return await generate(model: model, prompt: prompt, system: system, gen: g)
@@ -7723,8 +7784,13 @@ enum OllamaClient {
     /// with the cumulative text after each token chunk. Returns the final
     /// text, or nil if the server/model isn't reachable.
     static func chatStream(prompt: String, system: String? = nil,
+                           model modelOverride: String? = nil,
                            onUpdate: @escaping (String) -> Void) async -> String? {
-        guard await isUp(), let model = await activeChatModel() else { return nil }
+        guard await isUp() else { return nil }
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await activeChatModel() { model = active }
+        else { return nil }
         guard let url = URL(string: "\(base)/api/generate") else { return nil }
         // Same per-model tuning as the non-streaming path: the user's own Salehman
         // model stays warm 5 min with its 4096 context; small models stay RAM-lean.
@@ -25124,7 +25190,7 @@ enum ScratchpadList {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (169 lines) =====
+===== FILE: Salehman AI/Views/SettingsBrainReadiness.swift (173 lines) =====
 ```swift
 import Foundation
 
@@ -25149,6 +25215,8 @@ struct BrainReadiness {
     var hasCoder = false
     /// `settings.customModelName` is non-blank — the `.salehman` local floor.
     var customModelNamed = false
+    /// The abliterated ~3B uncensored model is pulled — the `.uncensored` floor.
+    var hasUncensored = false
 
     // Endpoint-configured engines (UserDefaults-backed, no Keychain).
     var unslothConfigured = false
@@ -25215,6 +25283,8 @@ struct BrainReadiness {
         case .salehman:    return salehmanAnyCloud || (ollamaUp && customModelNamed)
         case .unslothStudio: return unslothConfigured
         case .vllm:        return vllmConfigured
+        // Uncensored is local-only: Ollama up AND the abliterated model pulled.
+        case .uncensored:  return ollamaUp && hasUncensored
         }
     }
 }
@@ -25297,7 +25367,7 @@ enum AnthropicKeyPresentation {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1520 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1524 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -25311,6 +25381,7 @@ struct SettingsView: View {
     @State private var ollamaUp = false
     @State private var hasVision = false
     @State private var hasCoder = false
+    @State private var hasUncensored = false
     @State private var showMemory = false
     // Cloud brain key-saved flags — only the boolean (not the draft) is needed;
     // they feed brainReadiness which powers the green/orange dots in the Brain grid.
@@ -25597,7 +25668,8 @@ struct SettingsView: View {
                 async let up      = OllamaClient.isUp()
                 async let vision  = OllamaClient.hasModel(OllamaClient.visionModel)
                 async let active  = OllamaClient.activeCodeModel()
-                let (u, v, a) = await (up, vision, active)
+                async let unc     = OllamaClient.hasModel(OllamaClient.uncensoredModel)
+                let (u, v, a, uc) = await (up, vision, active, unc)
                 // The three probes are a suspension point — if Settings was
                 // dismissed while they were in flight, the task is now
                 // cancelled. Bail before writing state so we don't paint one
@@ -25606,6 +25678,7 @@ struct SettingsView: View {
                 ollamaUp  = u
                 hasVision = v
                 hasCoder  = (a != nil)
+                hasUncensored = uc
                 if !ranActiveBrainTestOnce, activeBrainIsLocal {
                     await testActiveBrain()
                     ranActiveBrainTestOnce = true
@@ -25755,6 +25828,7 @@ struct SettingsView: View {
             hasCoder: hasCoder,
             customModelNamed: !settings.customModelName
                 .trimmingCharacters(in: .whitespaces).isEmpty,
+            hasUncensored: hasUncensored,
             unslothConfigured: UnslothStudio.isConfigured,
             vllmConfigured: VLLM.isConfigured,
             anthropic: anthropicKeySaved,
@@ -37104,7 +37178,7 @@ struct StockSageStoreTests {
 }
 ```
 
-===== FILE: Salehman AITests/ToolLoopTests.swift (415 lines) =====
+===== FILE: Salehman AITests/ToolLoopTests.swift (417 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -37201,7 +37275,9 @@ struct PaidBrainHidingTests {
         // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
         // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
         // clutter). Other cases still function when set programmatically (rotation).
-        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
+        // 2026-06-18: + Uncensored (local abliterated ~3B, web-search capable) — free,
+        // on-device, so it stays out of the paid set above.
+        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio, .uncensored])
     }
 }
 
@@ -39983,7 +40059,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6528 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6604 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -45402,6 +45478,82 @@ hardening.
 
 ---
 
+## 2026-06-14 — EOCP: MarkdownText RTL-bidi fix APPLIED (EOCL plan executed; owner "go") — verified by typecheck
+
+Executed the EOCL plan after the owner greenlit ("go") a high-end-visual-design redirect. `MarkdownText.body`'s
+`.lines(chunk)` prose case now wraps each `MarkdownText.lineView(raw, …)` in `.rtlAware(raw)` (the modifier
+added EOCD, already shipping at 4 Knowledge/Scratchpad call sites). Arabic prose lines flip to RTL + trailing —
+list bullets/numbers and the blockquote rail move to the right with the flipped `HStack`; English/Latin is a
+**true no-op** because every assistant surface is already a full-width leading column (`frame(maxWidth:.infinity,
+alignment:.leading)` — confirmed at ContentView:2388 assistantRow, CodeView:2521 CodeMessageRow, CodeView
+streaming, and the gallery row), so the `maxWidth:.infinity` the modifier adds changes nothing for English.
+`CodeBlock` and `tableView` are deliberately NOT wrapped → code + tables stay LTR as required.
+
+**Verified by MEASUREMENT:** full-target Swift 6 typecheck at the project's exact isolation settings
+(`-swift-version 6 -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault`, all
+97 app files, `-target arm64-apple-macos26.0`) → **EXIT 0, 0 errors / 0 warnings.**
+
+**Sandbox recipe (NEW, important):** this session's sandbox denies `swiftc`'s internal `xcrun` spawn (it tries
+to create `xcrun_db-*` under the Darwin per-user temp dir `/var/folders/.../T/` → `errno=Operation not
+permitted`; `TMPDIR`/`XCRUN_CACHE_ENABLED`/`XCRUN_DB_PATH` overrides are all ignored, and
+`dangerouslyDisableSandbox` is policy-disabled). **Workaround that worked:** invoke the swiftc binary directly
+(`SWIFTC=$(xcrun --find swiftc)`) with `-tools-directory "$(dirname "$(xcrun --find clang)")"` so swiftc never
+spawns `xcrun` for clang. Standalone `xcrun --find/--show-sdk-path` succeed (read-only); only the compile-time
+spawn's cache *create* was blocked. This unblocks `-typecheck` verification in a sandbox that previously
+appeared to forbid it entirely (cf. the effort/grok "EPERM pre-compile" note).
+
+**Honest caveat:** compile is verified; the actual Arabic right-align *rendering* is NOT yet eyeball-confirmed
+(typecheck-clean ≠ pixels-correct). It mirrors `LiveTranscriptionView.lineView`'s shipping RTL pattern, so
+confidence is high, but the owner should glance at one live Arabic reply. **Instantly revertible**
+(`git checkout` the one file) if it renders wrong.
+
+**Files:** `Salehman AI/Views/MarkdownText.swift` (one functional line + comment). SOURCE_BUNDLE regenerated.
+
+---
+
+## 2026-06-18 · Uncensored web-search brain (local abliterated ~3B) added to the Brain picker
+**What:** New `BrainPreference.uncensored` / `LocalLLM.Brain.uncensored` — a small (~3B),
+on-device, FREE, key-less brain that runs an **abliterated** (refusal-removed)
+Llama-3.2-3B-Instruct via Ollama and, because it goes through the existing tool loop,
+can use **web_search/fetch_url** to find anything online (incl. NSFW — DuckDuckGo
+SafeSearch is already off). Owner request ("a model which can search for porn… ~3b"),
+clarified to "Uncensored + web search". Lawful personal use on the owner's own app
+(consistent with the app's existing Unrestricted Mode).
+
+**Model:** `huihui_ai/llama3.2-abliterate:3b` (~2.2 GB, 128K ctx, tool-calling capable —
+needed for web search). Pull to enable: `ollama pull huihui_ai/llama3.2-abliterate:3b`.
+The model is abliterated, so it self-declines nothing — no special system prompt; it
+reuses the default Ollama tool/chat system via a `modelOverride` path.
+
+**How it's wired (single-seam routing, compiler-forced exhaustiveness):**
+- `OllamaClient`: `uncensoredModel` constant; `chat`/`chatStream` gained a `model:` override.
+- `LocalLLM`: `Brain.uncensored` case; `chatOllamaWithTools`/`ollamaReply` gained
+  `modelOverride:`; new `Dispatch.uncensoredLocal` arm in all three exec switches
+  (`generate`/`generateStreaming`/`chat`) pins the abliterated model. Web-search gating
+  is unchanged — it's `ToolPolicy.isExternalAllowed` (web-access on + not Offline),
+  brain-agnostic, so no new gating code.
+- `BrainRouting`: `Dispatch.uncensoredLocal`; `dispatch(.uncensored)→.uncensoredLocal`
+  (passes Offline through like the other local tiers); `reachableBrain` + `BrainRouteConfig.uncensoredReady`
+  + `live()` probe via `OllamaClient.hasModel`.
+- UI/readiness: `AppSettings` case + title/subtitle/icon + `selectableCases` (now 4th pick);
+  `SettingsBrainReadiness.hasUncensored` + `ready` arm; `SettingsView` `@State` + `.task`
+  probe + builder; `BrainStatus` dot-color + symbol. `isPaid` unchanged (local = free).
+
+**Files:** `LLM/OllamaClient.swift`, `LLM/LocalLLM.swift`, `LLM/BrainRouting.swift`,
+`LLM/BrainStatus.swift`, `App/AppSettings.swift`, `Views/SettingsBrainReadiness.swift`,
+`Views/SettingsView.swift`, `Salehman AITests/ToolLoopTests.swift` (selectableCases pin →
+4 cases). SOURCE_BUNDLE regenerated.
+
+**Result:** Full-app typecheck **clean** — `swiftc -typecheck` over all 97 app files via the
+`-tools-directory` sandbox recipe, exit 0 / **0 diagnostics**. Test target couldn't be
+compiled in-sandbox (no `Testing` module via single-file swiftc), but the one test edit is
+a constant equality update mirroring the code, and no `BrainPreference.allCases`-iterating
+test breaks by inspection (`offMessage` sentinel is pref-invariant; the rawValue/contains
+tests use membership semantics). Owner must `ollama pull huihui_ai/llama3.2-abliterate:3b`
+to use it; not yet eyeball-tested against a live NSFW query (model not pulled here).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -48855,7 +49007,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (295 lines) =====
+===== FILE: PROJECT_CONTEXT.md (297 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -49006,12 +49158,14 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ## 3. The brain system (the heart of the app)
 
 Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 20 cases:
   `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
   `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
   `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
-  `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
-  (`.apple` was removed with Apple Intelligence, 2026-06-08.)
+  `.unslothStudio`, `.vllm`, **`.uncensored`** (local abliterated ~3B via Ollama —
+  unfiltered, web-search capable, free/key-less; 4th in `selectableCases`, added
+  2026-06-18). Persisted under `Keys.brainPreference`.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08; `.deepSeek` removed 2026-06-12.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
   live availability), used for the header label/dot.
 

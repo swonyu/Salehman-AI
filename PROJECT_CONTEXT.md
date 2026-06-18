@@ -148,12 +148,14 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ## 3. The brain system (the heart of the app)
 
 Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 20 cases:
   `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
   `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
   `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
-  `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
-  (`.apple` was removed with Apple Intelligence, 2026-06-08.)
+  `.unslothStudio`, `.vllm`, **`.uncensored`** (local abliterated ~3B via Ollama —
+  unfiltered, web-search capable, free/key-less; 4th in `selectableCases`, added
+  2026-06-18). Persisted under `Keys.brainPreference`.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08; `.deepSeek` removed 2026-06-12.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
   live availability), used for the header label/dot.
 

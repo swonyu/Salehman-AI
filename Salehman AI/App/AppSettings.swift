@@ -482,6 +482,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
+    case uncensored    // local Ollama, abliterated (refusal-removed) ~3B; web-search capable, on-device, free
     // freeAuto: race the FREE brains in parallel, first valid answer wins,
     // local (Ollama) backstop → effectively never rate-limited, never paid.
 
@@ -507,7 +508,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
     // Salehman + Auto, plus the custom-server brain so you can point the app at your
     // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
     // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
-    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio] }
+    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio, .uncensored] }
 
     var title: String {
         switch self {
@@ -529,6 +530,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
+        case .uncensored:    return "Uncensored (Local · web)"
         }
     }
     var subtitle: String {
@@ -551,6 +553,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
+        case .uncensored:    return "Unfiltered local model via Ollama — small (~3B), on-device, free, no key. Can use web search to find anything online (lawful personal use). Pull it: `ollama pull \(OllamaClient.uncensoredModel)`"
         }
     }
     var icon: String {
@@ -573,6 +576,7 @@ nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
         case .salehman:    return "brain.head.profile"
         case .unslothStudio: return "server.rack"
         case .vllm:          return "speedometer"
+        case .uncensored:    return "eye.trianglebadge.exclamationmark.fill"
         }
     }
 }

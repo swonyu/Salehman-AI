@@ -81,6 +81,8 @@ enum LocalLLM {
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
             return "vLLM is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → vLLM (e.g. http://localhost:8000/v1) and make sure `vllm serve` is running."
+        case .uncensored:
+            return "The Uncensored brain needs its model pulled. Run `ollama pull \(OllamaClient.uncensoredModel)` (and `ollama serve`), or switch to another brain."
         }
     }
 
@@ -129,6 +131,7 @@ enum LocalLLM {
         case salehman                                // Salehman — cloud-first, local floor
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
         case vllm                                    // local OpenAI-compat server served by vLLM
+        case uncensored                              // local Ollama, abliterated ~3B; web-search capable
         case claudeHaiku, grok                       // cloud, pre-existing
         case gemini, groq, mistral, cerebras         // cloud, free-tier
         case codex, copilot                          // cloud, OpenAI + GitHub Copilot
@@ -543,6 +546,7 @@ enum LocalLLM {
             return VLLM.isLocalLoopback
                 ? "Local · vLLM (\(AppSettings.vllmModelCurrent))"
                 : "Custom server · vLLM (\(AppSettings.vllmModelCurrent))"
+        case .uncensored:        return "Local · Uncensored · \(OllamaClient.uncensoredModel)"
         case .claudeHaiku:       return "Cloud · Claude Haiku"
         case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
         case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
@@ -576,6 +580,8 @@ enum LocalLLM {
                     ? "vLLM · server unreachable"
                     : "vLLM · set endpoint URL in Settings"
             case .auto:    return "No brain available"
+            case .uncensored:
+                return "Uncensored: pull the model — `ollama pull \(OllamaClient.uncensoredModel)`"
             default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
             }
         }
@@ -1105,8 +1111,14 @@ enum LocalLLM {
     /// model decides whether to call the tool; if it just answers, we return that
     /// text. Loops propose→approve→run→feed-back up to `maxRounds` so it can chain
     /// steps. `nil` → transport error (caller falls back to plain chat).
-    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil) async -> String? {
-        guard let model = await OllamaClient.activeChatModel() else { return nil }
+    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil,
+                                    modelOverride: String? = nil) async -> String? {
+        // `modelOverride` pins a specific tag (the Uncensored brain forces its
+        // abliterated ~3B) instead of the pref-based active chat model.
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await OllamaClient.activeChatModel() { model = active }
+        else { return nil }
         // The persona is injected by the caller (e.g. `.salehman` passes
         // `SalehmanPersona.systemPrompt`); default keeps the existing
         // tool-aware system prompt for the legacy Ollama path.
@@ -1354,9 +1366,12 @@ enum LocalLLM {
     /// overrides the default for both legs, so the `.salehman` brain can run the
     /// custom Ollama model with the Salehman persona instead of the generic
     /// tool-aware prompt.
-    static func ollamaReply(_ message: String, systemPrompt: String? = nil) async -> String? {
-        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt) { return withTools }
-        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem)
+    static func ollamaReply(_ message: String, systemPrompt: String? = nil,
+                            modelOverride: String? = nil) async -> String? {
+        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt,
+                                                     modelOverride: modelOverride) { return withTools }
+        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem,
+                                       model: modelOverride)
     }
 
     // The per-brain pin gates ("each cloud brain is only tried when the user
@@ -1417,6 +1432,11 @@ enum LocalLLM {
         case .localTier:
             // Local tier (Ollama): free & on-device.
             if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
+            return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — forces the abliterated ~3B model.
+            if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                                   model: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
@@ -1548,6 +1568,13 @@ enum LocalLLM {
                 return reply
             }
             return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — streams the abliterated ~3B model.
+            if let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem,
+                                                         model: OllamaClient.uncensoredModel, onUpdate: onUpdate) {
+                return reply
+            }
+            return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
             return offMessage
@@ -1640,6 +1667,11 @@ enum LocalLLM {
         case .localTier:
             // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
             if let reply = await ollamaReply(message) { return reply }
+            return offMessage
+        case .uncensoredLocal:
+            // Uncensored local tier — same tool loop (web_search/fetch_url when
+            // web access is on & not Offline), pinned to the abliterated ~3B model.
+            if let reply = await ollamaReply(message, modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         case .unavailable:
             // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
