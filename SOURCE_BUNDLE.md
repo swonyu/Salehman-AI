@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-18 09:54 +03 · Swift files: 144 · Swift LOC: 33695_
+_Generated: 2026-06-18 10:14 +03 · Swift files: 144 · Swift LOC: 33767_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1871,7 +1871,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/App/Salehman_AIApp.swift (121 lines) =====
+===== FILE: Salehman AI/App/Salehman_AIApp.swift (127 lines) =====
 ```swift
 //
 //  Salehman_AIApp.swift
@@ -1893,7 +1893,13 @@ struct Salehman_AIApp: App {
                 // One-time: seed the "external AI tools" docs into the Knowledge vault
                 // so the assistant can answer about them via search_documents. Runs
                 // off-main and only on the first launch after this version.
-                .task { await OllamaClient.ensureServing() }
+                .task {
+                    await OllamaClient.ensureServing()
+                    // If the Uncensored brain is selected, warm its abliterated
+                    // ~3B into RAM now so the first reply is instant (owner: "run
+                    // it automatically when I open the app").
+                    OllamaClient.warmUncensoredIfSelected()
+                }
                 .task { ExternalToolsKnowledge.seedIfNeeded() }
                 // QA: if qa/SNAPSHOT_REQUEST exists, render every surface to
                 // qa/snapshots/*.png so the screen-blind polish session can SEE
@@ -5338,7 +5344,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (426 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (464 lines) =====
 ```swift
 import Foundation
 
@@ -5694,6 +5700,44 @@ enum OllamaClient {
         }
     }
     @MainActor private static var didWarmup = false
+
+    /// Launch warm-up for the Uncensored brain's pinned abliterated ~3B. Owner
+    /// asked for it to "run automatically when I open the app" — so if `.uncensored`
+    /// is the selected brain, pre-load its model into RAM the moment the app opens
+    /// (the first reply is then instant). It's NEVER the `activeChatModel`
+    /// (`warmupChatModel` covers that), so it needs its own hook. Gated to the
+    /// `.uncensored` pref so we never resident ~3-4 GB for users on another brain.
+    /// The server may still be booting from `ensureServing`, so we poll readiness
+    /// briefly (busting the 30s cache) before loading. `keep_alive: 5m` keeps it
+    /// resident long enough that "open app → go use it" stays warm. Once per launch;
+    /// skips silently if the model isn't pulled or Ollama never comes up.
+    @MainActor static func warmUncensoredIfSelected() {
+        guard AppSettings.brainPreferenceCurrent == .uncensored else { return }
+        guard !didWarmUncensored else { return }
+        didWarmUncensored = true
+        Task.detached(priority: .utility) {
+            var up = await isUp()
+            var tries = 0
+            while !up && tries < 10 {                       // ~5s budget for a cold `ollama serve`
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await Reachability.shared.invalidate()      // re-probe instead of the cached miss
+                up = await isUp()
+                tries += 1
+            }
+            guard up, await hasModel(uncensoredModel) else { return }
+            guard let url = URL(string: "\(base)/api/generate") else { return }
+            let body: [String: Any] = ["model": uncensoredModel, "stream": false,
+                                       "keep_alive": "5m"]   // no prompt → just loads the weights
+            guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payload
+            req.timeoutInterval = 120
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+    @MainActor private static var didWarmUncensored = false
 
     // MARK: - Last-generation stats (speed visibility for the local model)
 
@@ -9000,7 +9044,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/MediaSearch.swift (320 lines) =====
+===== FILE: Salehman AI/Tools/MediaSearch.swift (332 lines) =====
 ```swift
 import Foundation
 
@@ -9188,10 +9232,18 @@ enum MediaSearch {
         // Bare adult terms are inherently "show me" requests — no trigger needed.
         let adultWords = ["porn", "porno", "nude", "naked", "nsfw", "xxx", "sex", "hentai",
                           "boobs", "tits", "pussy", "onlyfans", "hardcore", "blowjob"]
+        // Arabic — the owner searches in Arabic for authentic results, so the
+        // detector must speak it too (substring match; Arabic isn't space-delimited
+        // the way the padded English list assumes). Adult: سكس/نيك/اباحي/عاري/…;
+        // media-type: صور (pictures) / فيديو·مقطع (video).
+        let arabicVideo = ["فيديو", "فيديوهات", "مقطع", "مقاطع"]
+        let arabicImage = ["صور", "صوره", "صورة"]
+        let arabicAdult = ["سكس", "نيك", "اباحي", "إباحي", "عاري", "عاريه", "عارية",
+                           "شرموط", "عاهر", "طيز", "مزز", "متناك"]
         let padded = " \(lower) "
-        let hasVideo = videoWords.contains { padded.contains($0) }
-        let hasImage = imageWords.contains { padded.contains($0) }
-        let hasAdult = adultWords.contains { lower.contains($0) }
+        let hasVideo = videoWords.contains { padded.contains($0) } || arabicVideo.contains { lower.contains($0) }
+        let hasImage = imageWords.contains { padded.contains($0) } || arabicImage.contains { lower.contains($0) }
+        let hasAdult = adultWords.contains { lower.contains($0) } || arabicAdult.contains { lower.contains($0) }
 
         // Media request only when a media TYPE is named or adult content is asked
         // for — a bare "find the bug" must NOT be hijacked.
@@ -9222,6 +9274,10 @@ enum MediaSearch {
             "pictures", "picture", "pics", "pic", "images", "image", "photos", "photo",
             "videos", "video", "vids", "vid", "clips", "clip", "movie", "footage",
             "some", "of",
+            // Arabic command verbs + media-type words ("show me / I want", "pictures",
+            // "video / clip"). The search SUBJECT (incl. adult terms + nationality) stays.
+            "ورني", "وريني", "اعرض", "ابي", "ابغى", "اريد", "أريد", "بدي", "من فضلك",
+            "صور", "صوره", "صورة", "فيديو", "فيديوهات", "مقطع", "مقاطع",
         ]
         for phrase in strip {
             s = s.replacingOccurrences(of: " \(phrase) ", with: " ")
@@ -30468,7 +30524,7 @@ struct MediaDetectTests {
 }
 ```
 
-===== FILE: Salehman AITests/MediaSearchTests.swift (130 lines) =====
+===== FILE: Salehman AITests/MediaSearchTests.swift (146 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30598,6 +30654,22 @@ struct MediaIntentTests {
     @Test func cleanedQueryKeepsAdultAndNationality() {
         // The whole point: command words go, the searchable subject stays.
         #expect(MediaSearch.cleanedQuery("show me egyptian porn") == "egyptian porn")
+    }
+
+    @Test func arabicAdultQueryIsDetected() {
+        // The owner searches in Arabic for authentic results — the detector must
+        // fire on Arabic adult terms (سكس = sex), not just English.
+        let intent = MediaSearch.detectIntent("سكس سعوديه بالسياره")
+        #expect(intent != nil)
+        #expect(intent?.kind == .both)            // no صور/فيديو word → images + videos
+        #expect(intent?.query.contains("سعوديه") == true)   // subject preserved
+    }
+
+    @Test func arabicMediaTypeWordSetsKind() {
+        // صور = pictures → images-only; the type word is stripped from the query.
+        let intent = MediaSearch.detectIntent("صور سعودية")
+        #expect(intent?.kind == .images)
+        #expect(intent?.query == "سعودية")
     }
 }
 ```
@@ -36326,7 +36398,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6751 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6795 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -41968,11 +42040,55 @@ blip (model loads after first probe), self-resolving — not a code bug.
 
 ---
 
+## 2026-06-18 · Warm the abliterated 3B into RAM on app launch (Uncensored brain)
+**What:** Owner asked the Uncensored model (`huihui_ai/llama3.2-abliterate:3b`,
+`OllamaClient.uncensoredModel`) to "run automatically when I open the app." Added a
+launch warm-up so the first reply is instant instead of paying the cold weight-load.
+
+**How:** `OllamaClient.warmUncensoredIfSelected()` — gated to
+`brainPreferenceCurrent == .uncensored` (so it never makes ~3-4 GB resident for users
+on another brain), once-per-launch flag, polls `isUp` for ~5s (busting the 30s cache)
+to cover a cold `ollama serve`, then an empty-prompt `/api/generate` with
+`keep_alive: 5m` to load the weights. It's never the `activeChatModel`, so it needs
+its own hook beside `warmupChatModel()`. Wired into `Salehman_AIApp` after
+`ensureServing()`. Auto-committed as `cd091c5`.
+
+**Files:** `LLM/OllamaClient.swift` (+warm fn), `App/Salehman_AIApp.swift` (launch
+`.task`). SOURCE_BUNDLE regen DEFERRED — disk full (see below); regenerate after cleanup.
+
+**Result:** `xcodebuild … build` → **BUILD SUCCEEDED**. Feature-area suites
+(MediaSearchQuery, OllamaPreferredModels, AgentPipelineConcurrency, LineDiff, …)
+**TEST SUCCEEDED** in isolation. The *full* `Salehman AITests` run could NOT be
+verified green: the volume is at **~2.8 GiB free** and a full clean test run hits
+`error: … No space left on device` mid-compile (run 2) and crashes the test host
+mid-run → `0.000s` cascade (run 1). Environmental, not this change. Disk cleanup
+needed to re-verify the full suite (owner decision pending).
+
+---
+
+## 2026-06-18 · Arabic media-intent detection (owner searches in Arabic)
+**What:** Live: owner typed `سكس سعوديه بالسياره` → the 3B leaked a `web_search`
+call as text, no gallery. Cause: `MediaSearch.detectIntent` keyword lists were
+English-only, so Arabic queries fell through to the flaky model (right after I'd
+advised searching in Arabic for authenticity). Fix: added `arabicAdult`
+(سكس/نيك/اباحي/عاري/…), `arabicImage` (صور…), `arabicVideo` (فيديو/مقطع…),
+substring-matched (Arabic isn't space-delimited like the padded English list), plus
+Arabic command/media words in `cleanedQuery` so the subject survives. +2 tests.
+**Files:** `Tools/MediaSearch.swift`, `Salehman AITests/MediaSearchTests.swift`.
+**Result:** typecheck exit 0; live `سكس سعوديه بالسياره` → **100 images / 58 videos**
+through the same path. Arabic requests now hit the deterministic search. On `main`
+(owner moved work off the feature branch).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
-  ~19 GB if the heavy model isn't needed.
+  ~19 GB if the heavy model isn't needed. **(2026-06-18: ~2.8 GiB free — full
+  `xcodebuild test` runs out of space mid-run; isolated suites still pass. Levers:
+  `ollama rm qwen2.5-coder:32b` ≈19 GB, `rm -rf ~/Library/Developer/Xcode/DerivedData/*`
+  ≈1.8 GB, empty Trash.)**
 - **Gemini free tier:** user's Google account returns `limit: 0` (429) — account
   state, not an app bug.
 - **Anthropic key:** still in UserDefaults (Chat A's lane); Keychain migration

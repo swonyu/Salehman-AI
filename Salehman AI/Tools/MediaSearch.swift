@@ -184,10 +184,18 @@ enum MediaSearch {
         // Bare adult terms are inherently "show me" requests — no trigger needed.
         let adultWords = ["porn", "porno", "nude", "naked", "nsfw", "xxx", "sex", "hentai",
                           "boobs", "tits", "pussy", "onlyfans", "hardcore", "blowjob"]
+        // Arabic — the owner searches in Arabic for authentic results, so the
+        // detector must speak it too (substring match; Arabic isn't space-delimited
+        // the way the padded English list assumes). Adult: سكس/نيك/اباحي/عاري/…;
+        // media-type: صور (pictures) / فيديو·مقطع (video).
+        let arabicVideo = ["فيديو", "فيديوهات", "مقطع", "مقاطع"]
+        let arabicImage = ["صور", "صوره", "صورة"]
+        let arabicAdult = ["سكس", "نيك", "اباحي", "إباحي", "عاري", "عاريه", "عارية",
+                           "شرموط", "عاهر", "طيز", "مزز", "متناك"]
         let padded = " \(lower) "
-        let hasVideo = videoWords.contains { padded.contains($0) }
-        let hasImage = imageWords.contains { padded.contains($0) }
-        let hasAdult = adultWords.contains { lower.contains($0) }
+        let hasVideo = videoWords.contains { padded.contains($0) } || arabicVideo.contains { lower.contains($0) }
+        let hasImage = imageWords.contains { padded.contains($0) } || arabicImage.contains { lower.contains($0) }
+        let hasAdult = adultWords.contains { lower.contains($0) } || arabicAdult.contains { lower.contains($0) }
 
         // Media request only when a media TYPE is named or adult content is asked
         // for — a bare "find the bug" must NOT be hijacked.
@@ -218,6 +226,10 @@ enum MediaSearch {
             "pictures", "picture", "pics", "pic", "images", "image", "photos", "photo",
             "videos", "video", "vids", "vid", "clips", "clip", "movie", "footage",
             "some", "of",
+            // Arabic command verbs + media-type words ("show me / I want", "pictures",
+            // "video / clip"). The search SUBJECT (incl. adult terms + nationality) stays.
+            "ورني", "وريني", "اعرض", "ابي", "ابغى", "اريد", "أريد", "بدي", "من فضلك",
+            "صور", "صوره", "صورة", "فيديو", "فيديوهات", "مقطع", "مقاطع",
         ]
         for phrase in strip {
             s = s.replacingOccurrences(of: " \(phrase) ", with: " ")

@@ -127,4 +127,20 @@ struct MediaIntentTests {
         // The whole point: command words go, the searchable subject stays.
         #expect(MediaSearch.cleanedQuery("show me egyptian porn") == "egyptian porn")
     }
+
+    @Test func arabicAdultQueryIsDetected() {
+        // The owner searches in Arabic for authentic results — the detector must
+        // fire on Arabic adult terms (سكس = sex), not just English.
+        let intent = MediaSearch.detectIntent("سكس سعوديه بالسياره")
+        #expect(intent != nil)
+        #expect(intent?.kind == .both)            // no صور/فيديو word → images + videos
+        #expect(intent?.query.contains("سعوديه") == true)   // subject preserved
+    }
+
+    @Test func arabicMediaTypeWordSetsKind() {
+        // صور = pictures → images-only; the type word is stripped from the query.
+        let intent = MediaSearch.detectIntent("صور سعودية")
+        #expect(intent?.kind == .images)
+        #expect(intent?.query == "سعودية")
+    }
 }

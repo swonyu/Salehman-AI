@@ -5639,11 +5639,55 @@ blip (model loads after first probe), self-resolving — not a code bug.
 
 ---
 
+## 2026-06-18 · Warm the abliterated 3B into RAM on app launch (Uncensored brain)
+**What:** Owner asked the Uncensored model (`huihui_ai/llama3.2-abliterate:3b`,
+`OllamaClient.uncensoredModel`) to "run automatically when I open the app." Added a
+launch warm-up so the first reply is instant instead of paying the cold weight-load.
+
+**How:** `OllamaClient.warmUncensoredIfSelected()` — gated to
+`brainPreferenceCurrent == .uncensored` (so it never makes ~3-4 GB resident for users
+on another brain), once-per-launch flag, polls `isUp` for ~5s (busting the 30s cache)
+to cover a cold `ollama serve`, then an empty-prompt `/api/generate` with
+`keep_alive: 5m` to load the weights. It's never the `activeChatModel`, so it needs
+its own hook beside `warmupChatModel()`. Wired into `Salehman_AIApp` after
+`ensureServing()`. Auto-committed as `cd091c5`.
+
+**Files:** `LLM/OllamaClient.swift` (+warm fn), `App/Salehman_AIApp.swift` (launch
+`.task`). SOURCE_BUNDLE regen DEFERRED — disk full (see below); regenerate after cleanup.
+
+**Result:** `xcodebuild … build` → **BUILD SUCCEEDED**. Feature-area suites
+(MediaSearchQuery, OllamaPreferredModels, AgentPipelineConcurrency, LineDiff, …)
+**TEST SUCCEEDED** in isolation. The *full* `Salehman AITests` run could NOT be
+verified green: the volume is at **~2.8 GiB free** and a full clean test run hits
+`error: … No space left on device` mid-compile (run 2) and crashes the test host
+mid-run → `0.000s` cascade (run 1). Environmental, not this change. Disk cleanup
+needed to re-verify the full suite (owner decision pending).
+
+---
+
+## 2026-06-18 · Arabic media-intent detection (owner searches in Arabic)
+**What:** Live: owner typed `سكس سعوديه بالسياره` → the 3B leaked a `web_search`
+call as text, no gallery. Cause: `MediaSearch.detectIntent` keyword lists were
+English-only, so Arabic queries fell through to the flaky model (right after I'd
+advised searching in Arabic for authenticity). Fix: added `arabicAdult`
+(سكس/نيك/اباحي/عاري/…), `arabicImage` (صور…), `arabicVideo` (فيديو/مقطع…),
+substring-matched (Arabic isn't space-delimited like the padded English list), plus
+Arabic command/media words in `cleanedQuery` so the subject survives. +2 tests.
+**Files:** `Tools/MediaSearch.swift`, `Salehman AITests/MediaSearchTests.swift`.
+**Result:** typecheck exit 0; live `سكس سعوديه بالسياره` → **100 images / 58 videos**
+through the same path. Arabic requests now hit the deterministic search. On `main`
+(owner moved work off the feature branch).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
 - **Disk:** the volume is at/near 100%. `ollama rm qwen2.5-coder:32b` reclaims
-  ~19 GB if the heavy model isn't needed.
+  ~19 GB if the heavy model isn't needed. **(2026-06-18: ~2.8 GiB free — full
+  `xcodebuild test` runs out of space mid-run; isolated suites still pass. Levers:
+  `ollama rm qwen2.5-coder:32b` ≈19 GB, `rm -rf ~/Library/Developer/Xcode/DerivedData/*`
+  ≈1.8 GB, empty Trash.)**
 - **Gemini free tier:** user's Google account returns `limit: 0` (429) — account
   state, not an app bug.
 - **Anthropic key:** still in UserDefaults (Chat A's lane); Keychain migration
