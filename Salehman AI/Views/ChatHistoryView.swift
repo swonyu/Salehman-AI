@@ -12,6 +12,7 @@ struct ChatHistoryView: View {
     let onRestore: (ChatStore.ArchivedChat) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var archives: [ChatStore.ArchivedChat] =
         ProcessInfo.processInfo.arguments.contains("--qa") ? ChatStore.archives() : []
     @State private var hoveredRow: URL? = nil
@@ -41,17 +42,50 @@ struct ChatHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Conversations")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+            HStack(spacing: DS.Space.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                        .fill(DS.Gradient.brand)
+                        .frame(width: 30, height: 30)
+                        .dsShadow(DS.Elevation.accentGlow(0.32))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
+                    if reduceMotion {
+                        // Reduce Motion: static icon (no scale bounce-in).
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                    } else {
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: revealed) { scale in
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.60, duration: 0.07)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                            }
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Conversations")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Chat History")
+                }
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.plain)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.accent)
             }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            .padding(.horizontal, 18).padding(.vertical, 12)
             .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                      alignment: .bottom)
@@ -60,11 +94,34 @@ struct ChatHistoryView: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             } else if archives.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    ZStack {
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no pulsing).
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(0.14))
+                                .frame(width: 60, height: 60)
+                                .blur(radius: 14)
+                                .allowsHitTesting(false)
+                        } else {
+                            PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                                Circle()
+                                    .fill(DS.Palette.accent.opacity(opacity))
+                                    .frame(width: 60, height: 60)
+                                    .blur(radius: 14)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.14
+                                    ? .spring(duration: 2.2, bounce: 0.06)
+                                    : .easeOut(duration: 1.8)
+                            }
+                        }
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent.opacity(0.80))
+                    }
                     Text("No archived conversations yet")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))
@@ -74,46 +131,69 @@ struct ChatHistoryView: View {
                         .frame(maxWidth: 300)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     TextField("Filter by title…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .onKeyPress(.escape) { query = ""; return .handled }
                         .accessibilityIdentifier("history.filter")
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }.buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
+                        .transition(.opacity)
+                    }
                 }
-                .padding(.horizontal, 18).padding(.vertical, 8)
+                .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
+                .background(Color.white.opacity(0.07), in: Capsule())
+                .animation(DS.Motion.magnetic, value: query.isEmpty)
+                .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(DS.Palette.codeSurfaceSide.opacity(0.6))
                 .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1),
                          alignment: .bottom)
 
                 let shown = Self.filtered(archives, query: query)
-                if shown.isEmpty {
-                    Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
-                                row(item)
-                                    // Staggered mask reveal — each row fades up
-                                    // 40ms after the one above (lux curve).
-                                    .opacity(revealed ? 1 : 0)
-                                    .offset(y: revealed ? 0 : 12)
-                                    .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
-                                               value: revealed)
-                                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                Group {
+                    if shown.isEmpty {
+                        Text("No conversations match “\(query.trimmingCharacters(in: .whitespaces))”")
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(Array(shown.enumerated()), id: \.element.id) { idx, item in
+                                    Group {
+                                        row(item)
+                                            // Staggered mask reveal — each row fades up
+                                            // 40ms after the one above (lux curve).
+                                            .opacity(revealed ? 1 : 0)
+                                            .offset(y: revealed ? 0 : 12)
+                                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.04),
+                                                       value: revealed)
+                                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                                }
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                         }
+                        .transition(.opacity)
                     }
                 }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
             }
         }
         .frame(width: 520, height: 560)
         .background(DS.Palette.codeSurface)
+        .animation(DS.Motion.smooth, value: loaded)
+        .animation(DS.Motion.smooth, value: archives.isEmpty)
         .preferredColorScheme(.dark)
         .task {
             archives = await Task.detached(priority: .userInitiated) {
@@ -130,7 +210,20 @@ struct ChatHistoryView: View {
     }
 
     private func row(_ item: ChatStore.ArchivedChat) -> some View {
-        HStack(spacing: 12) {
+        let hov = hoveredRow == item.id
+        return HStack(spacing: 12) {
+            // Icon well — accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hov ? 0.20 : 0.10))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 12.5, weight: .medium))
@@ -145,6 +238,9 @@ struct ChatHistoryView: View {
                         .lineLimit(1)
                 }
             }
+            // Read the title + meta + preview as ONE VoiceOver element (not three
+            // swipes); the Restore/Export/Delete buttons stay separate siblings.
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 12)
             Button("Restore") { onRestore(item) }
                 .buttonStyle(PressableStyle())
@@ -158,9 +254,9 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.accent.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Export this conversation as Markdown")
             .accessibilityLabel("Export \(item.title)")
             Button {
@@ -169,15 +265,19 @@ struct ChatHistoryView: View {
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hov ? DS.Palette.danger.opacity(0.7) : .secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Delete this archived conversation")
             .accessibilityLabel("Delete \(item.title)")
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(hoveredRow == item.id ? Color.white.opacity(0.04) : .clear)
         .contentShape(Rectangle())
-        .onHover { hoveredRow = $0 ? item.id : (hoveredRow == item.id ? nil : hoveredRow) }
+        .onHover { over in
+            withAnimation(DS.Motion.magnetic) {
+                hoveredRow = over ? item.id : (hoveredRow == item.id ? nil : hoveredRow)
+            }
+        }
     }
 }

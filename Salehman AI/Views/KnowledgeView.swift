@@ -31,16 +31,36 @@ struct KnowledgeView: View {
     @State private var detailDoc: KnowledgeDoc?
     @State private var docSort: KnowledgeSort = .recent
     @State private var docFilter = ""
+    /// Focus glow on the doc-filter field — consistent with the app's text inputs.
+    @FocusState private var filterFocused: Bool
+    /// Focus glow on the primary ask field (the view's main input).
+    @FocusState private var askFocused: Bool
     @State private var hoveredDocID: UUID?
     /// Pulses briefly after "Save to Notes" to confirm the action.
     @State private var answerSaved = false
+    /// Copy-feedback flash for the answer copy button.
+    @State private var copiedAnswer = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance, value: appeared)
                 askCard
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance.delay(0.07), value: appeared)
                 documentsSection
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.entrance.delay(0.14), value: appeared)
+                    .animation(DS.Motion.smooth, value: docs.isEmpty)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -49,7 +69,7 @@ struct KnowledgeView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
-        .onAppear(perform: reload)
+        .onAppear { appeared = true; reload() }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay {
             if dropTargeted {
@@ -59,78 +79,123 @@ struct KnowledgeView: View {
                     .overlay(Label("Drop to add to Knowledge", systemImage: "tray.and.arrow.down.fill")
                         .font(.headline).foregroundStyle(.white))
                     .padding(8).allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: dropTargeted)
         .sheet(isPresented: $showPaste) { pasteSheet }
         .sheet(item: $detailDoc) { doc in DocDetailSheet(doc: doc) { detailDoc = nil } }
     }
 
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Ambient glow — soft depth behind the title area.
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.13))
-                .frame(width: 200)
-                .blur(radius: 70)
-                .offset(x: -30, y: -40)
-                .allowsHitTesting(false)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("KNOWLEDGE VAULT")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(DS.Palette.accent)
-                    Text("Knowledge")
-                        .font(.system(size: 17, weight: .semibold))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches TodayView / AgentsView header treatment.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(
+                                LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.75
+                            )
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                    Text("Chat with your own documents — private, on this Mac.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Button { showPaste = true } label: { Image(systemName: "doc.on.clipboard") }
-                    .buttonStyle(.bordered).controlSize(.small).help("Paste text")
-                    .accessibilityLabel("Paste text").disabled(ingesting)
-                Button(action: addFile) {
-                    HStack(spacing: 6) {
-                        if ingesting { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "plus") }
-                        Text(ingesting ? "Reading…" : "Add file")
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(DS.Palette.accent, in: Capsule())
-                    .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
-                .buttonStyle(LuxPressStyle())
-                .disabled(ingesting)
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Knowledge")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Private Vault")
+                }
+                Text("Chat with your own documents — on this Mac only.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            CircleIconButton(systemName: "doc.on.clipboard",
+                             size: 30, iconSize: 13,
+                             disabled: ingesting,
+                             help: "Paste text",
+                             accessibilityLabel: "Paste text") { showPaste = true }
+            Button(action: addFile) {
+                HStack(spacing: 6) {
+                    Group {
+                        if ingesting { ProgressView().controlSize(.small).tint(.white).transition(.opacity) }
+                        else { Image(systemName: "plus").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: ingesting)
+                    Text(ingesting ? "Reading…" : "Add file")
+                        .contentTransition(.opacity)
+                        .animation(DS.Motion.smooth, value: ingesting)
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(DS.Gradient.brand, in: Capsule())
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(ingesting)
         }
     }
 
     private var askCard: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(askFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
                 TextField("Ask your documents…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 15))
+                    .focused($askFocused)
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                     .accessibilityLabel("Ask your documents")
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent).transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: asking)
                 }
                 .buttonStyle(.plain).help("Ask your documents").accessibilityLabel("Ask")
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty || docs.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(askFocused ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous)
+                .stroke(askFocused
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(askFocused ? 0.15 : 0.0), radius: 10, y: 2)
+            .animation(DS.Motion.lux, value: askFocused)
 
             if !answer.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
                 Text(answer).font(.callout).foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .rtlAware(answer)
                 if !sources.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("SOURCES").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
@@ -151,8 +216,13 @@ struct KnowledgeView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(answer, forType: .string)
+                        copiedAnswer = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copiedAnswer = false }
                     } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
+                        Label(copiedAnswer ? "Copied!" : "Copy",
+                              systemImage: copiedAnswer ? "checkmark" : "doc.on.doc")
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: copiedAnswer)
                     }
                     .help("Copy answer to clipboard")
                     .accessibilityLabel("Copy answer")
@@ -172,6 +242,8 @@ struct KnowledgeView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
+                }
+                .transition(.opacity.combined(with: .offset(y: 6)))
             } else if docs.isEmpty {
                 Text("Add a file above, then ask a question — Salehman answers only from what's in your documents.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -179,16 +251,51 @@ struct KnowledgeView: View {
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Flat opaque panel + hairline (design language).
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // Bezel treatment — outer shell + inner core with subtle brand tint.
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .fill(!answer.isEmpty
+                          ? DS.Palette.accent.opacity(0.05)
+                          : DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .padding(DS.Bezel.shellPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(DS.Bezel.shellStroke, lineWidth: 1)
+        )
+        .animation(DS.Motion.smooth, value: answer.isEmpty)
     }
 
     @ViewBuilder private var documentsSection: some View {
         if docs.isEmpty {
             VStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(DS.Palette.accent.opacity(0.18)).frame(width: 100).blur(radius: 24)
+                    if reduceMotion {
+                        // Reduce Motion: static halo (same geometry, no pulsing).
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(0.23))
+                            .frame(width: 100)
+                            .blur(radius: 24)
+                    } else {
+                        PhaseAnimator([0.18, 0.28, 0.18]) { opacity in
+                            Circle()
+                                .fill(DS.Palette.accent.opacity(opacity))
+                                .frame(width: 100)
+                                .blur(radius: 24)
+                        } animation: { opacity in
+                            opacity > 0.23
+                                ? .spring(duration: 2.2, bounce: 0.06)
+                                : .easeOut(duration: 1.8)
+                        }
+                    }
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 40, weight: .light))
                         .foregroundStyle(DS.Palette.accent.opacity(0.9))
@@ -205,11 +312,14 @@ struct KnowledgeView: View {
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
+            .transition(.opacity)
         } else {
             let shown = docSort.apply(docs, filter: docFilter)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("\(docs.count) document\(docs.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: docs.count)
                     Spacer()
                     if docs.count > 1 {
                         Menu {
@@ -223,21 +333,51 @@ struct KnowledgeView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Sort documents")
+                        .transition(.opacity)
                     }
                 }
-                if docs.count > 10 { docFilterRow }
+                .animation(DS.Motion.smooth, value: docs.count > 1)
+                if docs.count > 10 {
+                    docFilterRow
+                        .transition(.opacity)
+                }
                 if shown.isEmpty {
-                    Text("No documents match “\(docFilter)”.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 20)
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 18, weight: .light))
+                                .foregroundStyle(.secondary.opacity(0.7))
+                        }
+                        Text("No documents match “\(docFilter)”.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 28)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 } else {
                     VStack(spacing: 1) {
-                        ForEach(shown) { doc in docRow(doc) }
+                        ForEach(shown) { doc in
+                            docRow(doc)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
                     }
-                    .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .animation(DS.Motion.smooth, value: docs.count)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .fill(DS.Bezel.cardFill)
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                        }
+                    )
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: docs.count > 10)
+            .animation(DS.Motion.smooth, value: shown.isEmpty)
+            .transition(.opacity)
         }
     }
 
@@ -246,6 +386,7 @@ struct KnowledgeView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Find a document…", text: $docFilter)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($filterFocused)
                 .onKeyPress(.escape) { docFilter = ""; return .handled }
                 .accessibilityLabel("Find a document")
             if !docFilter.isEmpty {
@@ -253,11 +394,15 @@ struct KnowledgeView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(filterFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: docFilter.isEmpty)
+        .animation(DS.Motion.lux, value: filterFocused)
     }
 
     private func docRow(_ doc: KnowledgeDoc) -> some View {
@@ -266,38 +411,51 @@ struct KnowledgeView: View {
             // Tapping the row opens the detail sheet (on-device summary + info).
             Button { detailDoc = doc } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: doc.icon)
-                        .font(.system(size: 14))
-                        .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 1) {
+                    // Icon well — consistent with ActionTile / AgentCard pattern.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                            .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.12))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: doc.icon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(DS.Palette.accent)
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                            .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                    )
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(doc.name)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(hovered ? .white : .white.opacity(0.9))
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(hovered ? .white : .white.opacity(0.90))
                             .lineLimit(1)
                         Text("\(doc.kind) · \(doc.chunkCount) passage\(doc.chunkCount == 1 ? "" : "s") · \(ScratchpadList.ageLabel(for: doc.addedAt))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
+                    Image(systemName: hovered ? "arrow.up.right" : "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.80) : .secondary)
+                        .offset(x: hovered ? 1 : 0, y: hovered ? -1 : 0)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: hovered)
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
+            .buttonStyle(LuxPressStyle()).help("Open & summarize").accessibilityHint("Open \(doc.name) and summarize it")
             Button { KnowledgeStore.shared.deleteDocument(doc.id); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.6) : .secondary)
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain).help("Remove").accessibilityLabel("Remove \(doc.name)")
+            .buttonStyle(LuxPressStyle()).help("Remove").accessibilityLabel("Remove \(doc.name)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredDocID = doc.id }
                 else if hoveredDocID == doc.id { hoveredDocID = nil }
             }
@@ -358,6 +516,7 @@ struct KnowledgeView: View {
             TextField("Title (optional)", text: $pasteTitle)
                 .textFieldStyle(.plain).padding(8)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             TextEditor(text: $pasteBody)
                 .font(.system(size: 13)).scrollContentBackground(.hidden)
                 .padding(6).frame(height: 220)
@@ -406,7 +565,8 @@ struct KnowledgeView: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 500) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 500))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }
@@ -445,6 +605,8 @@ private struct DocDetailSheet: View {
     @State private var answer = ""
     @State private var asking = false
     @State private var answerSaved = false
+    /// Focus glow on the per-document ask field — matches the main vault input.
+    @FocusState private var askFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -470,16 +632,18 @@ private struct DocDetailSheet: View {
                             Text("Summarizing on-device…").font(.callout).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
                     } else {
                         Text(summary).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(summary)
+                            .transition(.opacity)
                     }
 
                     if !answer.isEmpty {
                         Divider().overlay(DS.Palette.hairline)
                         Text("ANSWER").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
                         Text(answer).font(.callout).foregroundStyle(.white)
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled).rtlAware(answer)
                         HStack(spacing: 16) {
                             Button {
                                 NSPasteboard.general.clearContents()
@@ -493,13 +657,17 @@ private struct DocDetailSheet: View {
                             } label: {
                                 Label(answerSaved ? "Saved!" : "Save to Notes",
                                       systemImage: answerSaved ? "checkmark" : "note.text.badge.plus")
+                                    .contentTransition(.symbolEffect(.replace))
                             }
+                            .animation(DS.Motion.smooth, value: answerSaved)
                             .help("Save answer as a note").accessibilityLabel("Save answer to Notes")
                             Spacer(minLength: 0)
                         }
                         .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary).padding(.top, 2)
                     }
                 }
+                .animation(DS.Motion.smooth, value: loading)
+                .animation(DS.Motion.smooth, value: answer.isEmpty)
             }
 
             // Ask scoped to THIS document only.
@@ -507,18 +675,29 @@ private struct DocDetailSheet: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Ask about this document…", text: $question)
                     .textFieldStyle(.plain).font(.system(size: 14))
+                    .focused($askFocused)
                     .onSubmit { Task { await ask() } }
                     .onKeyPress(.escape) { question = ""; return .handled }
                 Button { Task { await ask() } } label: {
-                    if asking { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    Group {
+                        if asking { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent) }
+                    }
+                    .transition(.opacity)
                 }
-                .buttonStyle(.plain).accessibilityLabel("Ask about this document")
+                .buttonStyle(LuxPressStyle()).accessibilityLabel("Ask about this document").help("Ask about this document")
+                .animation(DS.Motion.smooth, value: asking)
                 .disabled(asking || question.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(askFocused ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous)
+                .stroke(askFocused
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(askFocused ? 0.15 : 0.0), radius: 10, y: 2)
+            .animation(DS.Motion.lux, value: askFocused)
         }
         .padding(DS.Space.xl)
         .frame(width: 520, height: 540)
@@ -541,7 +720,8 @@ private struct DocDetailSheet: View {
         DOCUMENT:
         \(text)
         """
-        summary = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        summary = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         loading = false
     }
 
@@ -566,7 +746,8 @@ private struct DocDetailSheet: View {
 
         QUESTION: \(q)
         """
-        answer = await LocalLLM.generateOnDevice(prompt, maxTokens: 400) ?? onDeviceUnavailableMessage
+        answer = (await LocalLLM.generateOnDevice(prompt, maxTokens: 400))
+            .map { AgentPipeline.stripNarration($0) } ?? onDeviceUnavailableMessage
         asking = false
     }
 }

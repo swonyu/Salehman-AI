@@ -245,8 +245,27 @@ enum AgentPipeline {
     /// "Response:" — so the user sees "Got it. What do you need?" not the analysis.
     /// Conservative: only fires when a non-empty answer follows the marker, so a normal
     /// reply that merely contains the word "Response" is untouched. Pure + testable.
+    /// Also strips <think>…</think> / <thinking>…</thinking> reasoning blocks emitted
+    /// by QwQ, DeepSeek-R1, and similar reasoning-mode models served through Ollama.
     nonisolated static func stripNarration(_ text: String) -> String {
         var out = text
+        // 0) Reasoning-model think blocks: QwQ / DeepSeek-R1 / Qwen-thinking emit
+        //    <think>…</think> or <thinking>…</thinking> before the real answer.
+        //    Strip all closed blocks (while loop handles multiple), then handle an
+        //    unclosed opening tag (model cut off mid-reasoning).
+        let closedThink = #"(?si)<think(?:ing)?>\s*.*?\s*</think(?:ing)?>\s*"#
+        while let r = out.range(of: closedThink, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let after  = String(out[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            out = [before, after].filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        // Unclosed <think> (model cut off): only substitute when there is content
+        // before the tag (rare); otherwise leave the in-progress reasoning visible
+        // so the user can see the model was still thinking when it was cut off.
+        if let r = out.range(of: #"(?i)<think(?:ing)?>"#, options: .regularExpression) {
+            let before = String(out[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { out = before }
+        }
         // 1) Leading scaffold: keep only what follows the final "Response:" line.
         for marker in ["\nResponse:", "Response:\n", "\nResponse :"] {
             if let r = out.range(of: marker, options: .backwards) {
@@ -292,7 +311,13 @@ enum AgentPipeline {
         if t.isEmpty || t == LocalLLM.offMessage { return true }
         guard t.hasPrefix("[") else { return false }
         let lower = t.lowercased()
+        // Matches all three bracketed diagnostic shapes:
+        //   [<Provider> error <STATUS>: …]          — parsed non-2xx body
+        //   [<Provider> request failed (HTTP …]     — transport / unparsed
+        //   [The on-device model couldn't complete …] — on-device generation fail
+        // Consistent with LocalLLM.freeAnswerErrorMarkers.
         return lower.contains("request failed (http")
+            || lower.contains("couldn't complete")
             || (lower.contains(" error ") && t.contains(where: \.isNumber))
     }
 
@@ -369,46 +394,10 @@ enum AgentPipeline {
         let brain = await LocalLLM.currentBrain()
         if brain == .none { return LocalLLM.offMessage }
 
-        // The short-circuit modes below bypass the multi-agent team (and the history
-        // handling further down), so fold the recent transcript into the prompt here
-        // so they remember the conversation. No-op on the first turn (empty history).
-        let contextualMission = withConversationContext(mission, history: priorHistory)
-
-        // "All Brains at Once" bypasses the multi-agent team entirely: ensemble
-        // means "ask every reachable brain the raw prompt, show all answers",
-        // not "run the 15-agent pipeline on one brain". The complexity/spec
-        // logic below doesn't apply.
-        if LocalLLM.isEnsembleMode {
-            return await LocalLLM.generateEnsemble(contextualMission)
-        }
-
-        // "Free · Auto" likewise bypasses the multi-agent team: it races the
-        // free brains in parallel for one fast answer (local backstop), not a
-        // 15-agent pipeline. Same short-circuit shape as ensemble above.
-        //
-        // Unrestricted Mode upgrades Free·Auto to a TOOL-capable single brain so
-        // it can actually run terminal commands / search the web (the owner asked
-        // Free·Auto to "do all commands"). With Unrestricted off it stays the fast
-        // no-tool race.
-        if LocalLLM.isFreeAutoMode {
-            if AppSettings.unrestrictedToolsEnabled {
-                return await LocalLLM.freeAutoReplyWithTools(contextualMission)
-            }
-            return await LocalLLM.generateFreeAuto(contextualMission)
-        }
-
-        // FreeCoding: a coding-focused loop over the free coders. Always
-        // tool-capable (coding wants to build/run/test), so it bypasses the
-        // multi-agent team too and routes straight to `freeCodingReply`.
-        if LocalLLM.isFreeCodingMode {
-            return await LocalLLM.freeCodingReply(contextualMission)
-        }
-
-        // Cloud Coding: cloud-only "best coders" loop — same tool-capable bypass,
-        // no local model (zero RAM / no lag).
-        if LocalLLM.isCloudCodingMode {
-            return await LocalLLM.cloudCodingReply(contextualMission)
-        }
+        // (The cloud composite modes — All-Brains ensemble, Free·Auto, FreeCoding,
+        // Cloud Coding — that used to short-circuit the multi-agent team here were
+        // removed in the 2026-06-18 local-only migration. Every remaining brain is
+        // local and runs the normal multi-agent team path below.)
 
         // How many agents run is a function of BOTH the user's response-mode
         // ceiling AND the message's actual complexity. The response mode is a
@@ -519,8 +508,14 @@ enum AgentPipeline {
                     let stream: @Sendable (String) -> Void
                     if spec.isFinal {
                         stream = { (partial: String) in
+                            // Strip reasoning blocks from the live stream so users
+                            // never see raw <think>…</think> in the streaming bubble.
+                            // onUpdate passes the cumulative string, so stripNarration
+                            // works correctly: closed blocks vanish immediately, and
+                            // an open block hides only if content existed before it.
+                            let visible = Self.stripNarration(partial)
                             Task { @MainActor in
-                                MissionProgress.shared.stream(partial)
+                                MissionProgress.shared.stream(visible)
                             }
                         }
                     } else {
@@ -556,8 +551,11 @@ enum AgentPipeline {
             let results = phaseResults
 
             // Fold this phase's outputs into MissionMemory (in spec order).
-            for (i, output) in results.sorted(by: { $0.0 < $1.0 }) {
+            // Strip reasoning-model think blocks before recording so they don't
+            // pollute downstream agents' context with thousands of reasoning tokens.
+            for (i, rawOutput) in results.sorted(by: { $0.0 < $1.0 }) {
                 let spec = specs[i]
+                let output = Self.stripNarration(rawOutput)
                 memory.recordAgentOutput(name: spec.name, output: output)
                 if spec.usesTools {
                     reasoning = output
@@ -614,7 +612,8 @@ enum AgentPipeline {
     /// the adaptTitles skip, and the local context diet, so a new serial brain
     /// added here updates all three behaviors in lockstep.
     nonisolated static func isSerialLocalBrain(_ brain: LocalLLM.Brain) -> Bool {
-        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio || brain == .vllm
+        brain == .ollamaCoder || brain == .salehman || brain == .unslothStudio
+            || brain == .vllm || brain == .uncensored
     }
 
     /// Per-phase agent concurrency cap. On the local Ollama coder we force SERIAL
@@ -669,6 +668,10 @@ enum AgentPipeline {
             "cool", "nice", "great", "good", "got it", "gotcha", "perfect",
             "awesome", "test", "ping", "hello there", "how are you",
             "how's it going", "whats up", "what's up", "wassup",
+            // Farewells — 3+ words that hit none of the other trivial guards.
+            "see you later", "see you soon", "see you tomorrow", "catch you later",
+            "talk to you later", "take care now", "have a good day", "have a nice day",
+            "good luck", "take it easy", "later gator", "bye for now",
         ]
         if greetings.contains(normalized) { return true }
 

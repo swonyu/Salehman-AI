@@ -13,6 +13,9 @@ struct ScratchpadView: View {
     @State private var aiResult = ""
     @State private var working = false
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field below.
+    @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Inline edit: which note/task is being renamed and its live draft text.
     /// Double-clicking a title enters edit mode; ↩ or blur commits, Esc cancels.
     @State private var editingId: UUID? = nil
@@ -23,6 +26,9 @@ struct ScratchpadView: View {
     /// Whether the "X Completed" disclosure group is expanded. Default collapsed
     /// so done tasks don't clutter the active-work view.
     @State private var showCompleted = false
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     private enum Pad: String, CaseIterable, Identifiable {
         case tasks, notes
@@ -34,14 +40,35 @@ struct ScratchpadView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
-                Picker("Scratchpad section", selection: $pad) {
-                    ForEach(Pad.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 12)
+                    .animation(DS.Motion.lux, value: appeared)
+                DSSegmentPicker(cases: Array(Pad.allCases), selection: $pad) { $0.title }
+                    .frame(maxWidth: 320)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .animation(DS.Motion.lux.delay(0.06), value: appeared)
                 addRow
-                if store.tasks.count + store.notes.count > 5 { searchRow }
-                if pad == .tasks { tasksList } else { notesList }
-                if !aiResult.isEmpty { aiResultCard }
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 8)
+                    .animation(DS.Motion.lux.delay(0.10), value: appeared)
+                Group {
+                    if store.tasks.count + store.notes.count > 5 { searchRow }
+                    if pad == .tasks {
+                        tasksList.transition(.opacity)
+                    } else {
+                        notesList.transition(.opacity)
+                    }
+                    if !aiResult.isEmpty {
+                        aiResultCard
+                            .transition(.opacity.combined(with: .offset(y: 8)))
+                    }
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 6)
+                .animation(DS.Motion.lux.delay(0.14), value: appeared)
+                .animation(DS.Motion.smooth, value: aiResult.isEmpty)
+                .animation(DS.Motion.smooth, value: pad)
             }
             .padding(DS.Space.xl)
             // Centered content column, same as the chat surfaces.
@@ -54,6 +81,7 @@ struct ScratchpadView: View {
         // the user can start typing immediately after the tab switch.
         // scratchpadFocusNotesMode switches the picker to Notes before focusing.
         .onAppear {
+            appeared = true
             if app.focusScratchpadAddFieldRequested {
                 applyFocusTrigger()
             }
@@ -77,55 +105,86 @@ struct ScratchpadView: View {
     }
 
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Ambient glow — soft depth behind the title.
-            Circle()
-                .fill(DS.Palette.accent.opacity(0.12))
-                .frame(width: 180)
-                .blur(radius: 65)
-                .offset(x: -20, y: -35)
-                .allowsHitTesting(false)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("NOTES & TASKS")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(DS.Palette.accent)
-                    Text("Notes")
-                        .font(.system(size: 17, weight: .semibold))
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches TodayView / AgentsView / KnowledgeView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
-                    Text("Your scratchpad — Salehman can add & complete these from chat too.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { copyAll() } label: {
-                    Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 13))
-                        .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
-                .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
-                .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
-
-                Button { Task { await runAI() } } label: {
-                    HStack(spacing: 6) {
-                        if working { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
-                        Text(pad == .tasks ? "Organize" : "Summarize")
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: pad)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: pad == .tasks ? "checklist" : "note.text")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: pad)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
                     }
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(DS.Palette.accent, in: Capsule())
-                    .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
                 }
-                .buttonStyle(LuxPressStyle())
-                .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Notes & Tasks")
+                }
+                Text("Salehman can add & complete these from chat too.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { copyAll() } label: {
+                Image(systemName: copyAllPulse ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 13))
+                    .foregroundStyle(copyAllPulse ? DS.Palette.successSoft : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copyAllPulse)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(pad == .tasks ? "Copy all tasks as Markdown" : "Copy all notes as Markdown")
+            .disabled(pad == .tasks ? store.tasks.isEmpty : store.notes.isEmpty)
+            .accessibilityLabel("Copy all \(pad == .tasks ? "tasks" : "notes")")
+
+            Button { Task { await runAI() } } label: {
+                HStack(spacing: 6) {
+                    Group {
+                        if working { ProgressView().controlSize(.small).transition(.opacity) }
+                        else { Image(systemName: "sparkles").transition(.opacity) }
+                    }
+                    .animation(DS.Motion.smooth, value: working)
+                    Text(pad == .tasks ? "Organize" : "Summarize")
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(DS.Gradient.brand, in: Capsule())
+                .shadow(color: DS.Palette.accent.opacity(0.28), radius: 5, y: 2)
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(working || (store.notes.isEmpty && store.tasks.isEmpty))
         }
+        .animation(DS.Motion.smooth, value: pad)
     }
 
     private var addRow: some View {
@@ -135,6 +194,8 @@ struct ScratchpadView: View {
                 .padding(.horizontal, 10).padding(.vertical, 9)
                 .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+                .animation(DS.Motion.lux, value: addFocused)
                 .focused($addFocused)
                 .onSubmit(add)
                 .onKeyPress(.escape) { newText = ""; return .handled }
@@ -142,7 +203,7 @@ struct ScratchpadView: View {
             Button(action: add) {
                 Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain).help("Add")
+            .buttonStyle(LuxPressStyle()).help("Add")
             .accessibilityLabel(pad == .tasks ? "Add task" : "Add note")
             .disabled(newText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
@@ -156,9 +217,11 @@ struct ScratchpadView: View {
 
     private var searchRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").font(.system(size: 12))
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search \(pad == .tasks ? "tasks" : "notes")…", text: $search)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { search = ""; return .handled }
                 .accessibilityLabel("Search scratchpad")
             if !search.isEmpty {
@@ -166,17 +229,30 @@ struct ScratchpadView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: search.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var noMatch: some View {
-        Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 16)
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            Text("No \(pad == .tasks ? "tasks" : "notes") match “\(search)”.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 26)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 
     private var tasksList: some View {
@@ -185,6 +261,7 @@ struct ScratchpadView: View {
         return Group {
             if store.tasks.isEmpty {
                 emptyState("No tasks yet", "checklist")
+                    .transition(.opacity)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     if search.isEmpty {
@@ -214,8 +291,10 @@ struct ScratchpadView: View {
                         else { listCard { ForEach(filtered) { taskRow($0) } } }
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.tasks.isEmpty)
     }
 
     private func completedDisclosure(_ done: [TaskItem]) -> some View {
@@ -264,18 +343,22 @@ struct ScratchpadView: View {
                 Image(systemName: t.done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16))
                     .foregroundStyle(t.done ? DS.Palette.successSoft : (hovered ? .white.opacity(0.5) : .secondary))
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: t.done)
             }
-            .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
+            .buttonStyle(LuxPressStyle()).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             if editingId == t.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: false, id: t.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(t.title)
                     .font(.system(size: 14))
                     .foregroundStyle(t.done ? Color.secondary : (hovered ? .white : .white.opacity(0.9)))
                     .strikethrough(t.done)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != t.id {
@@ -285,15 +368,16 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != t.id {
-                editButton { startEdit(id: t.id, text: t.title) }
+                editButton(hovered: hovered) { startEdit(id: t.id, text: t.title) }
+                    .transition(.opacity)
             }
-            deleteButton { store.deleteTask(t.id) }
+            deleteButton(hovered: hovered) { store.deleteTask(t.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredTaskID = t.id }
                 else if hoveredTaskID == t.id { hoveredTaskID = nil }
             }
@@ -323,37 +407,52 @@ struct ScratchpadView: View {
         Group {
             if store.notes.isEmpty {
                 emptyState("No notes yet", "note.text")
+                    .transition(.opacity)
             } else if search.isEmpty {
                 // No filter: stored order + drag-to-reorder.
                 reorderList {
                     ForEach(store.notes) { noteRow($0) }
                         .onMove { store.moveNote(from: $0, to: $1) }
                 }
+                .transition(.opacity)
             } else {
                 let filtered = ScratchpadList.notes(store.notes, filter: search)
                 if filtered.isEmpty { noMatch }
                 else { listCard { ForEach(filtered) { noteRow($0) } } }
             }
         }
+        .animation(DS.Motion.smooth, value: store.notes.isEmpty)
     }
 
     private func noteRow(_ n: Note) -> some View {
         let hovered = hoveredNoteID == n.id
         return HStack(spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 13))
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.8))
-                .frame(width: 18)
+            // Icon well — matches MemoryView fact rows.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "note.text")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             if editingId == n.id {
                 TextField("", text: $editingText)
                     .textFieldStyle(.plain).font(.system(size: 14))
                     .onSubmit { commitEdit(isNote: true, id: n.id) }
                     .onKeyPress(.escape) { cancelEdit(); return .handled }
+                    .transition(.opacity)
             } else {
                 Text(n.text)
                     .font(.system(size: 14))
                     .foregroundStyle(hovered ? .white : .white.opacity(0.9))
                     .textSelection(.enabled)
+                    .transition(.opacity)
             }
             Spacer(minLength: 8)
             if hovered && editingId != n.id {
@@ -363,15 +462,16 @@ struct ScratchpadView: View {
                     .transition(.opacity)
             }
             if editingId != n.id {
-                editButton { startEdit(id: n.id, text: n.text) }
+                editButton(hovered: hovered) { startEdit(id: n.id, text: n.text) }
+                    .transition(.opacity)
             }
-            deleteButton { store.deleteNote(n.id) }
+            deleteButton(hovered: hovered) { store.deleteNote(n.id) }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredNoteID = n.id }
                 else if hoveredNoteID == n.id { hoveredNoteID = nil }
             }
@@ -394,7 +494,8 @@ struct ScratchpadView: View {
     }
 
     private func startEdit(id: UUID, text: String) {
-        editingId = id; editingText = text
+        withAnimation(DS.Motion.smooth) { editingId = id }
+        editingText = text
     }
 
     private func commitEdit(isNote: Bool, id: UUID) {
@@ -403,26 +504,37 @@ struct ScratchpadView: View {
         cancelEdit()
     }
 
-    private func cancelEdit() { editingId = nil; editingText = "" }
-
-    private func editButton(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain).help("Edit").accessibilityLabel("Edit")
+    private func cancelEdit() {
+        withAnimation(DS.Motion.smooth) { editingId = nil }
+        editingText = ""
     }
 
-    private func deleteButton(_ action: @escaping () -> Void) -> some View {
+    private func editButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "pencil").font(.system(size: 11))
+                .foregroundStyle(hovered ? DS.Palette.accent.opacity(0.7) : .secondary)
         }
-        .buttonStyle(.plain).help("Delete").accessibilityLabel("Delete")
+        .buttonStyle(LuxPressStyle()).help("Edit").accessibilityLabel("Edit")
+    }
+
+    private func deleteButton(hovered: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "trash").font(.system(size: 12))
+                .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary)
+        }
+        .buttonStyle(LuxPressStyle()).help("Delete").accessibilityLabel("Delete")
     }
 
     private func listCard<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        // Flat opaque panel + hairline (design language).
         VStack(spacing: 1) { content() }
-            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(DS.Bezel.cardFill)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -441,8 +553,14 @@ struct ScratchpadView: View {
             // outer ScrollView sizes it correctly — without this the List either
             // collapses to 0 or fills the container on macOS.
             .fixedSize(horizontal: false, vertical: true)
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(DS.Bezel.cardFill)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .environment(\.defaultMinListRowHeight, 1)
@@ -451,11 +569,26 @@ struct ScratchpadView: View {
     private func emptyState(_ text: String, _ icon: String) -> some View {
         VStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 100)
-                    .blur(radius: 28)
-                    .allowsHitTesting(false)
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(0.18))
+                        .frame(width: 100)
+                        .blur(radius: 28)
+                        .allowsHitTesting(false)
+                } else {
+                    PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 100)
+                            .blur(radius: 28)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.18
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
+                }
                 Image(systemName: icon)
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(DS.Palette.accent)
@@ -492,7 +625,9 @@ struct ScratchpadView: View {
                         .foregroundStyle(.white.opacity(0.70))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color.white.opacity(0.08), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
                 .buttonStyle(LuxPressStyle()).help("Save this summary as a note")
                 .accessibilityLabel("Save AI summary as note")
@@ -502,12 +637,15 @@ struct ScratchpadView: View {
             }
             Text(aiResult).font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                .rtlAware(aiResult)
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private func runAI() async {
@@ -519,7 +657,8 @@ struct ScratchpadView: View {
         // On-device only: the scratchpad can hold private content, so Organize/
         // Summarize never leaves the Mac (mirrors the Knowledge vault) — returns a
         // clear message instead of silently routing to a pinned cloud brain.
-        aiResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        let rawResult = await LocalLLM.generateOnDevice(prompt, maxTokens: 400)
+        aiResult = rawResult.map { AgentPipeline.stripNarration($0) }
             ?? "No on-device model is available right now, so I can't do this privately. Start Ollama (a local model) to organize and summarize on this Mac."
         working = false
     }
@@ -560,8 +699,18 @@ enum ScratchpadList {
         let interval = now.timeIntervalSince(date)
         if interval < 60 { return "just now" }
         if interval < 3600 { return "\(Int(interval / 60))m" }
-        if interval < 86400 { return "\(Int(interval / 3600))h" }
-        if Calendar.current.isDateInYesterday(date) { return "yesterday" }
+        let cal = Calendar.current
+        // Day-relative buckets, computed against the injected `now` (hermetic):
+        // the hours bucket is TODAY-only, and a date on the previous calendar
+        // day reads "yesterday" even when < 24h has elapsed. The old code used
+        // `interval < 86400` for hours, which mislabelled e.g. yesterday-noon
+        // seen at 5am as "17h" and left the yesterday branch unreachable; it also
+        // mixed injected-now interval math with real-clock calendar checks, so
+        // the yesterday branch couldn't be unit-tested. Using `now` for both
+        // fixes the lie and makes every branch deterministic.
+        if cal.isDate(date, inSameDayAs: now) { return "\(Int(interval / 3600))h" }
+        if let yesterday = cal.date(byAdding: .day, value: -1, to: now),
+           cal.isDate(date, inSameDayAs: yesterday) { return "yesterday" }
         return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }

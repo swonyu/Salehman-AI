@@ -29,7 +29,15 @@ struct MarkdownText: View {
                             case .lines(let chunk):
                                 VStack(alignment: .leading, spacing: 5) {
                                     ForEach(Array(chunk.components(separatedBy: "\n").enumerated()), id: \.offset) { _, raw in
+                                        // Per-line RTL/bidi: Arabic prose lines flip to
+                                        // right-to-left + trailing (list bullets, numbers
+                                        // and quote rails move to the right with the
+                                        // flipped HStack); Latin/English is a no-op in a
+                                        // full-width leading column, so the assistant flow
+                                        // is unchanged. Applied here on PROSE only — code
+                                        // (CodeBlock) and tables stay LTR as required.
                                         MarkdownText.lineView(raw, highlight: highlight)
+                                            .rtlAware(raw)
                                     }
                                 }
                             }
@@ -51,12 +59,12 @@ struct MarkdownText: View {
     // Cache parsed segments + attributed strings so each MessageBubble redraw
     // doesn't re-parse the same body. Cap entries so the cache doesn't grow
     // without bound when the chat is long.
-    private static let cacheLock = NSLock()
+    nonisolated private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var segmentCache: [String: [Segment]] = [:]
     nonisolated(unsafe) private static var attributedCache: [String: AttributedString] = [:]
-    private static let maxCacheEntries = 200
+    nonisolated private static let maxCacheEntries = 200
 
-    static func segments(for text: String) -> [Segment] {
+    nonisolated static func segments(for text: String) -> [Segment] {
         cacheLock.lock()
         if let cached = segmentCache[text] {
             cacheLock.unlock()
@@ -75,7 +83,7 @@ struct MarkdownText: View {
         return parsed
     }
 
-    private static func parseSegments(_ text: String) -> [Segment] {
+    nonisolated private static func parseSegments(_ text: String) -> [Segment] {
         var result: [Segment] = []
         let lines = text.components(separatedBy: "\n")
         var inCode = false
@@ -109,7 +117,7 @@ struct MarkdownText: View {
         return result
     }
 
-    static func inlineMarkdown(_ s: String) -> AttributedString {
+    nonisolated static func inlineMarkdown(_ s: String) -> AttributedString {
         cacheLock.lock()
         if let hit = attributedCache[s] {
             cacheLock.unlock()
@@ -132,14 +140,14 @@ struct MarkdownText: View {
     /// Amber wash painted behind find-in-conversation matches. Deliberately NOT
     /// the red brand accent — red reads as "error/active brain" in this UI and
     /// would muddy the meaning of a match. Amber is the universal "found it" cue.
-    private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
+    nonisolated private static let highlightWash = Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.32)
 
     /// Overlay a search highlight on an already-rendered (and cached) attributed
     /// string. Applied AFTER the markdown cache so the parse cache stays
     /// query-independent — only this cheap O(text) attribute pass re-runs as the
     /// query changes. Highlights EVERY case-insensitive occurrence, not just the
     /// first. Returns `base` untouched when `query` is blank (the hot path).
-    static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
+    nonisolated static func highlighted(_ base: AttributedString, query: String) -> AttributedString {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return base }
         var out = base
@@ -189,7 +197,7 @@ struct MarkdownText: View {
                 .padding(.vertical, 4)
         } else if let quote = blockquote(trimmed) {
             HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 1.5)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(DS.Palette.accent.opacity(0.7))
                     .frame(width: 3)
                 Text(highlighted(inlineMarkdown(quote), query: highlight))
@@ -203,7 +211,7 @@ struct MarkdownText: View {
     }
 
     /// `#`/`##`/`###` heading → (level, text).
-    private static func heading(_ s: String) -> (level: Int, text: String)? {
+    nonisolated private static func heading(_ s: String) -> (level: Int, text: String)? {
         for level in [3, 2, 1] {
             let hashes = String(repeating: "#", count: level) + " "
             if s.hasPrefix(hashes) { return (level, String(s.dropFirst(hashes.count))) }
@@ -211,18 +219,18 @@ struct MarkdownText: View {
         return nil
     }
     /// `- ` / `* ` / `• ` bullet → item text.
-    private static func bullet(_ s: String) -> String? {
+    nonisolated private static func bullet(_ s: String) -> String? {
         for p in ["- ", "* ", "• "] where s.hasPrefix(p) { return String(s.dropFirst(p.count)) }
         return nil
     }
     /// `> ` blockquote → quoted text (`>` alone → empty quoted line).
-    private static func blockquote(_ s: String) -> String? {
+    nonisolated private static func blockquote(_ s: String) -> String? {
         if s == ">" { return "" }
         if s.hasPrefix("> ") { return String(s.dropFirst(2)) }
         return nil
     }
     /// `12. ` numbered → (marker "12.", text). Won't match decimals like "3.14".
-    private static func numbered(_ s: String) -> (marker: String, text: String)? {
+    nonisolated private static func numbered(_ s: String) -> (marker: String, text: String)? {
         guard let dot = s.firstIndex(of: ".") else { return nil }
         let numPart = s[s.startIndex..<dot]
         let afterDot = s.index(after: dot)
@@ -242,7 +250,7 @@ struct MarkdownText: View {
 
     /// Split a text body into table blocks + plain-line runs. A table is a `|…|`
     /// row immediately followed by a `|---|` separator, then zero+ `|…|` rows.
-    static func blocks(for body: String) -> [Block] {
+    nonisolated static func blocks(for body: String) -> [Block] {
         let lines = body.components(separatedBy: "\n")
         var blocks: [Block] = []
         var lineBuf: [String] = []
@@ -266,12 +274,12 @@ struct MarkdownText: View {
         return blocks
     }
 
-    private static func isTableRow(_ s: String) -> Bool {
+    nonisolated private static func isTableRow(_ s: String) -> Bool {
         let t = s.trimmingCharacters(in: .whitespaces)
         return t.hasPrefix("|") && t.dropFirst().contains("|")
     }
     /// A `|---|:--:|` separator line: every cell is only dashes/colons.
-    private static func isTableSeparator(_ s: String) -> Bool {
+    nonisolated private static func isTableSeparator(_ s: String) -> Bool {
         let cells = tableCells(s)
         guard !cells.isEmpty else { return false }
         return cells.allSatisfy { cell in
@@ -279,7 +287,7 @@ struct MarkdownText: View {
             return !c.isEmpty && c.allSatisfy { $0 == "-" || $0 == ":" }
         }
     }
-    private static func tableCells(_ s: String) -> [String] {
+    nonisolated private static func tableCells(_ s: String) -> [String] {
         var t = s.trimmingCharacters(in: .whitespaces)
         if t.hasPrefix("|") { t.removeFirst() }
         if t.hasSuffix("|") { t.removeLast() }
@@ -315,8 +323,8 @@ struct MarkdownText: View {
             }
             .padding(10)
         }
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 }
 
@@ -382,6 +390,8 @@ struct CodeBlock: View {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(copied ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: copied)
                         // Comfortable hit target: the tight 10pt label is hard
                         // to land on with assistive pointers / Voice Control.
                         // `.contentShape` over a minimum frame keeps the visual
@@ -389,7 +399,7 @@ struct CodeBlock: View {
                         .frame(minWidth: 56, minHeight: 24, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
                 .help("Copy code to clipboard")
                 .accessibilityLabel(copied ? "Copied" : "Copy code to clipboard")
             }
@@ -410,7 +420,7 @@ struct CodeBlock: View {
         .frame(maxWidth: 520, alignment: .leading)
         .background(Color.black.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func copyToClipboard(_ s: String) {

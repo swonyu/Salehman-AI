@@ -22,19 +22,21 @@ struct AgentPipelineConcurrencyTests {
         }
     }
 
-    @Test func nonOllamaBrainsUseTheBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 4) == 4)
-        #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: 6) == 6)
-        #expect(AgentPipeline.effectiveCap(brain: .grok,              baseCap: 8) == 8)
-        #expect(AgentPipeline.effectiveCap(brain: .ensemble,          baseCap: 3) == 3)
-        #expect(AgentPipeline.effectiveCap(brain: .none,              baseCap: 2) == 2)
+    @Test func nonSerialBrainsUseTheBaseCap() {
+        // After the app went local-only, every real brain is a serial local
+        // model; `.none` (no brain reachable) is the only non-serial case, so it
+        // is the one that honors the memory-derived base cap.
+        for (baseCap, expected) in [(4, 4), (6, 6), (8, 8), (2, 2)] {
+            #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: baseCap) == expected,
+                    ".none must honor baseCap=\(baseCap)")
+        }
     }
 
     @Test func capIsFlooredAtOne() {
         // A degenerate baseCap (0 / negative from a misconfigured
         // MemoryManager) must not produce cap=0 — that would create an empty
         // `stride(by:)` batch list and hang the pipeline silently.
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras,          baseCap: 0)  == 1)
-        #expect(AgentPipeline.effectiveCap(brain: .gemini,            baseCap: -3) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 0)  == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: -3) == 1)
     }
 }

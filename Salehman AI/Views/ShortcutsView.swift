@@ -6,6 +6,7 @@ import SwiftUI
 struct ShortcutsView: View {
     let onClose: () -> Void
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredID: UUID?
 
     private struct Shortcut: Identifiable { let id = UUID(); let keys: String; let label: String }
@@ -61,16 +62,44 @@ struct ShortcutsView: View {
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("KEYBOARD SHORTCUTS")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(2)
-                            .foregroundStyle(DS.Palette.accent)
+                // Header — brand tile + eyebrow component.
+                HStack(alignment: .center, spacing: DS.Space.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .fill(DS.Gradient.brand)
+                            .frame(width: 36, height: 36)
+                            .dsShadow(DS.Elevation.accentGlow(0.38))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                                    .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: 0.75)
+                            )
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
+                            Image(systemName: "keyboard")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                                }
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Every shortcut in one place")
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
+                        Eyebrow(text: "Keyboard Shortcuts")
                     }
                     Spacer()
                     Button { onClose() } label: {
@@ -83,7 +112,12 @@ struct ShortcutsView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: DS.Space.lg) {
-                        ForEach(groups) { group in groupSection(group) }
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { idx, group in
+                            groupSection(group)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.07), value: appeared)
+                        }
                     }
                 }
             }
@@ -108,8 +142,14 @@ struct ShortcutsView: View {
             VStack(spacing: 1) {
                 ForEach(group.items) { s in shortcutRow(s) }
             }
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(DS.Bezel.cardFill)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
@@ -142,7 +182,7 @@ struct ShortcutsView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if over { hoveredID = s.id }
                 else if hoveredID == s.id { hoveredID = nil }
             }

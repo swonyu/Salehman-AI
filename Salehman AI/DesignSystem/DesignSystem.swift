@@ -16,6 +16,7 @@ enum DS {
 
     // MARK: Corner radii
     enum Radius {
+        static let well:   CGFloat = 6   // small icon-well container (24-28 pt square)
         static let small:  CGFloat = 8
         static let chip:   CGFloat = 12
         static let card:   CGFloat = 14
@@ -104,6 +105,9 @@ enum DS {
         static let coreInnerHighlight = LinearGradient(
             colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)],
             startPoint: .top, endPoint: .bottom)
+        /// Subtle fill for machined card containers — the background layer under
+        /// the coreInnerHighlight stroke. Matches all per-view inline cards.
+        static let cardFill             = Color.white.opacity(0.035)
     }
 
     // MARK: Gradients
@@ -157,6 +161,8 @@ struct CircleIconButton: View {
                 .shadow(color: (filled && !disabled) ? DS.Palette.accent.opacity(0.5) : .clear, radius: 8, y: 3)
                 .scaleEffect(hovering && !disabled ? 1.06 : 1.0)
                 .opacity(disabled ? 0.55 : 1)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: systemName)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -220,6 +226,18 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
+/// Gravity-pull press: 0.97 settle on the lux curve — heavier, more deliberate
+/// than PressableStyle's press curve. Use on tinted pill/capsule CTAs that
+/// provide their own chrome (brand gradient, accent border, etc.).
+/// Moved from CodeView so all tabs share one definition. (Marathon EN)
+struct LuxPressStyle: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .scaleEffect(c.isPressed ? 0.97 : 1)
+            .animation(DS.Motion.lux, value: c.isPressed)
+    }
+}
+
 // MARK: - Bezel
 struct Bezel<Content: View>: View {
     var outerRadius: CGFloat = DS.Bezel.outerRadius
@@ -265,7 +283,10 @@ struct Eyebrow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(color.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.22), lineWidth: 0.5))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [color.opacity(0.40), color.opacity(0.08)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 0.5))
     }
 }
 
@@ -289,6 +310,9 @@ struct SuggestionCard: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 34, height: 34)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -340,6 +364,19 @@ extension View {
     func dsShadow(_ e: (color: Color, radius: CGFloat, y: CGFloat)) -> some View {
         shadow(color: e.color, radius: e.radius, y: e.y)
     }
+
+    /// RTL-aware block layout for PLAIN-text LLM output: when `text` contains
+    /// Arabic script, flips to right-to-left + trailing alignment (mirrors the
+    /// verified `LiveTranscriptionView.lineView` pattern — the outer `.frame`
+    /// resolves `.trailing` in the parent LTR context = the right edge, while the
+    /// inner layoutDirection gives the text correct RTL bidi). Latin/English is a
+    /// pure no-op (LTR + leading). NOT for Markdown/code surfaces — those need
+    /// structural bidi (code blocks must stay LTR), handled separately.
+    func rtlAware(_ text: String) -> some View {
+        let rtl = text.range(of: "\\p{Arabic}", options: .regularExpression) != nil
+        return environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+            .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
+    }
 }
 
 // MARK: - SuperGrok (added for Upgrade to SuperGrok + Anthropic migration)
@@ -360,9 +397,12 @@ struct SuperGrokBadge: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(DS.Palette.superGrokSoft, in: Capsule())
-            .overlay(Capsule().stroke(DS.Palette.superGrok.opacity(0.4), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [DS.Palette.superGrok.opacity(0.70),
+                                        DS.Palette.superGrok.opacity(0.15)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LuxPressStyle())
     }
 }
 
@@ -399,6 +439,50 @@ struct CloudKeyHintBanner: View {
         .padding(.vertical, 5)
         .background(DS.Palette.warningSoft.opacity(0.12))
         .foregroundStyle(DS.Palette.warningSoft)
+    }
+}
+
+// MARK: - DSSegmentPicker
+/// Dark-themed sliding-pill segment control. Replaces `.pickerStyle(.segmented)` app-wide.
+/// Selection indicator slides between segments via `matchedGeometryEffect`.
+/// Usage: `DSSegmentPicker(cases: MyEnum.allCases, selection: $binding) { $0.title }`
+struct DSSegmentPicker<T: Hashable>: View {
+    let cases: [T]
+    @Binding var selection: T
+    let label: (T) -> String
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(cases, id: \.self) { item in
+                Button {
+                    withAnimation(DS.Motion.spring) { selection = item }
+                } label: {
+                    Text(label(item))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selection == item ? Color.black : Color.white.opacity(0.62))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            if selection == item {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.92))
+                                    .matchedGeometryEffect(id: "segPill", in: ns)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 }
 

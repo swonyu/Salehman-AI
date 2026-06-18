@@ -106,19 +106,22 @@ struct FileTreeRow: View {
     var body: some View {
         if node.isDir {
             let isOpen = expanded.contains(node.id)
+            VStack(spacing: 0) {
             Button {
                 if isOpen { expanded.remove(node.id) } else { expanded.insert(node.id) }
             } label: {
                 row {
                     Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary).frame(width: 9)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: isOpen)
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10)).foregroundStyle(DS.Palette.accent.opacity(0.7))
                     Text(node.name)
                         .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(hovering ? 1.0 : 0.8))
                         .lineLimit(1).truncationMode(.middle)
                 }
-                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(hovering ? Color.white.opacity(0.04) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
@@ -127,8 +130,11 @@ struct FileTreeRow: View {
             if isOpen {
                 ForEach(node.children) { child in
                     FileTreeRow(node: child, depth: depth + 1, expanded: $expanded, ws: ws, onSelect: onSelect)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            }
+            .animation(DS.Motion.smooth, value: isOpen)
         } else if let url = node.url {
             let isSel = ws.selectedFile == url
             let changed = ws.changedFiles.contains(url)
@@ -142,16 +148,26 @@ struct FileTreeRow: View {
                         .foregroundStyle(isSel ? .white : Color.white.opacity(hovering ? 0.92 : 0.72))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
-                    if changed { Circle().fill(DS.Palette.accent).frame(width: 6, height: 6) }
+                    if changed {
+                        // Labelled so "AI changed this file" isn't color-only (VoiceOver).
+                        Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                            .help("Changed by the AI this run")
+                            .accessibilityLabel("Changed by the AI this run")
+                    }
                 }
                 .background(
                     isSel ? Color.white.opacity(0.08) : hovering ? Color.white.opacity(0.04) : .clear,
-                    in: RoundedRectangle(cornerRadius: 6)
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
+                .animation(DS.Motion.smooth, value: isSel)
+                .animation(DS.Motion.spring, value: changed)
             }
             .buttonStyle(.plain)
             .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
             .contextMenu { fileActionsMenu(url) }
+            // Selection is otherwise color-only (white fill) — expose it to VoiceOver.
+            .accessibilityAddTraits(isSel ? .isSelected : [])
         }
     }
 

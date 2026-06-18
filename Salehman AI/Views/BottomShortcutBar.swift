@@ -7,13 +7,13 @@ import SwiftUI
 /// the content above it.
 struct BottomShortcutBar: View {
     @ObservedObject private var app = AppState.shared
-    @State private var hoveredHintID: UUID?
+    @State private var hoveredHintID: String?
 
     private struct Hint: Identifiable {
-        let id = UUID()
         let keys: String
         let label: String
         let run: () -> Void
+        var id: String { keys }
     }
 
     private var hints: [Hint] {
@@ -64,9 +64,14 @@ struct BottomShortcutBar: View {
                             .foregroundStyle(.white.opacity(hinted ? 1.0 : 0.85))
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Color.white.opacity(hinted ? 0.14 : 0.08),
-                                        in: RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.white.opacity(hinted ? 0.22 : 0.12), lineWidth: 1))
+                                        in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .stroke(LinearGradient(
+                                        colors: [.white.opacity(hinted ? 0.40 : 0.28),
+                                                 .white.opacity(hinted ? 0.08 : 0.04)],
+                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            )
                             .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
                         Text(hint.label)
                             .font(.system(size: 11))
@@ -74,7 +79,8 @@ struct BottomShortcutBar: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LuxPressStyle())
+                .transition(.scale(scale: 0.75, anchor: .leading).combined(with: .opacity))
                 .onHover { over in
                     withAnimation(DS.Motion.press) {
                         hoveredHintID = over ? hint.id : (hoveredHintID == hint.id ? nil : hoveredHintID)
@@ -85,6 +91,8 @@ struct BottomShortcutBar: View {
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: app.aiIsRunning)
+        .animation(DS.Motion.smooth, value: app.selectedTab)
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)

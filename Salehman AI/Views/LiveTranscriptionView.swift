@@ -5,7 +5,11 @@ struct LiveTranscriptionView: View {
     @ObservedObject private var live = LiveTranscriber.shared
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    /// Focus glow on the transcript search — consistent with the app's text inputs.
+    @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var copied = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     var onAsk: (String) -> Void
 
     private var filteredLines: [TranscriptLine] {
@@ -16,15 +20,25 @@ struct LiveTranscriptionView: View {
 
     var body: some View {
         ZStack {
-            // Route through DS canvas tokens so this sheet inherits any palette
-            // swap (was a hardcoded cold-indigo that bypassed the token layer).
-            DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
+            DS.Palette.codeSurface.ignoresSafeArea()
+
+            // Ambient accent glow — depth on the flat canvas while listening.
+            Circle()
+                .fill((live.isRunning ? DS.Palette.accent : DS.Palette.accent.opacity(0.5)).opacity(0.14))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 200, y: -180)
+                .allowsHitTesting(false)
+                .animation(DS.Motion.smooth, value: live.isRunning)
 
             VStack(alignment: .leading, spacing: 14) {
                 header
                 controls
 
-                if live.needsScreenPermission { permissionBanner }
+                if live.needsScreenPermission {
+                    permissionBanner
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
 
                 Label(live.status, systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
@@ -36,17 +50,56 @@ struct LiveTranscriptionView: View {
                 footer
             }
             .padding(22)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(DS.Motion.smooth, value: live.needsScreenPermission)
         }
         .frame(width: 640, height: 660)
         .preferredColorScheme(.dark)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
     }
 
     // MARK: Header
     private var header: some View {
-        HStack {
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — matches VoiceModeView and other utility sheets.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(live.isRunning ? 0.55 : 0.38))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "waveform.and.mic")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "waveform.and.mic")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
+                    }
+                }
+            }
+            .animation(DS.Motion.smooth, value: live.isRunning)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Live Transcription").font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text("Transcribes the Mac's audio live (a call, video, or lecture)").font(.caption).foregroundStyle(.secondary)
+                Text("Live Transcription")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Eyebrow(text: "System Audio · On Device")
             }
             Spacer()
             Button { dismiss() } label: {
@@ -63,6 +116,8 @@ struct LiveTranscriptionView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: live.isRunning ? "stop.fill" : "record.circle")
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: live.isRunning)
                     Text(live.isRunning ? "Stop" : "Start listening")
                 }
                 .font(.system(size: 14, weight: .semibold))
@@ -84,12 +139,31 @@ struct LiveTranscriptionView: View {
 
             if live.isRunning {
                 HStack(spacing: 6) {
-                    Circle().fill(DS.Palette.accent).frame(width: 8, height: 8)
-                        .shadow(color: DS.Palette.accent.opacity(0.6), radius: 3)
+                    // PhaseAnimator pulses the glow shadow continuously while
+                    // recording — makes the dot read as "actively capturing".
+                    if reduceMotion {
+                        // Reduce Motion: static recording dot (no pulsing glow).
+                        Circle()
+                            .fill(DS.Palette.accent)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: DS.Palette.accent.opacity(0.55), radius: 3)
+                    } else {
+                        PhaseAnimator([false, true]) { bright in
+                            Circle()
+                                .fill(DS.Palette.accent)
+                                .frame(width: 8, height: 8)
+                                .shadow(color: DS.Palette.accent.opacity(bright ? 0.80 : 0.30),
+                                        radius: bright ? 5 : 2)
+                        } animation: { bright in
+                            bright ? .easeIn(duration: 0.65) : .easeOut(duration: 1.10)
+                        }
+                    }
                     Text("LIVE").font(.caption.weight(.bold)).foregroundStyle(DS.Palette.accent)
                 }
+                .transition(.opacity.combined(with: .scale(0.85, anchor: .trailing)))
             }
         }
+        .animation(DS.Motion.smooth, value: live.isRunning)
     }
 
     private var permissionBanner: some View {
@@ -116,7 +190,9 @@ struct LiveTranscriptionView: View {
         .background(DS.Palette.accent.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.52),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private var searchField: some View {
@@ -124,15 +200,21 @@ struct LiveTranscriptionView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
             TextField("Search the transcript…", text: $searchText)
                 .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(.white)
+                .focused($searchFocused)
                 .onKeyPress(.escape) { searchText = ""; return .handled }
                 .accessibilityLabel("Search transcript")   // placeholder isn't enough for VoiceOver
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: searchText.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     // MARK: Transcript (speaker bubbles + live partials)
@@ -144,17 +226,22 @@ struct LiveTranscriptionView: View {
                         Text(live.isRunning ? "Listening…" : "Press Start to transcribe the audio.")
                             .font(.system(size: 14)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
+                            .transition(.opacity.combined(with: .offset(y: 4)))
                     }
 
                     ForEach(searchText.isEmpty ? live.lines : filteredLines) { line in
                         lineView(text: line.text, live: false)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                     // In-flight (not yet finalized) text, shown faded.
                     if searchText.isEmpty && !live.partialThem.isEmpty {
                         lineView(text: live.partialThem, live: true)
+                            .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .animation(DS.Motion.smooth, value: live.lines.count)
+                .animation(DS.Motion.smooth, value: live.partialThem.isEmpty)
                 .padding(.vertical, 4)
             }
             .onChange(of: live.lines) { _, _ in scrollDown(proxy, animated: true) }
@@ -196,18 +283,38 @@ struct LiveTranscriptionView: View {
                 NSPasteboard.general.setString(live.combinedText, forType: .string)
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-            } label: { Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: copied)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(copied ? DS.Palette.successSoft : .white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText
                 guard !text.isEmpty else { return }
                 onAsk("Here is a live transcript of system audio (a call, video, or lecture). Summarize the key points and list any action items or decisions:\n\n\(text)")
                 dismiss()
-            } label: { Label("Summarize", systemImage: "list.bullet.rectangle") }
-                .buttonStyle(.bordered)
-                .disabled(live.combinedText.isEmpty)
+            } label: {
+                Label("Summarize", systemImage: "list.bullet.rectangle")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .disabled(live.combinedText.isEmpty)
 
             Button {
                 let text = live.combinedText

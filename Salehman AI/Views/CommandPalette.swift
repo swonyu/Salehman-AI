@@ -11,6 +11,10 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var hoveredID: UUID?
     @State private var selectedIndex: Int = 0
+    /// Shell + staggered row entrance. Pre-set under `--qa` so the offscreen
+    /// snapshot (onAppear never fires) captures the settled palette, not the
+    /// opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @FocusState private var searchFocused: Bool
 
     private struct Command: Identifiable {
@@ -97,8 +101,10 @@ struct CommandPalette: View {
                 Text("esc")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.18), radius: 1, y: 1)
             }
             .padding(16)
@@ -112,11 +118,18 @@ struct CommandPalette: View {
                             let isSelected = idx == selectedIndex
                             Button { run(cmd) } label: {
                                 HStack(spacing: 12) {
+                                    // Icon well — RoundedRectangle matches the
+                                    // app-wide DS icon well pattern (ActionTile etc).
                                     Image(systemName: cmd.icon)
-                                        .font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(DS.Palette.accent)
                                         .frame(width: 26, height: 26)
-                                        .background(DS.Palette.accent.opacity(0.10), in: Circle())
-                                        .overlay(Circle().stroke(DS.Palette.accent.opacity(0.16), lineWidth: 1))
+                                        .background(DS.Palette.accent.opacity(0.10),
+                                                    in: RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                                            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.32),
+                                                                            DS.Palette.accent.opacity(0.06)],
+                                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(cmd.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                                         if !cmd.subtitle.isEmpty {
@@ -130,27 +143,47 @@ struct CommandPalette: View {
                                     (hoveredID == cmd.id || isSelected)
                                         ? DS.Palette.accent.opacity(isSelected ? 0.18 : 0.10)
                                         : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 8)
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                                         .stroke(isSelected ? DS.Palette.accent.opacity(0.28) : Color.clear, lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .id(idx)
+                            // Staggered entrance — rows 0-8 cascade 35ms apart;
+                            // subsequent rows share row 8's delay.
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.035),
+                                       value: appeared)
+                            .animation(DS.Motion.magnetic, value: isSelected)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
                             .onHover { over in
-                                hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
-                                if over { selectedIndex = idx }
+                                withAnimation(DS.Motion.magnetic) {
+                                    hoveredID = over ? cmd.id : (hoveredID == cmd.id ? nil : hoveredID)
+                                    if over { selectedIndex = idx }
+                                }
                             }
                         }
                         if filtered.isEmpty {
-                            Text("No matching commands")
-                                .font(.system(size: 13)).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                            VStack(spacing: 10) {
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                                Text("No matching commands")
+                                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 26)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         }
                     }
+                    .animation(DS.Motion.smooth, value: filtered.count)
                     .padding(8)
                 }
                 .frame(maxHeight: 340)
@@ -160,9 +193,25 @@ struct CommandPalette: View {
                 }
             }
         }
+        // Shell entrance — palette drifts up + fades in when opened, matching
+        // the other sheet views (AboutView, ShortcutsView, OnboardingView).
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 8)
+        .animation(DS.Motion.smooth, value: appeared)
         .frame(width: 560)
-        .background(DS.Palette.bgTop)
-        .onAppear { searchFocused = true }
+        .background(
+            ZStack {
+                DS.Gradient.bgVertical
+                // Ambient brand glow — soft depth in the top-right corner.
+                Circle()
+                    .fill(DS.Palette.accent.opacity(0.10))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 60)
+                    .offset(x: 200, y: -100)
+                    .allowsHitTesting(false)
+            }
+        )
+        .onAppear { searchFocused = true; appeared = true }
         // Reset selection to top whenever the result list changes.
         .onChange(of: query) { _, _ in selectedIndex = 0 }
     }

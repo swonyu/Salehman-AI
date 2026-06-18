@@ -365,14 +365,6 @@ struct SlashCommand: Identifiable {
 /// Press physics for pills and primary actions (design language): the whole
 /// control compresses slightly under the pointer — simulated mass, not a color
 /// swap. GPU-safe (transform only), sprung on the shared lux curve.
-struct LuxPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(CodeView.lux, value: configuration.isPressed)
-    }
-}
-
 /// The `/`-command dropdown rendered above the Code composer. Extracted as its own
 /// view so the QA gallery can photograph it deterministically (the inline version
 /// only exists while `input` starts with "/").
@@ -398,13 +390,19 @@ struct SlashMenuView: View {
                     }
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(hovered == cmd.id ? Color.white.opacity(0.06) : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovered = $0 ? cmd.id : (hovered == cmd.id ? nil : hovered) }
+                .transition(.opacity.combined(with: .offset(y: 4)))
+                .onHover { over in
+                    withAnimation(DS.Motion.magnetic) {
+                        hovered = over ? cmd.id : (hovered == cmd.id ? nil : hovered)
+                    }
+                }
             }
         }
+        .animation(DS.Motion.smooth, value: matches.count)
         .padding(5)
         // Inner core: its own surface + machined top bevel…
         .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -417,7 +415,9 @@ struct SlashMenuView: View {
         .padding(4)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
     }
 }
@@ -439,19 +439,21 @@ struct ActivityStepRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             step.status == .running ? DS.Palette.accent.opacity(0.07) : Color.white.opacity(0.03),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(alignment: .leading) {
             if step.status == .running {
                 DS.Palette.accent.frame(width: 2.5)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         // Machined top bevel — each step card reads as a physical tile.
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.01)],
                                        startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder static func icon(_ status: MissionProgress.Status) -> some View {
@@ -494,7 +496,7 @@ struct ChangedFileRow: View {
                             .background(Color.white.opacity(0.07), in: Circle())
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .help("Revert this file to its pre-run state")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 } else if let stat {
@@ -512,7 +514,7 @@ struct ChangedFileRow: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSelected ? Color.white.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -528,7 +530,7 @@ struct CodeView: View {
     @ObservedObject private var progress = MissionProgress.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var approval = CommandApprovalCenter.shared
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var messages: [ChatMessage] = []
     /// Conversation persistence — the chat tab survives relaunches but Code-tab
@@ -547,10 +549,6 @@ struct CodeView: View {
     @State private var attachedText: String = ""
     @State private var isDropTargeted = false   // drag-a-file-onto-input highlight
     @State private var showWarmupHint = false   // "warming up the local model…" after 5s of silence
-    /// Design-language motion: one sprung curve for every Code-tab transition
-    /// (cubic-bezier(0.32, 0.72, 0, 1) — heavy start, soft landing). Replaces the
-    /// scattered `easeOut` micro-durations so all motion shares one physical feel.
-    static let lux = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
     /// Welcome entrance: pre-revealed on QA launches (offscreen renders never fire
     /// onAppear, so the capture would otherwise photograph an invisible welcome).
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
@@ -611,13 +609,6 @@ struct CodeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No-cloud-key notice: Review / coding here silently falls back to the
-            // slow local model (or can't fit the codebase). Tap "Add key" → Settings
-            // (ContentView stays mounted in RootView, so its sheet handles this).
-            if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                CloudKeyHintBanner(onAddKey: { app.showSettingsRequested = true },
-                                   onDismiss: { dismissedCloudHint = true })
-            }
             HSplitView {
                 if !treeCollapsed {
                     fileTree
@@ -685,11 +676,11 @@ struct CodeView: View {
         // and pop the right panel open so the file/diff is actually visible.
         .onChange(of: ws.selectedFile) { _, sel in
             revealInTree(sel)
-            if sel != nil { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+            if sel != nil { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } }
         }
         // A run that produces diffs auto-opens the panel too (so changes aren't hidden).
         .onChange(of: ws.changedFiles) { _, files in
-            if !files.isEmpty { withAnimation(CodeView.lux) { rightPanelCollapsed = false } }
+            if !files.isEmpty { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } }
         }
         // Edge-triggers from BottomShortcutBar hints (same actions as the local shortcuts).
         .onChange(of: app.reviewProjectRequested) { _, req in
@@ -710,7 +701,7 @@ struct CodeView: View {
         .onChange(of: app.toggleCodeTreeRequested) { _, req in
             guard req else { return }
             app.toggleCodeTreeRequested = false
-            withAnimation(CodeView.lux) { treeCollapsed.toggle() }
+            withAnimation(DS.Motion.lux) { treeCollapsed.toggle() }
         }
         // Hidden keyboard shortcuts: ⌘F focuses find-in-file, ⌘. stops a run.
         .background {
@@ -721,12 +712,12 @@ struct CodeView: View {
                     .keyboardShortcut(".", modifiers: .command)
                 Button("") { inputFocused = true }
                     .keyboardShortcut("l", modifiers: .command)
-                Button("") { withAnimation(CodeView.lux) { treeCollapsed.toggle() } }
+                Button("") { withAnimation(DS.Motion.lux) { treeCollapsed.toggle() } }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
-                Button("") { withAnimation(CodeView.lux) { rightPanelCollapsed.toggle() } }
+                Button("") { withAnimation(DS.Motion.lux) { rightPanelCollapsed.toggle() } }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                 Button("") {
-                    withAnimation(CodeView.lux) { convoSearching = true }
+                    withAnimation(DS.Motion.lux) { convoSearching = true }
                     convoSearchFocused = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
@@ -785,7 +776,10 @@ struct CodeView: View {
                             .font(.system(size: 11.5, weight: .semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                            .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                            .overlay(Capsule().stroke(
+                                LinearGradient(colors: [DS.Palette.accent.opacity(0.55),
+                                                        DS.Palette.accent.opacity(0.12)],
+                                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
                     .help("Pack the open folder and have Salehman review it — bugs, risks, improvements (⌘R)")
@@ -795,7 +789,7 @@ struct CodeView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Rescan project files")
                         .accessibilityLabel("Rescan project files")
-                    Button { withAnimation(CodeView.lux) { treeCollapsed = true } } label: {
+                    Button { withAnimation(DS.Motion.lux) { treeCollapsed = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 11))
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -817,6 +811,8 @@ struct CodeView: View {
                         // Quiet plain count (chrome diet — no badge box)
                         Text("\(ws.files.count) files")
                             .font(.system(size: 9.5)).foregroundStyle(.secondary.opacity(0.8))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: ws.files.count)
                     }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 6)
@@ -828,6 +824,7 @@ struct CodeView: View {
                 emptyTreeHint
             } else {
                 fileFilterField
+                Group {
                 if !fileFilter.isEmpty {
                     // Filtering → flat matched list (faster to scan than a tree).
                     let shown = filteredFiles
@@ -836,11 +833,16 @@ struct CodeView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
+                            .transition(.opacity)
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 1) {
-                                ForEach(shown, id: \.self) { url in fileRow(url) }
+                                ForEach(shown, id: \.self) { url in
+                                    fileRow(url)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                                }
                             }
+                            .animation(DS.Motion.smooth, value: shown.count)
                             .padding(.vertical, 6)
                         }
                     }
@@ -858,7 +860,10 @@ struct CodeView: View {
                         }
                         .padding(.vertical, 6)
                     }
+                    .transition(.opacity)
                 }
+                }
+                .animation(DS.Motion.smooth, value: fileFilter.isEmpty)
             }
         }
         .background(.ultraThinMaterial)
@@ -878,19 +883,43 @@ struct CodeView: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Clear file filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.vertical, 6)
+        .animation(DS.Motion.magnetic, value: fileFilter.isEmpty)
     }
 
     private var emptyTreeHint: some View {
         VStack(spacing: 11) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 23, weight: .light))
-                .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            ZStack {
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no breathing loop).
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(0.12))
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } else {
+                    PhaseAnimator([0.0, 0.16, 0.0]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 56, height: 56)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.08
+                            ? .spring(duration: 2.2, bounce: 0.05)
+                            : .easeOut(duration: 2.0)
+                    }
+                }
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 23, weight: .light))
+                    .foregroundStyle(DS.Palette.accent.opacity(0.8))
+            }
             Text("Open a project folder\nto start coding")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -899,7 +928,10 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(DS.Palette.accent.opacity(0.38), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                            DS.Palette.accent.opacity(0.15)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             }
             .buttonStyle(LuxPressStyle()).foregroundStyle(DS.Palette.accent)
             .padding(.top, 2)
@@ -926,24 +958,32 @@ struct CodeView: View {
                     .lineLimit(1).truncationMode(.head)
                 Spacer(minLength: 0)
                 if changed {
-                    // Accent dot: the AI changed this file THIS run.
+                    // Accent dot: the AI changed this file THIS run. Labelled so the
+                    // status isn't color-only (WCAG 1.4.1 / VoiceOver).
                     Circle().fill(DS.Palette.accent).frame(width: 6, height: 6)
+                        .help("Changed by the AI this run")
+                        .accessibilityLabel("Changed by the AI this run")
                 } else if ws.gitModified.contains(url) {
                     // Amber dot: uncommitted in git (modified/untracked).
                     Circle().fill(DS.Palette.warningSoft.opacity(0.75)).frame(width: 5, height: 5)
                         .help("Uncommitted changes (git)")
+                        .accessibilityLabel("Uncommitted changes (git)")
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(isSel ? Color.white.opacity(0.10)
                         : (hoveredFile == url ? Color.white.opacity(0.05) : .clear),
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(isSel ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
-            .onHover { inside in hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile) }
+            .onHover { inside in
+                withAnimation(DS.Motion.magnetic) {
+                    hoveredFile = inside ? url : (hoveredFile == url ? nil : hoveredFile)
+                }
+            }
         }
         .buttonStyle(.plain)
         .contextMenu { fileActionsMenu(url) }
@@ -974,7 +1014,7 @@ struct CodeView: View {
                 HStack(spacing: 10) {
                     if treeCollapsed {
                         headerIcon("sidebar.left", "Show the file tree") {
-                            withAnimation(CodeView.lux) { treeCollapsed = false }
+                            withAnimation(DS.Motion.lux) { treeCollapsed = false }
                         }
                     }
                     // Context meter — the local 14B sees only ~9k chars of history;
@@ -984,6 +1024,8 @@ struct CodeView: View {
                         Text("ctx \(min(contextPct, 100))%")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(contextPct >= 90 ? DS.Palette.warningSoft : .secondary.opacity(0.8))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: contextPct)
                             .padding(.horizontal, 7).padding(.vertical, 2.5)
                             .background(Color.white.opacity(0.05), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
@@ -995,6 +1037,8 @@ struct CodeView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "bolt.fill").font(.system(size: 8))
                             Text(String(format: "%.0f tok/s", tps)).font(.system(size: 10, weight: .medium))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: tps)
                         }
                         .padding(.horizontal, 7).padding(.vertical, 2.5)
                         .background(Color.white.opacity(0.05), in: Capsule())
@@ -1004,7 +1048,7 @@ struct CodeView: View {
                     }
                     Spacer()
                     headerIcon("square.and.pencil", "New chat") {
-                        if !isRunning { withAnimation { messages.removeAll() } }
+                        if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
                     }
                     headerIcon("doc.on.doc", "Copy conversation as Markdown") {
                         let md = messages
@@ -1039,8 +1083,8 @@ struct CodeView: View {
                                 .offset(y: welcomeAppeared ? 0 : 16)
                                 .onAppear {
                                     guard !welcomeAppeared else { return }
-                                    withAnimation(Self.lux.delay(0.05)) { welcomeAppeared = true }
-                                    withAnimation(Self.lux.delay(0.22)) { welcomeContentAppeared = true }
+                                    withAnimation(DS.Motion.lux.delay(0.05)) { welcomeAppeared = true }
+                                    withAnimation(DS.Motion.lux.delay(0.22)) { welcomeContentAppeared = true }
                                 }
                         }
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, msg in
@@ -1053,8 +1097,9 @@ struct CodeView: View {
                             codeBubble(msg)
                                 .background(currentConvoMatch == msg.id
                                             ? DS.Palette.accent.opacity(0.08) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 10))
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .id(msg.id)
+                                .transition(.opacity.combined(with: .offset(y: 8)))
                         }
                         if isRunning {
                             streamingView.id("stream")
@@ -1140,15 +1185,18 @@ struct CodeView: View {
                 Text("\(min(convoMatchIndex, convoMatches.count - 1) + 1)/\(convoMatches.count)")
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: convoMatchIndex)
             } else if convoQuery.count >= 2 {
                 Text("0 results").font(.system(size: 10.5)).foregroundStyle(.secondary.opacity(0.7))
+                    .transition(.opacity)
             }
             Button { jumpToMatch(convoMatchIndex - 1, proxy) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Previous match")
+                .accessibilityLabel("Previous match").help("Previous match")
             Button { jumpToMatch(convoMatchIndex + 1, proxy) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).disabled(convoMatches.isEmpty)
-                .accessibilityLabel("Next match")
+                .accessibilityLabel("Next match").help("Next match")
             Button { closeConvoSearch() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("Close search")
@@ -1176,7 +1224,7 @@ struct CodeView: View {
     }
 
     private func closeConvoSearch() {
-        withAnimation(CodeView.lux) { convoSearching = false }
+        withAnimation(DS.Motion.lux) { convoSearching = false }
         convoQuery = ""; convoMatchIndex = 0
         inputFocused = true
     }
@@ -1213,7 +1261,7 @@ struct CodeView: View {
             input = ""
             switch a {
             case "shot": attachLatestScreenshot()
-            case "clear": if !isRunning { withAnimation { messages.removeAll() } }
+            case "clear": if !isRunning { withAnimation(DS.Motion.smooth) { messages.removeAll() } }
             case "copy":
                 let md = messages
                     .map { "**\($0.isUser ? "You" : "Salehman")**\n\n\($0.text)" }
@@ -1239,7 +1287,9 @@ struct CodeView: View {
                 .font(.system(size: 9, weight: .semibold)).tracking(2.2)
                 .foregroundStyle(.secondary.opacity(0.85))
                 .padding(.horizontal, 10).padding(.vertical, 3.5)
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(DS.Palette.accent)
@@ -1262,7 +1312,7 @@ struct CodeView: View {
                 .frame(maxWidth: 400)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                ForEach(welcomeExamples, id: \.text) { ex in
+                ForEach(Array(welcomeExamples.enumerated()), id: \.offset) { idx, ex in
                     // Island architecture: the icon never sits naked next to the
                     // text — it's seated in its own circular wrapper, flush with
                     // the capsule's leading padding. Press = physical compression.
@@ -1277,16 +1327,19 @@ struct CodeView: View {
                         }
                         .padding(.leading, 5).padding(.trailing, 14).padding(.vertical, 6)
                         .background(Color.white.opacity(0.07), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         .contentShape(Capsule())
                     }
                     .buttonStyle(LuxPressStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
+                    .opacity(welcomeContentAppeared ? 1 : 0)
+                    .offset(y: welcomeContentAppeared ? 0 : 10)
+                    .animation(DS.Motion.lux.delay(Double(idx) * 0.05), value: welcomeContentAppeared)
                 }
             }
             .padding(.top, 6)
-            .opacity(welcomeContentAppeared ? 1 : 0)
-            .offset(y: welcomeContentAppeared ? 0 : 10)
             HStack(spacing: 16) {
                 shortcutHint("⌘O", "Open")
                 shortcutHint("⌘R", "Review")
@@ -1310,13 +1363,16 @@ struct CodeView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Color.white.opacity(0.05), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                                .overlay(Capsule().stroke(
+                                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                         }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help(url.path)
                     }
                 }
                 .padding(.top, 10)
+                .transition(.opacity.combined(with: .offset(y: 4)))
             }
             // The 14B's home: show when the owner's own model is serving locally.
             if let m = localServingModel {
@@ -1326,6 +1382,7 @@ struct CodeView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .frame(maxWidth: .infinity)
@@ -1339,6 +1396,8 @@ struct CodeView: View {
                            startRadius: 0, endRadius: 280)
                 .allowsHitTesting(false)
         }
+        .animation(DS.Motion.smooth, value: ws.recentProjects.isEmpty)
+        .animation(DS.Motion.smooth, value: localServingModel == nil)
     }
 
     /// A small keyboard-shortcut chip (key + label) for the welcome footer.
@@ -1348,8 +1407,10 @@ struct CodeView: View {
             Text(key)
                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                 .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.07)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.82))
         }
@@ -1364,6 +1425,8 @@ struct CodeView: View {
                 Spacer().frame(maxWidth: 0)
                 Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 5)
@@ -1476,12 +1539,16 @@ struct CodeView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(LuxPressStyle())
+                    .help("Remove attachment")
+                    .accessibilityLabel("Remove attachment")
                     Spacer()
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.05), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             // Slash-command menu — appears above the composer while typing `/…`.
@@ -1537,6 +1604,8 @@ struct CodeView: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(isRunning ? Color.white
                                 : (input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.45) : Color.white))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunning)
                             .frame(width: 27, height: 27)
                             .background(
                                 isRunning ? AnyShapeStyle(DS.Palette.accent.opacity(0.85))
@@ -1572,9 +1641,9 @@ struct CodeView: View {
                         input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.38 : 0.60),
                 lineWidth: isDropTargeted ? 1.5 : 1))
             .shadow(color: DS.Palette.accent.opacity(inputFocused ? 0.18 : 0), radius: 12, y: 2)
-            .animation(Self.lux, value: input.isEmpty)
-            .animation(Self.lux, value: isDropTargeted)
-            .animation(Self.lux, value: inputFocused)
+            .animation(DS.Motion.lux, value: input.isEmpty)
+            .animation(DS.Motion.lux, value: isDropTargeted)
+            .animation(DS.Motion.lux, value: inputFocused)
             // Drag a file onto the input to attach it as context.
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
@@ -1622,6 +1691,8 @@ struct CodeView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 // Which LOCAL model is actually serving (only shown when Salehman has
                 // no cloud configured, so the local floor is what answers): the owner's
                 // own fine-tune gets the accent — a fallback coder stays grey. Makes
@@ -1632,10 +1703,15 @@ struct CodeView: View {
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: localServingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -1668,7 +1744,7 @@ struct CodeView: View {
     /// which made a collapsed tree unrecoverable (owner hit this). ⇧⌘E also toggles.
     private var treeReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(CodeView.lux) { treeCollapsed = false } } label: {
+            Button { withAnimation(DS.Motion.lux) { treeCollapsed = false } } label: {
                 Image(systemName: "sidebar.left").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
@@ -1714,6 +1790,9 @@ struct CodeView: View {
                 if isRunning && !progress.steps.isEmpty {
                     Text("\(progress.steps.filter { $0.status == .done }.count)/\(progress.steps.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: progress.steps.filter { $0.status == .done }.count)
+                        .transition(.opacity)
                 }
                 // Live elapsed readout — long local runs are minutes of silence
                 // otherwise; a ticking clock shows the run is alive.
@@ -1728,27 +1807,36 @@ struct CodeView: View {
                                 let secs = max(1, ctx.date.timeIntervalSince(t0))
                                 Text(String(format: "≈%.0f tok/s",
                                             Double(progress.streamingAnswer.count) / 4 / secs))
+                                    .contentTransition(.numericText())
+                                    .animation(DS.Motion.smooth, value: progress.streamingAnswer.count)
                             }
                         }
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary.opacity(0.85))
                     }
+                    .transition(.opacity)
                 }
                 Spacer()
-                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = true } } label: {
+                Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = true } } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Close this panel").accessibilityLabel("Close the activity panel")
             }
+            .animation(DS.Motion.smooth, value: isRunning)
             .padding(.horizontal, 10).frame(height: 34)
             Divider().overlay(DS.Palette.hairline.opacity(0.5))
             VSplitView {
                 VStack(spacing: 0) {
                     activitySection.frame(minHeight: 90)
-                    if !ws.changedFiles.isEmpty { changedFilesList }
+                        .animation(DS.Motion.smooth, value: isRunning && !progress.steps.isEmpty)
+                    if !ws.changedFiles.isEmpty {
+                        changedFilesList
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.isEmpty)
                 inspectorPane.frame(minHeight: 150)
             }
         }
@@ -1763,7 +1851,7 @@ struct CodeView: View {
             attachedFile = nil
             attachedText = ""
             input = ""
-            withAnimation(Self.lux) {
+            withAnimation(DS.Motion.lux) {
                 messages.append(ChatMessage(id: UUID(),
                     text: "No screenshots found in \(ScreenshotGrabber.screenshotsDirectory().path).",
                     isUser: false, timestamp: Date()))
@@ -1801,17 +1889,21 @@ struct CodeView: View {
                     .foregroundStyle(.secondary.opacity(0.85))
                 Text("\(ws.changedFiles.count)")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 Spacer()
                 // The run-level safety net: one click reverts EVERY AI edit from
                 // this run (your own edits in other files are untouched).
-                Button { withAnimation(CodeView.lux) { ws.restoreAllChanged() } } label: {
+                Button { withAnimation(DS.Motion.lux) { ws.restoreAllChanged() } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.uturn.backward").font(.system(size: 8.5, weight: .semibold))
                         Text("Restore all").font(.system(size: 9.5, weight: .semibold))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color.white.opacity(0.06), in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -1825,12 +1917,14 @@ struct CodeView: View {
                         ChangedFileRow(label: relativePath(url),
                                        isSelected: ws.selectedFile == url,
                                        stat: ws.changeStats[url],
-                                       onRestore: { withAnimation(CodeView.lux) { _ = ws.restoreFromSnapshot(url) } }) {
+                                       onRestore: { withAnimation(DS.Motion.lux) { _ = ws.restoreFromSnapshot(url) } }) {
                             ws.select(url)
                             rightPane = .diff
                         }
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                 }
+                .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 .padding(.horizontal, 5).padding(.bottom, 6)
             }
             .frame(maxHeight: 110)
@@ -1845,16 +1939,22 @@ struct CodeView: View {
         if isRunning && !progress.steps.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(progress.steps) { activityStepRow($0) }
+                    ForEach(progress.steps) {
+                        activityStepRow($0)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .animation(DS.Motion.smooth, value: progress.steps.count)
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DS.Palette.codeSurfaceSide)
+            .transition(.opacity)
         } else {
             activityIdle
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DS.Palette.codeSurfaceSide)
+                .transition(.opacity)
         }
     }
 
@@ -1867,6 +1967,8 @@ struct CodeView: View {
             Image(systemName: isRunning ? "sparkles" : "bolt.horizontal.circle")
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.42))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: isRunning)
                 .frame(width: 48, height: 48)
                 .background(Color.white.opacity(0.04), in: Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
@@ -1886,6 +1988,8 @@ struct CodeView: View {
                         Circle().fill(DS.Palette.successSoft.opacity(0.65)).frame(width: 5, height: 5)
                         Text("\(stats.model)  \(String(format: "%.0f tok/s", stats.tps))")
                             .font(.system(size: 9.5, weight: .medium))
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: stats.tps)
                     }
                     .foregroundStyle(.secondary.opacity(0.62))
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -1900,14 +2004,14 @@ struct CodeView: View {
     /// Slim right-edge strip shown while the panel is closed — one click reopens it.
     private var rightReopenStrip: some View {
         VStack(spacing: 14) {
-            Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+            Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } } label: {
                 Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(LuxPressStyle()).foregroundStyle(.secondary)
             .help("Show the activity / files panel").accessibilityLabel("Show the activity and files panel")
             if !ws.changedFiles.isEmpty {
-                Button { withAnimation(CodeView.lux) { rightPanelCollapsed = false } } label: {
+                Button { withAnimation(DS.Motion.lux) { rightPanelCollapsed = false } } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10.5))
                         .frame(width: 24, height: 22).contentShape(Rectangle())
                         .overlay(alignment: .topTrailing) {
@@ -1927,7 +2031,7 @@ struct CodeView: View {
     /// Slim bar shown while the inspector is collapsed — one click brings it back.
     private var inspectorReopenBar: some View {
         Button {
-            withAnimation(CodeView.lux) { inspectorCollapsed = false }
+            withAnimation(DS.Motion.lux) { inspectorCollapsed = false }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.up").font(.system(size: 9, weight: .semibold))
@@ -1935,6 +2039,8 @@ struct CodeView: View {
                 if !ws.changedFiles.isEmpty {
                     Text("\(ws.changedFiles.count) changed")
                         .font(.system(size: 9.5, weight: .semibold)).foregroundStyle(DS.Palette.accent)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                 }
                 Spacer()
             }
@@ -1950,11 +2056,8 @@ struct CodeView: View {
     private var inspectorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Picker("", selection: $rightPane) {
-                    ForEach(RightPane.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                DSSegmentPicker(cases: RightPane.allCases, selection: $rightPane) { $0.rawValue }
+                    .frame(width: 150)
 
                 if let sel = ws.selectedFile {
                     Text(relativePath(sel))
@@ -1983,12 +2086,14 @@ struct CodeView: View {
                         Text("\(ws.changedFiles.count) changed")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.accent)
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: ws.changedFiles.count)
                     }
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(DS.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 Button {
-                    withAnimation(CodeView.lux) { rightPanelCollapsed = true }
+                    withAnimation(DS.Motion.lux) { rightPanelCollapsed = true }
                 } label: {
                     Image(systemName: "sidebar.right").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22).contentShape(Rectangle())
@@ -2007,16 +2112,38 @@ struct CodeView: View {
                         .foregroundStyle(.secondary.opacity(0.7))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(.secondary.opacity(0.48))
-                        .frame(width: 54, height: 54)
-                        .background(Color.white.opacity(0.04), in: Circle())
-                        .overlay(Circle().stroke(
-                            LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 1))
-                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    ZStack {
+                        if reduceMotion {
+                            // Reduce Motion: static halo (same geometry, no breathing loop).
+                            Circle()
+                                .fill(Color.white.opacity(0.10))
+                                .frame(width: 72, height: 72)
+                                .blur(radius: 18)
+                                .allowsHitTesting(false)
+                        } else {
+                            PhaseAnimator([0.0, 0.14, 0.0]) { opacity in
+                                Circle()
+                                    .fill(Color.white.opacity(opacity))
+                                    .frame(width: 72, height: 72)
+                                    .blur(radius: 18)
+                                    .allowsHitTesting(false)
+                            } animation: { opacity in
+                                opacity > 0.07
+                                    ? .spring(duration: 2.4, bounce: 0.04)
+                                    : .easeOut(duration: 2.2)
+                            }
+                        }
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.48))
+                            .frame(width: 54, height: 54)
+                            .background(Color.white.opacity(0.04), in: Circle())
+                            .overlay(Circle().stroke(
+                                LinearGradient(colors: [.white.opacity(0.12), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 1))
+                            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    }
                     Text("Select a file to view it,\nor run a task to see diffs.")
                         .font(.system(size: 11.5)).foregroundStyle(.secondary.opacity(0.65))
                         .multilineTextAlignment(.center)
@@ -2054,10 +2181,12 @@ struct CodeView: View {
             if !fileSearch.isEmpty {
                 Text(searchMatchLines.isEmpty ? "0/0" : "\(searchIndex + 1)/\(searchMatchLines.count)")
                     .font(.system(size: 10, design: .monospaced))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: searchIndex)
                 Button { jumpMatch(-1) } label: { Image(systemName: "chevron.up") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Previous match").help("Previous match")
                 Button { jumpMatch(+1) } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match")
+                    .buttonStyle(.plain).disabled(searchMatchLines.isEmpty).accessibilityLabel("Next match").help("Next match")
                 Button { clearSearch() } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
@@ -2273,20 +2402,22 @@ struct CodeView: View {
             await ConversationStore.shared.reset()
             let packed = await Task.detached(priority: .userInitiated) { RepoPacker.pack(rootPath: root.path) }.value
             // Honesty gate: a whole-codebase review is only trustworthy on a brain
-            // that can actually INGEST the codebase. With no cloud key the only brain
-            // is the local qwen2.5-coder at a 4096-token window (~12 KB of text) — it
-            // would see a tiny fraction and hallucinate findings (observed repeatedly:
-            // it "reviewed" code it never saw). Refuse instead of emitting guesswork;
-            // small folders that DO fit the window still go through.
+            // that can actually INGEST the codebase. On the default local
+            // qwen2.5-coder at a 4096-token window (~12 KB of text) it would see a
+            // tiny fraction and hallucinate findings (observed repeatedly: it
+            // "reviewed" code it never saw). Refuse instead of emitting guesswork;
+            // small folders that DO fit the window still go through. A large-context
+            // local engine (vLLM / Unsloth Studio) sidesteps this — point one at the
+            // model in Settings → Salehman engine.
             let localContextBudget = 12_000
             if !SalehmanEngine.hasAnyCloud && packed.digest.count > localContextBudget {
                 let pct = max(1, Int((Double(localContextBudget) / Double(packed.digest.count)) * 100))
                 let msg = """
                 ⚠️ Can't give a trustworthy review here.
 
-                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but with no cloud key the review runs on the local model's 4096-token window — it sees ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
+                This folder packs to \(RepoPacker.byteString(packed.totalBytes)) across \(packed.fileCount) files, but the default local model's 4096-token window sees only ~12 KB at a time (≈\(pct)% of your code), so any "review" would be guesswork (that's exactly why the last ones echoed code and refused).
 
-                To get a real review: add a free Groq or Cerebras key in Settings → Brain — both ingest the whole codebase. Then run Review again. (Or open a smaller folder that fits the local window.)
+                To get a real review: serve the model on a large-context local engine (vLLM or Unsloth Studio) in Settings → Salehman engine, then run Review again. (Or open a smaller folder that fits the local window.)
                 """
                 await MainActor.run {
                     messages.append(ChatMessage(id: UUID(), text: msg, isUser: false, timestamp: Date()))
@@ -2371,8 +2502,7 @@ struct CodeMessageRow: View {
                     // core, so user turns read as physical objects in the flow.
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.02)],
-                                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
                     )
             }
         } else {
@@ -2421,6 +2551,8 @@ struct CodeMessageRow: View {
             Image(systemName: icon).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(active ? DS.Palette.accent : Color.white.opacity(0.55))
                 .frame(width: 22, height: 22).contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(LuxPressStyle())
         .help(help)
@@ -2429,14 +2561,28 @@ struct CodeMessageRow: View {
 }
 
 /// Small breathing accent dot shown while a reply streams in.
+/// Streaming "active" dot. PhaseAnimator pulses 0.35↔1.0 opacity; under Reduce
+/// Motion it renders as a solid dot (presence + accent color still signal activity).
 struct PulsingDot: View {
-    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        Circle().fill(DS.Palette.accent)
-            .frame(width: 7, height: 7)
-            .opacity(on ? 1 : 0.35)
-            .onAppear { withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.8).repeatForever(autoreverses: true)) { on = true } }
-            .accessibilityHidden(true)
+        Group {
+            if reduceMotion {
+                Circle().fill(DS.Palette.accent)
+                    .frame(width: 7, height: 7)
+            } else {
+                PhaseAnimator([0.35, 1.0]) { opacity in
+                    Circle().fill(DS.Palette.accent)
+                        .frame(width: 7, height: 7)
+                        .opacity(opacity)
+                } animation: { opacity in
+                    opacity > 0.5
+                        ? .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.75)
+                        : .timingCurve(0.45, 0.0, 0.55, 1.0, duration: 0.90)
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -2518,7 +2664,7 @@ struct CodeSampleGallery: View {
                 }
                 .frame(maxWidth: 360, alignment: .leading)
                 .padding(8)
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10))
+                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .padding(26)

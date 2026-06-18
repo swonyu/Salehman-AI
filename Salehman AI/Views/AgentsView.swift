@@ -7,6 +7,12 @@ struct AgentsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var directCommand: String = ""
     @State private var agentSearch: String = ""
+    /// Focus drives a subtle accent glow on the filter field — consistent with
+    /// the app's other text inputs (add-note/composer focus affordance).
+    @FocusState private var searchFocused: Bool
+    /// Mirrors the filter field's accent-glow affordance on the direct-command input.
+    @FocusState private var commandFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isRunningAutonomous = false
 
     // Real autonomous-loop state. The Task lets us actually *cancel*
@@ -27,11 +33,13 @@ struct AgentsView: View {
     @State private var showStopConfirm = false
     @State private var runHistory: [RunEntry] = []
     @State private var hoveredRunID: UUID?
+    /// Staggered entrance — sections fade up on first appear. Pre-set under
+    /// `--qa` so the offscreen snapshot (onAppear never fires) captures the
+    /// settled layout, not the opacity-0 pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
 
     var body: some View {
         ZStack {
-            // Flat opaque working canvas (design language) — no gradients,
-            // no glow show-through on chat-like/working surfaces.
             DS.Palette.codeSurface.ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -40,24 +48,74 @@ struct AgentsView: View {
                 ScrollView {
                     VStack(spacing: DS.Space.lg) {
                         autonomousControlSection
-                        if !runHistory.isEmpty { runHistorySection.transition(.opacity.combined(with: .move(edge: .top))) }
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 12)
+                            .animation(DS.Motion.entrance.delay(0.06), value: appeared)
+                        if !runHistory.isEmpty {
+                            runHistorySection
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .opacity(appeared ? 1 : 0)
+                                .animation(DS.Motion.entrance.delay(0.10), value: appeared)
+                        }
                         agentsGrid
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 12)
+                            .animation(DS.Motion.entrance.delay(0.14), value: appeared)
                     }
+                    .animation(DS.Motion.smooth, value: runHistory.isEmpty)
                     .padding(DS.Space.xl)
                 }
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear { appeared = true }
     }
 
+    // MARK: Header
+
     private var header: some View {
-        // Slimmer header, chrome diet: the "N agents" counter badge is gone —
-        // not actionable, and the gallery below already shows the team.
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Agents")
-                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                Text("Your specialist team — they plan, build, and review together.")
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — consistent with TodayView header treatment.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(
+                                LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.75
+                            )
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Agents")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Specialist Team")
+                }
+                Text("They plan, build, and review together.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -65,17 +123,27 @@ struct AgentsView: View {
         .padding(.horizontal, DS.Space.xl)
         .padding(.top, DS.Space.lg)
         .padding(.bottom, DS.Space.md)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 10)
+        .animation(DS.Motion.entrance, value: appeared)
     }
 
+    // MARK: Autonomous Control
+
     private var autonomousControlSection: some View {
-        // Flat card per the design language (was a glass-hero with gradient
-        // wash + accent glow). Logic below (toggleAutonomousRun /
-        // sendDirectCommand / settings binding) is unchanged — chrome only.
         VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(DS.Palette.accent)
+                // Mode icon — glows brand when active.
+                ZStack {
+                    Circle()
+                        .fill(settings.autonomousMode
+                              ? DS.Palette.accent.opacity(0.20)
+                              : Color.white.opacity(0.07))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(settings.autonomousMode ? DS.Palette.accent : .secondary)
+                }
                 Text("Autonomous Mode")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
@@ -89,27 +157,39 @@ struct AgentsView: View {
                  ? "Agents can chain tasks, self-correct, and continue working with minimal input."
                  : "Classic mode: you give a mission — they execute once.")
                 .font(.caption).foregroundStyle(DS.Palette.textSecondary)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: settings.autonomousMode)
 
             if settings.autonomousMode {
                 Button {
-                    // While running, an accidental click could discard
-                    // mid-iteration work — confirm first. Starting is a normal
-                    // tap (no confirmation needed).
                     if isRunningAutonomous {
                         showStopConfirm = true
                     } else {
                         toggleAutonomousRun()
                     }
                 } label: {
-                    Label(isRunningAutonomous
-                          ? "Stop (iteration \(iterationCount))"
-                          : "Start Autonomous Run",
-                          systemImage: isRunningAutonomous ? "stop.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    HStack(spacing: 8) {
+                        Image(systemName: isRunningAutonomous ? "stop.fill" : "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
+                        Text(isRunningAutonomous
+                             ? "Stop  ·  iteration \(iterationCount)"
+                             : "Start Autonomous Run")
+                            .font(.system(size: 13, weight: .semibold))
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: isRunningAutonomous)
+                    }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(isRunningAutonomous ? Color.red.opacity(0.85) : DS.Palette.accent, in: Capsule())
-                    .shadow(color: (isRunningAutonomous ? Color.red : DS.Palette.accent).opacity(0.28), radius: 6, y: 2)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(
+                        isRunningAutonomous
+                            ? AnyShapeStyle(DS.Palette.danger.opacity(0.85))
+                            : AnyShapeStyle(DS.Gradient.brand),
+                        in: Capsule()
+                    )
+                    .shadow(color: (isRunningAutonomous ? DS.Palette.danger : DS.Palette.accent).opacity(0.30),
+                            radius: 8, y: 3)
                 }
                 .buttonStyle(LuxPressStyle())
                 .confirmationDialog("Stop the autonomous run?",
@@ -122,54 +202,105 @@ struct AgentsView: View {
                 }
 
                 if isRunningAutonomous && !lastResultPreview.isEmpty {
-                    // Show the head of the latest reply so the user has
-                    // visible proof the loop is actually iterating.
                     Text("Latest: \(lastResultPreview.prefix(160))…")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .padding(.top, 4)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
             }
 
-            HStack {
-                TextField("Give agents a direct command…", text: $directCommand)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                        .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    .onSubmit { Task { await sendDirectCommand() } }
-                    .onKeyPress(.escape) { directCommand = ""; return .handled }
-                    .accessibilityLabel("Direct command to agents")
+            // Direct command field — mini-composer treatment: accent focus glow on
+            // the well + a filled circular send, matching the chat composer's affordance
+            // (replaces the lone stock `.bordered` button — the last generic control here).
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.accent.opacity(commandFocused ? 1.0 : 0.70))
+                    TextField("Give agents a direct command…", text: $directCommand)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($commandFocused)
+                        .onSubmit { Task { await sendDirectCommand() } }
+                        .onKeyPress(.escape) { directCommand = ""; return .handled }
+                        .accessibilityLabel("Direct command to agents")
+                }
+                .padding(.horizontal, 10).padding(.vertical, 9)
+                .background(Color.white.opacity(commandFocused ? 0.10 : 0.08),
+                            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                    .stroke(commandFocused
+                            ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55),
+                                                                    DS.Palette.accent.opacity(0.15)],
+                                                           startPoint: .top, endPoint: .bottom))
+                            : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+                .shadow(color: DS.Palette.accent.opacity(commandFocused ? 0.15 : 0.0), radius: 10, y: 2)
+                .animation(DS.Motion.lux, value: commandFocused)
 
-                Button("Send") {
+                CircleIconButton(systemName: "arrow.up",
+                                 size: 34, iconSize: 14,
+                                 filled: true,
+                                 disabled: directCommand.trimmingCharacters(in: .whitespaces).isEmpty,
+                                 help: "Send command to agents",
+                                 accessibilityLabel: "Send command to agents") {
                     Task { await sendDirectCommand() }
                 }
-                .buttonStyle(.bordered)
-                .tint(DS.Palette.accent)
-                .disabled(directCommand.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(DS.Space.lg)
-        // Flat opaque card + hairline — no gradient wash, no glow shadow.
-        .background(DS.Palette.codeSurfaceSide,
-                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
+        // Bezel treatment: outer shell + inner core tinted by mode state.
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .fill(settings.autonomousMode
+                          ? DS.Palette.accent.opacity(0.07)
+                          : DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Bezel.innerRadius, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
         )
+        .padding(DS.Bezel.shellPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .fill(DS.Bezel.shellFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Bezel.outerRadius, style: .continuous)
+                .stroke(isRunningAutonomous
+                        ? DS.Palette.accent.opacity(0.35)
+                        : DS.Bezel.shellStroke,
+                        lineWidth: 1)
+        )
+        // Accent glow materialises while a run is in progress.
+        .shadow(color: DS.Palette.accent.opacity(isRunningAutonomous ? 0.18 : 0.0),
+                radius: 18, y: 6)
+        .animation(DS.Motion.smooth, value: settings.autonomousMode)
+        .animation(DS.Motion.smooth, value: isRunningAutonomous)
     }
+
+    // MARK: Agent grid
 
     private var agentsGrid: some View {
         let agents = AgentFilter.matching(AgentDefinitions.pipeline, query: agentSearch)
         return VStack(alignment: .leading, spacing: DS.Space.md) {
             agentSearchRow
             if agents.isEmpty {
-                Text("No agents match “\(agentSearch)”.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity).padding(.vertical, 20)
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.05))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
+                    Text("No agents match “\(agentSearch)”.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: DS.Space.md)], spacing: DS.Space.md) {
                     ForEach(agents) { spec in
@@ -177,8 +308,10 @@ struct AgentsView: View {
                                   isActive: progress.steps.contains { $0.name == spec.name && $0.status == .running })
                     }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: agents.isEmpty)
     }
 
     private var agentSearchRow: some View {
@@ -186,6 +319,7 @@ struct AgentsView: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
             TextField("Filter agents…", text: $agentSearch)
                 .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { agentSearch = ""; return .handled }
                 .accessibilityLabel("Filter agents")
             if !agentSearch.isEmpty {
@@ -193,12 +327,18 @@ struct AgentsView: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: agentSearch.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
+
+    // MARK: Run history
 
     private var runHistorySection: some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -208,11 +348,13 @@ struct AgentsView: View {
                     .foregroundStyle(.secondary)
                 Text("\(runHistory.count)")
                     .font(.caption2.monospacedDigit())
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: runHistory.count)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(DS.Palette.accent.opacity(0.15), in: Capsule())
                     .foregroundStyle(DS.Palette.accent)
                 Spacer()
-                Button("Clear") { runHistory.removeAll() }
+                Button("Clear") { withAnimation(DS.Motion.smooth) { runHistory.removeAll() } }
                     .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
             }
             VStack(spacing: 1) {
@@ -241,14 +383,24 @@ struct AgentsView: View {
                             else if hoveredRunID == entry.id { hoveredRunID = nil }
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .animation(DS.Motion.smooth, value: runHistory.count)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(DS.Bezel.cardFill)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
     }
+
+    // MARK: Autonomous run logic
 
     /// Toggle between starting and stopping the autonomous loop.
     ///
@@ -277,9 +429,6 @@ struct AgentsView: View {
         lastResultPreview = ""
 
         autonomousTask = Task {
-            // First iteration uses a generic improvement prompt; subsequent
-            // iterations feed the previous reply back as context so the
-            // agents are *chaining*, not redoing the same prompt.
             var mission = "Enter autonomous mode and improve the app while reporting progress. Pick one concrete next step you can take with the tools available, and produce a useful artifact (analysis, code, a plan, or a measurable change)."
 
             var i = 0
@@ -291,22 +440,17 @@ struct AgentsView: View {
                 if Task.isCancelled { break }
 
                 await MainActor.run {
-                    lastResultPreview = result
-                    runHistory.insert(
-                        RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
-                        at: 0
-                    )
+                    withAnimation(DS.Motion.smooth) {
+                        lastResultPreview = result
+                        runHistory.insert(
+                            RunEntry(iteration: i, preview: String(result.prefix(120)), timestamp: Date()),
+                            at: 0
+                        )
+                    }
                 }
 
-                // Bail if the agents signaled completion. This is now the
-                // ONLY natural stop condition (besides the user's Stop tap),
-                // since there's no iteration cap.
                 if result.contains("AUTONOMOUS_DONE") { break }
 
-                // Feed the previous result into the next iteration's mission
-                // so agents see what they just produced and can build on it,
-                // not redo the same task. We no longer reference an
-                // "iteration X of Y" — there is no Y.
                 mission = """
                 You are in an autonomous run (iteration \(i + 1), no fixed end).
 
@@ -316,9 +460,6 @@ struct AgentsView: View {
                 Continue working. If the previous step achieved its goal, propose and execute the next useful improvement. If it didn't, refine the approach and produce a better result. Stop by saying "AUTONOMOUS_DONE" on its own line when there's nothing useful left to do.
                 """
 
-                // Brief pause between iterations so a user hitting Stop has
-                // a chance to interrupt cleanly, and so a runaway loop
-                // doesn't slam the cloud brain back-to-back.
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 if Task.isCancelled { break }
             }
@@ -339,43 +480,111 @@ struct AgentsView: View {
 }
 
 // MARK: - Agent gallery card
-// Extracted to its own `View` so it can own `@State hovering` (a `@State` can't
-// live inside a `func` body). Themed icon circle (accent when the agent is
-// running), hover lift, and the new `DS.Elevation` shadows.
+
+/// Premium agent card — `RoundedRectangle` icon well (consistent with
+/// TodayView's ActionTile), bezel fill, magnetic hover, and an accent glow
+/// that materialises when the agent is actively running.
 private struct AgentCard: View {
     let spec: AgentSpec
     let isActive: Bool
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
+            // Icon well — brand gradient when active, subtle fill at rest.
             ZStack {
-                Circle()
-                    .fill(isActive ? DS.Palette.accent.opacity(0.18) : Color.white.opacity(0.06))
-                    .frame(width: 44, height: 44)
+                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                    .fill(isActive
+                          ? AnyShapeStyle(DS.Gradient.brand)
+                          : AnyShapeStyle(Color.white.opacity(hovering ? 0.10 : 0.06)))
+                    .frame(width: 42, height: 42)
+                    .shadow(color: DS.Palette.accent.opacity(isActive ? 0.40 : 0.0),
+                            radius: 8, y: 3)
                 Image(systemName: spec.icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(isActive ? DS.Palette.accent : Color.white.opacity(0.85))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isActive ? .white : Color.white.opacity(0.80))
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(spec.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                Text(spec.role).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.icon, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(isActive ? 0.45 : 0.18),
+                                                    Color.white.opacity(isActive ? 0.08 : 0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
+            .scaleEffect(hovering ? 1.06 : 1.0)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(spec.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(spec.role)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
             Spacer(minLength: 4)
-            if isActive { ProgressView().controlSize(.small) }
+
+            // Status indicator — pulsing dot + spinner when running, subtle
+            // arrow at rest. PhaseAnimator gives the dot a heartbeat glow.
+            if isActive {
+                HStack(spacing: 5) {
+                    if reduceMotion {
+                        // Reduce Motion: static running dot (no heartbeat glow).
+                        Circle()
+                            .fill(DS.Palette.successSoft)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 2)
+                    } else {
+                        PhaseAnimator([false, true]) { bright in
+                            Circle()
+                                .fill(DS.Palette.successSoft)
+                                .frame(width: 6, height: 6)
+                                .shadow(color: DS.Palette.successSoft.opacity(bright ? 0.75 : 0.20),
+                                        radius: bright ? 4 : 1)
+                        } animation: { bright in
+                            bright ? .easeIn(duration: 0.60) : .easeOut(duration: 1.0)
+                        }
+                    }
+                    ProgressView().controlSize(.small)
+                }
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
+            } else if hovering {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary.opacity(0.60))
+                    .transition(.opacity)
+            }
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Flat opaque card + hairline; the hover/active stroke is the only
-        // elevation cue (no shadows — design language).
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(hovering ? 0.07 : 0.04))
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(isActive ? DS.Palette.accent.opacity(0.5)
-                                 : (hovering ? Color.white.opacity(0.16) : DS.Palette.surfaceStroke),
+                .stroke(isActive
+                    ? LinearGradient(colors: [DS.Palette.accent.opacity(0.65),
+                                              DS.Palette.accent.opacity(0.16)],
+                                     startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [Color.white.opacity(hovering ? 0.16 : 0.07),
+                                              Color.white.opacity(hovering ? 0.16 : 0.07)],
+                                     startPoint: .top, endPoint: .bottom),
                         lineWidth: 1)
         )
-        .onHover { h in withAnimation(DS.Motion.press) { hovering = h } }
+        .scaleEffect(hovering ? 1.015 : 1.0)
+        .shadow(color: DS.Palette.accent.opacity(isActive ? 0.14 : 0.0), radius: 12, y: 5)
+        .onHover { h in withAnimation(DS.Motion.magnetic) { hovering = h } }
+        .animation(DS.Motion.smooth, value: isActive)
+        // One VoiceOver element per card; expose the running state, which is
+        // otherwise conveyed ONLY by the pulsing dot vs. arrow (invisible to VO).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spec.name), \(spec.role)")
+        .accessibilityValue(isActive ? "Running" : "Idle")
     }
 }
 

@@ -45,6 +45,36 @@ struct EffortTests {
         #expect(Effort.high.approxModelCalls <= Effort.ultra.approxModelCalls)
     }
 
+    // MARK: refineRounds + approxRefineCalls (the pinned-Salehman-brain path)
+    //
+    // `refineOwnDraft` runs when the Salehman brain calls critique on its own
+    // answer — no fan-out is available there, so `.ultra` is capped at `.high`.
+    // Breaking that cap would silently add extra model calls per reply.
+
+    @Test func refineRoundsMonotonicAndUltraCappedAtHigh() {
+        // instant < balanced < high == ultra (ultra can't fan out here).
+        #expect(Effort.instant.refineRounds == 0)
+        #expect(Effort.instant.refineRounds < Effort.balanced.refineRounds)
+        #expect(Effort.balanced.refineRounds < Effort.high.refineRounds)
+        // Key cap: .ultra caps at .high so refineOwnDraft doesn't spawn extra calls.
+        #expect(Effort.ultra.refineRounds == Effort.high.refineRounds,
+                ".ultra.refineRounds must equal .high.refineRounds — fan-out unavailable for refine path")
+    }
+
+    @Test func approxRefineCallsIsRefineRoundsTimesTwo() {
+        for e in Effort.allCases {
+            #expect(e.approxRefineCalls == e.refineRounds * 2,
+                    "approxRefineCalls must equal refineRounds × 2 for \(e)")
+        }
+    }
+
+    @Test func ultraRefineIsNotCheaperThanHigh() {
+        // Monotonic guard: the dial must never go backwards on the refine path.
+        #expect(Effort.instant.approxRefineCalls <= Effort.balanced.approxRefineCalls)
+        #expect(Effort.balanced.approxRefineCalls <= Effort.high.approxRefineCalls)
+        #expect(Effort.high.approxRefineCalls <= Effort.ultra.approxRefineCalls)
+    }
+
     // MARK: control flow
 
     @Test func instantReturnsDraftWithoutCritiquing() async {
@@ -82,17 +112,42 @@ struct EffortTests {
     }
 
     @Test func ultraFansOutThreeDraftsAndJudgePicksSecond() async {
-        // 3 candidates; each draft approved immediately (empty critique); judge → #2.
-        // Drafts are produced by generate(question), so their prompt == "q".
-        let rec = Recorder { prompt, idx in
-            if prompt == "q" { return "candidate-\(idx)" }            // distinct drafts
-            if prompt.contains("best answer") { return "pick 2" }     // judge verdict
-            return ""                                                 // approve each draft
+        // 3 candidates; each approved immediately (empty critique); judge → #2.
+        // Since ultra fans out in parallel, the recorder may assign indices in
+        // any order — drafts use a fixed string so the result is order-agnostic.
+        // The key assertions: 3 candidates tried, judge called, answer is one
+        // of the generated drafts (here they're all identical, so judge→#2 still
+        // returns the same string regardless of which task produced which index).
+        let rec = Recorder { prompt, _ in
+            if prompt == "q" { return "unanimous-answer" }        // all 3 drafts identical
+            if prompt.contains("best answer") { return "2" }      // judge picks #2
+            return ""                                             // approve each draft
         }
         let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
         #expect(result.candidatesTried == 3)
-        // drafts land at idx 0,2,4 → "candidate-0/2/4"; judge picks the 2nd → "candidate-2".
-        #expect(result.answer == "candidate-2")
+        #expect(result.answer == "unanimous-answer")
+    }
+
+    // MARK: judge + reasoning-model think blocks
+
+    @Test func judgeIgnoresThinkBlockBeforeVerdictNumber() async {
+        // A reasoning model (QwQ / DeepSeek-R1) might emit:
+        //   <think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2
+        // Without stripping: firstInt finds '1' from inside <think> → wrong candidate.
+        // With stripping (EOT fix): think block removed → firstInt("2") = 2 → correct.
+        //
+        // Candidates are identical strings so the judge's choice of #2 (index 1)
+        // returns the same content regardless of the fan-out's parallel scheduling.
+        let rec = Recorder { prompt, _ in
+            if prompt.contains("best answer") {
+                return "<think>Answer 1 has 3 issues, but answer 2 is clearly better.</think>2"
+            }
+            if prompt == "q" { return "approved-candidate" }
+            return ""   // empty critique = immediate approval per candidate
+        }
+        let result = await Effort.ultra.respond(to: "q") { rec.generate($0) }
+        // Judge's think-stripped verdict → "2" → candidates[1] = "approved-candidate".
+        #expect(result.answer == "approved-candidate")
     }
 
     @Test func firstIntParsesLooseVerdicts() {

@@ -11,6 +11,7 @@ struct OnboardingView: View {
     // Entrance choreography. Starts settled under `--qa` so offscreen snapshots
     // capture the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Page: Identifiable {
         let id = UUID()
@@ -74,19 +75,36 @@ struct OnboardingView: View {
                                                        startPoint: .top, endPoint: .bottom),
                                         lineWidth: 1)
                         )
-                    Image(systemName: pages[page].icon)
-                        .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(.white)
-                        .id("icon\(page)")
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+
+                    // KeyframeAnimator gives each page-change a physics-accurate
+                    // rubber-band pop: compress → overshoot → settle. Symbol
+                    // crossfade handled by contentTransition, scale by the track.
+                    if reduceMotion {
+                        // Reduce Motion: static icon (no scale bounce).
+                        Image(systemName: pages[page].icon)
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundStyle(.white)
+                            .contentTransition(.symbolEffect(.replace))
+                    } else {
+                        KeyframeAnimator(initialValue: CGFloat(1.0), trigger: page) { scale in
+                            Image(systemName: pages[page].icon)
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundStyle(.white)
+                                .scaleEffect(scale)
+                                .contentTransition(.symbolEffect(.replace))
+                        } keyframes: { _ in
+                            KeyframeTrack {
+                                LinearKeyframe(0.55, duration: 0.07)
+                                SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                            }
+                        }
+                    }
                 }
                 .padding(.bottom, 26)
 
-                // Editorial eyebrow — gives each page a sense of place + rhythm.
-                Text(pages[page].eyebrow)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .tracking(2.5)
-                    .foregroundStyle(DS.Palette.accent)
+                // Eyebrow badge — DS component for cross-view consistency.
+                Eyebrow(text: pages[page].eyebrow)
                     .padding(.bottom, 10)
                     .id("eyebrow\(page)")
                     .transition(.opacity)
@@ -118,6 +136,7 @@ struct OnboardingView: View {
                             .frame(width: i == page ? 22 : 7, height: 7)
                     }
                 }
+                .animation(DS.Motion.smooth, value: page)
                 .padding(.bottom, 26)
 
                 HStack {
@@ -125,6 +144,7 @@ struct OnboardingView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .opacity(page > 0 ? 1 : 0)
+                        .animation(DS.Motion.smooth, value: page > 0)
                         .disabled(page == 0)
 
                     Spacer()
@@ -133,24 +153,42 @@ struct OnboardingView: View {
                         if isLast { onDone() }
                         else { withAnimation(DS.Motion.smooth) { page += 1 } }
                     } label: {
-                        Text(isLast ? "Get Started" : "Next")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 26).padding(.vertical, 11)
-                            .background(DS.Gradient.brand, in: Capsule())
-                            .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
-                            .scaleEffect(ctaHover ? 1.035 : 1)
-                            .brightness(ctaHover ? 0.06 : 0)
+                        // Button-in-button: trailing chevron in its own circle.
+                        HStack(spacing: 8) {
+                            Text(isLast ? "Get Started" : "Next")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(ctaHover ? 0.20 : 0.12))
+                                    .frame(width: 26, height: 26)
+                                    .scaleEffect(ctaHover ? 1.08 : 1.0)
+                                Image(systemName: isLast ? "checkmark" : "chevron.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .animation(DS.Motion.smooth, value: isLast)
+                                    .offset(x: ctaHover && !isLast ? 1.5 : 0,
+                                            y: ctaHover && !isLast ? -1 : 0)
+                            }
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .background(DS.Gradient.brand, in: Capsule())
+                        .dsShadow(DS.Elevation.accentGlow(ctaHover ? 0.62 : 0.4))
+                        .scaleEffect(ctaHover ? 1.035 : 1)
+                        .brightness(ctaHover ? 0.06 : 0)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
-                    .onHover { hovering in withAnimation(DS.Motion.smooth) { ctaHover = hovering } }
+                    .onHover { hovering in withAnimation(DS.Motion.magnetic) { ctaHover = hovering } }
                 }
 
                 Button("Skip") { onDone() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.4))
+                    // WCAG-AA: 0.4 measured ~3.7:1 on the dark canvas (fails body-text
+                    // 4.5:1); 0.55 ≈ 6:1 while staying clearly subordinate to the CTA.
+                    .foregroundStyle(.white.opacity(0.55))
                     .padding(.top, 14)
             }
             .padding(44)

@@ -80,10 +80,14 @@ enum SelfCritique {
     /// sentinel anywhere in the (case-insensitive) text -- small models tend to
     /// wrap it in prose ("I find NO_ISSUES here.") -- and treats an empty
     /// critique as "nothing to fix".
+    /// Strips reasoning-model think blocks first: a model that debates the token
+    /// inside <think> ("Should I say NO_ISSUES? No, there are real problems.")
+    /// would otherwise produce a false positive.
     nonisolated static func isApproved(_ critique: String) -> Bool {
-        let trimmed = critique.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return true }
-        return trimmed.uppercased().contains(approvedToken)
+        let stripped = AgentPipeline.stripNarration(critique)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if stripped.isEmpty { return true }
+        return stripped.uppercased().contains(approvedToken)
     }
 
     nonisolated static func critiquePrompt(question: String, answer: String) -> String {

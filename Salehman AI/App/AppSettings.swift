@@ -34,15 +34,14 @@ final class AppSettings: ObservableObject {
     }
 
     /// User's preferred brain. Defaults to `.salehman` — the trained primary, which
-    /// cascades cloud→free→local on its own. `.auto` is local-first (Ollama
-    /// qwen-coder when reachable). The picker surfaces only those two now; see
-    /// `selectableCases`.
+    /// resolves vLLM → Unsloth Studio → MLX → Ollama, all local. `.auto` is
+    /// local-first (Ollama qwen-coder when reachable). See `selectableCases`.
     @Published var brainPreference: BrainPreference {
         didSet { UserDefaults.standard.set(brainPreference.rawValue, forKey: Keys.brainPreference) }
     }
     /// The user's OWN local model name, used by the `.salehman` brain's local
     /// floor (an Ollama model the user pulled or built with a Modelfile). Salehman
-    /// itself is cloud-first; this is its offline fallback model.
+    /// is fully local; this is its Ollama-tier model.
     @Published var customModelName: String {
         didSet { UserDefaults.standard.set(customModelName, forKey: Keys.customModel) }
     }
@@ -87,33 +86,6 @@ final class AppSettings: ObservableObject {
     @Published var rotationBrains: [BrainPreference] {
         didSet { UserDefaults.standard.set(rotationBrains.map(\.rawValue), forKey: Keys.rotationBrains) }
     }
-    /// Which xAI Grok model to call when `BrainPreference.grok` is active.
-    /// Defaults to `grok-4`; the Settings picker lets the user upgrade to
-    /// `grok-4-heavy` for deeper reasoning at higher latency/cost. The API
-    /// **key** itself never lives here — it's stored in the macOS Keychain
-    /// via `KeychainStore.Account.grokAPIKey`.
-    @Published var grokModel: String {
-        didSet { UserDefaults.standard.set(grokModel, forKey: Keys.grokModel) }
-    }
-    /// Picked model for each of the four free cloud brains. The API **key**
-    /// for each lives in macOS Keychain — see `KeychainStore.Account`.
-    @Published var geminiModel: String {
-        didSet { UserDefaults.standard.set(geminiModel, forKey: Keys.geminiModel) }
-    }
-    @Published var groqModel: String {
-        didSet { UserDefaults.standard.set(groqModel, forKey: Keys.groqModel) }
-    }
-    @Published var mistralModel: String {
-        didSet { UserDefaults.standard.set(mistralModel, forKey: Keys.mistralModel) }
-    }
-    @Published var cerebrasModel: String {
-        didSet { UserDefaults.standard.set(cerebrasModel, forKey: Keys.cerebrasModel) }
-    }
-    // (deepSeekModel removed 2026-06-12 — owner: "remove deepseek". The direct
-    // DeepSeek provider is gone; DeepSeek-V4 models still run via NVIDIA free.)
-    @Published var openRouterModel: String {
-        didSet { UserDefaults.standard.set(openRouterModel, forKey: Keys.openRouterModel) }
-    }
     @Published var responseMode: ResponseMode { didSet { UserDefaults.standard.set(responseMode.rawValue, forKey: "set_responseMode") } }
     @Published var autoSpeak: Bool    { didSet { UserDefaults.standard.set(autoSpeak, forKey: Keys.autoSpeak) } }
     /// Read-aloud speed, normalized 0…1 (mapped to AVSpeechUtterance min/max).
@@ -125,11 +97,10 @@ final class AppSettings: ObservableObject {
     /// Autonomous Mode — lets the Agents tab kick off a self-directed Orchestrator
     /// run (chain tasks, self-correct, keep working with minimal input). Off by default.
     @Published var autonomousMode: Bool { didSet { UserDefaults.standard.set(autonomousMode, forKey: Keys.autonomousMode) } }
-    /// **Offline / Local-Only mode.** Hard-disables every cloud brain (Claude, Grok,
-    /// Gemini, Groq, Mistral, Cerebras, OpenAI/Codex, Copilot, OpenRouter) AND the
-    /// external tools (`web_search`, `fetch_url`) — even when their keys/toggles
-    /// are saved. With this on, only the local Ollama brain can answer, and
-    /// no network call ever leaves the Mac. Off by default (opt-in).
+    /// **Offline / Local-Only mode.** Hard-disables the external tools
+    /// (`web_search`, `fetch_url`) — even when their toggles are saved. With this
+    /// on, no network call ever leaves the Mac. Off by default (opt-in). (The app
+    /// is already local-only for inference — all brains are on-device.)
     @Published var offlineOnly: Bool { didSet { UserDefaults.standard.set(offlineOnly, forKey: Keys.offlineOnly) } }
     @Published var hideFromCapture: Bool {
         didSet { UserDefaults.standard.set(hideFromCapture, forKey: Keys.hideCapture); applyCapturePrivacy() }
@@ -224,14 +195,6 @@ final class AppSettings: ObservableObject {
         nonisolated static let vllmEndpoint = "set_vllmEndpoint"
         nonisolated static let vllmModel    = "set_vllmModel"
         nonisolated static let rotationBrains  = "set_rotationBrains"
-        nonisolated static let openAIModel     = "set_openAIModel"
-        nonisolated static let grokModel       = "set_grokModel"
-        nonisolated static let geminiModel     = "set_geminiModel"
-        nonisolated static let groqModel       = "set_groqModel"
-        nonisolated static let mistralModel    = "set_mistralModel"
-        nonisolated static let cerebrasModel   = "set_cerebrasModel"
-        // ("set_deepSeekModel" key retired 2026-06-12 with the DeepSeek removal)
-        nonisolated static let openRouterModel = "set_openRouterModel"
     }
 
     /// `nonisolated` read of the user's own model name for the `.salehman` brain.
@@ -300,47 +263,6 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// `nonisolated` read of the selected OpenAI/Codex model (key is in Keychain).
-    nonisolated static var openAIModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.openAIModel) ?? ""
-        return OpenAIClient.allModels.contains(raw) ? raw : OpenAIClient.defaultModel
-    }
-
-    /// `nonisolated` reads for the four free cloud brains' selected model.
-    /// Each validates against its own `allModels` and falls back to the
-    /// provider's default if the stored value is unrecognized — keeps a
-    /// renamed-model rollout from silently 404ing every call.
-    nonisolated static var geminiModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.geminiModel) ?? ""
-        return GeminiClient.allModels.contains(raw) ? raw : GeminiClient.defaultModel
-    }
-    nonisolated static var groqModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.groqModel) ?? ""
-        return GroqClient.allModels.contains(raw) ? raw : GroqClient.defaultModel
-    }
-    nonisolated static var mistralModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.mistralModel) ?? ""
-        return MistralClient.allModels.contains(raw) ? raw : MistralClient.defaultModel
-    }
-    nonisolated static var cerebrasModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.cerebrasModel) ?? ""
-        return CerebrasClient.allModels.contains(raw) ? raw : CerebrasClient.defaultModel
-    }
-    nonisolated static var openRouterModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.openRouterModel) ?? ""
-        return OpenRouterClient.allModels.contains(raw) ? raw : OpenRouterClient.defaultModel
-    }
-
-    /// `nonisolated` read of the selected Grok model. The API **key** is in
-    /// Keychain — read it via `KeychainStore.read(.grokAPIKey)`.
-    nonisolated static var grokModelCurrent: String {
-        let raw = UserDefaults.standard.string(forKey: Keys.grokModel) ?? ""
-        // Falls back to the GrokClient default if the stored value isn't a
-        // recognized model — prevents a renamed-model rollout from silently
-        // 404ing every Grok request.
-        return GrokClient.allModels.contains(raw) ? raw : GrokClient.defaultModel
-    }
-
     /// Thread-safe read of the Salehman Leader switch (defaults ON) so the agent
     /// pipeline can gate the final Salehman pass from off the main actor.
     nonisolated static var salehmanLeaderEnabled: Bool { boolDefaultTrue(Keys.salehmanLeader) }
@@ -353,9 +275,8 @@ final class AppSettings: ObservableObject {
     /// Auto-continue switch (defaults ON) — read off-main by the chat send loop.
     nonisolated static var autoContinueEnabled: Bool { boolDefaultTrue(Keys.autoContinue) }
 
-    /// Thread-safe read of the Offline / Local-Only switch so
-    /// `LocalLLM.currentBrain()`, `generateFreeAuto`, and `ToolPolicy` can gate
-    /// cloud paths from outside the main actor. Defaults OFF (opt-in).
+    /// Thread-safe read of the Offline / Local-Only switch so `ToolPolicy` can
+    /// gate the external tools from outside the main actor. Defaults OFF (opt-in).
     nonisolated static var isOfflineOnly: Bool { UserDefaults.standard.bool(forKey: Keys.offlineOnly) }
 
     /// Thread-safe read of the Unrestricted Mode switch, for any
@@ -431,18 +352,6 @@ final class AppSettings: ObservableObject {
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
-        let storedGrok = d.string(forKey: Keys.grokModel) ?? ""
-        grokModel = GrokClient.allModels.contains(storedGrok) ? storedGrok : GrokClient.defaultModel
-        let storedGemini = d.string(forKey: Keys.geminiModel) ?? ""
-        geminiModel = GeminiClient.allModels.contains(storedGemini) ? storedGemini : GeminiClient.defaultModel
-        let storedGroq = d.string(forKey: Keys.groqModel) ?? ""
-        groqModel = GroqClient.allModels.contains(storedGroq) ? storedGroq : GroqClient.defaultModel
-        let storedMistral = d.string(forKey: Keys.mistralModel) ?? ""
-        mistralModel = MistralClient.allModels.contains(storedMistral) ? storedMistral : MistralClient.defaultModel
-        let storedCerebras = d.string(forKey: Keys.cerebrasModel) ?? ""
-        cerebrasModel = CerebrasClient.allModels.contains(storedCerebras) ? storedCerebras : CerebrasClient.defaultModel
-        let storedOpenRouter = d.string(forKey: Keys.openRouterModel) ?? ""
-        openRouterModel = OpenRouterClient.allModels.contains(storedOpenRouter) ? storedOpenRouter : OpenRouterClient.defaultModel
         installCaptureObservers()
     }
 
@@ -465,114 +374,65 @@ final class AppSettings: ObservableObject {
 
 /// User's preferred chat brain. Read by `LocalLLM.currentBrain()` to decide
 /// which model is asked for the next response. **Default: `.salehman`** — the
-/// app's primary identity; cloud-first with a free-tier chain and a local floor.
+/// app's primary identity, fully local with no third-party cloud.
 ///
-/// * `.salehman` — THE primary brain: NVIDIA DeepSeek V4 free → free frontier/
-///   120B tiers → local MLX/Ollama floor. Self-improves via a critique pass.
-///   Works with zero local models if any cloud key is set.
+/// * `.salehman` — THE primary brain: local-first (vLLM → Unsloth Studio → MLX →
+///   Ollama). Self-improves via a critique pass. No third-party cloud is ever
+///   contacted.
 /// * `.auto` — local-first: Ollama qwen-coder if reachable, else `.none`.
 /// * `.ollama` — pin to Ollama qwen-coder. The pipeline automatically collapses
 ///   to a single agent on this brain (see AgentPipeline).
 nonisolated enum BrainPreference: String, CaseIterable, Identifiable {
-    case auto, freeAuto, freeCoding, cloudCoding, ollama, claudeHaiku, grok, gemini, groq, mistral, cerebras, codex, copilot
-    case openRouter // aggregator with free `:free` models
-    // (.deepSeek removed 2026-06-12 — owner: "remove deepseek". Stored prefs
-    // with the old rawValue fall back to .salehman via brainPreferenceCurrent.)
-    case ensemble   // run ALL reachable brains in parallel, show every answer
+    case auto, ollama
     case salehman   // THE primary brain: local-first (vLLM → Unsloth Studio → MLX → Ollama). No third-party cloud is ever contacted.
     case unslothStudio // local OpenAI-compatible server (Unsloth Studio / mlx_lm.server / LM Studio / llama.cpp)
     case vllm          // local OpenAI-compatible server served by vLLM (`vllm serve`, default :8000/v1)
-    // freeAuto: race the FREE brains in parallel, first valid answer wins,
-    // local (Ollama) backstop → effectively never rate-limited, never paid.
+    case uncensored    // local Ollama, abliterated (refusal-removed) ~3B; web-search capable, on-device, free
 
     var id: String { rawValue }
 
-    /// Subscription / paid-per-call cloud providers. Hidden from the UI per owner
-    /// request ("hide every paid api") — the Brain grid and Settings both consult
-    /// this so the two surfaces can never drift. Free-tier clouds (Gemini, Groq,
-    /// Mistral, Cerebras, OpenRouter), the local brains, and the orchestration
-    /// modes (Auto / Free·Auto / Ensemble) are NOT paid.
-    var isPaid: Bool {
-        switch self {
-        case .claudeHaiku, .grok, .codex, .copilot: return true
-        default: return false
-        }
-    }
+    /// The app is local-only — there are no paid cloud brains, so this is always
+    /// false. Kept so the Brain grid and Settings can consult one source of truth.
+    var isPaid: Bool { false }
 
-    /// Cases shown in the Brain picker. Pared to the essentials now that Salehman is
-    /// the trained primary — it already cascades cloud→free→local internally, so the
-    /// individual cloud pickers were redundant clutter. `.auto` stays for pure-local /
-    /// offline use. (Every other case still functions if set directly — e.g. by the
-    /// brain-rotation hotkey — they're just no longer surfaced in the menu.)
+    /// Cases shown in the Brain picker. Salehman is the trained primary — it
+    /// resolves vLLM → Unsloth Studio → MLX → Ollama internally, all local.
+    /// `.auto` stays for pure-local / offline use. (`.ollama` and `.vllm` still
+    /// function if set directly — e.g. by the brain-rotation hotkey — they're
+    /// just no longer surfaced in the menu.)
     // Salehman + Auto, plus the custom-server brain so you can point the app at your
     // OWN model served on a free cloud GPU (Kaggle/Colab → Ollama → cloudflared URL)
     // or any local OpenAI-compatible server. See salehman-training/cloud_serve_salehman.md.
-    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio] }
+    static var selectableCases: [BrainPreference] { [.salehman, .auto, .unslothStudio, .uncensored] }
 
     var title: String {
         switch self {
         case .auto:        return "Auto"
-        case .freeAuto:    return "Free · Auto"
-        case .freeCoding:  return "FreeCoding"
-        case .cloudCoding: return "Cloud Coding"
         case .ollama:      return "Ollama qwen-coder"
-        case .claudeHaiku: return "Claude Haiku (Cloud)"
-        case .grok:        return "xAI Grok (Cloud)"
-        case .gemini:      return "Google Gemini (Cloud)"
-        case .groq:        return "Groq (Cloud)"
-        case .mistral:     return "Mistral (Cloud)"
-        case .cerebras:    return "Cerebras (Cloud)"
-        case .codex:       return "Codex / OpenAI (Cloud)"
-        case .copilot:     return "GitHub Copilot (Cloud)"
-        case .openRouter:  return "OpenRouter (Cloud · free models)"
-        case .ensemble:    return "All Brains at Once"
         case .salehman:    return "Salehman AI"
         case .unslothStudio: return "Custom server (local / cloud GPU)"
         case .vllm:          return "vLLM (local server)"
+        case .uncensored:    return "Uncensored (Local · web)"
         }
     }
     var subtitle: String {
         switch self {
         case .auto:        return "Local-first · Ollama qwen-coder when reachable"
-        case .freeAuto:    return "Races your free brains in parallel; first answer wins; falls back to local — never rate-limited, never paid"
-        case .freeCoding:  return "Coding loop · races your free coder models, runs & tests code in the terminal · local backstop"
-        case .cloudCoding: return "Cloud-only coding loop · the best cloud coders (gpt-oss-120b, qwen3-coder, codestral), raced · zero local RAM, no lag · needs a cloud key"
         case .ollama:      return "Local · qwen2.5-coder:7b · honors response mode (full = 15 agents)"
-        case .claudeHaiku: return "Cloud · fast · ~zero local RAM · needs API key"
-        case .grok:        return "Cloud · deepest reasoning · ~zero local RAM · needs API key"
-        case .gemini:      return "Cloud · generous free tier · ~zero local RAM · needs API key"
-        case .groq:        return "Cloud · blazing-fast Llama · ~zero local RAM · needs API key"
-        case .mistral:     return "Cloud · EU-hosted · ~zero local RAM · needs API key"
-        case .cerebras:    return "Cloud · ~2000 tok/s Llama · ~zero local RAM · needs API key"
-        case .codex:       return "Cloud · OpenAI GPT · ~zero local RAM · needs API key"
-        case .copilot:     return "Cloud · your Copilot sub · ~zero local RAM · sign in with GitHub"
-        case .openRouter:  return "Cloud · free `:free` models, no card · keys at openrouter.ai/keys"
-        case .ensemble:    return "Runs every configured brain in parallel & shows all answers · pays each cloud brain per message"
         case .salehman:    return "Your own model — vLLM (RunPod or local), Unsloth Studio, on-device MLX, or Ollama. Resolution order: vLLM → Unsloth Studio → MLX → Ollama. No third-party cloud."
         case .unslothStudio: return "Your fine-tune on a FREE cloud GPU (Kaggle/Colab → Ollama → cloudflared URL) or any local OpenAI-compatible server. Set the endpoint + model in Settings · no key needed"
         case .vllm:          return "Local · high-throughput vLLM server over OpenAI-compatible HTTP (`vllm serve`, :8000/v1) · no key needed"
+        case .uncensored:    return "Unfiltered local model via Ollama — small (~3B), on-device, free, no key. Can use web search to find anything online (lawful personal use). Pull it: `ollama pull \(OllamaClient.uncensoredModel)`"
         }
     }
     var icon: String {
         switch self {
         case .auto:        return "sparkles"
-        case .freeAuto:    return "infinity.circle.fill"
-        case .freeCoding:  return "terminal.fill"
-        case .cloudCoding: return "cloud.bolt.fill"
         case .ollama:      return "cpu"
-        case .claudeHaiku: return "cloud.fill"
-        case .grok:        return "bolt.horizontal.circle.fill"
-        case .gemini:      return "diamond.fill"
-        case .groq:        return "hare.fill"
-        case .mistral:     return "leaf.circle.fill"
-        case .cerebras:    return "rays"
-        case .codex:       return "chevron.left.forwardslash.chevron.right"
-        case .copilot:     return "person.2.badge.gearshape.fill"
-        case .openRouter:  return "arrow.triangle.branch"
-        case .ensemble:    return "rectangle.3.group.fill"
         case .salehman:    return "brain.head.profile"
         case .unslothStudio: return "server.rack"
         case .vllm:          return "speedometer"
+        case .uncensored:    return "eye.trianglebadge.exclamationmark.fill"
         }
     }
 }

@@ -15,6 +15,7 @@ struct TabSwitcherBar: View {
     /// brightening that signals "this thing has a tooltip / is interactive" to a
     /// keyboard/mouse user without yelling on first paint.
     @State private var marketHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Namespace that ties the selection-highlight Capsule across pills, so the
     /// `matchedGeometryEffect` interpolates the highlight's FRAME from the old
@@ -42,6 +43,11 @@ struct TabSwitcherBar: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(DS.Gradient.brand).frame(width: 36, height: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                        )
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 }
                 .shadow(color: DS.Palette.accent.opacity(0.30), radius: 8, y: 2)
@@ -66,7 +72,9 @@ struct TabSwitcherBar: View {
             }
             .padding(4)
             .background(Color.white.opacity(0.07), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
 
             Spacer(minLength: DS.Space.md)
 
@@ -123,11 +131,36 @@ struct TabSwitcherBar: View {
                 // that the pill is informational and explorable.
                 HStack(spacing: 7) {
                     ZStack {
-                        Circle().fill(market.session.isOpen ? DS.Palette.successSoft : Color.secondary)
-                            .frame(width: 8, height: 8)
                         if market.session.isOpen {
-                            Circle().stroke(DS.Palette.successSoft.opacity(0.45), lineWidth: 2)
-                                .frame(width: 8, height: 8).scaleEffect(1.7).opacity(0.6)
+                            if reduceMotion {
+                                // Reduce Motion: static "market open" dot (no breathing halo).
+                                Circle()
+                                    .fill(DS.Palette.successSoft)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: DS.Palette.successSoft.opacity(0.50), radius: 3)
+                            } else {
+                                // Continuously breathing halo — signals "live market"
+                                // more clearly than a static ring.
+                                PhaseAnimator([false, true]) { pulsing in
+                                    ZStack {
+                                        Circle()
+                                            .fill(DS.Palette.successSoft)
+                                            .frame(width: 8, height: 8)
+                                            .shadow(color: DS.Palette.successSoft.opacity(pulsing ? 0.80 : 0.20),
+                                                    radius: pulsing ? 5 : 1)
+                                        Circle()
+                                            .stroke(DS.Palette.successSoft.opacity(pulsing ? 0.50 : 0.08), lineWidth: 1.5)
+                                            .frame(width: 8, height: 8)
+                                            .scaleEffect(pulsing ? 2.6 : 1.7)
+                                    }
+                                } animation: { pulsing in
+                                    pulsing ? .easeIn(duration: 1.5) : .easeOut(duration: 2.2)
+                                }
+                            }
+                        } else {
+                            Circle()
+                                .fill(Color.secondary)
+                                .frame(width: 8, height: 8)
                         }
                     }
                     Text(market.session.shortLabel)
@@ -138,9 +171,13 @@ struct TabSwitcherBar: View {
                 .background(market.session.isOpen ? DS.Palette.successSoft.opacity(0.12) : Color.white.opacity(0.04),
                             in: Capsule())
                 .overlay(
-                    Capsule().stroke(Color.white.opacity(marketHovering ? 0.18 : 0.08), lineWidth: 1)
+                    Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(marketHovering ? 0.28 : 0.14),
+                                                Color.white.opacity(marketHovering ? 0.06 : 0.02)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 )
                 .scaleEffect(marketHovering ? 1.04 : 1.0)
+                .animation(DS.Motion.smooth, value: market.session.isOpen)
                 .onHover { h in withAnimation(DS.Motion.press) { marketHovering = h } }
                 .help(market.session.isOpen ? "Market is open" : "Market is closed")
                 .accessibilityElement(children: .ignore)
@@ -155,7 +192,7 @@ struct TabSwitcherBar: View {
                 // Decorative only, so it's hidden from accessibility; guarded
                 // so it never floats alone if every left-zone item is hidden.
                 if !cornerTabs.isEmpty || !AppTab.hidden.contains(.markets) {
-                    RoundedRectangle(cornerRadius: 0.5)
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
                         .fill(Color.white.opacity(0.10))
                         .frame(width: 1, height: 16)
                         .padding(.horizontal, 2)

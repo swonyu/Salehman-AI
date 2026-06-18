@@ -105,6 +105,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `CommandApprovalCenter.swift` | Bridges background tool exec → UI approval; `confirmationEnabled` toggle. |
 | `ShellTool.swift` | Runs shell commands on the Mac (gated by approval). |
 | `WebTools.swift` | DuckDuckGo search + page fetch. **SSRF-guarded** (`ssrfRejectionReason` blocks non-http(s) + private/loopback/link-local hosts). |
+| `MediaSearch.swift` | `image_search` / `video_search` tools — DuckDuckGo `i.js`/`v.js` (SafeSearch **off**, `p=-1`). `MediaItem` (Codable image/video result) + `MediaCapture` (@MainActor per-turn side-channel: the tool loop returns text to the model, the actual media flows here → `ChatMessage.media` → inline gallery). `authenticityBiased` appends a region's native-language term for relevance. Network tools — hidden offline like the web tools. |
 | `VisionAnalyzer.swift` | On-device image understanding (Apple Vision: scene/text/barcodes). |
 | `RepoPacker.swift` | `pack_repository` tool — Repomix-style whole-codebase digest. |
 | `GrokWatchTool.swift` | `read_grok_session` tool — snapshot of the latest Grok terminal-bridge session log. |
@@ -117,7 +118,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | File | Purpose |
 |---|---|
 | `ContentView.swift` | The chat UI: document-flow message list (hover action pills — copy/speak/regenerate/**quote**/per-reply timing on assistant rows, **edit-and-resend**+copy on user rows), Claude-style composer with **Code-tab parity colors** (signature accent ring), **slash commands** (`/summarize /continue /clear /copy /export /find /voice` + every saved prompt as `/slugged-title`), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge), **multi-file attachments** (chips per file, multi-select/drop/paste; merged to one synthetic attachment at submit so the pipeline stays single-attachment), **draft persistence** across relaunches, ↑-recall, Esc stops/dismisses, welcome that mirrors `CodeView.welcome` 1:1 (flat disc hero, 3 capsule pills, status line, full-tab optical centering). Presentation/input/focus/search only — conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
-| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). |
+| `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). Drains `MediaCapture` per turn → `reply.media`. |
+| `MediaGallery.swift` | Inline image/video gallery rendered under an assistant reply (`message.media`). Double-bezel tray + concentric tiles, hover lift, button-in-button play well, duration/source chips. Images open in browser; direct-file videos play inline (AVKit sheet). Fed by `image_search`/`video_search` via `MediaCapture`. |
 | `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. Brain-grid readiness reads ONLY cached `@State` key flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
 | `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12): `BrainReadiness` (per-`BrainPreference` reachability rules over cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict), `AnthropicKeyPresentation` (no-leak key subtitle). No UI imports; pinned by `SettingsBrainReadyTests`. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**7 tabs — Markets HIDDEN since 2026-06-12** per owner "until further notice"; one flag `AppTab.hidden` gates the pill, ⌘5, palette/shortcuts rows, Today card + market pill; restore = empty the set), Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
@@ -148,12 +150,14 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 ## 3. The brain system (the heart of the app)
 
 Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 19 cases:
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 20 cases:
   `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
   `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
   `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
-  `.unslothStudio`, `.vllm`. Persisted under `Keys.brainPreference`.
-  (`.apple` was removed with Apple Intelligence, 2026-06-08.)
+  `.unslothStudio`, `.vllm`, **`.uncensored`** (local abliterated ~3B via Ollama —
+  unfiltered, web-search capable, free/key-less; 4th in `selectableCases`, added
+  2026-06-18). Persisted under `Keys.brainPreference`.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08; `.deepSeek` removed 2026-06-12.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
   live availability), used for the header label/dot.
 

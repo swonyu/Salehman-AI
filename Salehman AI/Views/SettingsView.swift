@@ -10,60 +10,8 @@ struct SettingsView: View {
     @State private var ollamaUp = false
     @State private var hasVision = false
     @State private var hasCoder = false
+    @State private var hasUncensored = false
     @State private var showMemory = false
-    // Grok key entry state. `grokKeyDraft` only holds what the user is typing
-    // *right now* — once they hit Save it's written to Keychain and cleared.
-    // The literal key never lives in `@State` after Save.
-    @State private var anthropicKeyDraft: String = ""
-    @State private var anthropicKeySaved: Bool = AnthropicClient.isConfigured
-    // Same idle/"":OK/"msg":error tri-state convention as the other cloud
-    // brains. Lets the user run a live API check from Settings instead of
-    // discovering a 401 only after sending a chat message.
-    @State private var anthropicTesting: Bool = false
-    @State private var anthropicTestStatus: String? = nil
-
-    @State private var grokKeyDraft: String = ""
-    @State private var grokTestStatus: String? = nil  // nil = idle, "" = OK, "msg" = error
-    @State private var grokTesting: Bool = false
-    @State private var grokKeySaved: Bool = GrokClient.hasKey()
-
-    // Four free cloud brains. Same idle/"":OK/"msg":error convention as Grok.
-    @State private var geminiKeyDraft: String = ""
-    @State private var geminiTestStatus: String? = nil
-    @State private var geminiTesting: Bool = false
-    @State private var geminiKeySaved: Bool = GeminiClient.hasKey()
-
-    @State private var groqKeyDraft: String = ""
-    @State private var groqTestStatus: String? = nil
-    @State private var groqTesting: Bool = false
-    @State private var groqKeySaved: Bool = GroqClient.shared.hasKey()
-
-    @State private var mistralKeyDraft: String = ""
-    @State private var mistralTestStatus: String? = nil
-    @State private var mistralTesting: Bool = false
-    @State private var mistralKeySaved: Bool = MistralClient.shared.hasKey()
-
-    @State private var cerebrasKeyDraft: String = ""
-    @State private var cerebrasTestStatus: String? = nil
-    @State private var cerebrasTesting: Bool = false
-    @State private var cerebrasKeySaved: Bool = CerebrasClient.shared.hasKey()
-
-    @State private var openAIKeyDraft: String = ""
-    @State private var openAITestStatus: String? = nil
-    @State private var openAITesting: Bool = false
-    @State private var openAIKeySaved: Bool = OpenAIClient.hasKey()
-
-    @State private var openRouterKeyDraft: String = ""
-    @State private var openRouterTestStatus: String? = nil
-    @State private var openRouterTesting: Bool = false
-    @State private var openRouterKeySaved: Bool = OpenRouterClient.shared.hasKey()
-
-
-    // NVIDIA NIM — REAL DeepSeek V4 on a free tier (the "DeepSeek for free" route).
-    @State private var nvidiaKeyDraft: String = ""
-    @State private var nvidiaTestStatus: String? = nil
-    @State private var nvidiaTesting: Bool = false
-    @State private var nvidiaKeySaved: Bool = NvidiaClient.shared.hasKey()
 
     // Unsloth Studio (local OpenAI-compatible server). No key — just an endpoint URL.
     @State private var unslothStudioTestStatus: String? = nil
@@ -78,12 +26,6 @@ struct SettingsView: View {
     /// read is safe at @State init.
     @State private var unslothStudioKeySaved: Bool = (KeychainStore.read(.unslothStudioAPIKey) != nil)
     @State private var unslothStudioKeyDraft: String = ""
-
-    // GitHub Copilot signs in via OAuth device-flow, not a pasted key.
-    @State private var copilotAuthed: Bool = CopilotClient.isAuthed()
-    @State private var showCopilotSignIn = false
-    @State private var copilotTesting = false
-    @State private var copilotWorking: Bool? = nil   // nil = untested, true/false = result
 
     // Live "is the *selected* brain actually answering" check (covers all
     // brains). The overlap rules (three triggers can race at the await; a
@@ -112,11 +54,8 @@ struct SettingsView: View {
     // Persisted minimize/expand state for the two cloud-key groups. `@AppStorage`
     // (UserDefaults under the hood) survives a Settings-sheet reopen — plain
     // `@State` would reset every time the sheet appears, which would defeat the
-    // "minimize and stay minimized" intent. Default is collapsed: Settings opens
-    // clean; the count badge ("N/total set") in each header tells the user what
-    // they have configured without making them expand.
-    @AppStorage("settings.showFreeKeys") private var showFreeKeys: Bool = false
-    @AppStorage("settings.showPaidKeys") private var showPaidKeys: Bool = false
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var voices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
@@ -134,6 +73,9 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(DS.Motion.entrance, value: appeared)
 
                     section("Intelligence", "How Salehman thinks — local-first: vLLM → Unsloth Studio → MLX → Ollama.") {
                         toggle("Offline mode (local only)",
@@ -162,8 +104,9 @@ struct SettingsView: View {
 
                     section("Brain", "Which model answers. Tap a cell to pin one; hover for details. The dot is green when that brain is reachable, orange when not.") {
                         activeBrainStatusRow
-                        // Compact 3-column adaptive grid — 13 brains drop from a
-                        // long scroll into ~5 short rows. Cell padding lives in
+                        // Compact 3-column adaptive grid over the SELECTABLE brains
+                        // (paid providers hidden — see `selectableCases`), kept
+                        // glanceable in a couple of short rows. Cell padding lives in
                         // `brainGridCell`; outer padding here keeps the grid off
                         // the section card's edges.
                         LazyVGrid(
@@ -190,6 +133,7 @@ struct SettingsView: View {
                                 Spacer()
                             }
                             .padding(.horizontal, 14).padding(.bottom, 10)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
                         }
                     }
 
@@ -213,7 +157,8 @@ struct SettingsView: View {
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled(true)
                                 .padding(8)
-                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -311,10 +256,8 @@ struct SettingsView: View {
         }
         .frame(width: 560, height: 640)
         .preferredColorScheme(.dark)
+        .onAppear { withAnimation(DS.Motion.smooth) { appeared = true } }
         .sheet(isPresented: $showMemory) { MemoryView() }
-        .sheet(isPresented: $showCopilotSignIn) {
-            CopilotSignInView { copilotAuthed = CopilotClient.isAuthed() }
-        }
         .task {
             // Re-poll Ollama + its models while Settings is open so the
             // picker rows ("Ready" / "Unavailable") stay in sync with the
@@ -340,7 +283,8 @@ struct SettingsView: View {
                 async let up      = OllamaClient.isUp()
                 async let vision  = OllamaClient.hasModel(OllamaClient.visionModel)
                 async let active  = OllamaClient.activeCodeModel()
-                let (u, v, a) = await (up, vision, active)
+                async let unc     = OllamaClient.hasModel(OllamaClient.uncensoredModel)
+                let (u, v, a, uc) = await (up, vision, active, unc)
                 // The three probes are a suspension point — if Settings was
                 // dismissed while they were in flight, the task is now
                 // cancelled. Bail before writing state so we don't paint one
@@ -349,6 +293,7 @@ struct SettingsView: View {
                 ollamaUp  = u
                 hasVision = v
                 hasCoder  = (a != nil)
+                hasUncensored = uc
                 if !ranActiveBrainTestOnce, activeBrainIsLocal {
                     await testActiveBrain()
                     ranActiveBrainTestOnce = true
@@ -363,10 +308,45 @@ struct SettingsView: View {
     }
 
     private var header: some View {
-        // Slimmer header per the design language — title at body-plus weight,
-        // not a display headline.
-        HStack {
-            Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+        HStack(spacing: DS.Space.md) {
+            // Brand icon tile — consistent with all other sheet headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.38))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "gear")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "gear")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Settings")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Eyebrow(text: "App Configuration")
+            }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
@@ -383,32 +363,53 @@ struct SettingsView: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(1.2)
                 .foregroundStyle(DS.Palette.textSecondary)
+                // `.isHeader` lets VoiceOver users jump between sections via the rotor.
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(DS.Palette.textSecondary)
             }
-            // Flat opaque content canvas + hairline — no translucency, no shadow.
             VStack(spacing: 1) { content() }
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(DS.Bezel.cardFill)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
     }
 
     private func modeRow(_ mode: AppSettings.ResponseMode) -> some View {
-        Button { settings.responseMode = mode } label: {
+        let sel = settings.responseMode == mode
+        return Button { settings.responseMode = mode } label: {
             HStack(spacing: 12) {
-                Image(systemName: mode.icon).foregroundStyle(settings.responseMode == mode ? DS.Palette.accent : .secondary).frame(width: 22)
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                        .fill(DS.Palette.accent.opacity(sel ? 0.18 : 0.09))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(sel ? DS.Palette.accent : .secondary)
+                }
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mode.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text(mode.detail).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if settings.responseMode == mode {
+                if sel {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
             }
+            .animation(DS.Motion.snappy, value: sel)
             .padding(.horizontal, 14).padding(.vertical, 11)
             .contentShape(Rectangle())
         }
@@ -418,50 +419,33 @@ struct SettingsView: View {
     /// Whether the given brain preference is reachable right now. Thin caller
     /// over the pure `BrainReadiness` seam (SettingsBrainReadiness.swift) —
     /// the readiness RULES live there, pinned by SettingsBrainReadyTests.
-    /// Reads ONLY cached state: the @State key flags the Save/Clear bindings
-    /// maintain plus the polled `ollamaUp`/`hasCoder` — zero Keychain
-    /// syscalls per body recompute. (CODEBASE_REVIEW HIGH perf fix: the old
-    /// switch here fired live `hasKey()` reads per visible grid cell on
-    /// every recompute — each keystroke and each 5s poll tick paid ~25+
-    /// SecItemCopyMatching calls; `.salehman` alone walked the whole 10-key
-    /// `SalehmanEngine.hasAnyCloud` chain.)
+    /// Reads ONLY cached state (the polled `ollamaUp`/`hasCoder` + endpoint
+    /// config flags) — local-only, no Keychain syscalls per body recompute.
     private func brainReady(_ pref: BrainPreference) -> Bool {
         brainReadiness.ready(pref)
     }
 
     /// Snapshot of every readiness signal, assembled from cached state only.
     /// Endpoint checks (`UnslothStudio`/`VLLM.isConfigured`) are UserDefaults
-    /// reads — in-memory, no Keychain. Trade-off vs the old live reads: a key
-    /// saved by something OTHER than this sheet wouldn't repaint the grid —
-    /// but every in-app writer (Save/Clear rows, Copilot sign-in callback)
-    /// already updates its cached flag, which recomputes body anyway, and the
-    /// "N/total set" group badges have trusted these same flags all along.
+    /// reads — in-memory, no Keychain. Local-only: there are no cloud keys to
+    /// track anymore.
     private var brainReadiness: BrainReadiness {
         BrainReadiness(
             ollamaUp: ollamaUp,
             hasCoder: hasCoder,
             customModelNamed: !settings.customModelName
                 .trimmingCharacters(in: .whitespaces).isEmpty,
+            hasUncensored: hasUncensored,
             unslothConfigured: UnslothStudio.isConfigured,
-            vllmConfigured: VLLM.isConfigured,
-            anthropic: anthropicKeySaved,
-            grok: grokKeySaved,
-            gemini: geminiKeySaved,
-            groq: groqKeySaved,
-            mistral: mistralKeySaved,
-            cerebras: cerebrasKeySaved,
-            openAI: openAIKeySaved,
-            copilot: copilotAuthed,
-            openRouter: openRouterKeySaved,
-            nvidia: nvidiaKeySaved
+            vllmConfigured: VLLM.isConfigured
         )
     }
 
     /// Compact selectable cell for the Brain picker grid. Replaces the old
-    /// full-width `brainRow` — with 13 brains in the list, a vertical stack
-    /// forced a long scroll. A 3-column adaptive grid drops that to ~5 rows
-    /// while keeping every brain glanceable. The full subtitle text moves to
-    /// a `.help(...)` tooltip so detail isn't lost, just hidden until hover.
+    /// full-width `brainRow` — a 3-column adaptive grid keeps the selectable
+    /// brains glanceable without a long scroll (the list was much longer before
+    /// paid providers were hidden — see `selectableCases`). The full subtitle
+    /// text moves to a `.help(...)` tooltip so detail isn't lost, just on hover.
     // MARK: - MLX standalone engine row
     //
     // The "Salehman alone" path. Lives at the top of the Salehman engine section
@@ -482,10 +466,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: mlxStatusText)
             }
             Spacer(minLength: 8)
             mlxStatusControl
         }
+        .animation(DS.Motion.smooth, value: mlxState)
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .task(id: "mlx-poll") {
@@ -620,24 +607,28 @@ struct SettingsView: View {
                     .frame(width: 80)
                     .progressViewStyle(.linear)
                     .tint(DS.Palette.accent)
+                    .transition(.opacity)
 
             case .loading:
                 ProgressView()
                     .controlSize(.small)
+                    .transition(.opacity)
 
             case .ready:
                 Label("Ready", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.successSoft)
                     .labelStyle(.titleAndIcon)
+                    .transition(.opacity)
             }
         }
     }
 
-    /// The "smart modes" — orchestration prefs (not single brains) that get the
-    /// premium gradient glyph in the grid. Pure so the cell stays cheap to render.
+    /// The "smart mode" — `.auto` is an orchestration pref (not a single brain)
+    /// that gets the premium gradient glyph in the grid. Pure so the cell stays
+    /// cheap to render. (The cloud composite modes were removed — local-only.)
     private static func isOrchestrationMode(_ pref: BrainPreference) -> Bool {
-        pref == .auto || pref == .freeAuto || pref == .freeCoding || pref == .cloudCoding || pref == .ensemble
+        pref == .auto
     }
 
     private func brainGridCell(_ pref: BrainPreference) -> some View {
@@ -654,10 +645,9 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Group {
                         if Self.isOrchestrationMode(pref) {
-                            // The smart "modes" (Auto / Free·Auto / FreeCoding /
-                            // Ensemble) get a premium violet→accent gradient glyph
-                            // so they read as a distinct tier above the single
-                            // brains — cohesive, and makes the flagship loops pop.
+                            // The smart "Auto" mode gets a premium violet→accent
+                            // gradient glyph so it reads as a distinct tier above
+                            // the single local brains.
                             Image(systemName: pref.icon)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(LinearGradient(
@@ -675,10 +665,12 @@ struct SettingsView: View {
                         .fill(statusColor)
                         .frame(width: 8, height: 8)
                         .shadow(color: statusColor.opacity(0.5), radius: 3, y: 1)
+                        .animation(DS.Motion.smooth, value: ready)
                     if selected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(DS.Palette.successSoft)
+                            .transition(.opacity.combined(with: .scale(scale: 0.6)))
                     }
                 }
                 Text(pref.title)
@@ -689,6 +681,8 @@ struct SettingsView: View {
                 Text(statusText)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(statusColor)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: ready)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -698,10 +692,17 @@ struct SettingsView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(selected ? DS.Palette.accent.opacity(0.5) : Color.white.opacity(0.08),
+                    .stroke(selected
+                        ? LinearGradient(colors: [DS.Palette.accent.opacity(0.70),
+                                                  DS.Palette.accent.opacity(0.20)],
+                                         startPoint: .top, endPoint: .bottom)
+                        : LinearGradient(colors: [Color.white.opacity(0.12),
+                                                  Color.white.opacity(0.04)],
+                                         startPoint: .top, endPoint: .bottom),
                             lineWidth: 1)
             )
             .contentShape(Rectangle())
+            .animation(DS.Motion.snappy, value: selected)
         }
         .buttonStyle(.plain)
         .help(pref.subtitle)
@@ -716,6 +717,8 @@ struct SettingsView: View {
             Image(systemName: inRotation ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(inRotation ? DS.Palette.accent : Color.white.opacity(0.35))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: inRotation)
                 .padding(8)
                 .contentShape(Rectangle())
         }
@@ -744,13 +747,15 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio endpoint URL")
             Button("Use :8000") {
                 settings.unslothStudioEndpoint = "http://localhost:8000/v1"
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with Unsloth Studio's default localhost URL")
+            .help("Fill with Unsloth Studio's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -763,7 +768,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("Unsloth Studio model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -774,17 +780,20 @@ struct SettingsView: View {
             Button {
                 Task {
                     unslothStudioTesting = true
-                    // Convention: testConnection returns nil on success, so we
-                    // store "" for OK and the raw message for failure — matches
-                    // every other cloudTestRow in this file.
+                    // Convention: testConnection returns nil on success,
+                    // "" for OK and raw message for failure.
                     unslothStudioTestStatus = (await UnslothStudio.testConnection()) ?? ""
                     unslothStudioTesting = false
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if unslothStudioTesting { ProgressView().controlSize(.small) }
+                    if unslothStudioTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: unslothStudioTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(unslothStudioTesting || settings.unslothStudioEndpoint.isEmpty)
@@ -796,9 +805,12 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: unslothStudioTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -812,13 +824,15 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM endpoint URL")
             Button("Use :8000") {
                 settings.vllmEndpoint = "http://localhost:8000/v1"
             }
             .buttonStyle(.bordered).controlSize(.small)
             .accessibilityLabel("Fill with vLLM's default localhost URL")
+            .help("Fill with vLLM's default localhost URL")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -831,7 +845,8 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled(true)
                 .padding(8)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .accessibilityLabel("vLLM model name")
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -847,9 +862,13 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if vllmTesting { ProgressView().controlSize(.small) }
+                    if vllmTesting {
+                        ProgressView().controlSize(.small)
+                            .transition(.opacity)
+                    }
                     Text("Test connection")
                 }
+                .animation(DS.Motion.smooth, value: vllmTesting)
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(vllmTesting || settings.vllmEndpoint.isEmpty)
@@ -861,9 +880,12 @@ struct SettingsView: View {
                     .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             Spacer(minLength: 0)
         }
+        .animation(DS.Motion.smooth, value: vllmTestStatus == nil)
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
@@ -902,9 +924,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear vLLM API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: vllmKeySaved)
     }
 
     /// Optional Unsloth API key field. The app's `.unslothStudio` chat brain
@@ -950,15 +974,18 @@ struct SettingsView: View {
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Copies the token for pasting into the Colab notebook")
                 .accessibilityLabel("Copy Hugging Face token")
+                .transition(.opacity)
                 Button("Clear") {
                     _ = KeychainStore.delete(.hfToken)
                     hfTokenSaved = false
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Hugging Face token")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: hfTokenSaved)
     }
 
     @State private var hfTokenSaved: Bool = (KeychainStore.read(.hfToken) != nil)
@@ -995,9 +1022,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered).controlSize(.small).tint(.red)
                 .accessibilityLabel("Clear Unsloth API key")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
     }
 
     /// Per Unsloth's "Run Local LLMs with Claude Code" guide
@@ -1061,6 +1090,8 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: unslothStudioKeySaved ? "checkmark.circle.fill" : "info.circle")
                         .foregroundStyle(unslothStudioKeySaved ? DS.Palette.successSoft : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: unslothStudioKeySaved)
                     Text(unslothStudioKeySaved
                          ? "Copy will substitute your saved Unsloth API key."
                          : "No Unsloth key saved — copy will paste the placeholder. Save one above to substitute the real token.")
@@ -1112,6 +1143,8 @@ struct SettingsView: View {
                     Text("\(configured)/\(total) set")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary.opacity(0.7))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: configured)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Color.white.opacity(0.06), in: Capsule())
                 }
@@ -1126,53 +1159,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: xAI Grok rows
-    //
-    // Three small rows make up the Grok config UI:
-    //   * grokKeyRow   — paste key into SecureField + Save (writes to Keychain).
-    //   * grokModelRow — picker between grok-4 and grok-4-heavy.
-    //   * grokTestRow  — "Test connection" button + status text.
-    //
-    // The literal key only lives in `grokKeyDraft` while the user is typing.
-    // After Save, the draft is cleared and the bytes live only in Keychain.
-
-    /// SecureField + Save/Clear. "Save" writes to Keychain and wipes the draft.
-    private var grokKeyRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("xAI API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(grokKeySaved ? "Saved in macOS Keychain · paste a new one to replace"
-                                  : "Get one at console.x.ai → API Keys")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            SecureField("xai-…", text: $grokKeyDraft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = grokKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                _ = KeychainStore.write(trimmed, to: .grokAPIKey)
-                grokKeyDraft = ""             // Wipe the in-memory copy immediately.
-                grokKeySaved = GrokClient.hasKey()
-                Task { await BrainStatus.shared.refresh() }   // Refresh header dot.
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(grokKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-            if grokKeySaved {
-                Button("Clear") {
-                    _ = KeychainStore.delete(.grokAPIKey)
-                    grokKeySaved = false
-                    grokTestStatus = nil
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
     /// 14B-readiness status row under the custom-model-name field: is a model
     /// with the typed name (default "salehman") actually pulled in Ollama?
     /// Uses the SAME accessors the engine routes by (`customModelNameCurrent`,
@@ -1182,16 +1168,22 @@ struct SettingsView: View {
             switch localModelProbe {
             case .checking:
                 ProgressView().controlSize(.small)
+                    .transition(.opacity)
                 Text("Checking for your local model…")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .installed(let name):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Palette.successSoft)
+                    .transition(.opacity)
                 Text("\"\(name)\" is installed — Salehman's offline floor is ready.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             case .missing(let name):
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DS.Palette.warningSoft)
+                    .transition(.opacity)
                 Text("Ollama is running but has no \"\(name)\" model yet. When the fine-tuned GGUF lands, run the create command from its folder.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Button {
                     let pb = NSPasteboard.general
                     pb.clearContents()
@@ -1200,10 +1192,13 @@ struct SettingsView: View {
                     .buttonStyle(.bordered).controlSize(.small)
                     .help("Copy \"ollama create \(name) -f Modelfile\"")
                     .accessibilityLabel("Copy the ollama create command")
+                    .transition(.opacity)
             case .ollamaDown:
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Ollama isn't running — can't check for your local model.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
             Spacer()
             Button {
@@ -1212,6 +1207,7 @@ struct SettingsView: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Re-check").accessibilityLabel("Re-check local model status")
         }
+        .animation(DS.Motion.smooth, value: localModelProbe)
         .padding(.horizontal, 14).padding(.bottom, 11)
         .task { await probeLocalModel() }
         .onChange(of: settings.customModelName) { Task { await probeLocalModel() } }
@@ -1257,125 +1253,18 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
-    /// Picker between grok-4 (default) and grok-4-heavy.
-    private var grokModelRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("`grok-4` is the default; `grok-4-heavy` reasons deeper (slower / more $).")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Grok model", selection: $settings.grokModel) {
-                ForEach(GrokClient.allModels, id: \.self) { model in
-                    Text(model).tag(model)
-                }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 150)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Test-connection button. Hits the live API with a tiny prompt to verify
-    /// the saved key actually works (vs. a typo we silently 401 on later).
-    private var grokTestRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(grokTestStatus))
-                    .font(.caption2)
-                    .foregroundStyle(testStatusColor(grokTestStatus))
-            }
-            Spacer()
-            Button {
-                grokTesting = true
-                grokTestStatus = nil
-                Task {
-                    let err = await GrokClient.testConnection()
-                    await MainActor.run {
-                        grokTestStatus = err ?? ""    // "" = success
-                        grokTesting = false
-                    }
-                }
-            } label: {
-                if grokTesting { ProgressView().controlSize(.small) }
-                else           { Text("Test") }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(grokTesting || !grokKeySaved)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    // Grok used to carry its own `grokTestStatusText` / `grokTestStatusColor` —
-    // byte-identical to the shared `testStatusText(_:)` / `testStatusColor(_:)`
-    // helpers below. Deleted: the duplication was a maintenance hazard (a future
-    // color change would have drifted on Grok if you forgot the second site).
-    // Call sites switched to the shared `testStatusText(grokTestStatus)`.
-
-    /// GitHub Copilot OAuth device-flow sign-in + a live "is it working" check.
-    private var copilotRow: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Image(systemName: "person.2.badge.gearshape.fill")
-                    .foregroundStyle(.secondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("GitHub Copilot")
-                        .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                    Text(copilotAuthed ? "Signed in · token stored in macOS Keychain"
-                                       : "Requires an active Copilot subscription")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if copilotAuthed {
-                    Button("Sign out") {
-                        CopilotAuth.signOut()
-                        copilotAuthed = false
-                        copilotWorking = nil
-                    }
-                    .font(.caption.weight(.semibold)).buttonStyle(.bordered)
-                    .controlSize(.small).tint(.red)
-                } else {
-                    Button { showCopilotSignIn = true } label: {
-                        Text("Sign in with GitHub")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(DS.Palette.accent, in: Capsule())
-                            .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
-                    }
-                    .buttonStyle(LuxPressStyle())
-                }
-            }
-            if copilotAuthed {
-                HStack(spacing: 8) {
-                    workingBadge(testing: copilotTesting, working: copilotWorking)
-                    Spacer()
-                    Button("Test") { Task { await testCopilot() } }
-                        .font(.caption2.weight(.semibold)).buttonStyle(.bordered)
-                        .controlSize(.mini).disabled(copilotTesting)
-                }
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
     /// Live "is the selected brain actually working" row. Pings whatever brain
     /// is currently pinned through the real routing path (`LocalLLM.generate`),
-    /// so one check covers Ollama and every cloud brain.
+    /// so one check covers every local brain.
     private var activeBrainStatusRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill").foregroundStyle(DS.Palette.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Is \"\(settings.brainPreference.title)\" working?")
                     .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(settings.brainPreference == .ensemble
-                     ? "Tap ↻ to check that ≥1 brain is reachable (no paid request)."
-                     : activeBrainIsLocal
-                       ? "Live check — auto-pings the selected brain."
-                       : "Tap ↻ to check (sends one small paid request).")
+                Text(activeBrainIsLocal
+                     ? "Live check — auto-pings the selected brain."
+                     : "Tap ↻ to check (sends one small local request).")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -1389,9 +1278,9 @@ struct SettingsView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
-    /// Whether the pinned brain runs on this Mac (free to ping). Cloud brains
-    /// cost money per request, so we only auto-check local ones and make the
-    /// cloud check on-demand (the refresh button).
+    /// Whether the pinned brain runs fully on-device (cheap to auto-ping). The
+    /// endpoint-backed engines (vLLM / Unsloth Studio) may point at a remote
+    /// server, so they stay on-demand (the refresh button) rather than auto.
     private var activeBrainIsLocal: Bool {
         switch settings.brainPreference {
         case .auto, .ollama: return true
@@ -1400,11 +1289,7 @@ struct SettingsView: View {
     }
 
     /// Ping the pinned brain and decide if it actually answered. Failure
-    /// sentinels: empty reply, the canonical off-message, or the Anthropic
-    /// error string (which `AnthropicClient` returns verbatim on a non-200).
-    /// We match the specific "[Claude Haiku …" prefix rather than any "[" so a
-    /// legitimate reply that begins with a bracket (code, a JSON array) isn't
-    /// mistaken for a failure.
+    /// sentinels: an empty reply or the canonical off-message.
     private func testActiveBrain() async {
         // Three triggers (.task poll, brain-switch onChange, refresh button)
         // can overlap at the await below; `ActiveBrainProbe` owns the overlap
@@ -1414,18 +1299,8 @@ struct SettingsView: View {
         // is still selected at the end publishes its verdict.
         let pinned = settings.brainPreference
         activeBrain.begin()
-        let working: Bool
-        if LocalLLM.isEnsembleMode {
-            // Ensemble fans out to EVERY reachable brain — firing a real "ping"
-            // would bill several paid clouds just for a health check. Instead
-            // verify at least one brain is reachable (Apple / Ollama / any keyed
-            // cloud); that's exactly the condition under which ensemble answers.
-            // Zero paid round-trips.
-            working = await LocalLLM.anyBrainReachable()
-        } else {
-            let reply = await LocalLLM.generate("ping", maxTokens: 5)
-            working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
-        }
+        let reply = await LocalLLM.generate("ping", maxTokens: 5)
+        let working = BrainPing.verdict(reply: reply, offMessage: LocalLLM.offMessage)
         activeBrain.finish(verdict: working,
                            superseded: settings.brainPreference != pinned)
     }
@@ -1437,390 +1312,49 @@ struct SettingsView: View {
         HStack(spacing: 6) {
             if testing {
                 ProgressView().controlSize(.mini)
+                    .transition(.opacity)
                 Text("Checking…").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if let working {
                 Image(systemName: working ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: working)
+                    .transition(.opacity)
                 Text(working ? "Working" : "Not working")
                     .font(.caption2).foregroundStyle(working ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .transition(.opacity)
             } else {
                 Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                    .transition(.opacity)
                 Text("Not tested").font(.caption2).foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
-    }
-
-    /// Live ping for Copilot — does a one-token chat through the real path.
-    private func testCopilot() async {
-        copilotTesting = true
-        copilotWorking = nil
-        let ok = await CopilotClient.chat(prompt: "ping") != nil
-        copilotTesting = false
-        copilotWorking = ok
-    }
-
-    // (Deleted `grokTestStatusColor` — see note above grokTestStatusText.)
-
-    // MARK: Generic OpenAI-compatible cloud rows
-    //
-    // The three OpenAI-compatible brains (Groq, Mistral, Cerebras) share the
-    // exact same UI shape — key entry + model picker + test. These helpers
-    // take an `OpenAICompatibleClient` so each provider's Settings section is
-    // ~10 lines of call site instead of ~150 lines of copy-paste.
-
-    @ViewBuilder
-    private func cloudKeyRow(provider: OpenAICompatibleClient,
-                             keySaved: Binding<Bool>,
-                             draft: Binding<String>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(provider.displayName) API key")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(keySaved.wrappedValue
-                     ? "Saved in macOS Keychain · paste a new one to replace"
-                     : "Get one at \(provider.consoleURL)")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            Spacer()
-            SecureField("key…", text: draft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                // `cloudKeyRow` is only rendered for key-bearing providers, so
-                // `keychainAccount` is always non-nil in practice; we guard
-                // explicitly because the field is `Account?` to support the
-                // new no-auth local servers (Unsloth Studio).
-                guard let account = provider.keychainAccount else { return }
-                _ = KeychainStore.write(trimmed, to: account)
-                draft.wrappedValue = ""
-                keySaved.wrappedValue = provider.hasKey()
-                Task { await BrainStatus.shared.refresh() }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
-            if keySaved.wrappedValue {
-                Button("Clear") {
-                    // Same `Account?` unwrap as Save above — cloudKeyRow is
-                    // only used by key-bearing providers.
-                    guard let account = provider.keychainAccount else { return }
-                    _ = KeychainStore.delete(account)
-                    keySaved.wrappedValue = false
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    @ViewBuilder
-    private func cloudModelRow(displayName: String,
-                               models: [String],
-                               selection: Binding<String>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(displayName) model")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("First in the list is the lightest; last is the heaviest.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("\(displayName) model", selection: selection) {
-                ForEach(models, id: \.self) { model in Text(model).tag(model) }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 200)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    @ViewBuilder
-    private func cloudTestRow(provider: OpenAICompatibleClient,
-                              keySaved: Binding<Bool>,
-                              testing: Binding<Bool>,
-                              status: Binding<String?>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(status.wrappedValue))
-                    .font(.caption2).foregroundStyle(testStatusColor(status.wrappedValue))
-            }
-            Spacer()
-            Button {
-                testing.wrappedValue = true
-                status.wrappedValue = nil
-                Task {
-                    let err = await provider.testConnection()
-                    await MainActor.run {
-                        status.wrappedValue = err ?? ""
-                        testing.wrappedValue = false
-                    }
-                }
-            } label: {
-                if testing.wrappedValue { ProgressView().controlSize(.small) }
-                else                    { Text("Test") }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(testing.wrappedValue || !keySaved.wrappedValue)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    private func testStatusText(_ status: String?) -> String {
-        switch status {
-        case nil:           return "Tap Test after saving the key."
-        case .some(""):     return "Connected — your key works."
-        case .some(let m):  return m
-        }
-    }
-
-    private func testStatusColor(_ status: String?) -> Color {
-        switch status {
-        case nil:        return .secondary
-        // Desaturated soft tokens — full-saturation `.green`/`.orange` reads as
-        // alarming on the dark canvas (see DS.Palette docstring). One change
-        // here cascades to all seven cloud-provider test rows.
-        case .some(""):  return DS.Palette.successSoft
-        case .some(_):   return DS.Palette.warningSoft
-        }
-    }
-
-    // MARK: Google Gemini rows
-    //
-    // Gemini doesn't speak OpenAI's wire format, so it has its own client
-    // and its own row triplet. Same shape as the generic cloud rows above.
-
-    private var geminiKeyRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Gemini API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(geminiKeySaved
-                     ? "Saved in macOS Keychain · paste a new one to replace"
-                     : "Get one at aistudio.google.com → Get API key")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            SecureField("AIza…", text: $geminiKeyDraft)
-                .textFieldStyle(.plain).frame(width: 130)
-                .multilineTextAlignment(.trailing).foregroundStyle(.white)
-            Button("Save") {
-                let trimmed = geminiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                _ = KeychainStore.write(trimmed, to: .geminiAPIKey)
-                geminiKeyDraft = ""
-                geminiKeySaved = GeminiClient.hasKey()
-                Task { await BrainStatus.shared.refresh() }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(geminiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-            if geminiKeySaved {
-                Button("Clear") {
-                    _ = KeychainStore.delete(.geminiAPIKey)
-                    geminiKeySaved = false
-                    geminiTestStatus = nil
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small).tint(.red)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    private var geminiModelRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cube").foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Gemini model").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text("`gemini-2.0-flash` is the default; `gemini-1.5-pro` is deeper.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Gemini model", selection: $settings.geminiModel) {
-                ForEach(GeminiClient.allModels, id: \.self) { model in Text(model).tag(model) }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(width: 200)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    private var geminiTestRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .foregroundStyle(.secondary).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Test connection").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                Text(testStatusText(geminiTestStatus))
-                    .font(.caption2).foregroundStyle(testStatusColor(geminiTestStatus))
-            }
-            Spacer()
-            Button {
-                geminiTesting = true
-                geminiTestStatus = nil
-                Task {
-                    let err = await GeminiClient.testConnection()
-                    await MainActor.run {
-                        geminiTestStatus = err ?? ""
-                        geminiTesting = false
-                    }
-                }
-            } label: {
-                if geminiTesting { ProgressView().controlSize(.small) }
-                else             { Text("Test") }
-            }
-            .buttonStyle(.bordered).controlSize(.small)
-            .disabled(geminiTesting || !geminiKeySaved)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Anthropic API key entry — only needed for the Claude Haiku (cloud) brain.
-    /// Anthropic key entry — Keychain-backed Save/Clear/Test, same pattern
-    /// as the other cloud brains (the literal key only lives in
-    /// `anthropicKeyDraft` while the user is typing).
-    ///
-    /// The subtitle below the title shows the **prefix** of the saved key
-    /// (e.g. `sk-ant-api03…`) so the user can verify *which* key family is
-    /// stored without ever revealing the full string. The most common cause
-    /// of "but my key is valid" 401s against Anthropic is a key from the
-    /// wrong service silently saved (the SecureField masks input); the
-    /// prefix display flags that immediately.
-    private var claudeKeyRow: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "key.fill").foregroundStyle(.secondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Anthropic API key").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                    Text(anthropicSubtitle)
-                        .font(.caption2)
-                        .foregroundStyle(anthropicSubtitleColor)
-                }
-                Spacer()
-                SecureField("sk-ant-…", text: $anthropicKeyDraft)
-                    .textFieldStyle(.plain).frame(width: 130)
-                    .multilineTextAlignment(.trailing).foregroundStyle(.white)
-                Button("Save") {
-                    let trimmed = anthropicKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    _ = KeychainStore.write(trimmed, to: .anthropicAPIKey)
-                    anthropicKeyDraft = ""
-                    anthropicKeySaved = AnthropicClient.isConfigured
-                    anthropicTestStatus = nil   // reset the test indicator
-                    Task { await BrainStatus.shared.refresh() }
-                }
-                .buttonStyle(.bordered).controlSize(.small)
-                .disabled(anthropicKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                if anthropicKeySaved {
-                    Button {
-                        anthropicTesting = true
-                        anthropicTestStatus = nil
-                        Task {
-                            let err = await Self.runAnthropicTest()
-                            await MainActor.run {
-                                anthropicTestStatus = err ?? ""
-                                anthropicTesting = false
-                            }
-                        }
-                    } label: {
-                        if anthropicTesting { ProgressView().controlSize(.small) }
-                        else                { Text("Test") }
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
-                    .disabled(anthropicTesting)
-
-                    Button("Clear") {
-                        _ = KeychainStore.delete(.anthropicAPIKey)
-                        anthropicKeySaved = false
-                        anthropicTestStatus = nil
-                        Task { await BrainStatus.shared.refresh() }
-                    }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.red)
-                }
-            }
-
-            // Test-result line. Only visible after the user runs Test. The
-            // verbatim message (when error) is what Anthropic returned — same
-            // text the chat shows, but you see it here before paying for a
-            // full chat round-trip.
-            if anthropicKeySaved, let status = anthropicTestStatus {
-                HStack {
-                    Spacer().frame(width: 22)
-                    Text(status.isEmpty
-                         ? "Connected — Anthropic accepted the saved key."
-                         : status)
-                        .font(.caption2)
-                        .foregroundStyle(status.isEmpty ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                    Spacer()
-                }
-                .padding(.top, 4)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-    }
-
-    /// Single Keychain read shared by the subtitle text + color, so a body
-    /// recompute does ONE Keychain round-trip instead of two. Returns nil
-    /// when no key is saved (the subtitle/color fall back to the "not
-    /// configured" presentation). Never exposes the full key — callers only
-    /// read the prefix and the `sk-ant-` family check.
-    private var savedAnthropicKey: String? {
-        anthropicKeySaved ? KeychainStore.read(.anthropicAPIKey) : nil
-    }
-
-    /// Subtitle for the key row — the masking rule is pure in
-    /// `AnthropicKeyPresentation` (SettingsBrainReadiness.swift): echoes the
-    /// 12-char family prefix only when the key IS `sk-ant-…`; a misfiled
-    /// wrong-service key (whose first chars carry secret bytes) masks to
-    /// `sk-…`. No-leak property pinned by SettingsBrainReadyTests.
-    private var anthropicSubtitle: String {
-        AnthropicKeyPresentation.subtitle(savedKey: savedAnthropicKey)
-    }
-
-    /// Orange when the prefix doesn't look like an Anthropic key, secondary
-    /// otherwise. Drives attention to the "saved the wrong key" failure mode.
-    private var anthropicSubtitleColor: Color {
-        AnthropicKeyPresentation.flagsWrongService(savedKey: savedAnthropicKey)
-            ? DS.Palette.warningSoft : .secondary
-    }
-
-    /// Hit Anthropic with a one-token prompt and surface the actual error.
-    /// Returns `nil` for "OK", or a human-readable error string. Static
-    /// because the test logic is pure side-effect (network + Keychain
-    /// reads) and doesn't touch the view's `@State`.
-    private static func runAnthropicTest() async -> String? {
-        guard KeychainStore.read(.anthropicAPIKey) != nil else {
-            return "No Anthropic key saved. Paste one and tap Save."
-        }
-        let reply = await AnthropicClient.chat(prompt: "ping", system: nil)
-        guard let reply else {
-            return "Couldn't reach Anthropic. Check your network and try again."
-        }
-        // If the reply is a `[Claude Haiku error …]` formatted string, the
-        // key reached Anthropic but was rejected — surface their message
-        // verbatim so the user knows exactly what to fix.
-        if reply.hasPrefix("[Claude Haiku error") || reply.hasPrefix("[Claude Haiku request") {
-            return reply
-        }
-        return nil   // got a real assistant reply → success
+        .animation(DS.Motion.smooth, value: testing)
     }
 
     private func toggle(_ title: String, _ subtitle: String, _ icon: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 22)
+            // Icon well — accent-tinted, consistent with all other list rows.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text(subtitle).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).tint(DS.Palette.accent)
-                .accessibilityLabel(title)   // labelsHidden() drops the visual label from VoiceOver too
+                .accessibilityLabel(title)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
@@ -1828,7 +1362,17 @@ struct SettingsView: View {
     // MARK: Voice rows
     private var speedRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "speedometer").foregroundStyle(.secondary).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: "speedometer")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Speaking speed").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                 Text("How fast replies are read aloud").font(.caption2).foregroundStyle(.secondary)
@@ -1841,7 +1385,17 @@ struct SettingsView: View {
 
     private var voiceRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "person.wave.2").foregroundStyle(.secondary).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                Image(systemName: "person.wave.2")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text("Voice").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
             Spacer()
             Picker("Voice", selection: $settings.speechVoiceID) {
@@ -1873,7 +1427,17 @@ struct SettingsView: View {
     private var memoryRow: some View {
         Button { showMemory = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: "brain").foregroundStyle(.secondary).frame(width: 22)
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                        .fill(DS.Palette.accent.opacity(0.12))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "brain")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DS.Palette.accent)
+                }
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Manage memory").font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
                     Text("See and delete what Salehman AI remembers about you").font(.caption2).foregroundStyle(.secondary)
@@ -1889,8 +1453,19 @@ struct SettingsView: View {
 
     private func statusRow(_ title: String, _ ok: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft).frame(width: 22)
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill((ok ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14))
+                    .frame(width: 26, height: 26)
+                Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ok ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(DS.Motion.smooth, value: ok)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
             Text(title).font(.system(size: 14)).foregroundStyle(.white)
             Spacer()
             Text(ok ? "Ready" : "Off").font(.caption).foregroundStyle(.secondary)

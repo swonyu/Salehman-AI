@@ -44,20 +44,36 @@ enum MemorySort: String, CaseIterable, Identifiable {
 /// state on appear.
 struct MemoryView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var facts: [String] = []
     @State private var confirmClear = false
+    /// Staggered row entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled rows, not the opacity-0 pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var query = ""
     @AppStorage("ui.memorySort") private var sort: MemorySort = .newest
     @State private var hoveredFact: String?
     @State private var newFact = ""
     @State private var copiedFact: String?
     @FocusState private var addFocused: Bool
+    /// Focus glow on the search field — consistent with the add field.
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack {
             // Route through DS canvas tokens so this sheet inherits any palette
             // swap (was a hardcoded cold-indigo that bypassed the token layer).
             DS.Palette.codeSurface.ignoresSafeArea()   // flat working canvas (design language)
+
+            // Ambient brand glow — soft atmospheric depth behind the brain icon,
+            // consistent with the other sheets (AboutView, OnboardingView). Fixed
+            // non-scrolling element so the blur lives on the compositor, no repaints.
+            Circle()
+                .fill(DS.Palette.accent.opacity(0.12))
+                .frame(width: 200, height: 200)
+                .blur(radius: 70)
+                .offset(x: -80, y: -200)
+                .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 header
@@ -66,30 +82,55 @@ struct MemoryView: View {
 
                 if facts.isEmpty {
                     emptyState
+                        .transition(.opacity)
                 } else {
                     if facts.count > 1 { controlsRow }
 
                     let shown = sort.apply(facts, filter: query)
-                    if shown.isEmpty {
-                        VStack(spacing: 6) {
-                            Spacer()
-                            Text("No memories match “\(query)”.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        ScrollView {
+                    Group {
+                        if shown.isEmpty {
+                            VStack(spacing: 10) {
+                                Spacer()
+                                ZStack {
+                                    Circle().fill(Color.white.opacity(0.05)).frame(width: 46, height: 46)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 18, weight: .light))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                                Text("No memories match “\(query)”.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        } else {
+                            ScrollView {
                             VStack(spacing: 1) {
-                                ForEach(shown, id: \.self) { fact in
+                                ForEach(Array(shown.enumerated()), id: \.element) { idx, fact in
                                     row(fact)
+                                        .opacity(appeared ? 1 : 0)
+                                        .offset(y: appeared ? 0 : 10)
+                                        .animation(DS.Motion.lux.delay(Double(min(idx, 8)) * 0.040),
+                                                   value: appeared)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
                                 }
                             }
-                            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .animation(DS.Motion.smooth, value: facts)
+                            .background(
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .fill(DS.Bezel.cardFill)
+                                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                                }
+                            )
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
+                        .transition(.opacity)
                     }
+                }
+                .animation(DS.Motion.smooth, value: shown.isEmpty)
 
                     Button(role: .destructive) { confirmClear = true } label: {
                         Label("Forget everything", systemImage: "trash")
@@ -100,10 +141,11 @@ struct MemoryView: View {
                 }
             }
             .padding(DS.Space.xl)
+            .animation(DS.Motion.smooth, value: facts.isEmpty)
         }
         .frame(width: 480, height: 540)
         .preferredColorScheme(.dark)
-        .onAppear(perform: reload)
+        .onAppear { reload(); appeared = true }
         .confirmationDialog("Forget everything Salehman AI has remembered about you?",
                             isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Forget everything", role: .destructive) {
@@ -114,13 +156,50 @@ struct MemoryView: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("What I know about you")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            // Brand icon tile — consistent with TodayView / AgentsView headers.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 40, height: 40)
+                    .dsShadow(DS.Elevation.accentGlow(0.40))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("What I know about you")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Eyebrow(text: "Long-term Memory")
+                }
                 Text("\(facts.count) fact\(facts.count == 1 ? "" : "s") saved on this Mac")
                     .font(.caption).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: facts.count)
             }
             Spacer()
             Button { dismiss() } label: {
@@ -135,10 +214,24 @@ struct MemoryView: View {
             // Halo + tinted glyph — mirrors the chat empty-state's "brand glow"
             // pattern so an empty sheet still feels lived-in, not abandoned.
             ZStack {
-                Circle()
-                    .fill(DS.Palette.accent.opacity(0.14))
-                    .frame(width: 84, height: 84)
-                    .blur(radius: 16)
+                if reduceMotion {
+                    // Reduce Motion: static halo (same geometry, no pulsing).
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(0.18))
+                        .frame(width: 84, height: 84)
+                        .blur(radius: 16)
+                } else {
+                    PhaseAnimator([0.14, 0.22, 0.14]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 84, height: 84)
+                            .blur(radius: 16)
+                    } animation: { opacity in
+                        opacity > 0.18
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
+                }
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 40))
                     .foregroundStyle(DS.Palette.accent.opacity(0.85))
@@ -167,9 +260,11 @@ struct MemoryView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(searchFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Search memories…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 14))
+                .focused($searchFocused)
                 .onKeyPress(.escape) { query = ""; return .handled }
                 .accessibilityLabel("Search memories")
             if !query.isEmpty {
@@ -177,12 +272,15 @@ struct MemoryView: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(searchFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.magnetic, value: query.isEmpty)
+        .animation(DS.Motion.lux, value: searchFocused)
     }
 
     private var sortMenu: some View {
@@ -201,9 +299,8 @@ struct MemoryView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, DS.Space.md).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(Color.white.opacity(0.07), in: Capsule())
+            .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -213,9 +310,20 @@ struct MemoryView: View {
     private func row(_ fact: String) -> some View {
         let hovered = hoveredFact == fact
         return HStack(spacing: 12) {
-            Image(systemName: "sparkle")
-                .foregroundStyle(hovered ? DS.Palette.accent : DS.Palette.accent.opacity(0.7))
-                .frame(width: 18)
+            // Icon well — accent fill brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(hovered ? 0.20 : 0.11))
+                    .frame(width: 24, height: 24)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+            )
             Text(fact).font(.system(size: 14))
                 .foregroundStyle(hovered ? .white : Color.white.opacity(0.9))
                 .textSelection(.enabled)
@@ -224,22 +332,24 @@ struct MemoryView: View {
                 Group {
                     if copiedFact == fact {
                         Text("Copied!").font(.system(size: 10, weight: .semibold))
+                            .transition(.opacity)
                     } else {
                         Image(systemName: "doc.on.doc").font(.system(size: 12))
+                            .transition(.opacity)
                     }
                 }
                 .foregroundStyle(copiedFact == fact ? DS.Palette.accent : (hovered ? DS.Palette.accent.opacity(0.7) : .secondary))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Copy")
             .accessibilityLabel("Copy memory")
             .animation(DS.Motion.smooth, value: copiedFact == fact)
             Button { MemoryStore.shared.delete(fact); reload() } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
-                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : .secondary)
+                    .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.70) : .secondary.opacity(0.50))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Forget this")
             .accessibilityLabel("Forget this memory")
         }
@@ -247,7 +357,7 @@ struct MemoryView: View {
         .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
-            withAnimation(DS.Motion.press) {
+            withAnimation(DS.Motion.magnetic) {
                 hoveredFact = over ? fact : (hoveredFact == fact ? nil : hoveredFact)
             }
         }
@@ -255,7 +365,8 @@ struct MemoryView: View {
 
     private var addFactRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+            Image(systemName: "plus.circle").font(.system(size: 13))
+                .foregroundStyle(addFocused ? DS.Palette.accent.opacity(0.9) : .secondary)
             TextField("Add a memory…", text: $newFact)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -267,13 +378,15 @@ struct MemoryView: View {
                 Button("Add", action: addFact)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DS.Palette.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(LuxPressStyle())
                     .transition(.opacity)
             }
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 8)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        .shadow(color: DS.Palette.accent.opacity(addFocused ? 0.15 : 0), radius: 10, y: 2)
+        .animation(DS.Motion.lux, value: addFocused)
         .animation(DS.Motion.smooth, value: newFact.isEmpty)
     }
 

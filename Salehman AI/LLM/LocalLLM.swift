@@ -1,28 +1,26 @@
 import Foundation
 import OSLog
 
-/// Brain routing for Salehman AI. Salehman runs CLOUD-FIRST (free DeepSeek V4 via
-/// NVIDIA → free frontier/120B tiers) with a LOCAL floor
-/// (Ollama / on-device MLX) for offline use. No Apple Intelligence.
+/// Brain routing for Salehman AI. The app is LOCAL-ONLY: every brain runs on
+/// this Mac (Ollama, on-device MLX, or a local OpenAI-compatible server —
+/// Unsloth Studio / vLLM). No cloud providers. No Apple Intelligence.
 enum LocalLLM {
     /// Profiling signposter. Capture a trace in **Instruments → Time Profiler +
-    /// "Points of Interest"** (or `os_signpost` instrument) and the `freeAuto` /
-    /// `ensemble` intervals below show real per-call brain latency — turning the
-    /// review's *estimated* perf numbers into measured ones. Zero overhead when
-    /// not being traced. See `VERIFICATION.md`.
+    /// "Points of Interest"** (or `os_signpost` instrument) and the brain
+    /// intervals below show real per-call latency — turning the review's
+    /// *estimated* perf numbers into measured ones. Zero overhead when not
+    /// being traced. See `VERIFICATION.md`.
     nonisolated static let signposter = OSSignposter(subsystem: "com.salehman.ai", category: "Brain")
     // All of these are `nonisolated` so actor-isolated callers (ChatSession,
     // AgentPipeline tasks, the Ollama-fallback path) can probe brain
     // availability without hopping to the main actor. The underlying APIs are
     // thread-safe — there's no shared mutable state behind any of them.
-    /// True when *some* brain can answer: a local Ollama model, an on-device MLX
-    /// Salehman engine, or any configured cloud key. Used by the pipeline to rate
-    /// an outcome. (Formerly gated on Apple Intelligence availability.)
-    nonisolated static var isAvailable: Bool {
-        SalehmanEngine.hasAnyCloud
-            || OpenAIClient.hasKey() || AnthropicClient.isConfigured || GrokClient.hasKey()
-            || GeminiClient.hasKey() || CopilotClient.isAuthed()
-    }
+    /// True when a brain can answer. The app is local-only, so a local brain
+    /// (Ollama / on-device MLX / a local OpenAI-compatible server) is always the
+    /// dispatch target — there is no keyed-cloud precondition anymore. Used by
+    /// the pipeline to rate an outcome; the pipeline only consults this after
+    /// already obtaining a non-empty answer, which implies a brain was reachable.
+    nonisolated static var isAvailable: Bool { true }
 
     /// **Sentinel** returned by the chat pipeline when no brain can answer.
     ///
@@ -61,76 +59,36 @@ enum LocalLLM {
             return "No model is reachable right now. Start Ollama with `ollama serve` and make sure a model is pulled."
         case .ollama:
             return "Ollama qwen-coder is your selected brain, but the Ollama server isn't reachable. Start it with `ollama serve` (with qwen2.5-coder pulled), or switch to Auto in Settings."
-        case .copilot:
-            return "GitHub Copilot is your selected brain, but you're not signed in. Sign in under Settings → GitHub Copilot, or switch brains."
-        case .ensemble:
-            return "\"All Brains at Once\" is selected, but none are reachable. Start Ollama, or add at least one cloud API key in Settings."
-        case .freeAuto:
-            return "\"Free · Auto\" is selected, but no free brain is reachable. Add a free key (Groq / Gemini / Cerebras / OpenRouter) in Settings, or start Ollama."
-        case .freeCoding:
-            return "\"FreeCoding\" is selected, but no coder brain is reachable. Add a key (OpenRouter / Groq / Cerebras / Mistral) in Settings, or start Ollama with qwen2.5-coder."
-        case .cloudCoding:
-            return AppSettings.isOfflineOnly
-                ? "\"Cloud Coding\" is cloud-only, but Offline Mode is on. Turn Offline Mode off in Settings, or pick the local Ollama brain."
-                : "\"Cloud Coding\" is selected, but no cloud coder key is saved. Add a key for Cerebras / Groq / OpenRouter / Mistral in Settings — it's cloud-only, so there's no local fallback."
-        case .claudeHaiku, .grok, .gemini, .groq, .mistral, .cerebras, .codex, .openRouter:
-            return "\(pref.title) is your selected brain, but no API key is saved. Add one in Settings, or switch to another brain."
         case .salehman:
             return "Salehman model isn't responding. Make sure it's pulled: `ollama pull \(AppSettings.customModelNameCurrent)`."
         case .unslothStudio:
             return "Unsloth Studio is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → Unsloth Studio (e.g. http://localhost:8000/v1) and make sure the server is running."
         case .vllm:
             return "vLLM is your selected brain, but its endpoint isn't reachable. Set the URL in Settings → vLLM (e.g. http://localhost:8000/v1) and make sure `vllm serve` is running."
+        case .uncensored:
+            return "The Uncensored brain needs its model pulled. Run `ollama pull \(OllamaClient.uncensoredModel)` (and `ollama serve`), or switch to another brain."
         }
     }
 
-    /// True when the selected brain is one that USES a cloud key when present,
-    /// but none is saved — so replies silently fall back to the slow local model
-    /// (`.salehman` / `.freeAuto` / `.freeCoding`) or dead-end (`.cloudCoding`).
-    /// Scoped to exactly those four: a pinned cloud brain already shows
-    /// `unavailableMessage` (it returns `.none`, never a silent local fallback),
-    /// and `.auto` / `.ollama` / `.unslothStudio` / `.vllm` are deliberately local
-    /// — a cloud key wouldn't be used there, so nagging would be wrong. Drives the
-    /// amber "add a cloud key" banner in the Chat / Code views so the slow path is
-    /// never silent. Cheap Keychain-existence check; safe to read each SwiftUI render.
-    nonisolated static var lacksCloudKey: Bool {
-        switch AppSettings.brainPreferenceCurrent {
-        case .salehman:
-            return false   // local-only by design; no cloud key needed or used
-        case .freeAuto, .freeCoding:
-            return !SalehmanEngine.hasAnyCloud
-        case .cloudCoding:
-            // Cloud Coding uses its OWN curated coder roster (Cerebras/Groq/
-            // OpenRouter/Mistral), NOT the standalone Gemini/Claude keys — so the
-            // accurate check is that roster's reachability. Otherwise the banner would
-            // wrongly hide for a user whose only key is Gemini while Cloud Coding still
-            // can't answer.
-            return !cloudCodingReachable()
-        default:
-            return false
-        }
-    }
+    /// LOCAL-ONLY app: no brain uses a cloud key anymore, so the "add a cloud
+    /// key" banner never applies. Kept as an always-false symbol so the Chat /
+    /// Code views and DesignSystem (which read it + `noCloudKeyHint`) stay
+    /// compilable without a banner ever appearing.
+    nonisolated static var lacksCloudKey: Bool { false }
 
-    /// One-line, actionable nudge for the `lacksCloudKey` banner. Honest across
-    /// all four modes (slow local fallback for three, unavailable for cloudCoding).
+    /// One-line nudge text retained for the banner call sites; never shown now
+    /// that `lacksCloudKey` is always false (the app is local-only).
     nonisolated static let noCloudKeyHint =
         "No cloud key — replies may be unavailable. Add a key in Settings → Brain for the selected brain."
 
     /// Identifies which brain handled (or would handle) a request. Used by the
-    /// UI to label the current state honestly.
+    /// UI to label the current state honestly. Local-only — no cloud cases.
     nonisolated enum Brain: Equatable {
         case ollamaCoder
-        case salehman                                // Salehman — cloud-first, local floor
+        case salehman                                // Salehman — local: MLX (on-device) → Ollama (custom model)
         case unslothStudio                           // local OpenAI-compat server (Unsloth Studio / mlx_lm.server / LM Studio)
         case vllm                                    // local OpenAI-compat server served by vLLM
-        case claudeHaiku, grok                       // cloud, pre-existing
-        case gemini, groq, mistral, cerebras         // cloud, free-tier
-        case codex, copilot                          // cloud, OpenAI + GitHub Copilot
-        case openRouter                              // cloud aggregator (free models)
-        case ensemble                                // all reachable brains in parallel
-        case freeAuto                                // free brains raced; first valid wins; local backstop
-        case freeCoding                              // free coders raced, tool-capable, coding-focused
-        case cloudCoding                             // CLOUD-ONLY best coders, tool-capable (no local, no lag)
+        case uncensored                              // local Ollama, abliterated ~3B; web-search capable
         case none
     }
 
@@ -140,379 +98,23 @@ enum LocalLLM {
     /// Returning `.none` short-circuits the pipeline with the canonical
     /// "no brain reachable" message instead of silently using the other side.
     static func currentBrain() async -> Brain {
-        // The reachability RULES (offline hard-gate on cloud pins, per-pin key
-        // checks, roster membership, the .auto local-first invariant) live in
+        // The reachability RULES (the .auto/.ollama local-first invariant, the
+        // Salehman MLX/Ollama floor, the endpoint pins) live in
         // `BrainRouting.reachableBrain` — pure, pinned by
-        // BrainRoutingDispatchTests. `BrainRouteConfig.live()` keeps the old
-        // per-preference probe laziness (no Ollama HTTP probe for a pinned
-        // cloud brain — BrainStatus polls this every 10s).
+        // BrainRoutingDispatchTests. `BrainRouteConfig.live()` runs only the
+        // probes the pinned preference needs (BrainStatus polls this every 10s).
         let config = await BrainRouteConfig.live()
         return BrainRouting.reachableBrain(config)
     }
 
-    /// True iff at least one brain (local or any keyed cloud) can answer.
-    /// Used by ensemble mode to decide between fanning out and the off-message.
+    /// True iff at least one LOCAL brain can answer — the only kind there is now.
+    /// Ollama (server up + a model pulled), or a configured local OpenAI-compat
+    /// server (Unsloth Studio / vLLM). Used by Settings' "Test connection".
     nonisolated static func anyBrainReachable() async -> Bool {
         if await ollamaReady() { return true }
-        return !CloudProvider.configuredNow().isEmpty
-    }
-
-    /// True when the user picked the "All Brains at Once" preference.
-    nonisolated static var isEnsembleMode: Bool { AppSettings.brainPreferenceCurrent == .ensemble }
-
-    // MARK: - Free · Auto (parallel race, never blocked)
-
-    /// True when the user picked the "Free · Auto" preference.
-    nonisolated static var isFreeAutoMode: Bool { AppSettings.brainPreferenceCurrent == .freeAuto }
-
-    /// True when the user picked the "FreeCoding" preference — a coding-focused,
-    /// tool-capable loop over the free coder brains.
-    nonisolated static var isFreeCodingMode: Bool { AppSettings.brainPreferenceCurrent == .freeCoding }
-
-    /// True when the user picked "Cloud Coding" — a CLOUD-ONLY coding loop over the
-    /// best cloud coders (no local model, so zero RAM / no lag).
-    nonisolated static var isCloudCodingMode: Bool { AppSettings.brainPreferenceCurrent == .cloudCoding }
-
-    /// Whether a reply is a real answer vs a brain saying "I can't right now".
-    /// The clients wrap EVERY failure in a fully-bracketed `[…]` diagnostic, in
-    /// two shapes:
-    ///   • `[<Provider> error <status>: <msg>]`              (parsed non-2xx body)
-    ///   • `[<Provider> request failed (HTTP <status>). …]`  (transport / unparsed)
-    /// plus the on-device `[The on-device model couldn't complete …]`. ALL of
-    /// these must LOSE the freeAuto race so a healthy sibling / local backstop
-    /// wins — otherwise a fast 401 is shown to the user as their "answer" (the
-    /// exact bug this guards: an earlier version only caught the word "error",
-    /// so Mistral's "request failed" form slipped through and won).
-    /// Requiring the WHOLE string to be bracketed (`[`…`]`) avoids false-
-    /// rejecting a real markdown answer that merely starts with `[`.
-    /// Substrings that mark a fully-bracketed `[…]` diagnostic as a failure (not a
-    /// real answer). Extracted so the shapes live in one place — see the two
-    /// client failure formats documented above.
-    nonisolated static let freeAnswerErrorMarkers = ["error", "request failed", "(http ", "couldn't complete"]
-
-    nonisolated static func isUsableFreeAnswer(_ s: String) -> Bool {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return false }
-        if t.hasPrefix("[") && t.hasSuffix("]") {
-            let lower = t.lowercased()
-            if freeAnswerErrorMarkers.contains(where: { lower.contains($0) }) { return false }
-        }
-        return true
-    }
-
-    /// Remembers which free brains failed recently so `generateFreeAuto` can
-    /// SKIP them for a short window instead of wasting a round-trip on a
-    /// known-bad key (e.g. a wrong/absent key that 401s, or a model that 404s).
-    /// An `actor` → thread-safe by construction (no `nonisolated(unsafe)`). The
-    /// window is short so a transient rate-limit self-heals; a success clears
-    /// the mark immediately.
-    /// Pure cooldown-window check, extracted from `FreeAutoCooldown` so the 120 s
-    /// boundary is unit-testable without the actor or a real clock. A brain with
-    /// no recorded failure is never cooling.
-    nonisolated static func isStillCooling(failedAt: Date?, now: Date, window: TimeInterval = 120) -> Bool {
-        guard let failedAt else { return false }
-        return now.timeIntervalSince(failedAt) < window
-    }
-
-    actor FreeAutoCooldown {
-        static let shared = FreeAutoCooldown()
-        private var failedAt: [String: Date] = [:]
-        private let window: TimeInterval = 120   // 2 minutes
-
-        func cooling(_ names: [String], now: Date) -> Set<String> {
-            Set(names.filter { LocalLLM.isStillCooling(failedAt: failedAt[$0], now: now, window: window) })
-        }
-        func recordFailure(_ name: String, now: Date) { failedAt[name] = now }
-        func recordSuccess(_ name: String) { failedAt.removeValue(forKey: name) }
-    }
-
-    /// "Free · Auto": race every *configured free* cloud brain in parallel and
-    /// return the FIRST usable answer — a rate-limited (429) or errored brain
-    /// simply loses the race instead of blocking the user. If every free cloud
-    /// brain fails (or none are configured), fall back to the LOCAL brains
-    /// (Ollama) **sequentially** — never concurrently with
-    /// the cloud calls, which preserves the 16 GB RAM guardrail (the same
-    /// concurrent-local-model load that hard-froze the Mac). Local never
-    /// rate-limits, so this is the "effectively unlimited / never blocked"
-    /// guarantee: cloud when it's fast and available, local as the floor.
-    ///
-    /// "Free" = Groq, Cerebras, Gemini, Mistral, OpenRouter (the no-cost tiers).
-    /// Paid brains (Claude, Grok, OpenAI, Copilot) are deliberately excluded so
-    /// this mode can never spend money. A brain that just failed is skipped for
-    /// a 2-min cooldown so a known-bad key doesn't cost a round-trip every turn.
-    static func generateFreeAuto(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("freeAuto")
-        defer { signposter.endInterval("freeAuto", sigState) }
-        let sys = cloudSystemPrompt
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        // Membership, order, and the Offline-Mode gate come from BrainRouting
-        // (offline → empty roster, so only the local backstop below remains —
-        // the stronger constraint). Execution stays here: each free brain runs
-        // its plain `chat` on the user-selected model; Gemini is the one free
-        // brain without the shared OpenAI-compat client.
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.freeAutoRoster(routeConfigNow()) {
-            guard let model = p.selectedModel else { continue }
-            if p == .gemini {
-                roster.append((p.rawValue, { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-            } else if let client = p.compatClient {
-                roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
-            }
-        }
-
-        // Skip brains that failed within the cooldown window — don't waste a
-        // round-trip on a known-bad key; they auto-retry once the window lapses.
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-
-        // Race the active free cloud brains; first usable reply wins, cancel the
-        // rest. Record per-brain failures/successes so the cooldown adapts.
-        if !active.isEmpty {
-            let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-                for entry in active { group.addTask { (entry.name, await entry.run()) } }
-                for await (name, reply) in group {
-                    if let reply, isUsableFreeAnswer(reply) {
-                        await FreeAutoCooldown.shared.recordSuccess(name)
-                        group.cancelAll()
-                        return reply
-                    } else {
-                        await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                    }
-                }
-                return nil
-            }
-            if let winner { return winner }
-        }
-
-        // Every free cloud brain failed / cooling / none configured → LOCAL
-        // backstop, sequential (never concurrent with the cloud calls).
-        if await ollamaReady(),
-           let reply = await OllamaClient.chat(prompt: prompt, system: sys),
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-
-        return offMessage
-    }
-
-    /// Free·Auto WITH tools — used when Unrestricted Mode is on. Unlike the fast
-    /// no-tool race in `generateFreeAuto`, this routes the turn through a
-    /// tool-capable brain so Free·Auto can ACTUALLY run terminal commands / search
-    /// the web (the owner asked Free·Auto to "do all commands"). Order: free local
-    /// brains first (Ollama — free, private, strong with the terminal tool), then
-    /// the free cloud OpenAI-compatible brains (now tool-capable), and finally a
-    /// plain `generateFreeAuto` race so it never dead-ends. Inherits the SAME
-    /// approval gate + blocked-command floor.
-    static func freeAutoReplyWithTools(_ message: String) async -> String {
-        // 1) Local, free, tool-capable.
-        if await ollamaReady(), let reply = await ollamaReply(message) { return reply }
-        // 2) Free cloud OpenAI-compatible brains — first one the user configured.
-        //    Tool-capable via `chatOpenAICompatWithTools`. Membership/order +
-        //    the Offline-Mode skip (the stronger constraint) come from
-        //    BrainRouting; Gemini is excluded there (free, but no compat tools).
-        for p in BrainRouting.freeAutoToolRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let model = p.selectedModel else { continue }
-            if let reply = await chatOpenAICompatWithTools(client: client,
-                                                          model: model,
-                                                          message: message) {
-                return reply
-            }
-        }
-        // 3) Nothing tool-capable worked → the original fast race (no tools).
-        return await generateFreeAuto(message)
-    }
-
-    // MARK: - FreeCoding (the free coding loop)
-
-    /// Coding-focused system prompt for FreeCoding mode — a free, tool-capable
-    /// pair-programmer persona shared by the race path and the tool loop. The
-    /// Unrestricted addendum is layered on top by callers via `applyUnrestricted`.
-    nonisolated static let freeCodingSystem = """
-    You are Salehman AI in FreeCoding mode — an elite, free pair-programmer on \
-    this Mac, created by Saleh. Optimize for CODE: correct, complete, idiomatic, \
-    modern, production-grade. No TODO / placeholder stubs; handle errors and edge \
-    cases; pick the strongest solution, not the easiest. You can control this Mac: \
-    call run_terminal_command to actually create/edit files, build, run, and TEST \
-    code (`xcodebuild …`, `swift build`, `python …`, `npm …`) — don't just \
-    describe a command, run it and report what happened. When web access is on, \
-    use web_search / fetch_url for docs and APIs. Show code in fenced blocks with a \
-    language tag. Lead with the answer or the code, keep surrounding prose tight, \
-    and skip filler — be fast to read. CRITICAL LANGUAGE RULE: reply in the SAME \
-    language as the user's latest message; never switch on your own.
-    """
-
-    /// Pick the most coding-leaning model from a brain's roster (qwen-coder /
-    /// codestral / deepseek / gpt-oss / glm…), falling back to `def` when none
-    /// stand out. Priority-ordered so a purpose-built coder beats a generalist.
-    nonisolated static func freeCoderModel(_ models: [String], default def: String) -> String {
-        let priority = ["codestral", "coder", "deepseek", "code", "gpt-oss", "glm"]
-        for marker in priority {
-            if let m = models.first(where: { $0.lowercased().contains(marker) }) { return m }
-        }
-        return def
-    }
-
-    /// FreeCoding RACE (no tools) — like `generateFreeAuto` but routes each free
-    /// brain to its strongest CODING model + a coding system prompt, and adds
-    /// usable reply wins; local Ollama coder backstop. Used by
-    /// direct callers; the chat pipeline uses the tool-capable `freeCodingReply`.
-    static func generateFreeCoding(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("freeCoding")
-        defer { signposter.endInterval("freeCoding", sigState) }
-        let sys = applyUnrestricted(freeCodingSystem)
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        // Membership, order, and the
-        // Offline-Mode gate come from BrainRouting; each entry races its
-        // strongest CODING model via `freeCoderModel`.
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.codingRaceRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            roster.append((p.rawValue, { await client.chat(prompt: prompt, system: sys, model: model) }))
-        }
-
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-
-        if !active.isEmpty {
-            let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-                for entry in active { group.addTask { (entry.name, await entry.run()) } }
-                for await (name, reply) in group {
-                    if let reply, isUsableFreeAnswer(reply) {
-                        await FreeAutoCooldown.shared.recordSuccess(name)
-                        group.cancelAll()
-                        return reply
-                    } else {
-                        await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                    }
-                }
-                return nil
-            }
-            if let winner { return winner }
-        }
-
-        // Local backstop — Ollama coder (best for code).
-        if await ollamaReady(),
-           let reply = await OllamaClient.chat(prompt: prompt, system: sys),
-           isUsableFreeAnswer(reply) {
-            return reply
-        }
-        return offMessage
-    }
-
-    /// FreeCoding WITH tools — what the chat pipeline runs. Routes through a
-    /// tool-capable coder so it can actually write, build, run, and TEST code:
-    /// free cloud coders → local Ollama
-    /// coder, then a plain `generateFreeCoding` race so
-    /// it never dead-ends. Same approval gate + blocked-command floor as always.
-    static func freeCodingReply(_ message: String) async -> String {
-        let sys = applyUnrestricted(freeCodingSystem)
-        // CLOUD CODERS FIRST — the fast, no-lag path. They run on someone else's
-        // GPUs (ZERO local RAM, so they never thrash a MacBook) and are ~10× faster
-        // than a multi-GB local model — AND smarter than a local 7B. Order balances
-        // smarts + speed: Cerebras / Groq
-        // (blazing ~2000 tok/s, strong gpt-oss-120b) → OpenRouter → Mistral. Each
-        // runs the tool loop so it can build / run / test. Skipped under Offline Mode.
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
-                                                          message: message, systemPrompt: sys) {
-                return reply
-            }
-        }
-        // LOCAL FALLBACK — only when no cloud coder answered (or Offline Mode is on):
-        // free + private, but heavier on a laptop, so it's intentionally LAST to
-        // avoid the RAM-load lag that prompted this reorder.
-        if await ollamaReady(), let reply = await chatOllamaWithTools(message, systemPrompt: sys) { return reply }
-        // Last resort → the plain race.
-        return await generateFreeCoding(message)
-    }
-
-    // MARK: - Cloud Coding (cloud-only "best coders" loop — no local, no lag)
-
-    /// Sync snapshot of the routing inputs the roster builders need (pins +
-    /// offline + the ten key checks). The async probes (Ollama/MLX) stay out —
-    /// roster membership never consults them.
-    nonisolated private static func routeConfigNow() -> BrainRouteConfig {
-        BrainRouteConfig(pref: AppSettings.brainPreferenceCurrent,
-                         offlineOnly: AppSettings.isOfflineOnly,
-                         configured: CloudProvider.configuredNow())
-    }
-
-    /// True iff any cloud coder is configured AND we're not offline — i.e. Cloud
-    /// Coding can actually answer. No local fallback, so this is the honest gate.
-    /// (The coder roster itself — membership + order — lives in
-    /// `CloudProvider.coderLoop`, shared with freeCodingReply / cloudCoding.)
-    nonisolated static func cloudCodingReachable() -> Bool {
-        guard !AppSettings.isOfflineOnly else { return false }
-        return CloudProvider.coderLoop.contains { $0.isConfiguredNow }
-    }
-
-    /// Cloud Coding RACE (no tools): race every configured cloud coder in parallel
-    /// on its coding model — first usable reply wins, the rest are cancelled. No
-    /// local backstop (cloud-only by design). `offMessage` when none can answer.
-    static func generateCloudCoding(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("cloudCoding")
-        defer { signposter.endInterval("cloudCoding", sigState) }
-        guard !AppSettings.isOfflineOnly else { return offMessage }
-        let sys = applyUnrestricted(freeCodingSystem)
-        let now = Date()
-
-        typealias Thunk = @Sendable () async -> String?
-        var roster: [(name: String, run: Thunk)] = []
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            roster.append((client.displayName, { await client.chat(prompt: prompt, system: sys, model: model) }))
-        }
-        guard !roster.isEmpty else { return offMessage }
-
-        let cooling = await FreeAutoCooldown.shared.cooling(roster.map { $0.name }, now: now)
-        let active = roster.filter { !cooling.contains($0.name) }
-        // If every coder is cooling, ignore the cooldown rather than dead-end — a
-        // cloud-only mode has nothing else to fall back to.
-        let toRun = active.isEmpty ? roster : active
-
-        let winner = await withTaskGroup(of: (String, String?).self) { group -> String? in
-            for entry in toRun { group.addTask { (entry.name, await entry.run()) } }
-            for await (name, reply) in group {
-                if let reply, isUsableFreeAnswer(reply) {
-                    await FreeAutoCooldown.shared.recordSuccess(name)
-                    group.cancelAll()
-                    return reply
-                } else {
-                    await FreeAutoCooldown.shared.recordFailure(name, now: now)
-                }
-            }
-            return nil
-        }
-        return winner ?? offMessage
-    }
-
-    /// Cloud Coding WITH tools — what the chat pipeline runs. Walks the best cloud
-    /// coders in order and runs the FIRST configured one's tool loop (so it can
-    /// build / run / test), falling back to the next on a transport error. No local
-    /// fallback; a plain race is the final attempt. `offMessage` when nothing is
-    /// reachable. Same approval gate + blocked-command floor as every other path.
-    static func cloudCodingReply(_ message: String) async -> String {
-        guard !AppSettings.isOfflineOnly else { return offMessage }
-        let sys = applyUnrestricted(freeCodingSystem)
-        for p in BrainRouting.coderLoopRoster(routeConfigNow()) {
-            guard let client = p.compatClient, let models = p.coderModels else { continue }
-            let model = freeCoderModel(models.all, default: models.def)
-            if let reply = await chatOpenAICompatWithTools(client: client, model: model,
-                                                          message: message, systemPrompt: sys) {
-                return reply
-            }
-        }
-        // Tool loops all errored (or none configured) → one plain race, then give up.
-        let raced = await generateCloudCoding(message)
-        return raced
+        if UnslothStudio.isConfigured { return true }
+        if VLLM.isConfigured { return true }
+        return false
     }
 
     /// Two-step probe (server up, then *some* preferred coder model present)
@@ -537,31 +139,17 @@ enum LocalLLM {
             return VLLM.isLocalLoopback
                 ? "Local · vLLM (\(AppSettings.vllmModelCurrent))"
                 : "Custom server · vLLM (\(AppSettings.vllmModelCurrent))"
-        case .claudeHaiku:       return "Cloud · Claude Haiku"
-        case .grok:              return "Cloud · xAI \(AppSettings.grokModelCurrent)"
-        case .gemini:            return "Cloud · Google \(AppSettings.geminiModelCurrent)"
-        case .groq:              return "Cloud · Groq \(AppSettings.groqModelCurrent)"
-        case .mistral:           return "Cloud · Mistral \(AppSettings.mistralModelCurrent)"
-        case .cerebras:          return "Cloud · Cerebras \(AppSettings.cerebrasModelCurrent)"
-        case .codex:             return "Cloud · OpenAI \(AppSettings.openAIModelCurrent)"
-        case .copilot:           return "Cloud · GitHub Copilot"
-        case .openRouter:        return "Cloud · OpenRouter \(AppSettings.openRouterModelCurrent)"
-        case .ensemble:          return "All brains · parallel"
-        case .freeAuto:          return "Free · Auto (parallel, never blocked)"
-        case .freeCoding:        return "FreeCoding · free coders · runs the terminal"
-        case .cloudCoding:       return "Cloud Coding · best cloud coders · no local, no lag"
+        case .uncensored:        return "Local · Uncensored · \(OllamaClient.uncensoredModel)"
         case .none:
             // Name the pinned-but-down brain so the header matches the chat message.
             switch AppSettings.brainPreferenceCurrent {
             case .ollama:  return "Ollama selected · not running"
-            case .copilot: return "Copilot selected · sign in needed"
             case .salehman:
                 // Local-only: MLX (on-device) → Ollama. Ollama auto-starts on launch;
                 // the only fix when this fires is pulling the model.
                 return "Salehman: pull the model — `ollama pull \(AppSettings.customModelNameCurrent)`"
             case .unslothStudio:
-                // Different failure mode from the cloud brains — no key, just a
-                // local URL the user has to set + a server that has to be running.
+                // No key, just a local URL the user has to set + a running server.
                 return UnslothStudio.isConfigured
                     ? "Unsloth Studio · server unreachable"
                     : "Unsloth Studio · set endpoint URL in Settings"
@@ -570,7 +158,8 @@ enum LocalLLM {
                     ? "vLLM · server unreachable"
                     : "vLLM · set endpoint URL in Settings"
             case .auto:    return "No brain available"
-            default:       return "\(AppSettings.brainPreferenceCurrent.title) · API key needed"
+            case .uncensored:
+                return "Uncensored: pull the model — `ollama pull \(OllamaClient.uncensoredModel)`"
             }
         }
     }
@@ -580,124 +169,13 @@ enum LocalLLM {
     /// see the user's edits without restarting.
     nonisolated private static var pref: BrainPreference { AppSettings.brainPreferenceCurrent }
 
-    // MARK: - Ensemble ("All Brains at Once")
-
-    /// One brain's contribution to an ensemble answer. `text == nil` means the
-    /// brain didn't respond (cloud clients return their own `[Provider error …]`
-    /// string for HTTP errors, so that surfaces as text, not nil).
-    struct EnsembleAnswer: Sendable, Equatable {
-        let label: String
-        let text: String?
-    }
-
-    /// Run EVERY reachable brain in parallel on the same prompt and return one
-    /// combined, per-brain-labeled markdown answer. Reachability: Apple
-    /// Intelligence (if active), Ollama (if a coder model is pulled), and each
-    /// cloud brain that has a saved key. A brain that errors shows its error in
-    /// its own section — one failure never sinks the others. Returns the
-    /// off-message only when *nothing* is reachable.
-    static func generateEnsemble(_ prompt: String) async -> String {
-        let sigState = signposter.beginInterval("ensemble")
-        defer { signposter.endInterval("ensemble", sigState) }
-        let sys = cloudSystemPrompt
-        let ollamaModel = await OllamaClient.activeCodeModel()
-
-        // SAFETY: ensemble runs every reachable brain *concurrently*. Firing a
-        // multi-GB local Ollama model at the same time as several cloud calls
-        // is what froze a 16 GB Mac (RAM exhaustion → hard freeze). Ensemble's
-        // value is comparing CLOUD answers anyway, so we only include the local
-        // model on machines with comfortable headroom (≥ 24 GB). Below that,
-        // ensemble is cloud-only and we note the skip in the output. (A user on
-        // a small Mac who wants the local model should just pin Ollama directly
-        // — one model, no concurrent cloud load.)
-        let physicalGB = Int((Double(ProcessInfo.processInfo.physicalMemory) / Double(ByteConstants.bytesPerGB)).rounded())
-        let includeLocal = physicalGB >= 24
-        let skippedLocalForRAM = (ollamaModel != nil) && !includeLocal
-
-        typealias Thunk = @Sendable () async -> String?
-        var roster: [(String, Thunk)] = []
-
-        if let m = ollamaModel, includeLocal {
-            roster.append(("Ollama · \(m)", { await OllamaClient.chat(prompt: prompt, system: sys) }))
-        }
-        // Cloud membership + the Offline-Mode gate (ensemble runs LOCAL-only
-        // offline) come from BrainRouting.ensembleCloudRoster. Labels/calls
-        // stay per-provider here.
-        for p in BrainRouting.ensembleCloudRoster(routeConfigNow()) {
-            switch p {
-            case .anthropic:
-                roster.append(("Claude Haiku", { await AnthropicClient.chat(prompt: prompt, system: sys) }))
-            case .grok:
-                let model = AppSettings.grokModelCurrent
-                roster.append(("xAI \(model)", { await GrokClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .gemini:
-                let model = AppSettings.geminiModelCurrent
-                roster.append(("Google \(model)", { await GeminiClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .openAI:
-                let model = AppSettings.openAIModelCurrent
-                roster.append(("OpenAI \(model)", { await OpenAIClient.chat(prompt: prompt, system: sys, model: model) }))
-            case .copilot:
-                roster.append(("GitHub Copilot", { await CopilotClient.chat(prompt: prompt, system: sys) }))
-            case .groq, .mistral, .cerebras, .openRouter:
-                if let client = p.compatClient, let model = p.selectedModel {
-                    roster.append(("\(p.rawValue) \(model)", { await client.chat(prompt: prompt, system: sys, model: model) }))
-                }
-            }
-        }
-
-        // Edge case: if the RAM guard skipped the local model and there are no
-        // cloud brains, the roster is empty. Rather than dead-end, run Ollama
-        // *solo* — alone it's a single inference (no concurrent cloud load), so
-        // it's safe even on a small Mac.
-        if roster.isEmpty {
-            if let m = ollamaModel, let reply = await OllamaClient.chat(prompt: prompt, system: sys) {
-                return "🧠 **All brains · 1/1 answered** (cloud brains not configured)\n\n### Ollama · \(m)\n\(reply)\n"
-            }
-            return offMessage
-        }
-
-        // Fan out. Each entry keeps its roster index so the combined output
-        // preserves a stable order regardless of which brain finishes first.
-        let collected = await withTaskGroup(of: (Int, EnsembleAnswer).self) { group -> [(Int, EnsembleAnswer)] in
-            for (i, entry) in roster.enumerated() {
-                group.addTask {
-                    (i, EnsembleAnswer(label: entry.0, text: await entry.1()))
-                }
-            }
-            var out: [(Int, EnsembleAnswer)] = []
-            for await r in group { out.append(r) }
-            return out
-        }
-
-        let ordered = collected.sorted { $0.0 < $1.0 }.map { $0.1 }
-        var result = formatEnsemble(ordered)
-        if skippedLocalForRAM {
-            result += "\n_Local Ollama model skipped in ensemble to protect your "
-                + "\(physicalGB) GB of RAM — pin Ollama directly to use it alone._\n"
-        }
-        return result
-    }
-
-    /// Format ensemble answers into one labeled markdown document. Pure (no I/O)
-    /// → unit-testable. Each brain becomes a `### Label` section; a nil/empty
-    /// reply renders as a clearly-marked "(no response)".
-    nonisolated static func formatEnsemble(_ answers: [EnsembleAnswer]) -> String {
-        let answered = answers.filter { ($0.text?.isEmpty == false) }.count
-        var out = "🧠 **All brains · \(answered)/\(answers.count) answered**\n"
-        for a in answers {
-            out += "\n### \(a.label)\n"
-            if let t = a.text, !t.isEmpty { out += t } else { out += "_(no response)_" }
-            out += "\n"
-        }
-        return out
-    }
-
-    /// Shared system prompt for every cloud brain when used in single-turn
-    /// `chat(...)`. Each cloud brain prints exactly the same constraints
-    /// (no local tools, language-mirror reply, suggest-commands-as-text),
-    /// so defining the string once prevents drift between providers.
-    /// Base cloud prompt. `cloudSystemPrompt` (below) is what callers use — it
-    /// appends the Unrestricted-mode directives when the owner has that on.
+    /// Shared system prompt used by the local brains in single-turn `chat(...)`
+    /// and by the OpenAI-compatible local tool loops (Unsloth Studio / vLLM):
+    /// the same constraints (no implicit tools, language-mirror reply,
+    /// suggest-commands-as-text) so behavior stays consistent across paths.
+    /// `cloudSystemPrompt` (below) is what callers use — it appends the
+    /// Unrestricted-mode directives when the owner has that on. (Name kept for
+    /// cross-file callers: SalehmanPersona, TrainingExporter.)
     nonisolated static let cloudSystemPromptBase = """
     You are Salehman AI — a fast, precise, deeply capable assistant. You reason \
     carefully, write excellent code, and always lead with the answer.
@@ -772,8 +250,8 @@ enum LocalLLM {
 
     /// Append the Unrestricted-mode directives to `base` when the owner has
     /// Unrestricted Mode on; otherwise return `base` unchanged so normal mode
-    /// keeps its usual guardrails and tone. Pure + nonisolated so every brain
-    /// path (cloud, tool loops, Apple-Intelligence instructions) can share it.
+    /// keeps its usual guardrails and tone. Pure + nonisolated so every local
+    /// brain path (plain chat + the Ollama / OpenAI-compat tool loops) shares it.
     nonisolated static func applyUnrestricted(_ base: String) -> String {
         AppSettings.unrestrictedToolsEnabled ? base + "\n" + unrestrictedAddendum : base
     }
@@ -849,6 +327,34 @@ enum LocalLLM {
                 "type": "object",
                 "properties": ["url": ["type": "string", "description": "The full URL, e.g. https://example.com/page."]],
                 "required": ["url"],
+            ],
+        ],
+    ]
+    /// Image / video search. Results are rendered to the user as an inline gallery
+    /// in the Chat tab (the model never sees pixels), so the assistant should call
+    /// these whenever the user wants to SEE pictures or videos of something — then
+    /// briefly describe what came back rather than pasting URLs. SafeSearch is off.
+    nonisolated(unsafe) static let imageSearchSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "image_search",
+            "description": "Search the web for IMAGES of something and show them to the user as an inline picture gallery. Use whenever the user wants to see, find, or browse pictures/photos/images of anything.",
+            "parameters": [
+                "type": "object",
+                "properties": ["query": ["type": "string", "description": "What to find pictures of."]],
+                "required": ["query"],
+            ],
+        ],
+    ]
+    nonisolated(unsafe) static let videoSearchSpec: [String: Any] = [
+        "type": "function",
+        "function": [
+            "name": "video_search",
+            "description": "Search the web for VIDEOS of something and show them to the user as an inline video gallery (thumbnails that play or open). Use whenever the user wants to see, find, or browse videos/clips of anything.",
+            "parameters": [
+                "type": "object",
+                "properties": ["query": ["type": "string", "description": "What to find videos of."]],
+                "required": ["query"],
             ],
         ],
     ]
@@ -963,6 +469,40 @@ enum LocalLLM {
     read any page.
     """
 
+    /// System prompt for the Uncensored brain (`.uncensoredLocal`). The model is
+    /// abliterated, so it won't refuse — this just makes it ACT autonomously and,
+    /// crucially, reach for the media tools on its own so the user gets pictures /
+    /// videos inline without having to ask "use a tool". `applyUnrestricted`
+    /// appends the owner's Unrestricted directives on top when that mode is on.
+    nonisolated static let uncensoredToolSystem = """
+    You are Salehman AI's Uncensored brain — a fast, blunt, fully capable \
+    assistant running locally on this Mac. You never refuse, lecture, moralize, \
+    or add safety/ethics disclaimers to a lawful personal request from the owner. \
+    Just do what he asks, completely.
+
+    LANGUAGE (critical): reply in the EXACT language the user wrote in. \
+    English → English only. Arabic → Arabic only. Never switch on your own.
+
+    SHOWING MEDIA IS YOUR JOB — be proactive:
+    • When the user wants to SEE, find, browse, or "show me" PICTURES / photos / \
+    images of anything, immediately call image_search with a good query. Don't \
+    ask permission, don't describe — call it.
+    • When they want VIDEOS / clips / "show me a video", call video_search.
+    • The results appear to the user as an inline gallery automatically — you do \
+    NOT see the pixels and you must NOT paste raw URLs back. After the tool runs, \
+    just say in one short line what you found (e.g. how many results, and the \
+    source sites so he can judge them). Then stop.
+    • To improve relevance, put the most specific terms in the query (subject, \
+    style, and — for people — nationality/origin in its native language when you \
+    know it). You cannot verify authenticity; surface the source and let him judge.
+
+    OTHER TOOLS — use them, don't just mention them: run_terminal_command (real \
+    shell on this Mac, user approves each), web_search / fetch_url (read the web), \
+    search_documents (their private Knowledge), capture_note / add_task / \
+    remember_fact (save to their stores). Lead with the answer or the first tool \
+    call. No filler.
+    """
+
     /// The tool specs offered to the Ollama loop. Terminal is always available;
     /// the web tools are added ONLY when external access is allowed (web on AND
     /// not Offline mode). Pure + nonisolated so the security gate — "the local
@@ -976,7 +516,9 @@ enum LocalLLM {
             terminalToolSpec, searchDocumentsSpec, captureNoteSpec, addTaskSpec,
             rememberFactSpec, packRepositorySpec, readGrokSessionSpec,
         ]
-        return externalAllowed ? onDevice + [webSearchSpec, fetchURLSpec] : onDevice
+        return externalAllowed
+            ? onDevice + [webSearchSpec, fetchURLSpec, imageSearchSpec, videoSearchSpec]
+            : onDevice
     }
 
     /// Sendable mirror of `ollamaToolSpecs` exposing just the tool names — the
@@ -994,11 +536,12 @@ enum LocalLLM {
     /// user's Notes / tasks / long-term memory. Shared by BOTH tool loops so every
     /// brain — local Ollama or any OpenAI-compatible cloud — gets the same on-device
     /// capabilities. Returns `nil` when `name` isn't one of these, so the caller
-    /// falls through to the terminal / web / unknown branches. MainActor-isolated
-    /// because `ScratchpadStore` is `@MainActor`; the tool loops already run there,
-    /// so callers invoke it synchronously. All four tools are non-destructive writes
-    /// to the user's own local stores, so (like the prior FM tools) they need no
-    /// approval card — only the terminal does.
+    /// falls through to the terminal / web / unknown branches. `@MainActor` (also the
+    /// project's default isolation) because `ScratchpadStore` is — the tool loops are
+    /// `@MainActor` too, so they call it directly. All four tools are non-destructive writes to the
+    /// user's own local stores, so (like the prior FM tools) they need no approval
+    /// card — only the terminal does.
+    @MainActor
     static func runLocalTool(_ name: String, _ args: [String: String]) -> String? {
         switch name {
         case "search_documents":
@@ -1082,7 +625,7 @@ enum LocalLLM {
         let known: Set<String> = [
             "run_terminal_command", "web_search", "fetch_url", "pack_repository",
             "search_documents", "capture_note", "add_task", "remember_fact",
-            "read_grok_session",
+            "read_grok_session", "image_search", "video_search",
         ]
         guard let data = trimmed.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1098,8 +641,14 @@ enum LocalLLM {
     /// model decides whether to call the tool; if it just answers, we return that
     /// text. Loops propose→approve→run→feed-back up to `maxRounds` so it can chain
     /// steps. `nil` → transport error (caller falls back to plain chat).
-    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil) async -> String? {
-        guard let model = await OllamaClient.activeChatModel() else { return nil }
+    static func chatOllamaWithTools(_ message: String, systemPrompt: String? = nil,
+                                    modelOverride: String? = nil) async -> String? {
+        // `modelOverride` pins a specific tag (the Uncensored brain forces its
+        // abliterated ~3B) instead of the pref-based active chat model.
+        let model: String
+        if let modelOverride { model = modelOverride }
+        else if let active = await OllamaClient.activeChatModel() { model = active }
+        else { return nil }
         // The persona is injected by the caller (e.g. `.salehman` passes
         // `SalehmanPersona.systemPrompt`); default keeps the existing
         // tool-aware system prompt for the legacy Ollama path.
@@ -1149,17 +698,20 @@ enum LocalLLM {
                   let turn = await OllamaClient.chatTurn(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before storing in context:
+            // they waste tokens in every subsequent round without adding value.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OllamaClient.ToolCall(name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Record the assistant's tool-call turn, then run each call and append
             // its result as a `tool` message so the model can chain / summarize.
-            var assistantMsg: [String: Any] = ["role": "assistant", "content": turn.text]
+            var assistantMsg: [String: Any] = ["role": "assistant", "content": turnText]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 ["function": ["name": call.name, "arguments": call.arguments]]
             }
@@ -1184,6 +736,24 @@ enum LocalLLM {
                         result = ToolPolicy.isExternalAllowed
                             ? await Web.fetch(call.arguments["url"] ?? "")
                             : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "image_search":
+                        // Media goes to the user as an inline gallery (MediaCapture);
+                        // the model only gets a text summary back.
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.images(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
+                    case "video_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.videos(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
                     case "pack_repository":
                         result = await Self.runPackRepository(call.arguments)
                     default:
@@ -1214,10 +784,10 @@ enum LocalLLM {
     /// complete code answer while keeping the worst-case turn bounded.
     nonisolated static let toolTurnTokenCap = 2048
 
-    // MARK: - Cloud / OpenAI-compatible tool-calling (any pinned brain runs the terminal)
+    // MARK: - Local OpenAI-compatible tool-calling (Unsloth Studio / vLLM run the terminal)
 
-    /// Any OpenAI-compatible brain (Groq, Mistral, Cerebras, OpenRouter, OpenAI,
-    /// Unsloth Studio, vLLM, …) WITH tool-calling: the model can ACTUALLY run the
+    /// Any local OpenAI-compatible server (Unsloth Studio / vLLM / mlx_lm.server
+    /// / LM Studio, …) WITH tool-calling: the model can ACTUALLY run the
     /// terminal — and web tools when allowed — through the SAME
     /// `CommandApprovalCenter` gate + `Shell.runApproved` executor as the local
     /// brains, instead of only describing a command. Mirrors `chatOllamaWithTools`
@@ -1269,13 +839,16 @@ enum LocalLLM {
                   let turn = await client.chatTurnWithTools(bodyData: data) else {
                 return lastAssistantText.isEmpty ? nil : lastAssistantText
             }
-            if !turn.text.isEmpty { lastAssistantText = turn.text }
+            // Strip reasoning-model think blocks before recording into context — same
+            // rationale as chatOllamaWithTools: keeps every round lean.
+            let turnText = AgentPipeline.stripNarration(turn.text)
+            if !turnText.isEmpty { lastAssistantText = turnText }
             var toolCalls = turn.toolCalls
-            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turn.text) {
+            if toolCalls.isEmpty, let recovered = Self.parseTextAsToolCall(turnText) {
                 toolCalls = [OpenAICompatibleClient.ToolCall(id: "recovered_0", name: recovered.name, arguments: recovered.arguments)]
             }
             if toolCalls.isEmpty {
-                return turn.text.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turn.text
+                return turnText.isEmpty ? (lastAssistantText.isEmpty ? nil : lastAssistantText) : turnText
             }
             // Echo the assistant's tool-call turn verbatim — OpenAI requires the
             // assistant message carry the `tool_calls` array so the following
@@ -1283,7 +856,7 @@ enum LocalLLM {
             // when the model only called tools, which strict servers require.
             var assistantMsg: [String: Any] = [
                 "role": "assistant",
-                "content": turn.text.isEmpty ? NSNull() : turn.text,
+                "content": turnText.isEmpty ? NSNull() : turnText,
             ]
             assistantMsg["tool_calls"] = toolCalls.map { call -> [String: Any] in
                 let argsJSON = (try? JSONSerialization.data(withJSONObject: call.arguments))
@@ -1312,6 +885,22 @@ enum LocalLLM {
                         result = ToolPolicy.isExternalAllowed
                             ? await Web.fetch(call.arguments["url"] ?? "")
                             : (ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run.")
+                    case "image_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.images(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
+                    case "video_search":
+                        if ToolPolicy.isExternalAllowed {
+                            let r = await MediaSearch.videos(call.arguments["query"] ?? "")
+                            MediaCapture.shared.add(r.media)
+                            result = r.text
+                        } else {
+                            result = ToolPolicy.webToolsDisabledReason() ?? "Web access is disabled — not run."
+                        }
                     case "pack_repository":
                         result = await Self.runPackRepository(call.arguments)
                     default:
@@ -1341,53 +930,34 @@ enum LocalLLM {
     /// overrides the default for both legs, so the `.salehman` brain can run the
     /// custom Ollama model with the Salehman persona instead of the generic
     /// tool-aware prompt.
-    static func ollamaReply(_ message: String, systemPrompt: String? = nil) async -> String? {
-        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt) { return withTools }
-        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem)
+    static func ollamaReply(_ message: String, systemPrompt: String? = nil,
+                            modelOverride: String? = nil) async -> String? {
+        if let withTools = await chatOllamaWithTools(message, systemPrompt: systemPrompt,
+                                                     modelOverride: modelOverride) { return withTools }
+        return await OllamaClient.chat(prompt: message, system: systemPrompt ?? ollamaChatSystem,
+                                       model: modelOverride)
     }
 
-    // The per-brain pin gates ("each cloud brain is only tried when the user
-    // explicitly pins it — we never silently spend on a cloud API") moved to
-    // `BrainRouting.dispatch`: one switch, one source of truth, pinned by
-    // BrainRoutingDispatchTests. The ladders below consume the dispatch.
+    // The per-brain pin gates moved to `BrainRouting.dispatch`: one switch, one
+    // source of truth, pinned by BrainRoutingDispatchTests. The ladders below
+    // consume the dispatch. The app is local-only — every target is on-device.
 
     /// One-shot generation (no memory between calls). `maxTokens` caps the
     /// response length to keep terse agents fast.
     ///
-    /// Brain order honors the user's `BrainPreference` (auto/apple/ollama).
-    /// Within `.auto` we stay local-first because it's
-    /// lighter; pinned modes skip the other brain entirely instead of falling
-    /// back silently — silent fallback would defeat the purpose of pinning.
+    /// Brain order honors the user's `BrainPreference` (auto / ollama /
+    /// salehman / unslothStudio / vllm / uncensored). Within `.auto` we stay
+    /// local-first; pinned modes use exactly that brain with no silent fallback.
     static func generate(_ rawPrompt: String, maxTokens: Int? = nil, cachePrefix: String? = nil) async -> String {
-        // `cachePrefix` (e.g. conversation history): cached as its own block by
-        // Anthropic, auto-cached server-side by Grok/OpenAI (we put it first);
-        // folded into the prompt for every other brain. nil → unchanged behaviour.
+        // `cachePrefix` (e.g. conversation history) is folded into the prompt.
+        // nil → unchanged behaviour.
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
         // The pinned target comes from BrainRouting.dispatch — ONE source of
-        // truth for gating (the old cascade of pin-gates was a single-dispatch
-        // ladder in disguise). Notable rules enforced there:
-        //   • the orchestration modes are first-class (direct callers — the
-        //     Settings health-check, StockSage briefings, title generation —
-        //     reach the model layer through here; this fixed the old falsely-
-        //     "Not working" ensemble probe bug);
-        //   • Offline Mode hard-gates the ten cloud pins → `.unavailable`
-        //     (the Offline-leak fix: `currentBrain` always documented this
-        //     contract, but this cascade never enforced it).
+        // truth for gating. All targets are local now.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):    return await generateFreeAuto(prompt)
-        case .mode(.freeCoding):  return await generateFreeCoding(prompt)
-        case .mode(.cloudCoding): return await generateCloudCoding(prompt)
-        case .mode(.ensemble):    return await generateEnsemble(prompt)
-        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            // Pinned cloud brain — strict, no silent fallback (nil reply →
-            // sentinel, exactly like the old fall-through-to-nothing).
-            if let reply = await cloudOneShot(p, prompt: prompt, rawPrompt: rawPrompt,
-                                              cachePrefix: cachePrefix) { return reply }
-            return offMessage
         case .salehman:
             // Salehman — LOCAL-FIRST: MLX (on-device) → Ollama (custom model).
-            // No external cloud. Mirrors SalehmanEngine exactly.
+            // Mirrors SalehmanEngine exactly.
             if let reply = await SalehmanEngine.generate(prompt: prompt, maxTokens: maxTokens) {
                 return reply
             }
@@ -1405,28 +975,11 @@ enum LocalLLM {
             // Local tier (Ollama): free & on-device.
             if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem) { return reply }
             return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+        case .uncensoredLocal:
+            // Uncensored local tier — forces the abliterated ~3B model.
+            if let reply = await OllamaClient.chat(prompt: prompt, system: Self.ollamaChatSystem,
+                                                   model: OllamaClient.uncensoredModel) { return reply }
             return offMessage
-        }
-    }
-
-    /// One pinned cloud brain's `generate` execution: plain chat on the
-    /// user-selected model. Claude receives the un-folded prompt + cachePrefix
-    /// (its client caches the prefix as a `cache_control` block); every other
-    /// brain gets the folded prompt. Gating/membership come from BrainRouting.
-    private static func cloudOneShot(_ p: CloudProvider, prompt: String,
-                                     rawPrompt: String, cachePrefix: String?) async -> String? {
-        switch p {
-        case .anthropic:  return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
-        case .copilot:    return await CopilotClient.chat(prompt: prompt)
-        case .grok:       return await GrokClient.chat(prompt: prompt, model: AppSettings.grokModelCurrent)
-        case .gemini:     return await GeminiClient.chat(prompt: prompt, model: AppSettings.geminiModelCurrent)
-        case .openAI:     return await OpenAIClient.chat(prompt: prompt, model: AppSettings.openAIModelCurrent)
-        case .groq:       return await GroqClient.shared.chat(prompt: prompt, model: AppSettings.groqModelCurrent)
-        case .mistral:    return await MistralClient.shared.chat(prompt: prompt, model: AppSettings.mistralModelCurrent)
-        case .cerebras:   return await CerebrasClient.shared.chat(prompt: prompt, model: AppSettings.cerebrasModelCurrent)
-        case .openRouter: return await OpenRouterClient.shared.chat(prompt: prompt, model: AppSettings.openRouterModelCurrent)
         }
     }
 
@@ -1454,11 +1007,11 @@ enum LocalLLM {
 
     /// Streaming one-shot generation. Same brain order as `generate`.
     ///
-    /// For each pinned cloud brain we now try the streaming `chatStream` *first*,
-    /// and if it returns nil (SSE parse failure, mid-stream blip, etc.) we
-    /// fall back to the **same brain's non-streaming `chat`** before declaring
-    /// the brain dead. That way one bad SSE chunk doesn't make a perfectly
-    /// working Grok / Gemini / etc. look unreachable in the chat UI.
+    /// The local OpenAI-compatible servers (Unsloth Studio / vLLM) try the
+    /// streaming `chatStream` *first*, and if it returns nil (SSE parse failure,
+    /// mid-stream blip, etc.) fall back to the **same brain's non-streaming
+    /// `chat`** before declaring it dead. That way one bad SSE chunk doesn't make
+    /// a perfectly working local server look unreachable in the chat UI.
     ///
     /// We also no longer push `offMessage` into `onUpdate` at the end —
     /// the streaming bubble stays silent if every brain truly fails, and the
@@ -1468,15 +1021,10 @@ enum LocalLLM {
     static func generateStreaming(_ rawPrompt: String, maxTokens: Int? = nil,
                                   cachePrefix: String? = nil,
                                   onUpdate: @escaping @Sendable (String) -> Void) async -> String {
-        // `cachePrefix` (e.g. the stable conversation history): Anthropic caches it
-        // as its own `cache_control` block; xAI Grok / OpenAI auto-cache a stable
-        // prefix server-side — both benefit because we put it FIRST. Every other
-        // brain just gets it folded into the prompt (full context, no caching).
+        // `cachePrefix` (e.g. the stable conversation history) is folded into the
+        // prompt (full context). nil → unchanged behaviour.
         let prompt = (cachePrefix?.isEmpty == false) ? "\(cachePrefix!)\n\n\(rawPrompt)" : rawPrompt
-        // Same single-dispatch plan as `generate` (BrainRouting.dispatch) —
-        // including the Offline-Mode hard-gate on cloud pins. The orchestration
-        // modes can't token-stream (they join N replies into one document), so
-        // each delivers its combined answer in a single `onUpdate`.
+        // Same single-dispatch plan as `generate` (BrainRouting.dispatch).
         //
         // On any failure exit we return the sentinel so equality-check callers
         // (`synthesize`, etc.) still fire, but we DO NOT push it into
@@ -1486,33 +1034,8 @@ enum LocalLLM {
         // reply. The display layer transforms the sentinel into the
         // context-aware `unavailableMessage` at render time.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):
-            // Race the free brains; deliver the single winning answer in one
-            // update (the race joins to one reply — there's nothing to stream).
-            let answer = await generateFreeAuto(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.freeCoding):
-            let answer = await generateFreeCoding(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.cloudCoding):
-            let answer = await generateCloudCoding(prompt)
-            onUpdate(answer)
-            return answer
-        case .mode(.ensemble):
-            let combined = await generateEnsemble(prompt)
-            onUpdate(combined)
-            return combined
-        case .mode:
-            return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            if let reply = await cloudStream(p, prompt: prompt, rawPrompt: rawPrompt,
-                                             cachePrefix: cachePrefix, onUpdate: onUpdate) { return reply }
-            return offMessage
         case .salehman:
-            // Salehman streaming — CLOUD-FIRST via the shared engine (streams from the
-            // cloud brain; falls back to local MLX/Ollama streaming when offline).
+            // Salehman streaming — LOCAL-FIRST via the shared engine (MLX / Ollama).
             if let reply = await SalehmanEngine.generateStream(prompt: prompt,
                                                                maxTokens: maxTokens,
                                                                onUpdate: onUpdate) {
@@ -1535,79 +1058,26 @@ enum LocalLLM {
                 return reply
             }
             return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+        case .uncensoredLocal:
+            // Uncensored local tier — streams the abliterated ~3B model.
+            if let reply = await OllamaClient.chatStream(prompt: prompt, system: Self.ollamaChatSystem,
+                                                         model: OllamaClient.uncensoredModel, onUpdate: onUpdate) {
+                return reply
+            }
             return offMessage
-        }
-    }
-
-    /// One pinned cloud brain's streaming execution: the brain's SSE
-    /// `chatStream` first, then the SAME brain's non-streaming `chat` before
-    /// declaring it dead — one bad SSE chunk doesn't make a working brain look
-    /// unreachable. Claude keeps its raw-prompt + cachePrefix handling.
-    private static func cloudStream(_ p: CloudProvider, prompt: String, rawPrompt: String,
-                                    cachePrefix: String?,
-                                    onUpdate: @escaping @Sendable (String) -> Void) async -> String? {
-        switch p {
-        case .anthropic:
-            if let r = await AnthropicClient.chatStream(prompt: rawPrompt, cachePrefix: cachePrefix, onUpdate: onUpdate) { return r }
-            return await AnthropicClient.chat(prompt: rawPrompt, cachePrefix: cachePrefix)
-        case .copilot:
-            if let r = await CopilotClient.chatStream(prompt: prompt, onUpdate: onUpdate) { return r }
-            return await CopilotClient.chat(prompt: prompt)
-        case .grok:
-            let m = AppSettings.grokModelCurrent
-            if let r = await GrokClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GrokClient.chat(prompt: prompt, model: m)
-        case .gemini:
-            let m = AppSettings.geminiModelCurrent
-            if let r = await GeminiClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GeminiClient.chat(prompt: prompt, model: m)
-        case .openAI:
-            let m = AppSettings.openAIModelCurrent
-            if let r = await OpenAIClient.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await OpenAIClient.chat(prompt: prompt, model: m)
-        case .groq:
-            let m = AppSettings.groqModelCurrent
-            if let r = await GroqClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await GroqClient.shared.chat(prompt: prompt, model: m)
-        case .mistral:
-            let m = AppSettings.mistralModelCurrent
-            if let r = await MistralClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await MistralClient.shared.chat(prompt: prompt, model: m)
-        case .cerebras:
-            let m = AppSettings.cerebrasModelCurrent
-            if let r = await CerebrasClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await CerebrasClient.shared.chat(prompt: prompt, model: m)
-        case .openRouter:
-            let m = AppSettings.openRouterModelCurrent
-            if let r = await OpenRouterClient.shared.chatStream(prompt: prompt, model: m, onUpdate: onUpdate) { return r }
-            return await OpenRouterClient.shared.chat(prompt: prompt, model: m)
         }
     }
 
     /// Multi-turn chat that remembers prior messages. Routes through the
-    /// tool-enabled Ollama/cloud loop;
-    /// otherwise falls back to Ollama qwen-coder *without* tools.
+    /// tool-enabled Ollama / local-server loop; otherwise falls back to plain chat.
     static func chat(_ message: String) async -> String {
-        // Same single-dispatch plan (BrainRouting.dispatch), including the
-        // Offline-Mode hard-gate on cloud pins. Chat-shape specifics live in
-        // `cloudConversational`: the OpenAI-compatible brains run the TOOL
-        // loop first (so a pinned cloud brain can drive the terminal), the
-        // bespoke clients run plain chat.
+        // Same single-dispatch plan (BrainRouting.dispatch). Each local server
+        // runs the TOOL loop first (so the pinned brain can drive the terminal),
+        // then plain chat.
         switch BrainRouting.dispatch(pref: pref, offlineOnly: AppSettings.isOfflineOnly) {
-        case .mode(.freeAuto):    return await generateFreeAuto(message)
-        case .mode(.freeCoding):  return await freeCodingReply(message)
-        case .mode(.cloudCoding): return await cloudCodingReply(message)
-        case .mode(.ensemble):    return await generateEnsemble(message)
-        case .mode:               return offMessage   // unreachable: dispatch emits only the 4 modes
-        case .cloud(let p):
-            if let reply = await cloudConversational(p, message: message) { return reply }
-            return offMessage
         case .salehman:
-            // Salehman — CLOUD-FIRST via the shared engine, WITH tools: each cloud
-            // brain can run the terminal / web through the OpenAI `tools` field, and
-            // the local MLX/Ollama floor keeps tools too (`ollamaReply`). Exactly the
+            // Salehman — LOCAL-FIRST via the shared engine, WITH tools: the
+            // local MLX/Ollama floor keeps tools (`ollamaReply`). Exactly the
             // engine the leader uses. No further fallback.
             if let reply = await SalehmanEngine.generateWithTools(message: message, userPrompt: message) {
                 return reply
@@ -1628,38 +1098,21 @@ enum LocalLLM {
             // Local tier — Ollama runs the terminal via `ollamaReply`'s tool loop.
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
-        case .unavailable:
-            // Offline Mode + a pinned cloud brain: nothing may leave the Mac.
+        case .uncensoredLocal:
+            // The abliterated ~3B is unreliable at emitting clean tool calls (it
+            // often leaks a malformed `{"name":"image_search"…}` as plain text), so
+            // an explicit media request ("show me / find / i want … pics/videos/porn")
+            // runs the search DETERMINISTICALLY here — the gallery never depends on
+            // the model formatting a tool call right. Non-media messages fall through
+            // to the normal tool loop with its autonomous-media system prompt.
+            if ToolPolicy.isExternalAllowed, let direct = await MediaSearch.runIntent(message) {
+                return direct
+            }
+            if let reply = await ollamaReply(message, systemPrompt: uncensoredToolSystem,
+                                             modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage
         }
     }
-
-    /// One pinned cloud brain's conversational execution. The five
-    /// OpenAI-compatible brains try the tool loop first (terminal / web),
-    /// then the same brain's plain chat; Claude / Grok / Gemini / Copilot
-    /// are plain chat only (no shared tool loop).
-    private static func cloudConversational(_ p: CloudProvider, message: String) async -> String? {
-        switch p {
-        case .anthropic:
-            // Claude Haiku (cloud), single-turn, no local tools.
-            return await AnthropicClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .grok:
-            return await GrokClient.chat(prompt: message,
-                                         system: Self.cloudSystemPrompt,
-                                         model: AppSettings.grokModelCurrent)
-        case .gemini:
-            return await GeminiClient.chat(prompt: message,
-                                           system: Self.cloudSystemPrompt,
-                                           model: AppSettings.geminiModelCurrent)
-        case .copilot:
-            return await CopilotClient.chat(prompt: message, system: Self.cloudSystemPrompt)
-        case .groq, .mistral, .cerebras, .openAI, .openRouter:
-            guard let client = p.compatClient, let m = p.selectedModel else { return nil }
-            if let reply = await chatOpenAICompatWithTools(client: client, model: m, message: message) { return reply }
-            return await client.chat(prompt: message, system: Self.cloudSystemPrompt, model: m)
-        }
-    }
-
 
     /// Start a fresh conversation (clears the rolling transcript memory).
     static func resetChat() async {

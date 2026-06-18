@@ -18,7 +18,13 @@ struct Salehman_AIApp: App {
                 // One-time: seed the "external AI tools" docs into the Knowledge vault
                 // so the assistant can answer about them via search_documents. Runs
                 // off-main and only on the first launch after this version.
-                .task { await OllamaClient.ensureServing() }
+                .task {
+                    await OllamaClient.ensureServing()
+                    // If the Uncensored brain is selected, warm its abliterated
+                    // ~3B into RAM now so the first reply is instant (owner: "run
+                    // it automatically when I open the app").
+                    OllamaClient.warmUncensoredIfSelected()
+                }
                 .task { ExternalToolsKnowledge.seedIfNeeded() }
                 // QA: if qa/SNAPSHOT_REQUEST exists, render every surface to
                 // qa/snapshots/*.png so the screen-blind polish session can SEE

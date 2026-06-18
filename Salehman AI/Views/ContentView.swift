@@ -70,7 +70,6 @@ struct ContentView: View {
     @State private var welcomeAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var welcomeContentAppeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @State private var hoveredSuggestion: String? = nil
-    @State private var dismissedCloudHint = false   // per-session dismiss of the no-cloud-key banner
     @State private var showLive = false
     @State private var searching = false
     @State private var searchQuery = ""
@@ -92,6 +91,7 @@ struct ContentView: View {
 
     // Drives the "alive" pulse on the Unrestricted Mode indicator.
     @State private var unrestrictedPulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Composer parity with the Code tab (owner: "same colors"): drop-target
     // state for the signature ring, and which local model serves `.salehman`
     // when no cloud is configured (the "· salehman14b" badge).
@@ -139,12 +139,6 @@ struct ContentView: View {
                 // chat-only banner was never the real guard). The persistent
                 // mode signal is the pulsing header indicator; its tooltip
                 // carries the warning and clicking it opens Settings.
-                // No-cloud-key notice: the selected brain is silently on the slow
-                // local fallback (or unavailable). Tap "Add key" → Settings.
-                if LocalLLM.lacksCloudKey && !dismissedCloudHint {
-                    CloudKeyHintBanner(onAddKey: { showSettings = true },
-                                       onDismiss: { dismissedCloudHint = true })
-                }
                 header
                 Divider().overlay(Color.white.opacity(0.06))
                 conversation
@@ -248,8 +242,14 @@ struct ContentView: View {
         .onChange(of: settings.unrestrictedTools) { _, isUnrestricted in
             if isUnrestricted {
                 approval.confirmationEnabled = false
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
-                    unrestrictedPulse = true
+                // Reduce Motion: skip the repeatForever halo pulse — the static accent
+                // halo + dot + "UNRESTRICTED" label still signal the mode.
+                if reduceMotion {
+                    unrestrictedPulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) {
+                        unrestrictedPulse = true
+                    }
                 }
             } else {
                 unrestrictedPulse = false
@@ -301,16 +301,6 @@ struct ContentView: View {
                         .foregroundStyle(vm.isRunning ? DS.Palette.accent : brainStatus.dotColor)
                         .symbolEffect(.pulse, isActive: vm.isRunning)
                         .help(vm.isRunning ? "Thinking…" : brainStatus.label)
-                    // SuperGrok upgrade: show the DS badge (violet capsule + bolt)
-                    // when the Grok brain is active. Tapping opens Settings so the
-                    // user can complete the Anthropic→Grok migration or confirm
-                    // the key/model. This surfaces the "Super" path directly in
-                    // the primary chat chrome without cluttering local/Apple modes.
-                    if brainStatus.brain == .grok {
-                        SuperGrokBadge(text: "SUPER GROK") {
-                            app.showSettingsRequested = true
-                        }
-                    }
                 }
             }
             .accessibilityElement(children: .combine)
@@ -391,8 +381,10 @@ struct ContentView: View {
             if !settings.unrestrictedTools {
                 // Confirmation toggle — calm chip with a colored dot, no shouty fill.
                 ConfirmationChip(enabled: $approval.confirmationEnabled)
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Motion.snappy, value: settings.unrestrictedTools)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         // Flat opaque bar (design language — no translucent material).
@@ -420,7 +412,7 @@ struct ContentView: View {
 
     private var conversation: some View {
         VStack(spacing: 0) {
-            if searching { searchBar }
+            if searching { searchBar.transition(.move(edge: .top).combined(with: .opacity)) }
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
@@ -443,35 +435,47 @@ struct ContentView: View {
                                 let list = filteredMessages
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, msg in
                                     let prev: ChatMessage? = idx > 0 ? list[idx - 1] : nil
-                                    if Self.needsSeparator(prev: prev, curr: msg) {
-                                        TimeSeparator(date: msg.timestamp)
-                                    }
                                     let isFirst = Self.isFirstInGroup(idx: idx, list: list)
-                                    MessageBubble(message: msg,
-                                                  highlight: searchHighlight,
-                                                  onRegenerate: vm.regenerate,
-                                                  onEdit: { m in
-                                                      if let text = vm.extractForEdit(m) {
-                                                          mission = text
+                                    Group {
+                                        if Self.needsSeparator(prev: prev, curr: msg) {
+                                            TimeSeparator(date: msg.timestamp)
+                                        }
+                                        MessageBubble(message: msg,
+                                                      highlight: searchHighlight,
+                                                      onRegenerate: vm.regenerate,
+                                                      onEdit: { m in
+                                                          if let text = vm.extractForEdit(m) {
+                                                              mission = text
+                                                              inputFocused = true
+                                                          }
+                                                      },
+                                                      onQuote: { text in
+                                                          let q = Self.quoted(text)
+                                                          mission = mission.isEmpty ? q + "\n\n"
+                                                                                    : mission + "\n" + q + "\n"
                                                           inputFocused = true
-                                                      }
-                                                  },
-                                                  onQuote: { text in
-                                                      let q = Self.quoted(text)
-                                                      mission = mission.isEmpty ? q + "\n\n"
-                                                                                : mission + "\n" + q + "\n"
-                                                      inputFocused = true
-                                                  },
-                                                  onTogglePin: { vm.togglePin($0) },
-                                                  onSaveToNotes: { text in
-                                                      ScratchpadStore.shared.addNote(text)
-                                                      withAnimation(DS.Motion.fade) { noteSavedPulse = true }
-                                                  },
-                                                  onRate: { vm.rate($0, up: $1) })
-                                        .equatable()
-                                        .padding(.top, isFirst ? 14 : 0)
+                                                      },
+                                                      onTogglePin: { vm.togglePin($0) },
+                                                      onSaveToNotes: { text in
+                                                          ScratchpadStore.shared.addNote(text)
+                                                          withAnimation(DS.Motion.fade) { noteSavedPulse = true }
+                                                      },
+                                                      onRate: { vm.rate($0, up: $1) })
+                                            .equatable()
+                                            .padding(.top, isFirst ? 14 : 0)
+                                    }
+                                    .transition(.opacity.combined(with: .offset(y: 8)))
                                 }
-                                if vm.isRunning { RunningProgressView() }
+                                // Wrapping VStack isolates the animation scope so
+                                // the transition only runs on this indicator —
+                                // not on the entire LazyVStack message list.
+                                VStack(spacing: 0) {
+                                    if vm.isRunning {
+                                        RunningProgressView()
+                                            .transition(.opacity.combined(with: .offset(y: 8)))
+                                    }
+                                }
+                                .animation(DS.Motion.smooth, value: vm.isRunning)
                                 // Bottom sentinel: 1pt invisible view that
                                 // flips `atBottom`. Reliable visibility-based
                                 // "at bottom?" without a parallel scroll
@@ -483,6 +487,7 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 22)
+                            .animation(DS.Motion.smooth, value: vm.messages.count)
                             // Centered reading column (design language): content
                             // caps at 780pt; the input pill aligns to the same
                             // column below.
@@ -515,11 +520,15 @@ struct ContentView: View {
                     }
                 }
                 .animation(DS.Motion.snappy, value: atBottom)
+                .animation(DS.Motion.smooth, value: pinnedMessages.isEmpty)
                 // Pinned-message jump chips ride ABOVE the transcript as an
                 // inset (not inside the scroll) so they're always reachable;
                 // zero chrome when nothing is pinned.
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if !pinnedMessages.isEmpty { pinnedStrip(proxy) }
+                    if !pinnedMessages.isEmpty {
+                        pinnedStrip(proxy)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
             }
         }
@@ -574,16 +583,23 @@ struct ContentView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
+                    .animation(DS.Motion.smooth, value: settings.brainPreference)
                 if let m = servingModel {
                     Text("· \(m)")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(m.hasPrefix(AppSettings.customModelNameCurrent)
                                          ? AnyShapeStyle(DS.Palette.accent) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
+                        .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.smooth, value: servingModel)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(
+                LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -629,14 +645,17 @@ struct ContentView: View {
             if !searchQuery.isEmpty {
                 Text(ChatSearch.matchLabel(of: searchQuery, in: vm.messages))
                     .font(.caption2).foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
                 Button { searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
+                .transition(.opacity)
             }
             Button("Done") { withAnimation(DS.Motion.snappy) { searching = false; searchQuery = "" } }
                 .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
+        .animation(DS.Motion.magnetic, value: searchQuery.isEmpty)
         .background(DS.Palette.codeSurfaceSide)
         .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
     }
@@ -685,8 +704,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white.opacity(0.06), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(
-                            hoveredSuggestion == s.title ? 0.22 : 0.10), lineWidth: 1))
+                        .overlay(Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(hoveredSuggestion == s.title ? 0.36 : 0.18),
+                                                    Color.white.opacity(hoveredSuggestion == s.title ? 0.06 : 0.02)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
                     }
                     .buttonStyle(PressableStyle())
                     .foregroundStyle(Color.white.opacity(0.88))
@@ -718,6 +739,7 @@ struct ContentView: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 6)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
             // Quiet door back into archived conversations — the welcome is
             // exactly where "wait, where did my chat go?" happens. Hidden in
@@ -735,8 +757,11 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .padding(.top, 2)
                 .help("Browse and restore archived conversations")
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: localModelReady)
+        .animation(DS.Motion.smooth, value: archiveCount > 0)
         .background {
             RadialGradient(colors: [DS.Palette.accent.opacity(0.05), .clear],
                            center: .init(x: 0.5, y: 0.30), startRadius: 0, endRadius: 280)
@@ -799,8 +824,10 @@ struct ContentView: View {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.22), radius: 1, y: 1)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
@@ -814,9 +841,12 @@ struct ContentView: View {
             Text(count.label)
                 .font(.system(size: 10.5).monospacedDigit())
                 .foregroundStyle(count.warn ? DS.Palette.accent : .secondary.opacity(0.7))
+                .contentTransition(.numericText())
+                .animation(DS.Motion.smooth, value: count.label)
                 .help(count.warn ? "Very long message — consider splitting it or attaching a file"
                                  : "Draft length")
                 .accessibilityIdentifier("chat.composer.count")
+                .transition(.opacity)
         }
     }
 
@@ -826,6 +856,8 @@ struct ContentView: View {
             Image(systemName: speechIn.isListening ? "mic.fill" : "mic")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(speechIn.isListening ? .red : .secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: speechIn.isListening)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }
@@ -1110,9 +1142,12 @@ struct ContentView: View {
                             attachmentChip(icon: att.icon,
                                            title: "\(att.name) · \(att.kind)",
                                            onRemove: { attachments.removeAll { $0.id == att.id } })
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
+                    .animation(DS.Motion.smooth, value: attachments.count)
                 }
+                .transition(.opacity.combined(with: .offset(y: 8)))
             }
 
             // Slash-command menu — floats above the composer while typing `/…`
@@ -1137,16 +1172,26 @@ struct ContentView: View {
                             .padding(.horizontal, 11).padding(.vertical, 7)
                             .background(cmd.id == selected || hoveredChatSlash == cmd.id
                                         ? Color.white.opacity(0.06) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7))
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .onHover { hoveredChatSlash = $0 ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash) }
+                        .animation(DS.Motion.magnetic, value: cmd.id == selected)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
+                        .onHover { over in
+                            withAnimation(DS.Motion.magnetic) {
+                                hoveredChatSlash = over ? cmd.id : (hoveredChatSlash == cmd.id ? nil : hoveredChatSlash)
+                            }
+                        }
                     }
                 }
+                .animation(DS.Motion.smooth, value: chatSlashMatches.count)
                 .padding(5)
-                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(DS.Palette.accent.opacity(0.28), lineWidth: 1))
+                .background(DS.Palette.codeSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(
+                    LinearGradient(colors: [DS.Palette.accent.opacity(0.50),
+                                            DS.Palette.accent.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .frame(maxWidth: 520, alignment: .leading)
                 .transition(.scale(scale: 0.97, anchor: .bottom)
@@ -1278,6 +1323,7 @@ struct ContentView: View {
                     micButton
                     sendOrStopButton
                 }
+                .animation(DS.Motion.lux, value: Self.composerCount(mission) != nil)
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -1348,6 +1394,7 @@ struct ContentView: View {
         // Drives the slash-menu island's enter/exit transition (lux). Bound to
         // the EMPTY flip only — row updates while typing stay instant.
         .animation(DS.Motion.lux, value: chatSlashMatches.isEmpty)
+        .animation(DS.Motion.smooth, value: attachments.isEmpty)
     }
 
     private func attachmentChip(icon: String, title: String,
@@ -1365,6 +1412,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.white.opacity(0.09), in: Capsule())
+        .overlay(Capsule().stroke(
+            LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
         // Chips size to content now (they sit in a horizontal row), but a
         // single long filename still shouldn't span the whole composer.
         .frame(maxWidth: 360, alignment: .leading)
@@ -1386,7 +1436,7 @@ struct ContentView: View {
     }
 
     @MainActor private func attachImage() async {
-        let urls = AttachmentLoader.pickFiles()
+        let urls = AttachmentLoader.pickImages()
         guard !urls.isEmpty else { return }
         attachmentLoads += 1
         for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
@@ -1595,6 +1645,8 @@ struct ScrollToLatestButton: View {
                     .font(.system(size: 11, weight: .bold))
                 Text(unreadCount > 0 ? "\(unreadCount) new" : "Latest")
                     .font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: unreadCount)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1616,6 +1668,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let isUser: Bool
     let timestamp: Date
     var imagePath: String? = nil
+    /// Image/video results from a media search this turn, rendered as an inline
+    /// gallery under the reply. Optional so history persisted before this field
+    /// decodes unchanged (same Codable-compat trick as `pinned`/`rating`).
+    var media: [MediaItem]? = nil
     /// Seconds the reply took to generate (assistant messages only; optional
     /// so history persisted before this field decodes unchanged). Surfaced in
     /// the hover pill — zero chrome at rest.
@@ -2003,7 +2059,12 @@ enum ChatSearch {
 }
 
 // MARK: - Message Bubble
-struct MessageBubble: View, Equatable {
+// `@MainActor Equatable` (isolated conformance): MessageBubble is a SwiftUI View,
+// so it's main-actor-isolated, and `==` reads its isolated stored properties.
+// SwiftUI's `.equatable()` diffing always runs on the main actor, so pinning the
+// conformance to @MainActor is sound and resolves the Swift 6 #ConformanceIsolation
+// error (a plain nonisolated `==` couldn't read the isolated `message`/`highlight`).
+struct MessageBubble: View, @MainActor Equatable {
     /// Equality gates body re-evaluation (used via `.equatable()` at the
     /// transcript call site): ContentView's body re-runs on EVERY keystroke /
     /// hover flip, handing each bubble fresh closures — reflection-based
@@ -2185,7 +2246,7 @@ struct MessageBubble: View, Equatable {
     /// instead of raw "> " prose — quote-reply finally LOOKS quoted once sent.
     private func quoteCard(_ quote: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 1)
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
                 .fill(DS.Palette.accent.opacity(0.55))
                 .frame(width: 2)
             Text(MarkdownText.highlighted(AttributedString(quote), query: highlight))
@@ -2197,7 +2258,7 @@ struct MessageBubble: View, Equatable {
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(Color.white.opacity(0.05),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 
     /// User text, split into quote card + body when the message opens with a
@@ -2233,8 +2294,14 @@ struct MessageBubble: View, Equatable {
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 9)
-            .background(Color.white.opacity(0.09),
+            .background(Color.white.opacity(0.11),
                         in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            // Machined top-lit edge — matches the Code tab's user bubble and
+            // the composer core so user turns read as physical tiles.
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(DS.Bezel.coreInnerHighlight, lineWidth: 1)
+            )
             // Comfortable wrap measure — long pastes shouldn't span the
             // full 780 column just because they're the user's.
             .frame(maxWidth: 480, alignment: .trailing)
@@ -2267,8 +2334,8 @@ struct MessageBubble: View, Equatable {
                 }
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(DS.Palette.codeSurfaceSide,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .offset(y: -10)
                 .opacity(hovering || qaShowActions ? 1 : 0)
@@ -2298,6 +2365,11 @@ struct MessageBubble: View, Equatable {
                 CachedImage(path: path)
                     .frame(maxWidth: 360, maxHeight: 360)
                     .clipShape(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+            }
+            // Inline image/video search results (from image_search / video_search).
+            if let media = message.media, !media.isEmpty {
+                MediaGallery(items: media)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2360,8 +2432,8 @@ struct MessageBubble: View, Equatable {
             }
             .padding(.horizontal, 5).padding(.vertical, 3)
             .background(DS.Palette.codeSurfaceSide,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             .offset(y: -4)
             .opacity(hovering || qaShowActions ? 1 : 0)
@@ -2377,6 +2449,8 @@ struct MessageBubble: View, Equatable {
                 .foregroundStyle(active ? Theme.accent : .secondary)
                 .frame(width: 22, height: 22)        // comfortable hit target
                 .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+                .animation(DS.Motion.smooth, value: icon)
         }
         .buttonStyle(.plain)
         .help(help)
@@ -2459,6 +2533,7 @@ struct CachedImage: View {
 
 // MARK: - Typing Indicator
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animating = false
     // After ~5s of pre-stream silence the local model is probably loading into
     // RAM (the 14B is ~8.4 GB) — say so instead of looking stuck. The .task
@@ -2479,9 +2554,10 @@ struct TypingIndicator: View {
                         .opacity(animating ? 1 : 0.45)
                         // Same cubic-bezier as the rest of the app's motion.
                         .animation(
-                            .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
-                                .repeatForever()
-                                .delay(Double(i) * 0.2),
+                            reduceMotion ? nil
+                                : .timingCurve(0.42, 0.0, 0.58, 1.0, duration: 0.7)
+                                    .repeatForever()
+                                    .delay(Double(i) * 0.2),
                             value: animating)
                 }
             }
@@ -2496,7 +2572,7 @@ struct TypingIndicator: View {
         .onAppear { animating = true }
         .task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            withAnimation { warmHint = true }
+            withAnimation(DS.Motion.smooth) { warmHint = true }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .leading)))
     }
@@ -2511,6 +2587,7 @@ private struct BrainStatusDot: View {
     let isRunning: Bool
     let color: Color
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let active = isRunning ? DS.Palette.accent : color
@@ -2531,7 +2608,13 @@ private struct BrainStatusDot: View {
         // drain, very visible when the Mac is throttled in Low Power Mode).
         .onChange(of: isRunning, initial: true) { _, running in
             if running {
-                withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                // Reduce Motion: static "running" halo (larger + brighter) without the
+                // repeatForever pulse — running is still signalled by size + opacity.
+                if reduceMotion {
+                    pulse = false
+                } else {
+                    withAnimation(.timingCurve(0.45, 0.0, 0.55, 1.0, duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+                }
             } else {
                 pulse = false
             }
@@ -2560,6 +2643,8 @@ struct AgentRunView: View {
                 Text("\(doneCount)/\(steps.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: doneCount)
             }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(steps) { step in
@@ -2598,6 +2683,7 @@ struct AgentRow: View {
             Spacer(minLength: 0)
         }
         .opacity(isPending ? 0.55 : 1)
+        .animation(DS.Motion.smooth, value: step.status)
     }
 
     @ViewBuilder private var statusIcon: some View {

@@ -9,6 +9,7 @@ struct AboutView: View {
     // Entrance choreography — settled under `--qa` so offscreen snapshots capture
     // the final frame, not a mid-animation pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredCap: UUID?
 
     /// Major capability rows. Edit when a new feature surfaces — this is the
@@ -20,23 +21,27 @@ struct AboutView: View {
         let body: String
     }
 
-    private let capabilities: [Capability] = [
-        .init(icon: "lock.shield.fill",
-              title: "Fully private, on this Mac",
-              body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
-        .init(icon: "brain.head.profile",
-              title: "Your model, your identity",
-              body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
-        .init(icon: "wrench.and.screwdriver.fill",
-              title: "Real tools, with approval",
-              body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
-        .init(icon: "chart.line.uptrend.xyaxis",
-              title: "Markets watcher",
-              body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
-        .init(icon: "command",
-              title: "⌘K everywhere",
-              body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
-    ]
+    private let capabilities: [Capability] = {
+        var caps: [Capability] = [
+            .init(icon: "lock.shield.fill",
+                  title: "Fully private, on this Mac",
+                  body: "Runs entirely on-device — your Ollama `salehman` model, with MLX as an upgrade path. Nothing leaves your Mac."),
+            .init(icon: "brain.head.profile",
+                  title: "Your model, your identity",
+                  body: "Powered by your own fine-tuned `salehman` model via Ollama. When your RunPod pod is up, pin the vLLM brain in Settings to route there instead."),
+            .init(icon: "wrench.and.screwdriver.fill",
+                  title: "Real tools, with approval",
+                  body: "Runs terminal commands, searches the web, and transcribes audio — only after you approve each one in the safety card."),
+            .init(icon: "chart.line.uptrend.xyaxis",
+                  title: "Markets watcher",
+                  body: "Rule-based momentum signals, a heatmap, a portfolio with live P&L, and Mac notifications for strong moves."),
+            .init(icon: "command",
+                  title: "⌘K everywhere",
+                  body: "Press ⌘K to do anything; ⌘/ to see every shortcut. New surfaces don't get hidden behind menus."),
+        ]
+        if AppTab.hidden.contains(.markets) { caps.removeAll { $0.icon == "chart.line.uptrend.xyaxis" } }
+        return caps
+    }()
 
     private var appVersion: String {
         let info = Bundle.main.infoDictionary
@@ -73,9 +78,27 @@ struct AboutView: View {
                                                            startPoint: .top, endPoint: .bottom),
                                             lineWidth: 1)
                             )
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(.white)
+                        // KeyframeAnimator: compress → overshoot → settle on
+                        // first appear. Hardware-accurate bounce physics.
+                        if reduceMotion {
+                            // Reduce Motion: static icon (no scale bounce-in).
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                        } else {
+                            KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(scale)
+                            } keyframes: { _ in
+                                KeyframeTrack {
+                                    LinearKeyframe(0.60, duration: 0.07)
+                                    SpringKeyframe(1.20, duration: 0.30, spring: .snappy)
+                                    SpringKeyframe(1.0, duration: 0.24, spring: .bouncy)
+                                }
+                            }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Salehman AI")
@@ -98,20 +121,27 @@ struct AboutView: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Editorial section label → rhythm before the list.
-                Text("WHAT IT DOES")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(DS.Palette.accent)
-                    .padding(.top, 2)
+                // Section eyebrow — uses the DS component for consistency.
+                Eyebrow(text: "What it does").padding(.top, 2)
 
                 // Capability list (scrolls if cramped on smaller windows).
                 ScrollView {
                     VStack(spacing: 1) {
-                        ForEach(capabilities) { cap in capabilityRow(cap) }
+                        ForEach(Array(capabilities.enumerated()), id: \.element.id) { idx, cap in
+                            capabilityRow(cap)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 8)
+                                .animation(DS.Motion.lux.delay(Double(idx) * 0.06), value: appeared)
+                        }
                     }
-                    .background(DS.Palette.codeSurfaceSide,
-                                in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .fill(DS.Bezel.cardFill)
+                            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                                .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                        }
+                    )
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 }
@@ -138,11 +168,19 @@ struct AboutView: View {
     private func capabilityRow(_ cap: Capability) -> some View {
         let isHovered = hoveredCap == cap.id
         return HStack(alignment: .top, spacing: DS.Space.md) {
-            Image(systemName: cap.icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DS.Palette.accent)
-                .frame(width: 22, height: 22)
-                .padding(.top, 1)
+            // Icon well — 28×28, accent-tinted, brightens on hover.
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                    .fill(DS.Palette.accent.opacity(isHovered ? 0.20 : 0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: cap.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DS.Palette.accent)
+            }
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.well, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
+            .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(cap.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                 Text(cap.body).font(.caption).foregroundStyle(.white.opacity(0.7))
@@ -152,14 +190,18 @@ struct AboutView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 11)
-        // Hover highlight — a premium macOS row affordance (research: hover states).
         .background(isHovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(DS.Motion.smooth) {
+            withAnimation(DS.Motion.magnetic) {
                 if hovering { hoveredCap = cap.id }
                 else if hoveredCap == cap.id { hoveredCap = nil }
             }
         }
+        // One VoiceOver element per capability (the icon is decorative) — matches
+        // AgentCard's row-grouping so the list reads as coherent items, not as
+        // separate title/body fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(cap.title). \(cap.body)")
     }
 }

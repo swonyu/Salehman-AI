@@ -16,6 +16,10 @@ struct MarketsView: View {
     @State private var newSymbol = ""
     @State private var newShares = ""
     @State private var newCost = ""
+    /// Focus identity for the three add-holding fields → accent focus glow,
+    /// matching the app's other primary inputs.
+    private enum AddField: Hashable { case symbol, shares, cost }
+    @FocusState private var focusedAddField: AddField?
     // Alerts (wired to StockSageMonitor — strong-signal Mac notifications).
     @State private var monitoring = false
     @State private var alertSignals: [StockSageSignal] = []
@@ -26,6 +30,10 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
+    /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
+    /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
+    @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
@@ -36,10 +44,26 @@ struct MarketsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
                     header
-                    if store.isSampleData { sampleBanner }
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 10)
+                        .animation(DS.Motion.lux, value: appeared)
+                    if store.isSampleData {
+                        sampleBanner
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(0.05), value: appeared)
+                            .transition(.opacity.combined(with: .offset(y: -4)))
+                    }
                     sectionPicker
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.08), value: appeared)
                     content
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 6)
+                        .animation(DS.Motion.lux.delay(0.12), value: appeared)
                 }
+                .animation(DS.Motion.smooth, value: store.isSampleData)
                 .padding(DS.Space.xl)
                 // Centered content column, same as the chat surfaces.
                 .frame(maxWidth: 780, alignment: .leading)
@@ -49,14 +73,52 @@ struct MarketsView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
+        .onAppear { appeared = true }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Markets")
-                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-            Text("Rule-based momentum signals · educational, not financial advice")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: DS.Space.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                    .fill(DS.Gradient.brand)
+                    .frame(width: 36, height: 36)
+                    .dsShadow(DS.Elevation.accentGlow(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.02)],
+                                                   startPoint: .top, endPoint: .bottom),
+                                    lineWidth: 0.75)
+                    )
+                if reduceMotion {
+                    // Reduce Motion: static icon (no scale bounce-in).
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    KeyframeAnimator(initialValue: CGFloat(1.0), trigger: appeared) { scale in
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0.60, duration: 0.07)
+                            SpringKeyframe(1.18, duration: 0.28, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.22, spring: .bouncy)
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Markets")
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Eyebrow(text: "Signals & Portfolio")
+                }
+                Text("Rule-based momentum signals · educational, not financial advice")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
         }
     }
 
@@ -72,16 +134,14 @@ struct MarketsView: View {
         .background(DS.Palette.warningSoft.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-            .stroke(DS.Palette.warningSoft.opacity(0.30), lineWidth: 1))
+            .stroke(LinearGradient(colors: [DS.Palette.warningSoft.opacity(0.52),
+                                            DS.Palette.warningSoft.opacity(0.12)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     private var sectionPicker: some View {
-        Picker("Markets section", selection: $section) {
-            ForEach(MarketSection.allCases) { Text($0.title).tag($0) }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 520)
+        DSSegmentPicker(cases: Array(MarketSection.allCases), selection: $section) { $0.title }
+            .frame(maxWidth: 520)
     }
 
     @ViewBuilder private var content: some View {
@@ -113,19 +173,41 @@ struct MarketsView: View {
                 }
                 if !monitorError.isEmpty {
                     Text(monitorError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
                 }
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
-                        if checkingAlerts { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.clockwise") }
+                        Group {
+                            if checkingAlerts { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)) }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: checkingAlerts)
                         Text(checkingAlerts ? "Checking…" : "Check now")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: checkingAlerts)
                     }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 11).padding(.vertical, 5)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 }
-                .buttonStyle(.bordered).controlSize(.small).disabled(checkingAlerts)
+                .buttonStyle(LuxPressStyle()).disabled(checkingAlerts)
             }
+            .animation(DS.Motion.smooth, value: monitorError.isEmpty)
             .padding(DS.Space.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(DS.Bezel.cardFill)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
@@ -133,15 +215,29 @@ struct MarketsView: View {
                 Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
-                    ForEach(alertSignals, id: \.symbol) { signalAlertRow($0) }
+                    ForEach(alertSignals, id: \.symbol) {
+                        signalAlertRow($0)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                    }
                 }
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .animation(DS.Motion.smooth, value: alertSignals.count)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(DS.Bezel.cardFill)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: alertSignals.isEmpty)
     }
 
     private func signalAlertRow(_ s: StockSageSignal) -> some View {
@@ -205,15 +301,29 @@ struct MarketsView: View {
                 Text("No holdings yet — add one above to track value & P&L.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 1) {
-                    ForEach(portfolio.positions) { positionRow($0) }
+                    ForEach(portfolio.positions) {
+                        positionRow($0)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                    }
                 }
-                .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .animation(DS.Motion.smooth, value: portfolio.positions.count)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .fill(DS.Bezel.cardFill)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: portfolio.positions.isEmpty)
     }
 
     private var portfolioSummary: some View {
@@ -226,6 +336,8 @@ struct MarketsView: View {
                 Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
                 Text(String(format: "%.2f", t.value))
                     .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: t.value)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -233,37 +345,55 @@ struct MarketsView: View {
                 Text((up ? "+" : "") + String(format: "%.2f (%+.1f%%)", pl, plPct))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: pl)
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var addPositionForm: some View {
         HStack(spacing: 8) {
-            field($newSymbol, "Symbol", width: 84)
-            field($newShares, "Shares", width: 66)
-            field($newCost, "Cost/sh", width: 72)
+            field($newSymbol, "Symbol", width: 84, focus: .symbol)
+            field($newShares, "Shares", width: 66, focus: .shares)
+            field($newCost, "Cost/sh", width: 72, focus: .cost)
             Button {
                 portfolio.add(symbol: newSymbol, shares: Double(newShares) ?? 0, costBasis: Double(newCost) ?? 0)
                 newSymbol = ""; newShares = ""; newCost = ""
             } label: {
                 Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(LuxPressStyle())
             .help("Add holding").accessibilityLabel("Add holding")
             .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty || (Double(newShares) ?? 0) <= 0)
             Spacer()
         }
     }
 
-    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat) -> some View {
-        TextField(placeholder, text: text)
+    private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat, focus: AddField) -> some View {
+        let active = focusedAddField == focus
+        return TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
+            .focused($focusedAddField, equals: focus)
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .background(Color.white.opacity(active ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .stroke(active
+                        ? AnyShapeStyle(LinearGradient(colors: [DS.Palette.accent.opacity(0.55), DS.Palette.accent.opacity(0.15)],
+                                                       startPoint: .top, endPoint: .bottom))
+                        : AnyShapeStyle(DS.Palette.surfaceStroke), lineWidth: 1))
+            .shadow(color: DS.Palette.accent.opacity(active ? 0.15 : 0.0), radius: 8, y: 2)
+            .animation(DS.Motion.lux, value: active)
             .accessibilityLabel(placeholder)
     }
 
@@ -283,16 +413,21 @@ struct MarketsView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(price == nil ? "— no price" : String(format: "%.2f", value))
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .animation(DS.Motion.smooth, value: value)
                 if price != nil {
                     Text((up ? "+" : "") + String(format: "%.2f", pl))
                         .font(.caption).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: pl)
                 }
             }
+            .animation(DS.Motion.smooth, value: up)
             Button { portfolio.remove(p.id) } label: {
                 Image(systemName: "trash").font(.system(size: 12))
                     .foregroundStyle(hovered ? DS.Palette.danger.opacity(0.7) : Color.secondary)
             }
-            .buttonStyle(.plain).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
+            .buttonStyle(LuxPressStyle()).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
@@ -315,6 +450,7 @@ struct MarketsView: View {
         Group {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                     ForEach(store.symbols) { sym in
@@ -326,6 +462,8 @@ struct MarketsView: View {
                                 .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
                             Text(String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                                .contentTransition(.numericText())
+                                .animation(DS.Motion.smooth, value: change)
                         }
                         // Legibility on saturated tiles: white on a strong green/red is
                         // borderline — a subtle dark shadow lifts the text on any shade.
@@ -345,10 +483,14 @@ struct MarketsView: View {
                         .help(sym.market)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))")
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
+                .animation(DS.Motion.smooth, value: store.symbols.count)
+                .transition(.opacity)
             }
         }
+        .animation(DS.Motion.smooth, value: store.symbols.isEmpty)
     }
 
     /// Tile color: green-to-red by change magnitude (gain → green, loss → red,
@@ -365,6 +507,7 @@ struct MarketsView: View {
         VStack(spacing: DS.Space.sm) {
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 HStack {
                     Spacer()
@@ -381,9 +524,12 @@ struct MarketsView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Sort watchlist")
                 }
-                ForEach(sort.apply(store.symbols)) { signalCard($0) }
+                ForEach(sort.apply(store.symbols)) { signalCard($0)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
             }
         }
+        .animation(DS.Motion.smooth, value: store.symbols.count)
     }
 
     private func signalCard(_ sym: StockSageSymbol) -> some View {
@@ -399,11 +545,19 @@ struct MarketsView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 if let p = sym.latest?.price {
-                    Text(String(format: "%.2f", p)).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                    Text(String(format: "%.2f", p))
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
                     Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
-                    Text(String(format: "%+.2f%%", change)).font(.system(size: 12, weight: .medium))
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(DS.Motion.smooth, value: up)
+                    Text(String(format: "%+.2f%%", change))
+                        .font(.system(size: 12, weight: .medium))
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: change)
                 }
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
             }
@@ -424,9 +578,19 @@ struct MarketsView: View {
             }
         }
         .padding(DS.Space.md)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(hovered ? Color.white.opacity(0.055) : DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
+        .scaleEffect(hovered ? 1.008 : 1.0)
+        .shadow(color: DS.Palette.accent.opacity(hovered ? 0.10 : 0), radius: 10, y: 3)
+        .animation(DS.Motion.smooth, value: hovered)
         .contentShape(Rectangle())
         .onHover { over in
             withAnimation(DS.Motion.smooth) {
@@ -468,9 +632,15 @@ struct MarketsView: View {
                 Spacer()
                 Button { Task { await generateBriefing() } } label: {
                     HStack(spacing: 6) {
-                        if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
-                        else { Image(systemName: "sparkles") }
+                        Group {
+                            if loadingBriefing { ProgressView().controlSize(.small).tint(.white) }
+                            else { Image(systemName: "sparkles") }
+                        }
+                        .transition(.opacity)
+                        .animation(DS.Motion.smooth, value: loadingBriefing)
                         Text(loadingBriefing ? "Generating…" : "Generate")
+                            .contentTransition(.opacity)
+                            .animation(DS.Motion.smooth, value: loadingBriefing)
                     }
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(.white)
@@ -485,10 +655,19 @@ struct MarketsView: View {
                 .font(.callout).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .contentTransition(.opacity)
+                .animation(DS.Motion.smooth, value: briefing.isEmpty)
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Palette.codeSurfaceSide, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
@@ -502,9 +681,42 @@ struct MarketsView: View {
     // MARK: Empty
 
     private var emptyState: some View {
-        Text("No symbols tracked yet.")
-            .font(.callout).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 28)
+        VStack(spacing: 10) {
+            ZStack {
+                if reduceMotion {
+                    // Reduce Motion: static halo (no breathing loop).
+                    Circle()
+                        .fill(DS.Palette.accent.opacity(0.14))
+                        .frame(width: 52, height: 52)
+                        .blur(radius: 14)
+                        .allowsHitTesting(false)
+                } else {
+                    PhaseAnimator([0.10, 0.18, 0.10]) { opacity in
+                        Circle()
+                            .fill(DS.Palette.accent.opacity(opacity))
+                            .frame(width: 52, height: 52)
+                            .blur(radius: 14)
+                            .allowsHitTesting(false)
+                    } animation: { opacity in
+                        opacity > 0.14
+                            ? .spring(duration: 2.2, bounce: 0.06)
+                            : .easeOut(duration: 1.8)
+                    }
+                }
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(DS.Palette.accent)
+                    .frame(width: 50, height: 50)
+                    .background(RadialGradient(colors: [DS.Palette.accent.opacity(0.18), DS.Palette.accent.opacity(0.05)],
+                                               center: .center, startRadius: 0, endRadius: 25), in: Circle())
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)],
+                                                            startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                    .shadow(color: DS.Palette.accent.opacity(0.26), radius: 14, y: 3)
+            }
+            Text("No symbols tracked yet.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 28)
     }
 }
 

@@ -3,15 +3,15 @@
 
 import Foundation
 
-/// Minimal typed message for BrainAdapter. Mirrors the role/content shape the existing
-/// cloud clients build as [String: Any] dicts, but gives call sites a type-safe handle.
+/// Minimal typed message for BrainAdapter. Mirrors the role/content shape the local
+/// clients build as [String: Any] dicts, but gives call sites a type-safe handle.
 struct LLMMessage: Sendable {
     enum Role: String, Sendable { case system, user, assistant }
     let role: Role
     let content: String
 }
 
-/// Abstraction over any LLM backend — local (MLX, Ollama) or remote (cloud keys).
+/// Abstraction over any local LLM backend (MLX, Ollama, vLLM, Unsloth Studio).
 /// No existing code is required to conform yet; defined here for staged adoption.
 protocol BrainAdapter: Sendable {
     var id: BrainPreference { get }
@@ -25,7 +25,7 @@ enum BrainError: Error {
 }
 
 /// Extracts the optional system prompt and flattens remaining turns into a single
-/// prompt string compatible with single-turn completion APIs (OllamaClient, AnthropicClient).
+/// prompt string compatible with single-turn completion APIs (OllamaClient, LocalLLM).
 func brainAdapterPrompt(from messages: [LLMMessage]) -> (system: String?, prompt: String) {
     let system = messages.first(where: { $0.role == .system })?.content
     let body = messages.filter { $0.role != .system }
@@ -36,14 +36,13 @@ func brainAdapterPrompt(from messages: [LLMMessage]) -> (system: String?, prompt
 }
 
 /// Maps a `LocalLLM.Brain` to the right `BrainAdapter`. Returns a dedicated adapter
-/// for Ollama and Anthropic; all other brains get `LocalLLMFallbackAdapter`, which
-/// delegates to `LocalLLM.generate()`. Adding a new brain never requires touching
+/// for Ollama; all other local brains get `LocalLLMFallbackAdapter`, which delegates
+/// to `LocalLLM.generate()`. Adding a new brain never requires touching
 /// AgentPipeline — only a new adapter struct and a case here.
 enum BrainAdapterFactory {
     nonisolated static func adapter(for brain: LocalLLM.Brain) -> any BrainAdapter {
         switch brain {
         case .ollamaCoder:  return OllamaBrainAdapter()
-        case .claudeHaiku:  return AnthropicBrainAdapter()
         default:
             return LocalLLMFallbackAdapter(id: AppSettings.brainPreferenceCurrent)
         }

@@ -15,13 +15,9 @@ import Foundation
 ///   still applies via `refineOwnDraft` — no regeneration, just self-critique.
 /// - **Graceful:** if the Salehman engine isn't reachable it returns the draft
 ///   UNCHANGED — it never blanks out a reply just because Salehman is offline.
-/// - **Cloud-capable, FREE-FIRST:** the engine chain prefers your own hosted
-///   endpoint (cloud vLLM / Unsloth Studio), then a **free frontier cloud brain**
-///   (Kimi K2.6 ~1T / Nemotron-Ultra-550B / gpt-oss-120B — all $0), then the
-///   local floor (MLX, Ollama). So whenever you're online with any one free key
-///   set, Salehman finalizes on a big model at **$0**, and it drops to the ~7B
-///   local model when offline. (The paid DeepSeek backstop was removed
-///   2026-06-12 — owner: "remove deepseek".)
+/// - **On-device-only pass:** the engine falls through MLX (if loaded) then
+///   Ollama (Salehman custom model). The leader only runs when one of these is
+///   available; if neither is ready it returns the draft unchanged.
 /// - **No Apple Intelligence:** Salehman is its own thing; it never borrows
 ///   Apple's on-device model and must never present itself as such.
 enum SalehmanLeader {
@@ -32,9 +28,8 @@ enum SalehmanLeader {
         let pref = AppSettings.brainPreferenceCurrent
         // Don't double-pass when the user already pinned Salehman as the brain.
         if pref == .salehman { return false }
-        // Step aside for the dedicated coding modes — a small leader shouldn't
-        // rewrite (and risk breaking) the coder loop's tool-built output.
-        if pref == .cloudCoding || pref == .freeCoding { return false }
+        // (The dedicated cloud/free coding modes the leader used to step aside
+        // for were removed in the 2026-06-18 local-only migration.)
         return true
     }
 
@@ -55,6 +50,10 @@ enum SalehmanLeader {
     static func finalize(userPrompt: String, draft: String) async -> String {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, draft != LocalLLM.offMessage else { return draft }
+        // Skip error sentinels (bracketed "[Provider error …]" / "request failed …").
+        // offMessage is caught above; this catches all other error shapes so the
+        // leader doesn't waste a generate call trying to polish a diagnostic message.
+        guard !AgentPipeline.isErrorReply(draft) else { return draft }
         // Never let extra passes rewrite substantial code — handing working code
         // to another pass risks subtle breakage, so the drafter's code stands.
         guard !isMostlyCode(draft) else { return draft }
@@ -130,7 +129,8 @@ enum SalehmanLeader {
     /// True when the draft is dominated by fenced code blocks (≥40% of the
     /// reply). Such replies are left untouched by the leader so a small model
     /// can't quietly break working code, even outside the dedicated coding modes.
-    private static func isMostlyCode(_ text: String) -> Bool {
+    /// `internal` (not `private`) so `SalehmanLeaderTests` can pin the threshold.
+    static func isMostlyCode(_ text: String) -> Bool {
         let parts = text.components(separatedBy: "```")
         guard parts.count >= 3 else { return false }   // need ≥1 opened+closed fence
         var codeLen = 0

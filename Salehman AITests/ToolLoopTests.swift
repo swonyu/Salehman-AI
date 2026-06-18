@@ -25,35 +25,15 @@ struct OllamaToolSpecsTests {
         #expect(n.contains("search_documents"))
     }
 
-    @Test func onlineAddsExactlyTheTwoWebTools() {
+    @Test func onlineAddsExactlyTheWebAndMediaTools() {
         let offline = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: false)))
         let online = Set(names(LocalLLM.ollamaToolSpecs(externalAllowed: true)))
-        #expect(online.subtracting(offline) == ["web_search", "fetch_url"])
+        // Online adds the four network tools — web + media (image/video search).
+        #expect(online.subtracting(offline)
+                == ["web_search", "fetch_url", "image_search", "video_search"])
     }
 }
 
-// MARK: - FreeAuto cooldown window boundary (pins the extracted `isStillCooling`
-// seam specifically — distinct from the existing FreeAutoCooldownTests).
-//
-// A free brain that just failed is skipped for `window` seconds. Pins the 120 s
-// boundary (strict `<`) and that a brain with no recorded failure never cools.
-struct CooldownWindowSeamTests {
-    private let t0 = Date(timeIntervalSince1970: 1_000_000)
-
-    @Test func withinWindowStillCools() {
-        #expect(LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(119), window: 120))
-    }
-
-    @Test func atOrPastBoundaryRetries() {
-        // Strict `<`, so exactly `window` seconds later is NOT cooling.
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(120), window: 120))
-        #expect(!LocalLLM.isStillCooling(failedAt: t0, now: t0.addingTimeInterval(121), window: 120))
-    }
-
-    @Test func noRecordedFailureNeverCools() {
-        #expect(!LocalLLM.isStillCooling(failedAt: nil, now: t0))
-    }
-}
 
 // MARK: - AgentPipeline OOM-prevention concurrency cap
 //
@@ -68,32 +48,31 @@ struct AgentPipelineCapTests {
     }
 
     @Test func otherBrainsUseBaseCap() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 8) == 8)
-        #expect(AgentPipeline.effectiveCap(brain: .ensemble, baseCap: 4) == 4)
+        // `.none` is the only non-serial brain left after the app went local-only;
+        // it must honor the memory-derived base cap rather than forcing serial.
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 8) == 8)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 4) == 4)
     }
 
     @Test func baseCapFlooredAtOne() {
-        #expect(AgentPipeline.effectiveCap(brain: .cerebras, baseCap: 0) == 1)
+        #expect(AgentPipeline.effectiveCap(brain: .none, baseCap: 0) == 1)
     }
 }
 
 // MARK: - Paid-brain hiding (owner request: "hide every paid api")
 //
-// Pins which brains count as paid and that the Brain picker's `selectableCases`
-// excludes exactly those — so a future enum addition can't silently leak a paid
-// provider back into the UI.
+// The app is local-only — there are NO paid cloud brains, so `isPaid` is always
+// false. This pins that the Brain picker's `selectableCases` never surfaces a
+// paid provider, so a future enum addition can't silently leak one into the UI.
 struct PaidBrainHidingTests {
-    @Test func paidSetIsExactlyTheFourCloudPaidProviders() {
-        let paid = BrainPreference.allCases.filter { $0.isPaid }
-        #expect(Set(paid) == Set([.claudeHaiku, .grok, .codex, .copilot]))
-    }
-
     @Test func selectableCasesExcludeAllPaid() {
         #expect(!BrainPreference.selectableCases.contains { $0.isPaid })
-        // Owner decision 2026-06-11: the picker is pared to EXACTLY Salehman + Auto
-        // (Salehman cascades cloud→free→local itself, so the per-cloud entries were
-        // clutter). Other cases still function when set programmatically (rotation).
-        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio])
+        // Owner decision 2026-06-11: the picker is pared to a small local set.
+        // Salehman resolves vLLM → Unsloth → MLX → Ollama itself (all local), so
+        // the per-engine entries were clutter. Other cases still function when set
+        // programmatically (rotation). 2026-06-18: + Uncensored (local abliterated
+        // ~3B, web-search capable) — free, on-device, so never paid.
+        #expect(BrainPreference.selectableCases == [.salehman, .auto, .unslothStudio, .uncensored])
     }
 }
 
@@ -226,5 +205,189 @@ struct AutoContinueDetectorTests {
         #expect(!AgentPipeline.looksIncomplete("Done — here's the code:\n```swift\nlet x = 1\n```\nThat's everything."))
         #expect(!AgentPipeline.looksIncomplete(""))                  // empty ⇒ not continuable
         #expect(!AgentPipeline.looksIncomplete("[Groq error 429]"))  // error ⇒ handled elsewhere, not continued
+    }
+}
+
+// MARK: - AgentPipeline.isErrorReply (direct unit tests)
+//
+// `SalehmanLeaderTests.FinalizeErrorBypassTests` tests the guard via
+// `SalehmanLeader.finalize`, but that path falls through to "return draft" any
+// time the engine is unreachable — which is always in CI. These tests hit the
+// pure predicate directly so the assertion is unambiguous: the guard fires
+// because `isErrorReply` returns true, NOT because the engine produced "".
+
+struct IsErrorReplyTests {
+
+    @Test func emptyStringIsAnError() {
+        #expect(AgentPipeline.isErrorReply(""))
+        #expect(AgentPipeline.isErrorReply("   "))
+    }
+
+    @Test func bracketedProviderErrorIsAnError() {
+        // The "[<Provider> error <STATUS>: …]" shape produced by every
+        // OpenAI-compatible client on a non-2xx response.
+        #expect(AgentPipeline.isErrorReply("[Groq error 429: rate limit exceeded]"))
+        #expect(AgentPipeline.isErrorReply("[Mistral error 401: unauthorized]"))
+        #expect(AgentPipeline.isErrorReply("[OpenRouter error 503: service unavailable]"))
+    }
+
+    @Test func requestFailedIsAnError() {
+        // Transport failure shape "[<Provider> request failed (HTTP <STATUS>). …]"
+        #expect(AgentPipeline.isErrorReply("[Mistral request failed (HTTP 503). Retry in a moment.]"))
+        #expect(AgentPipeline.isErrorReply("[Groq request failed (HTTP 408). Retry in a moment.]"))
+    }
+
+    @Test func onDeviceCouldntCompleteIsAnError() {
+        // "[The on-device model couldn't complete …]" — covered by
+        // LocalLLM.freeAnswerErrorMarkers; isErrorReply now matches it too.
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the request]"))
+        #expect(AgentPipeline.isErrorReply("[The on-device model couldn't complete the task: timeout]"))
+    }
+
+    @Test func realAnswersAreNotErrors() {
+        #expect(!AgentPipeline.isErrorReply("The capital of France is Paris."))
+        #expect(!AgentPipeline.isErrorReply("Here's a fix for your bug."))
+        // A real answer that contains the word "error" but isn't bracketed.
+        #expect(!AgentPipeline.isErrorReply("There was an error in your logic — see line 4."))
+        // Bracketed text that isn't an error sentinel.
+        #expect(!AgentPipeline.isErrorReply("[OK] The server is running."))
+        #expect(!AgentPipeline.isErrorReply("[DONE] All tests passed."))
+    }
+}
+
+// MARK: - withConversationContext (mission + rolling history wrapper)
+//
+// Every AgentPipeline.run call uses this to inject conversation context into
+// the single-string mission that gets handed to the local brain. A bug here
+// either drops the history (model sees each turn in isolation) or garbles
+// the mission/history ordering (model "answers" the history instead of the ask).
+struct WithConversationContextTests {
+
+    @Test func emptyHistoryReturnsMissionUnchanged() {
+        let m = AgentPipeline.withConversationContext("What is 2+2?", history: "")
+        #expect(m == "What is 2+2?")
+    }
+
+    @Test func whitespaceHistoryReturnsMissionUnchanged() {
+        let m = AgentPipeline.withConversationContext("tell me more", history: "   \n\t  ")
+        #expect(m == "tell me more")
+    }
+
+    @Test func nonEmptyHistoryWrapsInContextAndMissionLabels() {
+        let m = AgentPipeline.withConversationContext("follow-up", history: "User: hi\nAI: hello")
+        #expect(m.contains("Conversation so far"))
+        #expect(m.contains("New message from the user"))
+        #expect(m.contains("follow-up"))
+        #expect(m.contains("User: hi\nAI: hello"))
+    }
+
+    @Test func historyAppearsBeforeMissionInOutput() {
+        let m = AgentPipeline.withConversationContext("the actual ask", history: "User: prior turn")
+        let historyRange  = m.range(of: "User: prior turn")!
+        let missionRange  = m.range(of: "the actual ask")!
+        #expect(historyRange.lowerBound < missionRange.lowerBound,
+                "history must appear before the new mission in the wrapped string")
+    }
+
+    @Test func hugeHistoryIsTrimmmedForLocalBrain() {
+        // SalehmanEngine.hasAnyCloud is hardcoded false → diet always applies.
+        // A history larger than localHistoryCharBudget (9000) must be trimmed.
+        let bigHistory = String(repeating: "User: padding turn\n", count: 600)  // ~12k chars
+        let m = AgentPipeline.withConversationContext("ask", history: bigHistory)
+        #expect(m.contains("(earlier context trimmed)"),
+                "over-budget history must carry the trim marker")
+    }
+}
+
+// MARK: - isSerialLocalBrain (OOM-prevention gate)
+//
+// `isSerialLocalBrain` is the canonical list of brains that run SERIALLY —
+// any brain missing from this list would silently fan out concurrent Ollama
+// calls and risk OOM-crashing WindowServer. Adding `.vllm` or `.unslothStudio`
+// requires them to appear here; this test catches the omission before it ships.
+struct IsSerialLocalBrainTests {
+
+    @Test func serialBrainsAreExactlyTheLocalModels() {
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
+        for b in serial {
+            #expect(AgentPipeline.isSerialLocalBrain(b), "\(b) must be serial")
+        }
+    }
+
+    @Test func noneBrainIsNotSerial() {
+        // After the app went local-only, every real brain is a serial local model;
+        // `.none` (no brain reachable) is the only non-serial case left.
+        #expect(!AgentPipeline.isSerialLocalBrain(.none), ".none must not be serial")
+    }
+
+    @Test func effectiveCapMirrosIsSerialLocalBrain() {
+        // Sanity guard: effectiveCap must force serial (cap==1) for every brain
+        // that isSerialLocalBrain returns true for — the two must agree.
+        let serial: [LocalLLM.Brain] = [.ollamaCoder, .salehman, .unslothStudio, .vllm, .uncensored]
+        for b in serial {
+            #expect(AgentPipeline.effectiveCap(brain: b, baseCap: 8) == 1,
+                    "\(b) effectiveCap must be 1 even with baseCap 8")
+        }
+    }
+}
+
+// MARK: - buildPrompt (per-agent prompt assembly)
+//
+// `buildPrompt` wires every agent's identity (name, role), user request,
+// conversation context, and length rule into the single string that is sent
+// to the LLM. A bug here affects every agent in the pipeline — wrong spec.name
+// would make the model answer as a different persona; missing history means the
+// model answers blind; wrong length rule (full vs terse) floods the chat with
+// long parallel answers or truncates a full-answer agent mid-thought.
+struct BuildPromptTests {
+
+    private static let terseSpec = AgentSpec(
+        name: "Test Analyst", icon: "star",
+        role: "analyse the request for correctness", full: false
+    )
+    private static let fullSpec = AgentSpec(
+        name: "Summarizer", icon: "doc",
+        role: "write a complete summary", full: true
+    )
+
+    @Test func containsSpecNameAndRole() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Test Analyst"))
+        #expect(p.contains("analyse the request for correctness"))
+    }
+
+    @Test func containsMission() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "What is 42?", history: "", context: "")
+        #expect(p.contains("What is 42?"))
+    }
+
+    @Test func emptyHistoryProducesNoConversationHeader() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(!p.contains("Recent conversation:"))
+    }
+
+    @Test func nonEmptyHistoryAppearsUnderRecentConversation() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q",
+                                          history: "User: hi\nAI: hey", context: "")
+        #expect(p.contains("Recent conversation:"))
+        #expect(p.contains("User: hi\nAI: hey"))
+    }
+
+    @Test func nonEmptyContextAppearsInOutput() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "",
+                                          context: "File context: foo.swift")
+        #expect(p.contains("File context: foo.swift"))
+    }
+
+    @Test func fullSpecGetsCompleteResponseRule() {
+        let p = AgentPipeline.buildPrompt(spec: Self.fullSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Write a complete, well-structured response."))
+        #expect(!p.contains("Be concise:"))
+    }
+
+    @Test func terseSpecGetsConciseRule() {
+        let p = AgentPipeline.buildPrompt(spec: Self.terseSpec, mission: "Q", history: "", context: "")
+        #expect(p.contains("Be concise:"))
+        #expect(!p.contains("Write a complete, well-structured response."))
     }
 }

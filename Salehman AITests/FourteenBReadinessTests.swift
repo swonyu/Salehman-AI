@@ -62,6 +62,44 @@ struct FourteenBReadinessTests {
         }
     }
 
+    @Test func tunedKnobsWorkWithTaggedModelNames() {
+        withSavedModelKey {
+            // Ollama appends ":latest" (or a quant tag like ":q4_K_M") at pull time.
+            // The custom key stores the bare name "salehman14b", so
+            // "salehman14b:latest" != custom and the prefix-check is the only
+            // path that can match. This pins the components(separatedBy:":").first
+            // tag-strip that feeds the prefix check.
+            UserDefaults.standard.set("salehman14b", forKey: AppSettings.Keys.customModel)
+            let tagged = OllamaClient.Generation.tuned(for: "salehman14b:latest")
+            #expect(tagged.keepAlive == "5m",
+                    "'salehman14b:latest' must get warm keep-alive via tag-stripping prefix check")
+            #expect(tagged.numCtx == 4096)
+
+            // A non-salehman tagged model must still fall through to .default.
+            let other = OllamaClient.Generation.tuned(for: "qwen2.5-coder:7b-instruct")
+            #expect(other.keepAlive == "30s",
+                    "non-salehman tagged model must not get warm knobs")
+        }
+    }
+
+    @Test func tunedKnobsAreCaseInsensitiveForSalehmanPrefix() {
+        withSavedModelKey {
+            // Ollama model names are case-insensitive in practice; the prefix check
+            // uses .lowercased() so "SALEHMAN14B" or "Salehman" still match.
+            UserDefaults.standard.removeObject(forKey: AppSettings.Keys.customModel)
+            let uppercase = OllamaClient.Generation.tuned(for: "SALEHMAN14B")
+            #expect(uppercase.keepAlive == "5m",
+                    "uppercase SALEHMAN prefix must get warm knobs via lowercased()")
+            #expect(uppercase.numCtx == 4096)
+
+            // Uppercase + colon tag — both transforms must compose correctly.
+            let upperTagged = OllamaClient.Generation.tuned(for: "SALEHMAN14B:latest")
+            #expect(upperTagged.keepAlive == "5m",
+                    "uppercase + tagged must get warm knobs")
+            #expect(upperTagged.numCtx == 4096)
+        }
+    }
+
     // MARK: recentTail — local context diet keeps the most-recent turns
 
     @Test func recentTailKeepsShortTextWhole() {
