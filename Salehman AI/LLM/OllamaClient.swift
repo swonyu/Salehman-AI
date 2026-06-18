@@ -353,6 +353,44 @@ enum OllamaClient {
     }
     @MainActor private static var didWarmup = false
 
+    /// Launch warm-up for the Uncensored brain's pinned abliterated ~3B. Owner
+    /// asked for it to "run automatically when I open the app" — so if `.uncensored`
+    /// is the selected brain, pre-load its model into RAM the moment the app opens
+    /// (the first reply is then instant). It's NEVER the `activeChatModel`
+    /// (`warmupChatModel` covers that), so it needs its own hook. Gated to the
+    /// `.uncensored` pref so we never resident ~3-4 GB for users on another brain.
+    /// The server may still be booting from `ensureServing`, so we poll readiness
+    /// briefly (busting the 30s cache) before loading. `keep_alive: 5m` keeps it
+    /// resident long enough that "open app → go use it" stays warm. Once per launch;
+    /// skips silently if the model isn't pulled or Ollama never comes up.
+    @MainActor static func warmUncensoredIfSelected() {
+        guard AppSettings.brainPreferenceCurrent == .uncensored else { return }
+        guard !didWarmUncensored else { return }
+        didWarmUncensored = true
+        Task.detached(priority: .utility) {
+            var up = await isUp()
+            var tries = 0
+            while !up && tries < 10 {                       // ~5s budget for a cold `ollama serve`
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await Reachability.shared.invalidate()      // re-probe instead of the cached miss
+                up = await isUp()
+                tries += 1
+            }
+            guard up, await hasModel(uncensoredModel) else { return }
+            guard let url = URL(string: "\(base)/api/generate") else { return }
+            let body: [String: Any] = ["model": uncensoredModel, "stream": false,
+                                       "keep_alive": "5m"]   // no prompt → just loads the weights
+            guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payload
+            req.timeoutInterval = 120
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+    @MainActor private static var didWarmUncensored = false
+
     // MARK: - Last-generation stats (speed visibility for the local model)
 
     /// (model, tokens/sec) of the most recent completed local generation, with a
