@@ -81,3 +81,50 @@ struct MediaCaptureTests {
         #expect(cap.drain().isEmpty)
     }
 }
+
+// MARK: - Deterministic intent (the fix for weak-3B tool-calling)
+//
+// The abliterated 3B often leaks a malformed tool call as plain text, so explicit
+// media requests are detected + run in code. These pin that subject extraction
+// keeps the real query (incl. adult terms + nationality) and that ordinary chat
+// is NOT hijacked.
+
+struct MediaIntentTests {
+    @Test func bareAdultRequestIsBothKinds() {
+        let intent = MediaSearch.detectIntent("i want saudi porn")
+        #expect(intent?.kind == .both)
+        #expect(intent?.query == "saudi porn")   // "i want" stripped; subject kept
+    }
+
+    @Test func picturesRequestIsImagesOnly() {
+        let intent = MediaSearch.detectIntent("show me pictures of cats")
+        #expect(intent?.kind == .images)
+        #expect(intent?.query == "cats")
+    }
+
+    @Test func videosRequestIsVideosOnly() {
+        let intent = MediaSearch.detectIntent("find videos of riyadh")
+        #expect(intent?.kind == .videos)
+        #expect(intent?.query == "riyadh")
+    }
+
+    @Test func ordinaryRequestIsNotHijacked() {
+        // No media type, no adult term → must fall through to the model.
+        #expect(MediaSearch.detectIntent("fix the bug in ContentView") == nil)
+        #expect(MediaSearch.detectIntent("what's the capital of France?") == nil)
+    }
+
+    @Test func stripsThePipelinePreamble() {
+        // The agent pipeline wraps the message; only the trailing Request matters.
+        let wrapped = "Prior conversation:\nUser: hi\n\nRequest: show me nude photos of x"
+        let intent = MediaSearch.detectIntent(wrapped)
+        #expect(intent != nil)
+        #expect(intent?.query.contains("x") == true)
+        #expect(intent?.query.contains("prior") == false)   // preamble excluded
+    }
+
+    @Test func cleanedQueryKeepsAdultAndNationality() {
+        // The whole point: command words go, the searchable subject stays.
+        #expect(MediaSearch.cleanedQuery("show me egyptian porn") == "egyptian porn")
+    }
+}

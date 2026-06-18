@@ -1099,10 +1099,15 @@ enum LocalLLM {
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
         case .uncensoredLocal:
-            // Uncensored local tier — same tool loop (web_search/fetch_url +
-            // image_search/video_search when web access is on & not Offline),
-            // pinned to the abliterated ~3B model. Its own system prompt makes it
-            // reach for the media tools autonomously so pictures/videos render inline.
+            // The abliterated ~3B is unreliable at emitting clean tool calls (it
+            // often leaks a malformed `{"name":"image_search"…}` as plain text), so
+            // an explicit media request ("show me / find / i want … pics/videos/porn")
+            // runs the search DETERMINISTICALLY here — the gallery never depends on
+            // the model formatting a tool call right. Non-media messages fall through
+            // to the normal tool loop with its autonomous-media system prompt.
+            if ToolPolicy.isExternalAllowed, let direct = await MediaSearch.runIntent(message) {
+                return direct
+            }
             if let reply = await ollamaReply(message, systemPrompt: uncensoredToolSystem,
                                              modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage

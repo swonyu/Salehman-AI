@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-18 08:58 +03 · Swift files: 144 · Swift LOC: 33542_
+_Generated: 2026-06-18 09:54 +03 · Swift files: 144 · Swift LOC: 33695_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -3728,7 +3728,7 @@ enum KeychainStore {
 }
 ```
 
-===== FILE: Salehman AI/LLM/LocalLLM.swift (1142 lines) =====
+===== FILE: Salehman AI/LLM/LocalLLM.swift (1147 lines) =====
 ```swift
 import Foundation
 import OSLog
@@ -4831,10 +4831,15 @@ enum LocalLLM {
             if let reply = await ollamaReply(message) { return reply }
             return offMessage
         case .uncensoredLocal:
-            // Uncensored local tier — same tool loop (web_search/fetch_url +
-            // image_search/video_search when web access is on & not Offline),
-            // pinned to the abliterated ~3B model. Its own system prompt makes it
-            // reach for the media tools autonomously so pictures/videos render inline.
+            // The abliterated ~3B is unreliable at emitting clean tool calls (it
+            // often leaks a malformed `{"name":"image_search"…}` as plain text), so
+            // an explicit media request ("show me / find / i want … pics/videos/porn")
+            // runs the search DETERMINISTICALLY here — the gallery never depends on
+            // the model formatting a tool call right. Non-media messages fall through
+            // to the normal tool loop with its autonomous-media system prompt.
+            if ToolPolicy.isExternalAllowed, let direct = await MediaSearch.runIntent(message) {
+                return direct
+            }
             if let reply = await ollamaReply(message, systemPrompt: uncensoredToolSystem,
                                              modelOverride: OllamaClient.uncensoredModel) { return reply }
             return offMessage
@@ -8995,7 +9000,7 @@ enum GrokWatchTool {
 }
 ```
 
-===== FILE: Salehman AI/Tools/MediaSearch.swift (219 lines) =====
+===== FILE: Salehman AI/Tools/MediaSearch.swift (320 lines) =====
 ```swift
 import Foundation
 
@@ -9156,6 +9161,107 @@ enum MediaSearch {
                 duration: r["duration"] as? String)
         }
         return (summaryText(kind: "video", query: query, items: items), items)
+    }
+
+    // MARK: Deterministic intent (works even when a weak model can't tool-call)
+
+    enum IntentKind { case images, videos, both }
+
+    /// Detect an explicit "show me media" request and pull out its subject, so the
+    /// Chat tab can run the search DIRECTLY in code instead of depending on a small
+    /// local model to emit a clean `image_search`/`video_search` tool call (the
+    /// abliterated 3B often leaks a malformed call as plain text). Returns nil for
+    /// anything that isn't clearly a media request, so ordinary chat falls through
+    /// to the model untouched.
+    nonisolated static func detectIntent(_ raw: String) -> (kind: IntentKind, query: String)? {
+        // The agent pipeline wraps the user text in a preamble ("Prior
+        // conversation:… Request: <actual>"). Search only the real request.
+        var msg = raw
+        if let r = raw.range(of: "Request:", options: .backwards) {
+            msg = String(raw[r.upperBound...])
+        }
+        let lower = msg.lowercased()
+        guard !lower.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+
+        let videoWords = [" video", " videos", " vid ", " vids", " clip", " clips", " movie", " footage"]
+        let imageWords = [" picture", " pictures", " pic ", " pics", " image", " images", " photo", " photos"]
+        // Bare adult terms are inherently "show me" requests — no trigger needed.
+        let adultWords = ["porn", "porno", "nude", "naked", "nsfw", "xxx", "sex", "hentai",
+                          "boobs", "tits", "pussy", "onlyfans", "hardcore", "blowjob"]
+        let padded = " \(lower) "
+        let hasVideo = videoWords.contains { padded.contains($0) }
+        let hasImage = imageWords.contains { padded.contains($0) }
+        let hasAdult = adultWords.contains { lower.contains($0) }
+
+        // Media request only when a media TYPE is named or adult content is asked
+        // for — a bare "find the bug" must NOT be hijacked.
+        guard hasVideo || hasImage || hasAdult else { return nil }
+
+        let kind: IntentKind = (hasVideo && !hasImage) ? .videos
+                             : (hasImage && !hasVideo) ? .images
+                             : .both
+        let query = cleanedQuery(msg)
+        return query.isEmpty ? nil : (kind, query)
+    }
+
+    /// Strip command verbs and media-type words from a request, leaving the search
+    /// subject (keeps adult terms + nationality — those ARE the query). Pure for tests.
+    nonisolated static func cleanedQuery(_ msg: String) -> String {
+        var s = " " + msg.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\u0600-\\u06FF ]", with: " ", options: .regularExpression)
+            + " "
+        // Longest phrases first so "pictures of" is removed before "pictures".
+        let strip = [
+            "can you", "could you", "please", "for me", "right now", "online", "on the web",
+            "show me some", "show me", "show", "find me some", "find me", "find some", "find",
+            "search for", "search", "look up", "pull up", "get me", "give me", "gimme",
+            "i want to see", "i wanna see", "i want some", "i wanna", "i want", "i need", "see some", "see",
+            "pictures of", "picture of", "pics of", "pic of", "images of", "image of",
+            "photos of", "photo of", "videos of", "video of", "vids of", "vid of",
+            "clips of", "clip of", "footage of",
+            "pictures", "picture", "pics", "pic", "images", "image", "photos", "photo",
+            "videos", "video", "vids", "vid", "clips", "clip", "movie", "footage",
+            "some", "of",
+        ]
+        for phrase in strip {
+            s = s.replacingOccurrences(of: " \(phrase) ", with: " ")
+        }
+        let cleaned = s.split(separator: " ").joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        // If stripping ate everything (e.g. "show me pics"), fall back to the raw text.
+        return cleaned.isEmpty
+            ? msg.lowercased().trimmingCharacters(in: .whitespaces)
+            : cleaned
+    }
+
+    /// Detect + run a media request directly, populating `MediaCapture` for the
+    /// inline gallery. Returns the assistant's short reply text, or nil when the
+    /// message isn't a media request (caller falls through to the model).
+    static func runIntent(_ raw: String) async -> String? {
+        guard let intent = detectIntent(raw) else { return nil }
+        switch intent.kind {
+        case .images:
+            let r = await images(intent.query); MediaCapture.shared.add(r.media)
+            return reply(query: intent.query, images: r.media.count, videos: 0)
+        case .videos:
+            let r = await videos(intent.query); MediaCapture.shared.add(r.media)
+            return reply(query: intent.query, images: 0, videos: r.media.count)
+        case .both:
+            let ri = await images(intent.query)
+            MediaCapture.shared.add(ri.media)
+            let rv = await videos(intent.query)
+            MediaCapture.shared.add(rv.media)
+            return reply(query: intent.query, images: ri.media.count, videos: rv.media.count)
+        }
+    }
+
+    private nonisolated static func reply(query: String, images: Int, videos: Int) -> String {
+        guard images + videos > 0 else {
+            return "I couldn't find anything for \"\(query)\" right now — try different words, or make sure Web Access is on (and Offline Mode off)."
+        }
+        var parts: [String] = []
+        if images > 0 { parts.append("\(images) image\(images == 1 ? "" : "s")") }
+        if videos > 0 { parts.append("\(videos) video\(videos == 1 ? "" : "s")") }
+        return "Here's what I found for \"\(query)\" — \(parts.joined(separator: " and ")) below."
     }
 
     // MARK: Internals
@@ -30362,7 +30468,7 @@ struct MediaDetectTests {
 }
 ```
 
-===== FILE: Salehman AITests/MediaSearchTests.swift (83 lines) =====
+===== FILE: Salehman AITests/MediaSearchTests.swift (130 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -30445,6 +30551,53 @@ struct MediaCaptureTests {
         cap.add([MediaItem(kind: .video, url: "stale")])
         cap.reset()
         #expect(cap.drain().isEmpty)
+    }
+}
+
+// MARK: - Deterministic intent (the fix for weak-3B tool-calling)
+//
+// The abliterated 3B often leaks a malformed tool call as plain text, so explicit
+// media requests are detected + run in code. These pin that subject extraction
+// keeps the real query (incl. adult terms + nationality) and that ordinary chat
+// is NOT hijacked.
+
+struct MediaIntentTests {
+    @Test func bareAdultRequestIsBothKinds() {
+        let intent = MediaSearch.detectIntent("i want saudi porn")
+        #expect(intent?.kind == .both)
+        #expect(intent?.query == "saudi porn")   // "i want" stripped; subject kept
+    }
+
+    @Test func picturesRequestIsImagesOnly() {
+        let intent = MediaSearch.detectIntent("show me pictures of cats")
+        #expect(intent?.kind == .images)
+        #expect(intent?.query == "cats")
+    }
+
+    @Test func videosRequestIsVideosOnly() {
+        let intent = MediaSearch.detectIntent("find videos of riyadh")
+        #expect(intent?.kind == .videos)
+        #expect(intent?.query == "riyadh")
+    }
+
+    @Test func ordinaryRequestIsNotHijacked() {
+        // No media type, no adult term → must fall through to the model.
+        #expect(MediaSearch.detectIntent("fix the bug in ContentView") == nil)
+        #expect(MediaSearch.detectIntent("what's the capital of France?") == nil)
+    }
+
+    @Test func stripsThePipelinePreamble() {
+        // The agent pipeline wraps the message; only the trailing Request matters.
+        let wrapped = "Prior conversation:\nUser: hi\n\nRequest: show me nude photos of x"
+        let intent = MediaSearch.detectIntent(wrapped)
+        #expect(intent != nil)
+        #expect(intent?.query.contains("x") == true)
+        #expect(intent?.query.contains("prior") == false)   // preamble excluded
+    }
+
+    @Test func cleanedQueryKeepsAdultAndNationality() {
+        // The whole point: command words go, the searchable subject stays.
+        #expect(MediaSearch.cleanedQuery("show me egyptian porn") == "egyptian porn")
     }
 }
 ```
@@ -36173,7 +36326,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (6722 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (6751 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -41783,6 +41936,35 @@ diagnostics). Test target couldn't be executed in-sandbox (no `Testing` module),
 an exhaustive grep confirms NO remaining test references a deleted symbol (cloud
 clients, cloud `BrainPreference`/`BrainReadiness` fields, `isStillCooling`, or the
 removed `LocalLLM` cloud methods). SOURCE_BUNDLE regenerated.
+
+---
+
+## 2026-06-18 · Deterministic media intent — make the Uncensored 3B "just work"
+**What:** Live test surfaced the weak-3B failure mode I'd flagged: asked *"i want
+saudi porn,"* the abliterated 3B leaked a malformed `{"name":"image_search","parameters":{}}`
+as plain TEXT (empty query) instead of executing the tool — so no gallery. Fix:
+detect explicit media requests in CODE and run the search directly, so the result
+never depends on the model emitting a clean tool call.
+
+**How:** `MediaSearch.detectIntent(_:)` (+ `cleanedQuery`, `runIntent`) — strips the
+agent-pipeline preamble (`Request:`), recognizes media-type words + adult terms,
+classifies images/videos/both, and extracts the subject (keeps adult terms +
+nationality, drops command verbs). The `.uncensoredLocal` arm in `LocalLLM.chat`
+now calls `MediaSearch.runIntent(message)` FIRST (when web access is on); non-media
+messages fall through to the normal tool loop. Ordinary requests ("fix the bug")
+are not hijacked — a media type or adult term is required.
+
+**Files:** `Tools/MediaSearch.swift` (+intent API), `LLM/LocalLLM.swift`
+(`.uncensoredLocal` short-circuit), `Salehman AITests/MediaSearchTests.swift`
+(+6 intent tests). SOURCE_BUNDLE regenerated.
+
+**Result:** Full-app `swiftc -typecheck` clean (exit 0). Verified the backend by
+measurement for the actual query: `saudi porn` (English) → **0 images / 60 videos**,
+but `saudi porn سعودية` (what `authenticityBiased` auto-appends) → **97 images / 59
+videos**. So the native-language biasing is load-bearing — it's the difference
+between 0 and 97 image results, and the deterministic path always runs the
+augmented query. Cold-start "needs model pulled" was a transient 30s readiness-cache
+blip (model loads after first probe), self-resolving — not a code bug.
 
 ---
 

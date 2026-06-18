@@ -5610,6 +5610,35 @@ removed `LocalLLM` cloud methods). SOURCE_BUNDLE regenerated.
 
 ---
 
+## 2026-06-18 · Deterministic media intent — make the Uncensored 3B "just work"
+**What:** Live test surfaced the weak-3B failure mode I'd flagged: asked *"i want
+saudi porn,"* the abliterated 3B leaked a malformed `{"name":"image_search","parameters":{}}`
+as plain TEXT (empty query) instead of executing the tool — so no gallery. Fix:
+detect explicit media requests in CODE and run the search directly, so the result
+never depends on the model emitting a clean tool call.
+
+**How:** `MediaSearch.detectIntent(_:)` (+ `cleanedQuery`, `runIntent`) — strips the
+agent-pipeline preamble (`Request:`), recognizes media-type words + adult terms,
+classifies images/videos/both, and extracts the subject (keeps adult terms +
+nationality, drops command verbs). The `.uncensoredLocal` arm in `LocalLLM.chat`
+now calls `MediaSearch.runIntent(message)` FIRST (when web access is on); non-media
+messages fall through to the normal tool loop. Ordinary requests ("fix the bug")
+are not hijacked — a media type or adult term is required.
+
+**Files:** `Tools/MediaSearch.swift` (+intent API), `LLM/LocalLLM.swift`
+(`.uncensoredLocal` short-circuit), `Salehman AITests/MediaSearchTests.swift`
+(+6 intent tests). SOURCE_BUNDLE regenerated.
+
+**Result:** Full-app `swiftc -typecheck` clean (exit 0). Verified the backend by
+measurement for the actual query: `saudi porn` (English) → **0 images / 60 videos**,
+but `saudi porn سعودية` (what `authenticityBiased` auto-appends) → **97 images / 59
+videos**. So the native-language biasing is load-bearing — it's the difference
+between 0 and 97 image results, and the deterministic path always runs the
+augmented query. Cold-start "needs model pulled" was a transient 30s readiness-cache
+blip (model loads after first probe), self-resolving — not a code bug.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
