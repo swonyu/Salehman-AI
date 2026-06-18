@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-18 08:55 +03 · Swift files: 144 · Swift LOC: 33542_
+_Generated: 2026-06-18 08:58 +03 · Swift files: 144 · Swift LOC: 33542_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
