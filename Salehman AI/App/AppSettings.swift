@@ -70,6 +70,14 @@ final class AppSettings: ObservableObject {
     @Published var unslothStudioModel: String {
         didSet { UserDefaults.standard.set(unslothStudioModel, forKey: Keys.unslothStudioModel) }
     }
+    /// Base URL of the **Ollama** server the native `.ollama`/`.auto`/`.salehman` paths
+    /// (and the Code tab) talk to. Defaults to `http://localhost:11434`; point it at a
+    /// remote box (e.g. an always-on PC over Tailscale: `http://100.x.y.z:11434`) to run
+    /// generation on that machine's GPU. Blank falls back to localhost. Native Ollama API,
+    /// so no API key — local-first guarantees are unchanged.
+    @Published var ollamaServerURL: String {
+        didSet { UserDefaults.standard.set(ollamaServerURL, forKey: Keys.ollamaServerURL) }
+    }
     /// vLLM endpoint URL (e.g. http://localhost:8000/v1) for the `.vllm` brain.
     /// Empty = not configured (the brain gate treats that as unreachable).
     @Published var vllmEndpoint: String {
@@ -194,6 +202,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let unslothStudioModel    = "set_unslothStudioModel"
         nonisolated static let vllmEndpoint = "set_vllmEndpoint"
         nonisolated static let vllmModel    = "set_vllmModel"
+        nonisolated static let ollamaServerURL = "set_ollamaServerURL"
         nonisolated static let rotationBrains  = "set_rotationBrains"
     }
 
@@ -238,6 +247,17 @@ final class AppSettings: ObservableObject {
         let stored = (UserDefaults.standard.string(forKey: Keys.vllmModel) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return stored.isEmpty ? "local" : stored
+    }
+
+    /// Nonisolated read of the Ollama base URL — trimmed, trailing slash stripped, and
+    /// falling back to localhost when blank so a stray space or empty field can never
+    /// produce a malformed request. Single source of truth for `OllamaClient.base`.
+    nonisolated static let ollamaDefaultURL = "http://localhost:11434"
+    nonisolated static var ollamaBaseURLCurrent: String {
+        var s = (UserDefaults.standard.string(forKey: Keys.ollamaServerURL) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.isEmpty ? ollamaDefaultURL : s
     }
 
     /// Rotation mode is active when the user checked ≥2 brains to cycle through.
@@ -351,6 +371,7 @@ final class AppSettings: ObservableObject {
         unslothStudioModel    = d.string(forKey: Keys.unslothStudioModel)    ?? ""
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
+        ollamaServerURL = d.string(forKey: Keys.ollamaServerURL) ?? AppSettings.ollamaDefaultURL
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
         installCaptureObservers()
     }

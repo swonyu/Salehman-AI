@@ -39,7 +39,10 @@ enum OllamaClient {
         heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB), opt-in only.
     ]
 
-    nonisolated private static let base = "http://localhost:11434"
+    /// The Ollama server URL — user-configurable (Settings → Ollama server URL), so the
+    /// native paths and the Code tab can run on a remote box's GPU (e.g. an always-on PC
+    /// over Tailscale). Defaults to localhost; see `AppSettings.ollamaBaseURLCurrent`.
+    nonisolated private static var base: String { AppSettings.ollamaBaseURLCurrent }
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
     // (vision() checks it twice per request); 30s caching is fine and

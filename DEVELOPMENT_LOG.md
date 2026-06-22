@@ -6600,6 +6600,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Configurable Ollama server URL (point the app at the always-on PC GPU)
+**Files:** `App/AppSettings.swift` (+ollamaServerURL field/key/init/ollamaBaseURLCurrent), `LLM/OllamaClient.swift` (base now reads the setting), `Views/SettingsView.swift` (+ollamaServerURLRow). Owner-directed (cross-lane: Chat-B files, owner override).
+**Why:** owner is hosting Ollama on an always-on Windows PC (Tailscale 100.111.178.2:11434) and wanted the Mac app to generate on that GPU. The native Ollama client was HARDCODED to localhost:11434, so neither the chat (.ollama/.auto/.salehman) nor the Code tab could reach a remote box. Added a user-configurable Ollama server URL (Settings → "Ollama server URL"), default localhost (zero behavior change), trimmed + trailing-slash-stripped + blank→localhost fallback. OllamaClient.base now reads AppSettings.ollamaBaseURLCurrent. Native Ollama API, no key — local-first guarantees intact.
+**Code-tab finding:** the Code tab calls OllamaClient.chat directly (not the brain router), so this single setting is what makes BOTH tabs use the remote PC. The chat tab can alternatively reach it via the existing vLLM brain pointed at .../v1.
+**Verify:** typecheck clean; URL normalization python-verified (remote preserved, trailing slash stripped, blank/space→localhost). UNVERIFIED: SettingsView render (build on Mac).
+**Result:** set the URL to the PC + pull a code model there → chat AND code generate on the PC GPU, offline, from anywhere via Tailscale. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

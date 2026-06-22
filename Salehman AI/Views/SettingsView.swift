@@ -163,6 +163,11 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
 
+                        // Where Ollama runs: localhost by default, or a remote box's GPU
+                        // (e.g. an always-on PC over Tailscale). Applies to the native
+                        // Ollama paths AND the Code tab.
+                        ollamaServerURLRow
+
                         // Live status for the model named above: installed → the
                         // .salehman brain's offline floor is ready; missing → a
                         // copyable `ollama create` command for when the fine-tuned
@@ -815,6 +820,27 @@ struct SettingsView: View {
     }
 
     // MARK: vLLM rows (keyless local OpenAI-compatible server)
+
+    private var ollamaServerURLRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "server.rack").foregroundStyle(DS.Palette.accent)
+            TextField("Ollama server URL (default: http://localhost:11434)",
+                      text: $settings.ollamaServerURL)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+                .padding(8)
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .accessibilityLabel("Ollama server URL")
+            Button("Localhost") {
+                settings.ollamaServerURL = AppSettings.ollamaDefaultURL
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .accessibilityLabel("Reset Ollama URL to localhost")
+            .help("Reset to the local Ollama (http://localhost:11434)")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
 
     private var vllmEndpointRow: some View {
         HStack(spacing: 10) {

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 15:23 +03 · Swift files: 246 · Swift LOC: 45858_
+_Generated: 2026-06-22 15:33 +03 · Swift files: 246 · Swift LOC: 45908_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -1299,7 +1299,7 @@ enum SelfImprove {
 }
 ```
 
-===== FILE: Salehman AI/App/AppSettings.swift (454 lines) =====
+===== FILE: Salehman AI/App/AppSettings.swift (475 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -1372,6 +1372,14 @@ final class AppSettings: ObservableObject {
     /// surface it. Empty falls back to `"local"` (a harmless sentinel).
     @Published var unslothStudioModel: String {
         didSet { UserDefaults.standard.set(unslothStudioModel, forKey: Keys.unslothStudioModel) }
+    }
+    /// Base URL of the **Ollama** server the native `.ollama`/`.auto`/`.salehman` paths
+    /// (and the Code tab) talk to. Defaults to `http://localhost:11434`; point it at a
+    /// remote box (e.g. an always-on PC over Tailscale: `http://100.x.y.z:11434`) to run
+    /// generation on that machine's GPU. Blank falls back to localhost. Native Ollama API,
+    /// so no API key — local-first guarantees are unchanged.
+    @Published var ollamaServerURL: String {
+        didSet { UserDefaults.standard.set(ollamaServerURL, forKey: Keys.ollamaServerURL) }
     }
     /// vLLM endpoint URL (e.g. http://localhost:8000/v1) for the `.vllm` brain.
     /// Empty = not configured (the brain gate treats that as unreachable).
@@ -1497,6 +1505,7 @@ final class AppSettings: ObservableObject {
         nonisolated static let unslothStudioModel    = "set_unslothStudioModel"
         nonisolated static let vllmEndpoint = "set_vllmEndpoint"
         nonisolated static let vllmModel    = "set_vllmModel"
+        nonisolated static let ollamaServerURL = "set_ollamaServerURL"
         nonisolated static let rotationBrains  = "set_rotationBrains"
     }
 
@@ -1541,6 +1550,17 @@ final class AppSettings: ObservableObject {
         let stored = (UserDefaults.standard.string(forKey: Keys.vllmModel) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return stored.isEmpty ? "local" : stored
+    }
+
+    /// Nonisolated read of the Ollama base URL — trimmed, trailing slash stripped, and
+    /// falling back to localhost when blank so a stray space or empty field can never
+    /// produce a malformed request. Single source of truth for `OllamaClient.base`.
+    nonisolated static let ollamaDefaultURL = "http://localhost:11434"
+    nonisolated static var ollamaBaseURLCurrent: String {
+        var s = (UserDefaults.standard.string(forKey: Keys.ollamaServerURL) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.isEmpty ? ollamaDefaultURL : s
     }
 
     /// Rotation mode is active when the user checked ≥2 brains to cycle through.
@@ -1654,6 +1674,7 @@ final class AppSettings: ObservableObject {
         unslothStudioModel    = d.string(forKey: Keys.unslothStudioModel)    ?? ""
         vllmEndpoint = d.string(forKey: Keys.vllmEndpoint) ?? "" // empty = not configured
         vllmModel    = d.string(forKey: Keys.vllmModel)    ?? ""
+        ollamaServerURL = d.string(forKey: Keys.ollamaServerURL) ?? AppSettings.ollamaDefaultURL
         rotationBrains = (d.array(forKey: Keys.rotationBrains) as? [String] ?? []).compactMap(BrainPreference.init(rawValue:))
         installCaptureObservers()
     }
@@ -5353,7 +5374,7 @@ struct OllamaBrainAdapter: BrainAdapter {
 }
 ```
 
-===== FILE: Salehman AI/LLM/OllamaClient.swift (464 lines) =====
+===== FILE: Salehman AI/LLM/OllamaClient.swift (467 lines) =====
 ```swift
 import Foundation
 
@@ -5396,7 +5417,10 @@ enum OllamaClient {
         heavyCodeModel,      // qwen2.5-coder:32b — heavy (~19 GB), opt-in only.
     ]
 
-    nonisolated private static let base = "http://localhost:11434"
+    /// The Ollama server URL — user-configurable (Settings → Ollama server URL), so the
+    /// native paths and the Code tab can run on a remote box's GPU (e.g. an always-on PC
+    /// over Tailscale). Defaults to localhost; see `AppSettings.ollamaBaseURLCurrent`.
+    nonisolated private static var base: String { AppSettings.ollamaBaseURLCurrent }
 
     // Short reachability/model-list cache. Ollama is local, but the call is hot
     // (vision() checks it twice per request); 30s caching is fine and
@@ -32210,7 +32234,7 @@ enum BrainPing {
 }
 ```
 
-===== FILE: Salehman AI/Views/SettingsView.swift (1476 lines) =====
+===== FILE: Salehman AI/Views/SettingsView.swift (1502 lines) =====
 ```swift
 import SwiftUI
 import AVFoundation
@@ -32376,6 +32400,11 @@ struct SettingsView: View {
                                 .accessibilityLabel("Your custom Ollama model name")
                         }
                         .padding(.horizontal, 14).padding(.vertical, 11)
+
+                        // Where Ollama runs: localhost by default, or a remote box's GPU
+                        // (e.g. an always-on PC over Tailscale). Applies to the native
+                        // Ollama paths AND the Code tab.
+                        ollamaServerURLRow
 
                         // Live status for the model named above: installed → the
                         // .salehman brain's offline floor is ready; missing → a
@@ -33029,6 +33058,27 @@ struct SettingsView: View {
     }
 
     // MARK: vLLM rows (keyless local OpenAI-compatible server)
+
+    private var ollamaServerURLRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "server.rack").foregroundStyle(DS.Palette.accent)
+            TextField("Ollama server URL (default: http://localhost:11434)",
+                      text: $settings.ollamaServerURL)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+                .padding(8)
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .accessibilityLabel("Ollama server URL")
+            Button("Localhost") {
+                settings.ollamaServerURL = AppSettings.ollamaDefaultURL
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .accessibilityLabel("Reset Ollama URL to localhost")
+            .help("Reset to the local Ollama (http://localhost:11434)")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+    }
 
     private var vllmEndpointRow: some View {
         HStack(spacing: 10) {
@@ -49151,7 +49201,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7719 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7728 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55751,6 +55801,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What:** `walkForward(_:warmup:folds:)→[BacktestResult]` runs the existing run() over each fold's test window separately, so the owner can see whether the rules HELD across time or just worked once. `foldRanges(n:warmup:folds:)` tiles [warmup,n) into contiguous, non-overlapping windows; each fold gets its own `warmup` prefix of preceding bars (shared indicator history, NOT counted trades — windows never overlap) via a pure `subHistory` slice. Thin folds keep isSignificant=false so a lucky 5-trade fold can't be over-trusted. Composes run() — no new trading logic, no look-ahead added.
 **Verify:** typecheck clean; python-verified fold math — foldRanges(350,50,3)=[(50,150),(150,250),(250,350)] contiguous, starts 50, ends 350, each slice 150 bars (>warmup+5 so it trades); empty when n==warmup. Behavior tests: a strict downtrend yields 0 trades in ALL folds (mirrors the existing no-long-on-downtrend guard); a clean uptrend trades across folds; each ~100-bar fold is not-significant.
 **Result:** completes SIGNAL_BACKLOG (#2 volume, #3 rel-strength, #6 vol-adj momentum, #4 Donchian, #5 walk-forward). The backtest can now expose regime instability the single aggregate hides. ✅
+
+---
+
+## 2026-06-22 · Configurable Ollama server URL (point the app at the always-on PC GPU)
+**Files:** `App/AppSettings.swift` (+ollamaServerURL field/key/init/ollamaBaseURLCurrent), `LLM/OllamaClient.swift` (base now reads the setting), `Views/SettingsView.swift` (+ollamaServerURLRow). Owner-directed (cross-lane: Chat-B files, owner override).
+**Why:** owner is hosting Ollama on an always-on Windows PC (Tailscale 100.111.178.2:11434) and wanted the Mac app to generate on that GPU. The native Ollama client was HARDCODED to localhost:11434, so neither the chat (.ollama/.auto/.salehman) nor the Code tab could reach a remote box. Added a user-configurable Ollama server URL (Settings → "Ollama server URL"), default localhost (zero behavior change), trimmed + trailing-slash-stripped + blank→localhost fallback. OllamaClient.base now reads AppSettings.ollamaBaseURLCurrent. Native Ollama API, no key — local-first guarantees intact.
+**Code-tab finding:** the Code tab calls OllamaClient.chat directly (not the brain router), so this single setting is what makes BOTH tabs use the remote PC. The chat tab can alternatively reach it via the existing vLLM brain pointed at .../v1.
+**Verify:** typecheck clean; URL normalization python-verified (remote preserved, trailing slash stripped, blank/space→localhost). UNVERIFIED: SettingsView render (build on Mac).
+**Result:** set the URL to the PC + pull a code model there → chat AND code generate on the PC GPU, offline, from anywhere via Tailscale. ✅
 
 ---
 
