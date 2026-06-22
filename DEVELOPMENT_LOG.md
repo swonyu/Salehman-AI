@@ -7227,6 +7227,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · SACRED FIX — Monitor no longer pushes a notification computed on STALE cache prices
+**Files:** `StockSage/StockSageMonitor.swift` (runCycle notification gate). Persisted DATA_INTEGRITY_AUDIT.md (data-integrity sweep wnw1nvskx, 19 agents).
+**What (DATA_INTEGRITY #1, HIGH realDataViolation):** runCycle gated notifications on \!isSampleData but NOT loadedFromCache. After a failed/partial live refresh (web-off, feed-unreachable, coverage<0.5 all early-return without clearing the cache), the board holds last-session disk-cache prices — which the in-app Markets UI already labels "NOT live" with an amber banner — yet the Monitor would still push a "Strong Buy/Sell" system notification built on them. While the owner is away, that is a stale push acted on without seeing the on-screen caveat: the worst stale-as-live case. Fix: liveNotify = notify && \!store.isSampleData && \!store.loadedFromCache (loadedFromCache is @Published private(set), set in loadCachedQuotes, cleared only after a live refresh commits). Mirrors the exact freshness distinction the UI already enforces.
+**Verify:** typecheck EXIT=0. RE-TRACED: the gate affects only the push + lastAlerted write (both private); runCycle still RETURNS the same `strong` signals (appended before the liveNotify check), and the sample-seeded test store has isSampleData=true so liveNotify was already false — no test observes a change. Gate is not unit-testable without exposing private lastAlerted/loadedFromCache (notifications go to the system); the guard is identical in shape to the proven isSampleData guard beside it.
+**Remaining (DATA_INTEGRITY_AUDIT #2-#5): FX-rate freshness on the USD total, refreshIdeas/retry re-reconcile vs userSymbols, partial-refresh stale holding in total, future-dated GE leg → age 0.**
+**Result:** no push notification fires off a price the app itself calls "NOT live". The only-real-data floor now reaches the notification path. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
