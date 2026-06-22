@@ -157,6 +157,17 @@ struct StockSageExpectedValueTests {
         #expect(empty.contains("1."))
     }
 
+    @Test func lowConvictionFantasyTargetCannotTopTheBoard() {
+        // 18:1 reward:risk but ZERO conviction inflates raw EV to ~5.65R — it must NOT
+        // out-rank a real 0.8-conviction 2:1 setup (~0.60R) once quality-adjusted.
+        let junk = idea("JUNK", conviction: 0.0, stop: 90, target: 280)
+        let real = idea("AAPL", conviction: 0.8, stop: 90, target: 120)
+        #expect(EV.rankByEV([junk, real]).first?.symbol == "AAPL")
+        #expect(EV.rankByVelocity([junk, real]).first?.symbol == "AAPL")
+        #expect(EV.bestOpportunity([junk]) == nil)                      // sub-0.40 conviction → no #1 pick
+        #expect(EV.bestOpportunity([junk, real])?.idea.symbol == "AAPL")
+    }
+
     @Test func fastLaneConcentrationFlagsAllSameClass() {
         let c1 = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
         let c2 = idea("ETH-USD", conviction: 0.8, stop: 90, target: 130)

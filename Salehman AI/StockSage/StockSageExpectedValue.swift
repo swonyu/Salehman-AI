@@ -94,9 +94,32 @@ enum StockSageExpectedValue {
     }
 
     /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
+    /// A near-zero-CONVICTION idea with a fantasy wide target inflates EV (winProb only
+    /// spans 35–58%, but reward:risk is unbounded), so it could out-rank a REAL
+    /// high-conviction setup. These RANKING keys down-weight by conviction (mirroring the
+    /// advisor's 0.4+0.6 size scaler) and demote anything below the conviction floor — so a
+    /// junk idea can never top the board. The DISPLAYED EV/velocity stays the raw estimate.
+    nonisolated static let minConvictionToRank = 0.40
+    private nonisolated static func qualityWeight(_ conviction: Double) -> Double {
+        0.4 + 0.6 * Swift.max(0, Swift.min(1, conviction))
+    }
+    /// Quality-adjusted EV — the ranking key (the raw `ev` is still shown to the user).
+    nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea) -> Double? {
+        ev(for: idea).map { $0.evR * qualityWeight(idea.advice.conviction) }
+    }
+    private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
+        qualityAdjustedEVR(for: idea).map { idea.advice.conviction >= minConvictionToRank ? $0 : $0 - 1000 }
+    }
+    private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays) -> Double? {
+        guard let q = qualityAdjustedEVR(for: idea),
+              let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
+        let v = q / hold
+        return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
+    }
+
     nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (velocity(for: a.element, holds: holds), velocity(for: b.element, holds: holds)) {
+            switch (velocityRankKey(for: a.element, holds: holds), velocityRankKey(for: b.element, holds: holds)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -115,7 +138,7 @@ enum StockSageExpectedValue {
     /// bottom keeping their original relative order (stable).
     nonisolated static func rankByEV(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (ev(for: a.element)?.evR, ev(for: b.element)?.evR) {
+            switch (evRankKey(for: a.element), evRankKey(for: b.element)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -129,10 +152,11 @@ enum StockSageExpectedValue {
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea]) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
+                  idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   let e = ev(for: idea), e.evR > 0 else { return nil }
             return (idea, e)
         }
-        .max { $0.1.evR < $1.1.evR }
+        .max { (qualityAdjustedEVR(for: $0.0) ?? 0) < (qualityAdjustedEVR(for: $1.0) ?? 0) }
         .map { (idea: $0.0, ev: $0.1) }
     }
 
@@ -142,7 +166,7 @@ enum StockSageExpectedValue {
     /// AND more chances to be wrong; the UI carries that caveat.
     nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
-            guard let e = ev(for: idea), e.evR > 0, let v = velocity(for: idea, holds: holds) else { return nil }
+            guard let e = ev(for: idea), e.evR > 0, let v = velocityRankKey(for: idea, holds: holds) else { return nil }
             return (idx, idea, v)
         }
         .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }

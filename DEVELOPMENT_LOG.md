@@ -6552,6 +6552,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · RANKING #1 (conviction gate) + REAL-DATA audit fixes
+**Files:** `StockSage/StockSageExpectedValue.swift` (quality-adjusted ranking + conviction floor), `RuneScape/RuneScapeStore.swift` (drop unresolved-name rows), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test), backlogs persisted.
+**RANKING #1 (HIGH — the most important money-correctness fix):** the ranking-quality workflow found that because winProbEstimate only spans 35–58% but reward:risk is UNBOUNDED, a conviction-0 idea with a fantasy 18:1 target gets evR≈5.65R and could rank as "best opportunity," beating a real 0.8-conviction 2:1 setup (~0.60R). Added a quality-adjusted ranking key `qualityAdjustedEVR = evR·(0.4+0.6·conviction)` (mirrors the advisor's size scaler) and a `minConvictionToRank = 0.40` floor that HARD-demotes sub-floor ideas (−1000) in rankByEV/rankByVelocity/fastLane and EXCLUDES them from bestOpportunity. Display still shows the raw EV (honest). PYTHON-VERIFIED: junk rankKey −997.74 vs real 0.53 → real wins; bestOpportunity excludes conviction<0.40. The "best opportunity now" card can no longer surface a low-signal fantasy bet.
+**REAL-DATA AUDIT (22-agent, 1.4M tokens):** VERDICT — the markets tab is real-data-only in substance: every price/stat is live Yahoo / OSRS-Wiki + real cache + labeled estimates; the audit DISPROVED 2 handed findings (sample data never reaches store.ideas/velocity). Only fabricated spot fixed: RuneScapeStore showed a placeholder "Item <id>" name beside a real price when the GE mapping missed an id → now drops the row (real data only). Sample-data banner already made unmistakable (26a1b9b).
+**Result:** The board now surfaces QUALITY trades, and shows only real data. ✅ typecheck clean. Loop markets-money-first.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -60,9 +60,9 @@ final class RuneScapeStore: ObservableObject {
         latest = prices
 
         featured = RuneScapeMarketService.featuredIDs.compactMap { id in
-            guard let price = prices[id] else { return nil }
-            let item = mappingByID[id]
-                ?? RuneScapeItem(id: id, name: "Item \(id)", examine: "", members: false, buyLimit: nil)
+            // Real data only: drop a featured id whose NAME didn't resolve from the GE
+            // mapping rather than showing a fabricated "Item <id>" placeholder beside a real price.
+            guard let price = prices[id], let item = mappingByID[id] else { return nil }
             return RuneScapeListing(item: item, price: price)
         }
         lastUpdated = Date()

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:26 +03 · Swift files: 246 · Swift LOC: 45591_
+_Generated: 2026-06-22 14:34 +03 · Swift files: 246 · Swift LOC: 45626_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8521,9 +8521,9 @@ final class RuneScapeStore: ObservableObject {
         latest = prices
 
         featured = RuneScapeMarketService.featuredIDs.compactMap { id in
-            guard let price = prices[id] else { return nil }
-            let item = mappingByID[id]
-                ?? RuneScapeItem(id: id, name: "Item \(id)", examine: "", members: false, buyLimit: nil)
+            // Real data only: drop a featured id whose NAME didn't resolve from the GE
+            // mapping rather than showing a fabricated "Item <id>" placeholder beside a real price.
+            guard let price = prices[id], let item = mappingByID[id] else { return nil }
             return RuneScapeListing(item: item, price: price)
         }
         lastUpdated = Date()
@@ -9643,7 +9643,7 @@ enum StockSageEarnings {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (236 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (260 lines) =====
 ```swift
 import Foundation
 
@@ -9741,9 +9741,32 @@ enum StockSageExpectedValue {
     }
 
     /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
+    /// A near-zero-CONVICTION idea with a fantasy wide target inflates EV (winProb only
+    /// spans 35–58%, but reward:risk is unbounded), so it could out-rank a REAL
+    /// high-conviction setup. These RANKING keys down-weight by conviction (mirroring the
+    /// advisor's 0.4+0.6 size scaler) and demote anything below the conviction floor — so a
+    /// junk idea can never top the board. The DISPLAYED EV/velocity stays the raw estimate.
+    nonisolated static let minConvictionToRank = 0.40
+    private nonisolated static func qualityWeight(_ conviction: Double) -> Double {
+        0.4 + 0.6 * Swift.max(0, Swift.min(1, conviction))
+    }
+    /// Quality-adjusted EV — the ranking key (the raw `ev` is still shown to the user).
+    nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea) -> Double? {
+        ev(for: idea).map { $0.evR * qualityWeight(idea.advice.conviction) }
+    }
+    private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
+        qualityAdjustedEVR(for: idea).map { idea.advice.conviction >= minConvictionToRank ? $0 : $0 - 1000 }
+    }
+    private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays) -> Double? {
+        guard let q = qualityAdjustedEVR(for: idea),
+              let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
+        let v = q / hold
+        return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
+    }
+
     nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (velocity(for: a.element, holds: holds), velocity(for: b.element, holds: holds)) {
+            switch (velocityRankKey(for: a.element, holds: holds), velocityRankKey(for: b.element, holds: holds)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -9762,7 +9785,7 @@ enum StockSageExpectedValue {
     /// bottom keeping their original relative order (stable).
     nonisolated static func rankByEV(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (ev(for: a.element)?.evR, ev(for: b.element)?.evR) {
+            switch (evRankKey(for: a.element), evRankKey(for: b.element)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -9776,10 +9799,11 @@ enum StockSageExpectedValue {
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea]) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
+                  idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   let e = ev(for: idea), e.evR > 0 else { return nil }
             return (idea, e)
         }
-        .max { $0.1.evR < $1.1.evR }
+        .max { (qualityAdjustedEVR(for: $0.0) ?? 0) < (qualityAdjustedEVR(for: $1.0) ?? 0) }
         .map { (idea: $0.0, ev: $0.1) }
     }
 
@@ -9789,7 +9813,7 @@ enum StockSageExpectedValue {
     /// AND more chances to be wrong; the UI carries that caveat.
     nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
-            guard let e = ev(for: idea), e.evR > 0, let v = velocity(for: idea, holds: holds) else { return nil }
+            guard let e = ev(for: idea), e.evR > 0, let v = velocityRankKey(for: idea, holds: holds) else { return nil }
             return (idx, idea, v)
         }
         .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
@@ -42790,7 +42814,7 @@ struct StockSageEarningsTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (210 lines) =====
+===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (221 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42949,6 +42973,17 @@ struct StockSageExpectedValueTests {
                                                      fastestVelocity: nil, weeklyR: nil, worstRunLosses: nil, worstRunDrawdownPct: nil))
         #expect(empty.contains("stop"))
         #expect(empty.contains("1."))
+    }
+
+    @Test func lowConvictionFantasyTargetCannotTopTheBoard() {
+        // 18:1 reward:risk but ZERO conviction inflates raw EV to ~5.65R — it must NOT
+        // out-rank a real 0.8-conviction 2:1 setup (~0.60R) once quality-adjusted.
+        let junk = idea("JUNK", conviction: 0.0, stop: 90, target: 280)
+        let real = idea("AAPL", conviction: 0.8, stop: 90, target: 120)
+        #expect(EV.rankByEV([junk, real]).first?.symbol == "AAPL")
+        #expect(EV.rankByVelocity([junk, real]).first?.symbol == "AAPL")
+        #expect(EV.bestOpportunity([junk]) == nil)                      // sub-0.40 conviction → no #1 pick
+        #expect(EV.bestOpportunity([junk, real])?.idea.symbol == "AAPL")
     }
 
     @Test func fastLaneConcentrationFlagsAllSameClass() {
@@ -48884,7 +48919,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7671 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7679 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55439,6 +55474,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · RANKING #1 (conviction gate) + REAL-DATA audit fixes
+**Files:** `StockSage/StockSageExpectedValue.swift` (quality-adjusted ranking + conviction floor), `RuneScape/RuneScapeStore.swift` (drop unresolved-name rows), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test), backlogs persisted.
+**RANKING #1 (HIGH — the most important money-correctness fix):** the ranking-quality workflow found that because winProbEstimate only spans 35–58% but reward:risk is UNBOUNDED, a conviction-0 idea with a fantasy 18:1 target gets evR≈5.65R and could rank as "best opportunity," beating a real 0.8-conviction 2:1 setup (~0.60R). Added a quality-adjusted ranking key `qualityAdjustedEVR = evR·(0.4+0.6·conviction)` (mirrors the advisor's size scaler) and a `minConvictionToRank = 0.40` floor that HARD-demotes sub-floor ideas (−1000) in rankByEV/rankByVelocity/fastLane and EXCLUDES them from bestOpportunity. Display still shows the raw EV (honest). PYTHON-VERIFIED: junk rankKey −997.74 vs real 0.53 → real wins; bestOpportunity excludes conviction<0.40. The "best opportunity now" card can no longer surface a low-signal fantasy bet.
+**REAL-DATA AUDIT (22-agent, 1.4M tokens):** VERDICT — the markets tab is real-data-only in substance: every price/stat is live Yahoo / OSRS-Wiki + real cache + labeled estimates; the audit DISPROVED 2 handed findings (sample data never reaches store.ideas/velocity). Only fabricated spot fixed: RuneScapeStore showed a placeholder "Item <id>" name beside a real price when the GE mapping missed an id → now drops the row (real data only). Sample-data banner already made unmistakable (26a1b9b).
+**Result:** The board now surfaces QUALITY trades, and shows only real data. ✅ typecheck clean. Loop markets-money-first.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -59959,6 +60002,62 @@ Tests: `StockSageExpectedValueTests`, `StockSageRiskOfRuinTests`, `StockSageGEFl
 `StockSageVelocityHistoryTests`, `StockSageGlossaryTests` (+ journal tests for compounding). Hardened by
 adversarial review workflows (passes 23–28; the few findings were honesty/label fixes, not math).
 
+
+===== FILE: RANKING_BACKLOG.md (42 lines) =====
+# Ideas-ranking quality backlog (ranking-quality-audit wh1odjfbq, 2026-06-22)
+
+13 items. #1 (conviction-gate) shipped. Make the board surface the BEST trades.
+
+### ✅ DONE #1 [high] Gate/penalize low-conviction, high-R:R ideas so a near-zero-signal bet can't rank #1
+**Fix:** This is the single most-cited flaw (verified). EV = p·rewardR − (1−p) and winProbEstimate only moves p across 0.35→0.58, while rewardR is unbounded — so a conviction=0.0 setup with a wide stop/target (e.g. 19:1) yields evR≈6R and wins bestOpportunity()/rankByEV() over a conviction=0.8, 2:1 setup. Fix in StockSageExpectedValue.swift: add a quality-adjusted EV used for ranking — `qualityAdjustedEVR(idea) = evR * (0.4 + 0.6*conviction)` (mirrors the advisor's own 0.4+0.6 size scaler at StockSageAdvisor line 151, so the constant is already precedented) — AND a hard floor `minConvictionToRank = 0.40` (the exact threshold StockSageRiskFlags line 47 already calls 'Low conviction'). Apply both to rankByEV, rankByVelocity, fastLane, and bestOpportunity. Signature: `static func rankByEV(_ ideas:, minConviction: Double = 0.40)`; bestOpportunity adds `guard idea.advice.conviction >= minConviction else { return nil }` after the EV check. Tests: idea(conviction 0.0, R:R 6:1) must NOT outrank idea(conviction 0.8, R:R 2:1); bestOpportunity returns nil when the only positive-EV buy has conviction < 0.40. Honesty: a #1 pick must never be a setup flagged 'Low conviction' elsewhere in the same app.
+
+### ⬜ #2 [high] Regime-gate the ranking — no buy ranks #1 in a crisis/bear regime, no short ranks #1 in a bull
+**Fix:** Verified: rankByEV/bestOpportunity take only [StockSageIdea] and never consult store.regime (MarketRegime already exists with .state and sizingBias). A buy can rank 'Best opportunity now' with VIX≥40 (crisis, sizingBias 0.25) or in a trendingBear. Fix: thread the optional regime through — `bestOpportunity(_ ideas:, regime: MarketRegime? = nil)` returns nil when regime.state == .crisis; apply a regime-alignment multiplier to the ranking EV: `alignedEVR = evR * (regime == nil ? 1 : alignment)` where alignment = 1.0 if buy-family in bull/ranging or sell-family in bear, 0.5 if neutral, 0.0 if it contradicts the regime (buy in bear / short in bull). MarketsView passes store.regime and, when stale (store.regimeIsStale) or .crisis, renders the bestOpportunityCard empty with the existing stale/crisis copy. Tests: a high-conviction .sell in a trendingBull is not bestOpportunity; every buy in .crisis is excluded. Keep it OPTIONAL so unit tests without a regime still pass unchanged.
+
+### ⬜ #3 [high] Calibrate winProbEstimate against the journal (and add the conviction field it needs)
+**Fix:** Verified the 0.35–0.58 band (StockSageExpectedValue line 64) is a hardcoded guess never validated against outcomes. BLOCKER found: TradeRecord (StockSageJournal line 12) does NOT store conviction-at-entry, so no calibration is possible today. Two-part fix: (1) add `var convictionAtEntry: Double?` to TradeRecord, defaulted nil so old persisted records still decode (same pattern as `note`), and populate it on prefill-from-idea; (2) add `StockSageExpectedValue.calibratedWinProb(conviction:, trades:[TradeRecord])` that bins closed trades by convictionAtEntry (0–0.2…0.8–1.0), computes realized win% per bin, and returns a fitted value ONLY when n≥5 per bin, else falls back to the conservative 0.35–0.58 band. Surface a diagnostics line: 'Conviction 0.5 → est 47%, actual 44% (n=12)'. Tests: fallback triggers with <5 trades/bin; assert a monotonic-ish realized curve is respected. Honesty: until enough journal data exists the app must keep saying the band is an UNCALIBRATED estimate — do not present it as measured.
+
+### ⬜ #4 [high] Liquidity-gate the ranking so thin names can't rank #1 or top the fast lane
+**Fix:** Verified: StockSageLiquidity (with .thin/.moderate/.deep tiers) and store.liquidity[symbol] exist, but rankByEV/rankByVelocity/fastLane/bestOpportunity never consult them. A thin altcoin/OTC name with high modeled EV ranks top, but real slippage exceeds the modeled stop. Fix: thread an optional liquidity lookup — `bestOpportunity(_ , liquidity: [String:LiquidityProfile] = [:])` requires tier != .thin to be #1; rankByEV/fastLane apply a liquidity discount `evR * (thin 0.5 | moderate 0.85 | deep 1.0)` before sorting; velocity uses the same factor. Names with no profile (FX/indices return nil) are unaffected. Tests: two ideas with identical EV but thin vs deep liquidity — deep ranks first; a thin name is never bestOpportunity. Optional unless liquidity dict is supplied, so existing tests stay green.
+
+### ⬜ #5 [medium] Drop (don't rank) negative-EV ideas in EV and velocity ranking
+**Fix:** Verified: rankByEV (line 117) and rankByVelocity (line 98) treat any numeric evR/velocity as a valid sort key, so a −0.3R sell sorts ABOVE a hold with no EV, and a −0.05R/day idea can sort above a +0.01R/day idea. The board then shows 'how much you can LOSE' interleaved with 'how much you can MAKE'. Fix: in both functions, partition into positive-EV (evR>0) ranked desc, then no-EV ideas (stable), then negative-EV ideas LAST (or in a separate collapsible 'Avoid' section in MarketsView). fastLane already filters evR>0 correctly — make rankByEV/rankByVelocity consistent. Tests: rankByEV([negativeEV, positiveEV]) puts positive first; a lone negative-EV idea still returns without crashing, labeled low-confidence.
+
+### ⬜ #6 [medium] Demote earnings-imminent ideas in bestOpportunity and surface it on the card
+**Fix:** Verified: StockSageEarnings (imminent ≤3d / soon ≤10d) and store.earnings[symbol] exist; EarningsProximity.isWarning is defined; but bestOpportunity never checks it — an 8% ATR stop is an intraday promise that an overnight earnings gap blows through, yet the idea still ranks #1 with the warning buried in the detail sheet. Fix: `bestOpportunity(_ , earnings: [String:EarningsProximity] = [:])` returns nil (strict) or applies an EV×0.8 penalty when the symbol's severity == .imminent; rankByEV applies the same 0.8 penalty for imminent. MarketsView bestOpportunityCard shows an inline warning badge using the existing EarningsProximity.note when daysUntil ≤ 3. Tests: a +0.70R idea 2 days before earnings loses to a +0.65R idea 20 days out.
+
+### ⬜ #7 [medium] Risk-adjust velocity for volatility (don't let high-ATR crypto auto-win the fast lane)
+**Fix:** Verified: rankByVelocity = evR/holdDays with class-wide hold defaults (crypto 3d, equity 12d) and NO volatility penalty, so 40%-ATR crypto ranks above 8%-ATR equity at equal EV/day — the 'fastest' label steers a small account toward the highest-ruin setups. Fix: expose ATR% on the idea (or pass it in) and compute `riskAdjustedVelocity = (evR/holdDays) * (1 − min(ATRpct, 0.6))` (or a user-tunable variance-penalty slider 0–1 in MarketsView, defaulting OFF so nothing shifts silently). Combine with the liquidity factor from rank 4. Tests: two setups with identical EV and hold — the lower-ATR one ranks higher when the penalty is on. Honesty: surface the ATR/variance in the rank row so the trade-off is visible.
+
+### ⬜ #8 [medium] Make fast-lane concentration GATE sizing, not just warn
+**Fix:** Verified: fastLaneConcentration() (line 224) only DETECTS that the top-N are all one class; rankByVelocity/fastLane/expectedWeeklyR ignore it and expectedWeeklyR sums the velocities as if independent — running the top 3 crypto ideas is one correlated bet counted 3×. Fix: when fastLaneConcentration().isConcentrated, (a) in expectedWeeklyR, treat the concentrated legs as correlated: multiply the summed velocity by a concentration factor (e.g. 0.70) instead of summing them as independent; (b) surface 'Fast lane is crypto-only — sized as ~1 bet, not three'; (c) add an optional 'diversified fast lane' sort that caps any one asset class to ≤50% of the top-N. Extend the concentration check to also flag all-thin-liquidity or all-low-conviction top-N. Tests: an all-crypto fast lane at 4.0R/day ranks/sizes below a mixed lane at 3.0R/day when de-concentration is on.
+
+### ⬜ #9 [medium] Add an active, un-dismissable conservatism warning to expectedWeeklyR / weekly-$
+**Fix:** Verified: expectedWeeklyR (line 156) = Σ(top-N velocities) × 5, assuming ideal fills, zero slippage, and independent trades; the caveat exists but is passive. Fix: when weeklyR > 0.50R OR fastLaneConcentration is true, attach a mandatory warning to MoneyVelocitySummary: 'Assumes ideal fills, zero slippage, independent trades — real results are typically 20–40% lower from latency and correlation. Size the trades, not the estimate.' Optionally fold in a haircut field `expectedWeeklyR(haircut: 0.0)` so the UI can show a conservative second number without hiding the raw one. Tests: warning is present whenever weeklyR > 0.50R; raw value unchanged when haircut=0.
+
+### ⬜ #10 [medium] bestOpportunity: prefer velocity and tie-break by conviction instead of raw EV alone
+**Fix:** Verified two inconsistencies: (1) bestOpportunity ranks by raw evR while the app's own fast lane ranks by velocity (EV/day) — a slow 0.40R setup is named 'best' over a faster-compounding 0.38R/day one; (2) .max{ $0.evR < $1.evR } has no tie-break, so two ideas at evR 0.74 are ordered by array position, and a low-conviction one can win. Fix: rank bestOpportunity by velocity when available (fall back to evR for index/FX), and on near-ties (|Δ| < 0.01) prefer higher conviction. Pair this with a tie band in rankByEV: `abs(x−y) < 0.01 ? a.offset < b.offset : x > y` to kill spurious day-to-day #1 flips from floating-point noise. Tests: equal-EV ideas with conviction 0.3 vs 0.8 → 0.8 wins; 0.700 vs 0.709 keep input order, 0.700 vs 0.850 reorder.
+
+### ⬜ #11 [medium] Validate ranked symbols against the universe and ideasMissing before ranking
+**Fix:** Verified: ranking functions assume every idea.symbol is real and priced; store.ideasMissing (failed fetches) and StockSageUniverse.worldwide/.catalog/.search exist but aren't consulted, so a delisted/typo/stale symbol can rank #1 on stale local data. Fix: before sorting in rankByEV/rankByVelocity/fastLane/bestOpportunity, drop ideas whose symbol is not in StockSageUniverse.catalog (or addable via .search) OR is currently in store.ideasMissing OR has price ≤ 0; return the dropped list so MarketsView can show 'N excluded (couldn't fetch / unknown ticker)'. Tests: 'FAKE123' is dropped with a warning; 'BTC-USD' (confirmed present in the Crypto group) passes; a symbol in ideasMissing never appears in any ranked output even with high EV.
+
+### ⬜ #12 [medium] Fold multi-timeframe alignment into conviction so confluent setups outrank single-signal ones
+**Fix:** Verified: conviction = min(abs(score),1) from trend+momentum+MACD+RSI on a single daily series; StockSageMultiTimeframe (MultiTimeframeTrend) exists but doesn't feed conviction, so a daily+weekly aligned trend scores no higher than a one-timeframe fire. Fix: extend advise() to optionally consume the weekly trend and add +0.15 to conviction (capped at 1.0) when daily and weekly agree, −0.10 when they conflict; document the new breakdown ('confluence 0.40 + momentum 0.15 + MACD 0.10 + RSI ±0.10 + multi-TF ±0.15'). This makes conviction a better input to the (now-calibrated) winProb. Tests: same daily setup gets higher conviction with weekly alignment than without; conflict lowers it.
+
+### ⬜ #13 [low] Surface the 'incomplete (no stop/target)' count instead of silently dropping those ideas
+**Fix:** Verified: rankByEV drops ideas where ev(for:) is nil — which happens when advice.stopPrice/targetPrice is nil (hold/avoid or non-positive price). The board shows fewer ranked ideas than store.ideas with no explanation. Fix: tag the nil reason (enum EvSkip { case noStop, noTarget, notBuyFamily }) and have rankByEV optionally return (ranked, skipped) so MarketsView header shows 'Ranked: 40 · Incomplete (no stop/target): 10'. Low risk, pure display honesty. Tests: ideas with nil stop/target land in the skipped list with the right reason.
+
+===== FILE: REALDATA_AUDIT.md (10 lines) =====
+# Real-data integrity (real-data-integrity-audit w86pl9vzt, 2026-06-22)
+
+VERDICT: Markets tab is real-data-only in substance today; sample data is a transient, unmistakably-labeled launch seed. (a) Live fetch -- every price/percent-change in watchlist, heatmap, ideas board, regime, portfolio analytics, correlation heatmap, risk-parity, backtests, seasonality, liquidity, money-velocity and RuneScape GE rows comes from real keyless Yahoo Finance (StockSageQuoteService) or prices.runescape.wiki (RuneScapeMarketService), gated by ToolPolicy. (b) Real cached last-good -- StockSageQuoteCache restores real prior quotes, labeled 'Last-good (cached) as of'. (c) Labeled estimates -- EV/velocity/weekly-dollars/gp-per-hour carry explicit caveat copy. (d) Fabricated/hardcoded: ONLY two spots. (1) seedSampleData() five hardcoded prices in watchlist + heatmap at launch, flagged by an always-on sample banner and the 'SAMPLE prices (not real) - tap to load live data' subtitle and auto-replaced by store.refresh() on appear. (2) RuneScapeStore Item-id fallback name (real price, fabricated name) when the GE mapping misses a featured id. IMPORTANT: the two velocity/ideas findings I was handed are NOT reproducible -- store.ideas, the money-velocity card, and the velocity-history snapshot derive exclusively from store.ideas, populated ONLY by refreshIdeas()/retryFailedIdeas()/buildIdeas() on real Yahoo history; seedSampleData() only ever writes store.symbols. With sample-only data (ideas empty), the money-velocity card is hidden (summary.hasContent == false) and no velocity snapshot is recorded (snap.weeklyR nil at launch). Net: no fabricated number is presented as real and unlabeled on any money surface; the one cosmetic gap is the RuneScape placeholder name.
+
+## Confirmed (2)
+### ✅ DONE #1 [low] RuneScape featured row can show a fabricated Item-id placeholder name beside a REAL price
+**Fix:** Lines 62-67 build the featured board. When a featured id has a live price but the mapping lookup misses (mappingByID[id] == nil), the code substitutes RuneScapeItem(id: id, name: 'Item id', examine: '', members: false, buyLimit: nil). That fabricated row renders in RuneScapeMarketView.listingRow (line 285) with REAL Buy/Sell gp from price. The price is real; the name/examine/buyLimit are fabricated placeholders shown identically to real rows. Only fires in the edge case where /latest succeeds but /mapping failed or omitted that id (curated featured ids are all real liquid items, so rare). Exact fix: skip these rows instead of synthesizing one -- change the compactMap to guard let price = prices[id], let item = mappingByID[id] else return nil, so a featured id with no resolved name is dropped rather than shown as 'Item 20997'. Alternative: render placeholder rows visually distinct (dim + 'name unavailable - refresh' tag) so they cannot be mistaken for a real item row.
+
+### ⬜ #2 [low] Watchlist rows and heatmap tiles render hardcoded SAMPLE prices at launch (labeled at page level, not per-element)
+**Fix:** store.symbols is seeded by seedSampleData() (StockSageStore.swift lines 667-685) and shown by the watchlist signalCard (signalList, line 1658) and heatmap tiles (lines 1586-1594). Rows/tiles carry no per-element sample marker. NOT a real-data violation today because tab-wide labeling is unmistakable: feedBanner is always present (line 152 -> sampleBanner) AND the header subtitle reads exactly 'SAMPLE prices (not real) - tap to load live data' whenever store.isSampleData (lines 315-318). On launch .task also auto-fires store.refresh() (line 138), replacing the seed with live Yahoo quotes within seconds. Optional hardening only: gate the heatmap and watchlist numbers behind an empty-state while store.isSampleData so a cropped screenshot cannot be separated from its banner. No code change required for honesty -- already labeled.
 
 ===== FILE: SIGNAL_BACKLOG.md (35 lines) =====
 # Signal-quality build-specs (signal-quality-research wklhll44i, 2026-06-22)
