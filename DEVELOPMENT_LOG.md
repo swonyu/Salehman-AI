@@ -7031,6 +7031,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ORPHAN-WATCH (b) — Monte-Carlo ruin DISTRIBUTION surfaced in the journal
+**Files:** `Views/MarketsView.swift` (journal equity-risk block).
+**What:** StockSageMonteCarloRuin (built+tested 5d856e9) was UNWIRED — computed nowhere. Added a journal line that bootstraps the owner's realized R into many simulated futures at their configured risk % and shows P(ruin) · P(>20% drawdown) · 95th-pct max drawdown, the FORWARD-looking complement to the existing single-historical-path risk-of-ruin row right above it. Keyed off sizerRiskPct (default 1%); amber when P(ruin) > 5%; the engine's i.i.d./clustering caveat on .help. nil under 20 R-defined trades (engine self-gates) so it simply doesn't render on a thin journal — never a fabricated scary number.
+**Verify:** typecheck EXIT=0; render UNVERIFIED (Mac). Engine itself is unit-tested (determinism + bounds). No struct change → no test RE-TRACE needed (pure additive UI calling a tested engine).
+**Result:** the owner can now SEE their forward ruin probability from their own trade record — capital-preservation risk that was computed-but-invisible. orphan-watch (b) done; (c) walkForwardDecay + (d) TrailingStop.recompute + PSR/DSR display remain.
+**Result:** ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

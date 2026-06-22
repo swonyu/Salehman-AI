@@ -1161,6 +1161,19 @@ struct MarketsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageGlossary.explain(.drawdownSurvival))
                     }
+                    // Forward-looking ruin DISTRIBUTION — bootstraps YOUR realized R into many
+                    // simulated futures at your configured risk %, the complement to the single
+                    // historical path above. nil under 20 R-defined trades (the engine self-gates).
+                    let mcRiskFraction = Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil } ?? 0.01
+                    if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: mcRiskFraction) {
+                        Text(String(format: "Forward ruin risk (%d sims @ %.0f%%/trade): P(ruin) %.0f%% · P(>20%% drawdown) %.0f%% · 95th-pct max drawdown %.0f%% — bootstrapped from your %d closed trades.",
+                                    mc.sims, mcRiskFraction * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
+                                    mc.p95MaxDD * 100, mc.sampleSize))
+                            .font(.caption2)
+                            .foregroundStyle(mc.pRuin > 0.05 ? DS.Palette.warningSoft : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageMonteCarloRuin.caveat)
+                    }
                 }
                 if let comp = journal.compounding, comp.multiples.count >= 2 {
                     let up = comp.finalMultiple >= 1
