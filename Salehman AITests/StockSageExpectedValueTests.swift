@@ -239,6 +239,19 @@ struct StockSageExpectedValueTests {
         #expect(EV.bestOpportunity([clean])?.idea.symbol == "AAPL")
     }
 
+    @Test func bestOpportunityHonorsTheEarningsGate() {
+        // AAPL has the HIGHER base EV (6:1) but reports in 2 days; MSFT is a clean 1.5:1.
+        let imminent = idea("AAPL", conviction: 0.9, stop: 95, target: 130)
+        let clean = idea("MSFT", conviction: 0.9, stop: 90, target: 115)
+        // No earnings → the higher-EV name wins (unchanged behavior, matches the boards).
+        #expect(EV.bestOpportunity([imminent, clean])?.idea.symbol == "AAPL")
+        // AAPL imminent → demoted below the clean peer, so the card/Today/summary match the EV board.
+        let earnings: [String: EarningsProximity] = ["AAPL": EarningsProximity(daysUntil: 2, severity: .imminent)]
+        #expect(EV.bestOpportunity([imminent, clean], earnings: earnings)?.idea.symbol == "MSFT")
+        // Demotion, not exclusion: if the imminent name is the ONLY positive-EV buy, it still surfaces.
+        #expect(EV.bestOpportunity([imminent], earnings: earnings)?.idea.symbol == "AAPL")
+    }
+
     @Test func hairThinStopCannotOverrunTheRegimeBan() {
         // Pre-cap, a regime-banned SELL with a near-zero stop (risk 1e-5) scored ~2,000,000 R and
         // beat the −1,000,000 ban penalty — crowning a short #1 in a BULL tape. rewardR caps at 50.

@@ -142,7 +142,7 @@ struct MarketsView: View {
             // 0 taps from open to the best move. refreshIdeas self-guards re-entry/ToolPolicy.
             if store.ideas.isEmpty { await store.refreshIdeas() }
             // Snapshot today's money-velocity (one per UTC day) so the trend can build.
-            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime)
+            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings)
             if let wk = snap.weeklyR {
                 velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
             }
@@ -2415,7 +2415,7 @@ struct MarketsView: View {
 
     // Best opportunity now — the single highest positive-EV buy idea (money velocity).
     @ViewBuilder private var bestOpportunityCard: some View {
-        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime) {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings) {
             let idea = best.idea, ev = best.ev
             VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
@@ -2539,11 +2539,11 @@ struct MarketsView: View {
         // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
         // track the same fraction the rest of the card uses (was a hardcoded 1%).
         let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime)
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime, earnings: store.earnings)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
-                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime) { selectedIdea = best.idea }
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings) { selectedIdea = best.idea }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {

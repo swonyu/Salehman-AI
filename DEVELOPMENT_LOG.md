@@ -7254,6 +7254,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · MONEY (consistency) — Best-opportunity card / Today tile / summary now honor the earnings gate
+**Files:** `StockSage/StockSageExpectedValue.swift` (bestOpportunity + summary earnings param), `Views/MarketsView.swift` (2 bestOpportunity + 2 summary call sites), `Views/TodayView.swift` (1 call site), `Salehman AITests/StockSageExpectedValueTests.swift` (+test). Persisted DECISIVENESS (money-decisiveness sweep wk3ls81vm).
+**What (DECISIVENESS wk3ls81vm #4 — closes a cross-surface contradiction I introduced 6d363a0):** earnings-gated rankByEV/rankByVelocity demote an imminent-earnings name on the BOARDS, but bestOpportunity (the "Best opportunity now" card + Today best-bet tile + money-velocity summary best-bet) was earnings-BLIND — so the boards sank a name for overnight-gap-through-stop risk while the headline card still crowned it. Fix: bestOpportunity + summary gain a defaulted earnings:[:] param; bestOpportunity subtracts earningsRankPenalty in its .max comparator (demotion not exclusion — an imminent name still surfaces if it is the only positive-EV buy); threaded store.earnings through all 5 call sites (MarketsView bestOpportunityCard + nav + 2 summary; TodayView tile).
+**Verify:** typecheck EXIT=0; +test (higher-EV imminent AAPL vs clean MSFT → AAPL wins with no earnings, MSFT wins when AAPL imminent, AAPL still surfaces as the only candidate). RE-TRACED: defaulted [:] → all existing bestOpportunity/summary tests byte-identical (afterCostNegativeFlip, regime-ban, summary tests call without earnings).
+**Result:** all four action surfaces now name the SAME #1 — an imminent-earnings name can no longer be crowned "Best opportunity now" after the boards demoted it. The earnings gate reaches the headline decision. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

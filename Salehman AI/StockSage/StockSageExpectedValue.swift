@@ -257,10 +257,18 @@ enum StockSageExpectedValue {
 
     /// The single best BET right now: the buy-family idea with the highest POSITIVE
     /// expected value. nil if no buy idea has positive EV (don't manufacture one).
-    nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil) -> (idea: StockSageIdea, ev: ExpectedValue)? {
+    nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
+                                            earnings: [String: EarningsProximity] = [:]) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
         // stop gets gapped through. (nil regime → no gate, identical to before.)
         if let r = regime, bannedFromTopRank(.buyFamily, regime: r.state) { return nil }
+        // Same earnings demotion the EV/velocity boards apply, so the "Best opportunity now" card,
+        // Today tile and summary can't crown an imminent-earnings name the boards already sank
+        // (empty earnings → 0 → identical to before). Demotion, not exclusion: it can still surface
+        // if it's the only positive-EV buy.
+        func rankVal(_ idea: StockSageIdea) -> Double {
+            (qualityAdjustedEVR(for: idea) ?? 0) - earningsRankPenalty(for: idea, earnings: earnings)
+        }
         return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
@@ -268,7 +276,7 @@ enum StockSageExpectedValue {
                   let e = ev(for: idea), e.evR > 0 else { return nil }
             return (idea, e)
         }
-        .max { (qualityAdjustedEVR(for: $0.0) ?? 0) < (qualityAdjustedEVR(for: $1.0) ?? 0) }
+        .max { rankVal($0.0) < rankVal($1.0) }
         .map { (idea: $0.0, ev: $0.1) }
     }
 
@@ -333,10 +341,12 @@ enum StockSageExpectedValue {
     /// composed for a single header. All optional; `hasContent` gates the card.
     nonisolated static func summary(_ ideas: [StockSageIdea], trades: [TradeRecord] = [],
                                     fraction: Double = 0.01, holds: VelocityHoldDays = .defaults,
-                                    regime: MarketRegime? = nil) -> MoneyVelocitySummary {
+                                    regime: MarketRegime? = nil,
+                                    earnings: [String: EarningsProximity] = [:]) -> MoneyVelocitySummary {
         // Regime-aware so the card's displayed "best bet" matches the regime-gated nav target
         // (a risk-off tape suppresses the best-buy on BOTH). nil regime → identical to before.
-        let best = bestOpportunity(ideas, regime: regime)
+        // Earnings-aware so the summary best-bet matches the demoted board (empty → unchanged).
+        let best = bestOpportunity(ideas, regime: regime, earnings: earnings)
         let fastest = fastLane(ideas, holds: holds).first
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
