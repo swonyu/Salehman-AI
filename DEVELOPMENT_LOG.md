@@ -7187,6 +7187,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · OSRS ONLY-REAL-DATA — Fastest-flips strip + budget optimizer no longer rank a phantom stale edge
+**Files:** `StockSage/StockSageGEFlip.swift` (GEFlip.stale + flips(asOf:) + BudgetedFlip.stale), `Views/RuneScapeMarketView.swift` (strip + optimizer), `Salehman AITests/StockSageGEFlipTests.swift` (+test).
+**What (REALDATA_VERIFICATION wtexg5a6u #2, MED sacred):** the per-row chip got the stale-guard in edbc2bf, but StockSageGEFlip.flips discarded the leg timestamps, so the gp/hour-ranked "Fastest flips" strip + the "With N gp, flip these" budget optimizer could still rank a days-old leg as a fresh, fillable edge. GEFlip gains a `stale` flag (explicit init, defaults false → all existing construction byte-stable); flips() now takes an optional `asOf` clock and sets stale via price.isStale; BudgetedFlip propagates it. The strip dims the gp/hr + shows "⚠︎ stale" (and the screen-reader label says "stale spread, may not fill at this margin"); the budget plan appends "⚠︎ Some legs are stale — those margins may not actually fill" when any funded leg is stale.
+**Verify:** typecheck EXIT=0; python-verified (2-day leg = 172800 > 3600 → stale; margin 100 → profit 78 → 19500 gp/hr). +test: same-margin fresh vs 2-day-old → stale flag false/true, no-clock → false (back-compat), budget plan propagates the flag. RE-TRACED all GEFlipTests: explicit-init default keeps the flip() helper + every flips()/budget test byte-stable (stale doesn't affect the sort).
+**Result:** every OSRS money surface — per-row chip, gp/hr strip, ROI line, budget optimizer — now flags a stale leg instead of selling it as live. The only-real-data rule covers the whole OSRS tab. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

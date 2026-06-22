@@ -205,7 +205,7 @@ struct RuneScapeMarketView: View {
     // limit ÷ 4h), not raw margin. An estimate that assumes you fill the buy limit.
     @ViewBuilder private var fastestFlipsStrip: some View {
         // Match the RuneLite plugin's shipped min-margin floor so the two surfaces agree on the same prices.
-        let flips = StockSageGEFlip.flips(rows, minMargin: StockSageGEFlip.defaultMinMargin)
+        let flips = StockSageGEFlip.flips(rows, minMargin: StockSageGEFlip.defaultMinMargin, asOf: Date())
         if flips.count >= 2 {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -219,10 +219,18 @@ struct RuneScapeMarketView: View {
                             .lineLimit(1).frame(maxWidth: 150, alignment: .leading)
                         Text("≈ \(RSFormat.gp(Int(flip.gpPerHour)))/hr")
                             .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.Palette.successSoft)
+                            .opacity(flip.stale ? 0.5 : 1)   // stale leg → may not fill at this gp/hr
+                        if flip.stale {
+                            Text("⚠︎ stale").font(.system(size: rsFont8, weight: .bold)).foregroundStyle(DS.Palette.warningSoft)
+                        }
                         Spacer(minLength: 0)
                         Text("\(RSFormat.gp(flip.profitPerItem))/ea · ×\(flip.buyLimit.formatted())")
                             .font(.system(size: rsFont9)).foregroundStyle(.secondary)
+                            .opacity(flip.stale ? 0.5 : 1)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(flip.name), about \(RSFormat.gp(Int(flip.gpPerHour))) per hour, \(RSFormat.gp(flip.profitPerItem)) each"
+                        + (flip.stale ? ", stale spread, may not fill at this margin" : ""))
                 }
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
                     .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -251,9 +259,12 @@ struct RuneScapeMarketView: View {
                     }
                 }
                 if !plan.flips.isEmpty {
+                    let anyStale = plan.flips.contains { $0.stale }
                     Text("Flip: " + plan.flips.map { "\($0.name) ×\($0.units.formatted())" }.joined(separator: ", ")
-                         + " — estimate; assumes you fill what you buy, fills depend on volume.")
-                        .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                         + " — estimate; assumes you fill what you buy, fills depend on volume."
+                         + (anyStale ? " ⚠︎ Some legs are stale — those margins may not actually fill." : ""))
+                        .font(.system(size: rsFont9))
+                        .foregroundStyle(anyStale ? DS.Palette.warningSoft : .secondary).fixedSize(horizontal: false, vertical: true)
                 } else if budget > 0 {
                     Text("Budget too small to fund a full unit of the fastest flips — raise it.")
                         .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)

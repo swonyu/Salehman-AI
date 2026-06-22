@@ -79,6 +79,25 @@ struct StockSageGEFlipTests {
         #expect(ranked.first?.profitPerItem == 28)
     }
 
+    @Test func flipsFlagStaleLegsWhenGivenAClock() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Same margin (gross 100, tax 22, profit 78, 19500 gp/hr) — but one spread's sell leg is 2 days old.
+        let fresh = RuneScapeListing(item: RuneScapeItem(id: 1, name: "Fresh", examine: "", members: false, buyLimit: 1000),
+                                     price: RuneScapePrice(high: 1100, highTime: now.addingTimeInterval(-60),
+                                                           low: 1000, lowTime: now.addingTimeInterval(-60)))
+        let stale = RuneScapeListing(item: RuneScapeItem(id: 2, name: "Stale", examine: "", members: false, buyLimit: 1000),
+                                     price: RuneScapePrice(high: 1100, highTime: now.addingTimeInterval(-60),
+                                                           low: 1000, lowTime: now.addingTimeInterval(-2 * 86_400)))
+        let withClock = StockSageGEFlip.flips([fresh, stale], asOf: now)
+        #expect(withClock.first { $0.itemId == 1 }?.stale == false)
+        #expect(withClock.first { $0.itemId == 2 }?.stale == true)   // the days-old leg is flagged, not ranked as live
+        // No clock → pure ranker, never flags stale (engine stays deterministic / back-compatible).
+        #expect(StockSageGEFlip.flips([stale]).first?.stale == false)
+        // The budget optimizer carries the stale flag through to the funded plan.
+        let plan = StockSageGEFlip.bestFlipsForBudget(withClock, budget: 10_000_000)
+        #expect(plan.flips.first { $0.itemId == 2 }?.stale == true)
+    }
+
     @Test func minMarginFloorMatchesThePlugin() {
         let a = listing(1, "A", low: 1000, high: 1100, limit: 1000)   // post-tax profit 78
         let b = listing(2, "B", low: 100, high: 130, limit: 10000)    // post-tax profit 28 (< 50 floor)

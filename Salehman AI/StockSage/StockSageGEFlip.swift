@@ -22,7 +22,18 @@ struct GEFlip: Sendable, Equatable, Identifiable {
     let taxPerItem: Int      // GE tax paid on each sale
     let profitPerItem: Int   // sell − buy − tax
     let gpPerHour: Double     // profitPerItem × buyLimit ÷ 4h window
+    /// The source spread's older leg is stale (hasn't traded recently) — the margin may not actually
+    /// be fillable, so ranked surfaces must qualify it the way the per-row chip does. Defaults false
+    /// (the engine stays pure); set only when `flips(asOf:)` is given a clock to judge freshness.
+    let stale: Bool
     var id: Int { itemId }
+
+    nonisolated init(itemId: Int, name: String, buyPrice: Int, sellPrice: Int, buyLimit: Int,
+                     taxPerItem: Int, profitPerItem: Int, gpPerHour: Double, stale: Bool = false) {
+        self.itemId = itemId; self.name = name; self.buyPrice = buyPrice; self.sellPrice = sellPrice
+        self.buyLimit = buyLimit; self.taxPerItem = taxPerItem; self.profitPerItem = profitPerItem
+        self.gpPerHour = gpPerHour; self.stale = stale
+    }
 
     /// Return on capital per flip cycle = net profit ÷ gp tied up. Surfaces capital
     /// efficiency: a cheap item at 8% beats a 5M item at 0.5% per unit of gp you have.
@@ -37,6 +48,7 @@ struct BudgetedFlip: Sendable, Equatable, Identifiable {
     let units: Int          // funded units (≤ buy limit, ≤ what the budget can buy)
     let capital: Int        // units × buyPrice — gp tied up in this flip
     let gpPerHour: Double   // profitPerItem × units ÷ 4h (scales down when budget-capped)
+    let stale: Bool         // the source spread is stale — this funded plan may not fill at the margin
     var id: Int { itemId }
 }
 
@@ -77,15 +89,18 @@ enum StockSageGEFlip {
     /// missing prices, or post-tax profit below `minMargin` are dropped. `minMargin` defaults to 0
     /// (the engine is a pure ranker); user-facing surfaces pass `defaultMinMargin` to match the plugin.
     nonisolated static func flips(_ listings: [RuneScapeListing], rate: Double = defaultRate,
-                                  minMargin: Int = 0) -> [GEFlip] {
+                                  minMargin: Int = 0, asOf: Date? = nil) -> [GEFlip] {
         listings.compactMap { l -> GEFlip? in
             guard let buy = l.price.low, let sell = l.price.high, let limit = l.item.buyLimit,
                   let gph = gpPerHour(buy: buy, sell: sell, buyLimit: limit, rate: rate) else { return nil }
             let tax = sellTax(sell, rate: rate)
             let profit = sell - buy - tax
             guard profit >= minMargin else { return nil }   // below the plugin's min-margin floor → drop
+            // Flag a stale-leg spread when given a clock — the ranked strips must qualify it, not present
+            // a days-old margin as a fresh, fillable edge (only-real-data). nil clock → pure ranker, false.
+            let stale = asOf.map { l.price.isStale(asOf: $0) } ?? false
             return GEFlip(itemId: l.item.id, name: l.item.name, buyPrice: buy, sellPrice: sell,
-                          buyLimit: limit, taxPerItem: tax, profitPerItem: profit, gpPerHour: gph)
+                          buyLimit: limit, taxPerItem: tax, profitPerItem: profit, gpPerHour: gph, stale: stale)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
     }
@@ -109,7 +124,8 @@ enum StockSageGEFlip {
             guard units > 0 else { continue }
             let capital = units * f.buyPrice
             chosen.append(BudgetedFlip(itemId: f.itemId, name: f.name, units: units, capital: capital,
-                                       gpPerHour: Double(f.profitPerItem) * Double(units) / windowHours))
+                                       gpPerHour: Double(f.profitPerItem) * Double(units) / windowHours,
+                                       stale: f.stale))
             remaining -= capital
         }
         return BudgetPlan(flips: chosen,
