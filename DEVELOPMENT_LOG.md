@@ -7179,6 +7179,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · A11Y honesty fix — risk/staleness warnings were INVISIBLE to VoiceOver (2 HIGH)
+**Files:** `Views/RuneScapeMarketView.swift` (row a11y label), `Views/MarketsView.swift` (velocity Button label). Persisted A11Y_BUGHUNT.md (a11y sweep woobpb79o, 25 agents).
+**What:** the a11y sweep caught two honesty-floor leaks where a money/risk warning rendered on screen but was dropped from the screen-reader path — the sacred only-real-data caveat never reached a blind owner. (#1 HIGH, a regression from THIS session) the OSRS row uses .accessibilityElement(children:.combine) + an explicit .accessibilityLabel that REPLACES the merged children, so the "⚠︎ Nh old — stale; may not fill" Text I added in edbc2bf was discarded — VoiceOver heard a confident net-margin as if live. Appended the stale clause to the label. (#2 HIGH) the money-velocity card's drawdown-brake + fast-lane-concentration ⚠︎ warnings sit inside a Button whose overriding .accessibilityLabel collapses it to one leaf, killing their per-Text labels — folded both warnings into the Button label so they are announced.
+**Verify:** typecheck EXIT=0. No logic/struct change (label strings only) → no test impact.
+**Result:** a VoiceOver owner now hears "stale: older leg Nh old, may not fill" and the drawdown/concentration risk warnings — the honesty floor reaches the screen-reader path. Remaining A11Y_BUGHUNT (#3-#10): PSR/decay/ruin row labels + color-not-only glyphs + stale-chip contrast + Dynamic-Type on gp prices. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -2571,7 +2571,17 @@ struct MarketsView: View {
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
             }
             .buttonStyle(LuxPressStyle())
-            .accessibilityLabel("Money velocity summary; tap for the best opportunity")
+            // Fold the risk warnings INTO the Button label — the override above collapses the Button to
+            // one leaf, so the inner per-Text labels (drawdown brake, fast-lane concentration) are dead.
+            .accessibilityLabel("Money velocity summary; tap for the best opportunity"
+                + ({ () -> String in
+                    guard let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses else { return "" }
+                    return String(format: ". Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100)
+                }())
+                + ({ () -> String in
+                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated else { return "" }
+                    return ". Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass), concentration risk; size them as one bet."
+                }()))
             .help(StockSageGlossary.moneyVelocityHelp)
             HStack(spacing: 6) {
                 Spacer()

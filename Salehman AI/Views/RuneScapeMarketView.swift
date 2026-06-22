@@ -359,7 +359,10 @@ struct RuneScapeMarketView: View {
                 guard let b = price.low, let s = price.high, let lim = listing.item.buyLimit,
                       let gph = StockSageGEFlip.gpPerHour(buy: b, sell: s, buyLimit: lim) else { return "" }
                 return ", about \(RSFormat.gp(Int(gph))) per hour"
-            }()))
+            }())
+            // Keep the only-real-data staleness cue in the SCREEN-READER path: .combine + this explicit
+            // label otherwise discards the visible "stale; may not fill" Text (the edbc2bf safety signal).
+            + (stale ? ", stale: older leg \(priceAge.map(rsAgeLabel) ?? "") old, may not fill at this spread" : ""))
     }
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
