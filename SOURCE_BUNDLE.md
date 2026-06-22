@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 07:46 +03 · Swift files: 218 · Swift LOC: 43302_
+_Generated: 2026-06-22 08:36 +03 · Swift files: 218 · Swift LOC: 43312_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25455,7 +25455,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2826 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2833 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -25479,6 +25479,13 @@ struct MarketsView: View {
     @AppStorage("velocityEquityHoldDays") private var equityHoldDays = 12.0
     private var velocityHolds: VelocityHoldDays { VelocityHoldDays(crypto: cryptoHoldDays, equity: equityHoldDays) }
     @ObservedObject private var velocityHistory = StockSageVelocityHistoryStore.shared
+
+    // Dynamic-Type-aware small fonts: each equals its base size at the default text
+    // setting (mvFont9 == 9), so the dense layout is unchanged, but they scale up when
+    // the user enlarges system text — fixing the "tiny fixed money font" a11y finding.
+    @ScaledMetric(relativeTo: .caption2) private var mvFont7: CGFloat = 7
+    @ScaledMetric(relativeTo: .caption2) private var mvFont8: CGFloat = 8
+    @ScaledMetric(relativeTo: .caption2) private var mvFont9: CGFloat = 9
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -25660,7 +25667,7 @@ struct MarketsView: View {
                     Text(store.regimeIsStale
                          ? "⚠︎ Gauged \(at.formatted(.relative(presentation: .named))) — stale, re-gauge."
                          : "Gauged \(at.formatted(.relative(presentation: .named))).")
-                        .font(.system(size: 9)).foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : DS.Palette.textSecondary)
+                        .font(.system(size: mvFont9)).foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : DS.Palette.textSecondary)
                 }
             }
             if let e = store.regimeError {
@@ -26264,14 +26271,14 @@ struct MarketsView: View {
                         ForEach(c.symbols.indices, id: \.self) { i in
                             HStack(spacing: 2) {
                                 Text(String(c.symbols[i].prefix(6)))
-                                    .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                                    .font(.system(size: mvFont8, weight: .semibold)).foregroundStyle(.secondary)
                                     .frame(width: 46, alignment: .leading).lineLimit(1)
                                 ForEach(c.symbols.indices, id: \.self) { j in
                                     let v = c.matrix[i][j]
                                     Rectangle().fill(correlationColor(v))
                                         .frame(width: 26, height: 18)
                                         .overlay(Text(String(format: "%.1f", v))
-                                            .font(.system(size: 7, weight: .bold)).foregroundStyle(.white.opacity(0.92)))
+                                            .font(.system(size: mvFont7, weight: .bold)).foregroundStyle(.white.opacity(0.92)))
                                         .accessibilityElement(children: .ignore)
                                         .accessibilityLabel("\(c.symbols[i]) vs \(c.symbols[j]), correlation \(String(format: "%.1f", v))")
                                 }
@@ -26442,7 +26449,7 @@ struct MarketsView: View {
                                     style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                             .frame(height: 26).opacity(0.9)
                         Text("Your OWN logged R compounded at a fixed risk % — the past path of your trades, NOT a projection of future returns.")
-                            .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     .help(StockSageGlossary.explain(.compounding))
                 }
@@ -26463,11 +26470,11 @@ struct MarketsView: View {
                             ForEach(dist.bins.indices, id: \.self) { i in
                                 let bin = dist.bins[i]
                                 VStack(spacing: 2) {
-                                    Text("\(bin.count)").font(.system(size: 8)).foregroundStyle(.secondary)
+                                    Text("\(bin.count)").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(i < 2 ? DS.Palette.danger : DS.Palette.successSoft)
                                         .frame(width: 26, height: max(2, CGFloat(bin.count) / CGFloat(maxC) * 26))
-                                    Text(bin.label).font(.system(size: 7)).foregroundStyle(.secondary)
+                                    Text(bin.label).font(.system(size: mvFont7)).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer(minLength: 0)
@@ -26589,7 +26596,7 @@ struct MarketsView: View {
                 }.buttonStyle(LuxPressStyle()).disabled(!draftIsValid)
                 if !draftIsValid {
                     Text("Symbol, entry, stop, shares required — protective stop (below entry for Long, above for Short).")
-                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -26663,7 +26670,7 @@ struct MarketsView: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
-                Text(trade.side.rawValue).font(.system(size: 9, weight: .semibold))
+                Text(trade.side.rawValue).font(.system(size: mvFont9, weight: .semibold))
                     .foregroundStyle(trade.side == .long ? DS.Palette.successSoft : DS.Palette.danger)
                 Text(String(format: "@ %.2f", trade.entry)).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
@@ -26682,7 +26689,7 @@ struct MarketsView: View {
                 }.buttonStyle(.plain)
             }
             if let note = trade.note, !note.isEmpty {
-                Text(note).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Text(note).font(.system(size: mvFont9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             if closingTradeID == trade.id {
                 HStack(spacing: 8) {
@@ -26712,7 +26719,7 @@ struct MarketsView: View {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
             }
             Button { journal.remove(trade.id) } label: {
-                Image(systemName: "trash").font(.system(size: 9)).foregroundStyle(.secondary)
+                Image(systemName: "trash").font(.system(size: mvFont9)).foregroundStyle(.secondary)
             }.buttonStyle(.plain)
         }
         .padding(.vertical, 2)
@@ -26797,7 +26804,7 @@ struct MarketsView: View {
 
     private func kellyField(_ text: Binding<String>, _ label: String, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
             TextField("", text: text)
                 .textFieldStyle(.plain).font(.system(size: 13)).frame(width: width)
                 .padding(.horizontal, 8).padding(.vertical, 5)
@@ -27034,7 +27041,7 @@ struct MarketsView: View {
                         .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9, weight: .bold))
+                    Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: mvFont9, weight: .bold))
                         .contentTransition(.symbolEffect(.replace))
                         .animation(DS.Motion.smooth, value: up)
                     Text(String(format: "%+.2f%%", change))
@@ -27434,12 +27441,12 @@ struct MarketsView: View {
                        let rp = Double(sizerRiskPct), rp > 0,
                        let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
                         Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(MoneyVelocityCopy.bestOpportunity)
-                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -27480,30 +27487,30 @@ struct MarketsView: View {
                     if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
                         Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
-                            .font(.system(size: 8))
+                            .font(.system(size: mvFont8))
                             .foregroundStyle(d >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                     if let ch = velocityHistory.change {
                         let movers = [ch.bestChangedTo.map { "best → \($0)" }, ch.fastestChangedTo.map { "fastest → \($0)" }].compactMap { $0 }
                         if !movers.isEmpty {
                             Text("Mover: \(movers.joined(separator: ", ")) — \(MoneyVelocityCopy.ownHistory)")
-                                .font(.system(size: 8)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+                                .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     if let t = velocityHistory.trend {
                         let rising = t.direction == .rising, fading = t.direction == .fading
                         HStack(spacing: 5) {
                             Image(systemName: rising ? "arrow.up.right" : (fading ? "arrow.down.right" : "arrow.right"))
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.system(size: mvFont8, weight: .bold))
                                 .foregroundStyle(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : .secondary))
                             Text(String(format: "Your opportunity set is %@ (recent wk-R %+.1f vs %+.1f early) — %@",
                                         t.direction.rawValue, t.recentAvg, t.earlyAvg, MoneyVelocityCopy.ownHistory))
-                                .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                .font(.system(size: mvFont8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             if velocityHistory.series.count >= 2 {
                                 Sparkline(values: velocityHistory.series.map(\.weeklyR))
                                     .stroke(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : DS.Palette.surfaceStroke),
@@ -27519,7 +27526,7 @@ struct MarketsView: View {
                             .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at 1 percent risk is about %.1f percent drawdown. Size to survive variance.", losses, ddPct * 100))
                     }
                     Text(MoneyVelocityCopy.summary)
-                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -27535,7 +27542,7 @@ struct MarketsView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
-                    Label("Copy plan", systemImage: "doc.on.doc").font(.system(size: 9, weight: .medium))
+                    Label("Copy plan", systemImage: "doc.on.doc").font(.system(size: mvFont9, weight: .medium))
                 }
                 .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
                 .help("Copy a short, caveated money-velocity action list to the clipboard.")
@@ -27546,9 +27553,9 @@ struct MarketsView: View {
 
     private func summaryStat(_ label: String, _ value: String, _ sub: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label.uppercased()).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label.uppercased()).font(.system(size: mvFont8, weight: .semibold)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
-            Text(sub).font(.system(size: 8)).foregroundStyle(DS.Palette.successSoft).lineLimit(1)
+            Text(sub).font(.system(size: mvFont8)).foregroundStyle(DS.Palette.successSoft).lineLimit(1)
         }
     }
 
@@ -27571,10 +27578,10 @@ struct MarketsView: View {
                                 Text(String(format: "%+.3fR/day", v)).font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(DS.Palette.successSoft)
                                 if idea.symbol.hasSuffix("-USD") {
-                                    Text("24/7 · volatile").font(.system(size: 8)).foregroundStyle(DS.Palette.warningSoft)
+                                    Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                             }.contentShape(Rectangle())
                         }.buttonStyle(LuxPressStyle())
                         .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
@@ -27582,29 +27589,29 @@ struct MarketsView: View {
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {
                     Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                     if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
                     Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — that's closer to ONE bet than \(conc.total); they tend to move together. Diversify or size them as one.")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                 }
                 Text(MoneyVelocityCopy.fastLane)
-                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 14) {
-                    Text("Hold est:").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("Hold est:").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     Stepper(value: $cryptoHoldDays, in: 1...60, step: 1) {
-                        Text("crypto \(Int(cryptoHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                        Text("crypto \(Int(cryptoHoldDays))d").font(.system(size: mvFont9)).foregroundStyle(.white)
                     }.frame(maxWidth: 132)
                     Stepper(value: $equityHoldDays, in: 1...180, step: 1) {
-                        Text("equity \(Int(equityHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                        Text("equity \(Int(equityHoldDays))d").font(.system(size: mvFont9)).foregroundStyle(.white)
                     }.frame(maxWidth: 132)
                     Spacer(minLength: 0)
                 }
@@ -27718,7 +27725,7 @@ struct MarketsView: View {
                                 Text("Buy & hold underwater (5y)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                                 Spacer()
                                 Text(String(format: "worst −%.0f%% · longest %d bars under", u.maxDrawdown, u.longestUnderwaterBars))
-                                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.danger)
+                                    .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.danger)
                             }
                             underwaterSparkline(u)
                         }
@@ -27784,9 +27791,9 @@ struct MarketsView: View {
                     Image(systemName: "function").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
                     Text("Position size").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                     Spacer()
-                    Text("Acct $").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("Acct $").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("10000", text: $sizerAccount, width: 72)
-                    Text("Risk %").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("Risk %").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("1", text: $sizerRiskPct, width: 40)
                 }
                 if let acct = Double(sizerAccount), let rp = Double(sizerRiskPct),
@@ -27802,13 +27809,13 @@ struct MarketsView: View {
                     }
                     Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%@%% of the account). Not a profit promise.",
                                 stop, ps.dollarsAtRisk, sizerRiskPct))
-                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if leveraged {
                         Text("⚠︎ Notional exceeds your account — this needs margin/leverage. A gap or slippage THROUGH the stop can lose well more than the stated risk. Tight stops inflate share count; widen the stop or cut risk %.")
-                            .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
-                    Text("Enter a valid account size and risk %.").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text("Enter a valid account size and risk %.").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                 }
             }
             .padding(10)
@@ -27821,7 +27828,7 @@ struct MarketsView: View {
                   : (flag.level == .caution ? DS.Palette.warningSoft : DS.Palette.textSecondary)
         return HStack(spacing: 4) {
             Image(systemName: flag.level == .high ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
-                .font(.system(size: 9))
+                .font(.system(size: mvFont9))
             Text(flag.label).font(.system(size: 10, weight: .semibold))
         }
         .foregroundStyle(color)
@@ -28133,7 +28140,7 @@ struct MarketsView: View {
 
     private func ideaMetric(_ label: String, _ value: String, color: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 12.5, weight: .semibold, design: .rounded)).foregroundStyle(color)
         }
         .accessibilityElement(children: .ignore)
@@ -29280,7 +29287,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (376 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (379 lines) =====
 ```swift
 import SwiftUI
 
@@ -29297,6 +29304,9 @@ struct RuneScapeMarketView: View {
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Dynamic-Type-aware small fonts (base size at default, scale up when enlarged).
+    @ScaledMetric(relativeTo: .caption2) private var rsFont8: CGFloat = 8
+    @ScaledMetric(relativeTo: .caption2) private var rsFont9: CGFloat = 9
 
     private var isSearching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
@@ -29499,11 +29509,11 @@ struct RuneScapeMarketView: View {
                             .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.Palette.successSoft)
                         Spacer(minLength: 0)
                         Text("\(RSFormat.gp(flip.profitPerItem))/ea · ×\(flip.buyLimit.formatted())")
-                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                            .font(.system(size: rsFont9)).foregroundStyle(.secondary)
                     }
                 }
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
             }
             .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
@@ -29531,7 +29541,7 @@ struct RuneScapeMarketView: View {
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                         .lineLimit(1)
                     if listing.item.members {
-                        Text("P2P").font(.system(size: 8, weight: .bold)).foregroundStyle(Color(white: 0.12))
+                        Text("P2P").font(.system(size: rsFont8, weight: .bold)).foregroundStyle(Color(white: 0.12))
                             .padding(.horizontal, 4).padding(.vertical, 1)
                             .background(DS.Palette.warningSoft, in: Capsule())
                     }
@@ -29586,7 +29596,7 @@ struct RuneScapeMarketView: View {
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: rsFont9, weight: .semibold)).foregroundStyle(.secondary)
             Text(value.map(RSFormat.gp) ?? "—")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(value == nil ? Color.secondary : color)
@@ -46233,7 +46243,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7476 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7482 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -52594,6 +52604,12 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 - **RuneScape listing rows** — enriched the existing label with margin + gp/hour (the primary money info VoiceOver was omitting).
 **⚠️ TODO (tracked, owner chip):** the bulk of the findings are fixed sub-9pt money/caveat fonts (`$/week`, mover, weekly-R, concentration, compounding/what-if caveats, R-distribution counts, heatmap 7pt cells) that ignore Dynamic Type. Migrating those to scalable text styles changes a dense, deliberately-tuned layout — it needs a running build to eyeball, so it's deferred to the owner rather than done blind.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 40 review/audit workflows. Money-velocity surfaces are now VoiceOver-navigable and the key risk warning is color-blind-safe. Autonomous /loop — heavy verification mode.
+
+## 2026-06-21 · Dynamic-Type migration of Markets small fonts (a11y follow-up, owner chip)
+**Files:** `Views/MarketsView.swift`, `Views/RuneScapeMarketView.swift`.
+**What & why:** Completed the accessibility audit's deferred font-scaling fix (the owner started the task chip). All **44** fixed sub-9pt fonts (`.system(size: 7|8|9)`) on the Markets + RuneScape money-velocity surfaces — which ignored Dynamic Type, so a low-vision user couldn't enlarge important money/risk text — were migrated to **`@ScaledMetric(relativeTo: .caption2)`** base sizes (`mvFont7/8/9`, `rsFont8/9`). **Done safely WITHOUT a running build:** `@ScaledMetric` returns the exact base size at the default text setting (mvFont9 == 9), so the dense layout is pixel-identical to before today, and the fonts now scale up only when the user increases system text — strictly an improvement, no default-size visual change. Replace was collision-checked (no 2-digit `size:` values) and verified: 0 fixed `size: 7/8/9` remain in either view. Every honesty caveat preserved (captions still come from `MoneyVelocityCopy`).
+**⚠️ Owner verification still useful:** at LARGE text sizes the densest cards (fast-lane rows, heatmap) could in principle wrap/overflow — build + run (⌘R), open Markets, and bump system text size to confirm; the default-size layout is guaranteed unchanged.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The Markets money-velocity surfaces are now Dynamic-Type-aware end-to-end; combined with last tick's VoiceOver labels + color-blind glyph, the accessibility audit's findings are substantially addressed. Committed + pushed. Autonomous /loop — responsive-maintenance.
 
 ---
 

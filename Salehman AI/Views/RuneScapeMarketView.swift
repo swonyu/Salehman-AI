@@ -13,6 +13,9 @@ struct RuneScapeMarketView: View {
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Dynamic-Type-aware small fonts (base size at default, scale up when enlarged).
+    @ScaledMetric(relativeTo: .caption2) private var rsFont8: CGFloat = 8
+    @ScaledMetric(relativeTo: .caption2) private var rsFont9: CGFloat = 9
 
     private var isSearching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
@@ -215,11 +218,11 @@ struct RuneScapeMarketView: View {
                             .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.Palette.successSoft)
                         Spacer(minLength: 0)
                         Text("\(RSFormat.gp(flip.profitPerItem))/ea · ×\(flip.buyLimit.formatted())")
-                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                            .font(.system(size: rsFont9)).foregroundStyle(.secondary)
                     }
                 }
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
             }
             .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
@@ -247,7 +250,7 @@ struct RuneScapeMarketView: View {
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                         .lineLimit(1)
                     if listing.item.members {
-                        Text("P2P").font(.system(size: 8, weight: .bold)).foregroundStyle(Color(white: 0.12))
+                        Text("P2P").font(.system(size: rsFont8, weight: .bold)).foregroundStyle(Color(white: 0.12))
                             .padding(.horizontal, 4).padding(.vertical, 1)
                             .background(DS.Palette.warningSoft, in: Capsule())
                     }
@@ -302,7 +305,7 @@ struct RuneScapeMarketView: View {
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: rsFont9, weight: .semibold)).foregroundStyle(.secondary)
             Text(value.map(RSFormat.gp) ?? "—")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(value == nil ? Color.secondary : color)

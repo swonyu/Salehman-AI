@@ -6359,6 +6359,12 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **⚠️ TODO (tracked, owner chip):** the bulk of the findings are fixed sub-9pt money/caveat fonts (`$/week`, mover, weekly-R, concentration, compounding/what-if caveats, R-distribution counts, heatmap 7pt cells) that ignore Dynamic Type. Migrating those to scalable text styles changes a dense, deliberately-tuned layout — it needs a running build to eyeball, so it's deferred to the owner rather than done blind.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 40 review/audit workflows. Money-velocity surfaces are now VoiceOver-navigable and the key risk warning is color-blind-safe. Autonomous /loop — heavy verification mode.
 
+## 2026-06-21 · Dynamic-Type migration of Markets small fonts (a11y follow-up, owner chip)
+**Files:** `Views/MarketsView.swift`, `Views/RuneScapeMarketView.swift`.
+**What & why:** Completed the accessibility audit's deferred font-scaling fix (the owner started the task chip). All **44** fixed sub-9pt fonts (`.system(size: 7|8|9)`) on the Markets + RuneScape money-velocity surfaces — which ignored Dynamic Type, so a low-vision user couldn't enlarge important money/risk text — were migrated to **`@ScaledMetric(relativeTo: .caption2)`** base sizes (`mvFont7/8/9`, `rsFont8/9`). **Done safely WITHOUT a running build:** `@ScaledMetric` returns the exact base size at the default text setting (mvFont9 == 9), so the dense layout is pixel-identical to before today, and the fonts now scale up only when the user increases system text — strictly an improvement, no default-size visual change. Replace was collision-checked (no 2-digit `size:` values) and verified: 0 fixed `size: 7/8/9` remain in either view. Every honesty caveat preserved (captions still come from `MoneyVelocityCopy`).
+**⚠️ Owner verification still useful:** at LARGE text sizes the densest cards (fast-lane rows, heatmap) could in principle wrap/overflow — build + run (⌘R), open Markets, and bump system text size to confirm; the default-size layout is guaranteed unchanged.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The Markets money-velocity surfaces are now Dynamic-Type-aware end-to-end; combined with last tick's VoiceOver labels + color-blind glyph, the accessibility audit's findings are substantially addressed. Committed + pushed. Autonomous /loop — responsive-maintenance.
+
 ---
 
 ## Standing notes / known issues
