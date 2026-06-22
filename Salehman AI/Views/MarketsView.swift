@@ -512,11 +512,19 @@ struct MarketsView: View {
         store.symbols.first { $0.symbol.uppercased() == symbol.uppercased() }?.latest?.price
     }
 
+    /// THE one true holding value: per-share price × shares, with the symbol's quote unit applied.
+    /// London .L trades in PENCE, so a raw price×shares is ~100× the real (£) value — every value /
+    /// P&L site MUST route through here (previously only the currency-exposure widget did, so the
+    /// headline total, position rows, rebalance and allocation all over-valued .L holdings ~100×).
+    private func holdingValue(_ symbol: String, perShare: Double, shares: Double) -> Double {
+        StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: perShare * shares)
+    }
+
     private var portfolioTotals: (cost: Double, value: Double) {
         var cost = 0.0, value = 0.0
         for p in portfolio.positions {
             cost += p.totalCost
-            value += (currentPrice(p.symbol) ?? p.costBasis) * p.shares
+            value += holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares)
         }
         return (cost, value)
     }
@@ -633,7 +641,7 @@ struct MarketsView: View {
 
     private func positionRow(_ p: PortfolioPosition) -> some View {
         let price = currentPrice(p.symbol)
-        let value = (price ?? p.costBasis) * p.shares
+        let value = holdingValue(p.symbol, perShare: price ?? p.costBasis, shares: p.shares)
         let pl = value - p.totalCost
         let up = pl >= 0
         let hovered = hoveredPositionID == p.id
@@ -720,7 +728,7 @@ struct MarketsView: View {
                 // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
                 // with a 2% no-trade band so you don't churn on tiny drifts.
                 let rebalHoldings = portfolio.positions.map {
-                    (symbol: $0.symbol, value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares)
+                    (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
                 }
                 let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
                                               uniquingKeysWith: { a, _ in a })
@@ -779,7 +787,7 @@ struct MarketsView: View {
 
     private var allocationPanel: some View {
         let holdings = portfolio.positions.map {
-            (symbol: $0.symbol, value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares)
+            (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
         }
         let alloc = StockSageAllocation.breakdown(holdings)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
@@ -3032,7 +3040,7 @@ struct MarketsView: View {
                     }
                 }
                 let whatIfHoldings = portfolio.positions.map {
-                    (symbol: $0.symbol, value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares)
+                    (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
                 }
                 if !whatIfHoldings.isEmpty {
                     let bookTotal = whatIfHoldings.reduce(0) { $0 + $1.value }

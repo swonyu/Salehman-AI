@@ -6907,6 +6907,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — London .L pence (÷100) now applied to EVERY holding value (was 100x off)
+**Files:** `Views/MarketsView.swift` (+holdingValue helper, routed 5 value sites). Persisted DATA_INTEGRITY_AUDIT.md (14 findings).
+**What (data-integrity audit wqelv0xwp #2, VERIFIED real):** StockSageCurrency.majorUnitValue (÷100 for .L pence) was applied at ONLY ONE site (the currency-exposure widget, :807). The headline portfolio Value/P&L (:519), each position row (:636), the rebalance $-trades (:723), the allocation baseValue (:782) AND the what-if book (:3034) all used raw (price ?? costBasis)·shares — so a real 400p (£4) SHEL.L/AZN.L/BP.L share was valued at £400, ~100x too high, on REAL data. New holdingValue(symbol:perShare:shares:) applies majorUnitValue once; all 5 value sites now route through it. (The currency widget at :807 already applied it — left as-is.)
+**Verify:** typecheck EXIT=0; python-checked 400p×10 = 4000 raw → £40 (was £4000). The 100x overvaluation of London-listed holdings is gone everywhere a value is shown.
+**Remaining (DATA_INTEGRITY_AUDIT.md, sacred rule — high backlog): #1 headline sums GBP+USD at 1:1 (no FX); #3 stale disk-cache shows the green Live banner (no age gate); #4 root: currentPrice non-nil under isSampleData leaks SAMPLE P&L into rows/summary/journal/what-if unlabeled; #6 what-if sheet has NO banner; #12 gp/hour row caveat.**
+**Result:** no London-listed holding is shown 100x its real value anymore — the worst-magnitude only-real-data error closed. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
