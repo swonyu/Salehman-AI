@@ -6464,6 +6464,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The advisor set stop/target ONLY for buys (`if isBuy`), so sell/reduce ideas had NO stop, target, R:R, EV, or size — the bearish half of the board was un-actionable. Extracted a pure `stopTarget` helper: a long stops BELOW / targets ABOVE; a short (sell/reduce) MIRRORS it — stop ABOVE entry, target BELOW — both 2-ATR swing / 2:1, 8% fallback; hold/avoid get nothing; a degenerate negative short target is dropped. Position sizing generalized to `abs(price - stop)` so a short sizes like a long. Safe downstream: `RewardRisk.assess`, `ExpectedValue.ev`, and `NetEdge.evaluate` all use `abs()`, so shorts now get correct R:R/EV/net-edge automatically. 1 test, PYTHON-VERIFIED: long 100/atr5 → (90,120); short → (110,80); buy fallback stop 92; reduce fallback stop 108; hold → nil.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 16/32 (half done). NEXT: #14 watchlist quick-remove. Committed + pushed.
 
+## 2026-06-22 · Backlog #14: Watchlist hover quick-remove
+**Files:** `Views/MarketsView.swift` (signalCard hover trash button).
+**What & why:** Removing a user-added watchlist ticker was only possible via right-click (low discoverability). Added a hover-visible trash button on the signal card, shown ONLY for user-added rows (`market == "★ My watchlist"` = `StockSageStore.userMarketLabel`); curated-universe rows stay un-removable (no button). Calls `store.removeSymbol` with an animation, + a VoiceOver label. The existing context-menu remove stays as the keyboard/right-click path.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 17/32. NEXT: #21 journal a11y / #27 sheet width. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues

@@ -1729,6 +1729,16 @@ struct MarketsView: View {
                 }
                 .frame(width: 96, alignment: .trailing)
             }
+            // Hover quick-remove — only for user-added rows (curated rows aren't removable).
+            if sym.market == "★ My watchlist", hovered {
+                Button { withAnimation(DS.Motion.smooth) { store.removeSymbol(sym.symbol) } } label: {
+                    Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(DS.Palette.danger)
+                }
+                .buttonStyle(.plain)
+                .help("Remove from watchlist")
+                .accessibilityLabel("Remove \(sym.symbol) from watchlist")
+                .transition(.opacity)
+            }
         }
         .padding(DS.Space.md)
         .background(

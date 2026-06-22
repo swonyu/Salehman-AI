@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:38 +03 · Swift files: 236 · Swift LOC: 44926_
+_Generated: 2026-06-22 10:42 +03 · Swift files: 236 · Swift LOC: 44936_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26316,7 +26316,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3099 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3109 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -28048,6 +28048,16 @@ struct MarketsView: View {
                     }
                 }
                 .frame(width: 96, alignment: .trailing)
+            }
+            // Hover quick-remove — only for user-added rows (curated rows aren't removable).
+            if sym.market == "★ My watchlist", hovered {
+                Button { withAnimation(DS.Motion.smooth) { store.removeSymbol(sym.symbol) } } label: {
+                    Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(DS.Palette.danger)
+                }
+                .buttonStyle(.plain)
+                .help("Remove from watchlist")
+                .accessibilityLabel("Remove \(sym.symbol) from watchlist")
+                .transition(.opacity)
             }
         }
         .padding(DS.Space.md)
@@ -47929,7 +47939,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7581 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7586 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54396,6 +54406,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The advisor set stop/target ONLY for buys (`if isBuy`), so sell/reduce ideas had NO stop, target, R:R, EV, or size — the bearish half of the board was un-actionable. Extracted a pure `stopTarget` helper: a long stops BELOW / targets ABOVE; a short (sell/reduce) MIRRORS it — stop ABOVE entry, target BELOW — both 2-ATR swing / 2:1, 8% fallback; hold/avoid get nothing; a degenerate negative short target is dropped. Position sizing generalized to `abs(price - stop)` so a short sizes like a long. Safe downstream: `RewardRisk.assess`, `ExpectedValue.ev`, and `NetEdge.evaluate` all use `abs()`, so shorts now get correct R:R/EV/net-edge automatically. 1 test, PYTHON-VERIFIED: long 100/atr5 → (90,120); short → (110,80); buy fallback stop 92; reduce fallback stop 108; hold → nil.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 16/32 (half done). NEXT: #14 watchlist quick-remove. Committed + pushed.
 
+## 2026-06-22 · Backlog #14: Watchlist hover quick-remove
+**Files:** `Views/MarketsView.swift` (signalCard hover trash button).
+**What & why:** Removing a user-added watchlist ticker was only possible via right-click (low discoverability). Added a hover-visible trash button on the signal card, shown ONLY for user-added rows (`market == "★ My watchlist"` = `StockSageStore.userMarketLabel`); curated-universe rows stay un-removable (no button). Calls `store.removeSymbol` with an animation, + a VoiceOver label. The existing context-menu remove stays as the keyboard/right-click path.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 17/32. NEXT: #21 journal a11y / #27 sheet width. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57843,7 +57858,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Filtering is the fastest path from a big board to an actionable shortlist — directly serves 'make money fast'. Add a SegmentPicker below ideaSort: All / Strong Buy only / Strong Sell only / [sector]; filter store.ideas locally before displayedIdeas. No extra network.
 **Files:** Salehman AI/Views/MarketsView.swift:1815; Salehman AI/Views/MarketsView.swift:1832-1836
 
-### ⬜ #14 — Quick-remove on watchlist rows (hover trash, matching portfolio rows)  [medium/small, UX/ux]
+### ✅ DONE #14 — Quick-remove on watchlist rows (hover trash, matching portfolio rows)  [medium/small, UX/ux]
 **What:** Watchlist symbol removal is buried in a .contextMenu (~1708). Portfolio positionRow already surfaces a hover-reveal trash icon (~639); the watchlist doesn't, so curating a long list is slow.
 **Why:** Cheap consistency win on a daily action. Reuse the positionRow hover-trash pattern on signalCard.
 **Files:** Salehman AI/Views/MarketsView.swift:1641-1717; Salehman AI/Views/MarketsView.swift:613-654

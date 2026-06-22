@@ -89,7 +89,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Filtering is the fastest path from a big board to an actionable shortlist — directly serves 'make money fast'. Add a SegmentPicker below ideaSort: All / Strong Buy only / Strong Sell only / [sector]; filter store.ideas locally before displayedIdeas. No extra network.
 **Files:** Salehman AI/Views/MarketsView.swift:1815; Salehman AI/Views/MarketsView.swift:1832-1836
 
-### ⬜ #14 — Quick-remove on watchlist rows (hover trash, matching portfolio rows)  [medium/small, UX/ux]
+### ✅ DONE #14 — Quick-remove on watchlist rows (hover trash, matching portfolio rows)  [medium/small, UX/ux]
 **What:** Watchlist symbol removal is buried in a .contextMenu (~1708). Portfolio positionRow already surfaces a hover-reveal trash icon (~639); the watchlist doesn't, so curating a long list is slow.
 **Why:** Cheap consistency win on a daily action. Reuse the positionRow hover-trash pattern on signalCard.
 **Files:** Salehman AI/Views/MarketsView.swift:1641-1717; Salehman AI/Views/MarketsView.swift:613-654
