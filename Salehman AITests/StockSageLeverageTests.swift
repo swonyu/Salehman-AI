@@ -26,4 +26,12 @@ struct StockSageLeverageTests {
         #expect(L.assess(leverage: 0, entry: 100) == nil)
         #expect(L.assess(account: 0, notional: 30_000, entry: 100) == nil)
     }
+
+    @Test func theThreeRiskEnginesCarryHonestCaveats() {
+        // These caveats are surfaced in MarketsView (loss-limit banner, sizer gap/leverage lines);
+        // pin that they exist and say the hard truths so a refactor can't quietly drop them.
+        #expect(StockSageLeverage.caveat.lowercased().contains("more than"))
+        #expect(StockSageGapRisk.caveat.lowercased().contains("not a guaranteed fill"))
+        #expect(StockSageLossLimit.caveat.lowercased().contains("not a probability edge"))
+    }
 }

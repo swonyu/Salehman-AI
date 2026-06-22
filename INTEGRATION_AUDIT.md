@@ -20,7 +20,7 @@
 
 **value:** High. It is the one new signal the research notes frame as a crash filter / veto, and the ONLY one of the four (vs volumeConfirmation/volAdjustedMomentum/relativeStrength, all confirmed to mutate `score`) that does not influence advise() and therefore never moves an idea's conviction/action or its rankScore. rankScore (StockSageAdvisor.swift) is a pure function of action+conviction, both sourced solely from `score`, so a signal counts iff it mutates `score` — and trendOK never does. Confirmed: only call sites repo-wide are the doc-comment and StockSageIndicatorsTests.swift.
 
-### ⬜ #3 — StockSageGapRisk — forward 'a stop is not a guaranteed fill' quantifier is orphaned
+### ✅ DONE #3 — StockSageGapRisk — forward 'a stop is not a guaranteed fill' quantifier is orphaned
 **builtEngine:** Salehman AI/StockSage/StockSageGapRisk.swift — worstCase(side:entry:stop:shares:…) at line 62 and fromPosition(_:side:stop:entry:accountEquity:gapPct:) at line 70 -> [GapRiskScenario]; each scenario has .verdict (line 24), .exceedsAccount (line 22), .rMultiple, .accountLossPct.
 
 **wiredInto:** NOTHING. Natural home: positionSizerPanel(_:) in Salehman AI/Views/MarketsView.swift (line 2644), which already computes the PositionSize and shows a weaker static gap string (~line 2671).
@@ -29,7 +29,7 @@
 
 **value:** Medium-high. Real, distinct honesty gap: no surface quantifies gap-through-stop forward (the backtester only models gaps backward in simulateExit), and the sizer panel hand-rolls a weaker static gap warning at MarketsView.swift:2671. Near drop-in — entry/stop/shares/account/side are all already in scope in positionSizerPanel, and a fromPosition(PositionSize,…) bridge exists purpose-built. Lower than LossLimit because it informs rather than halts. Confirmed zero app-target callers.
 
-### ⬜ #4 — StockSageLeverage — margin/liquidation honesty (100/L wipeout, liq price, drawdown multiplier) is orphaned
+### ✅ DONE #4 — StockSageLeverage — margin/liquidation honesty (100/L wipeout, liq price, drawdown multiplier) is orphaned
 **builtEngine:** Salehman AI/StockSage/StockSageLeverage.swift — assess(account:notional:entry:) at line 47 (and assess(leverage:entry:) at line 34) -> LeverageRisk? (liquidationMovePct=100/L, liquidationPrice, drawdownMultiplier, canLoseMoreThanAccount, .verdict at line 19, .caveat).
 
 **wiredInto:** NOTHING. Natural home: the `if leveraged` branch (line 2671) of positionSizerPanel(_:) in Salehman AI/Views/MarketsView.swift (leveraged computed at line 2659), which already knows the position is leveraged and shows a generic string.

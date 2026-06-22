@@ -2708,12 +2708,28 @@ struct MarketsView: View {
                                    color: leveraged ? DS.Palette.danger : .white)
                         Spacer(minLength: 0)
                     }
-                    Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%@%% of the account). Not a profit promise.",
-                                stop, ps.dollarsAtRisk, sizerRiskPct))
+                    // % of account from the FLOORED dollars-at-risk (was the requested risk %, which
+                    // overstates the loss it sits beside once shares round down).
+                    Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%.2f%% of the account). Not a profit promise.",
+                                stop, ps.dollarsAtRisk, ps.dollarsAtRisk / acct * 100))
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if leveraged {
-                        Text("⚠︎ Notional exceeds your account — this needs margin/leverage. A gap or slippage THROUGH the stop can lose well more than the stated risk. Tight stops inflate share count; widen the stop or cut risk %.")
-                            .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    // Leverage truth: liquidation distance + can-lose-more-than-account (replaces the static string).
+                    if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: ps.notional, entry: entry) {
+                        Text("⚠︎ " + lev.verdict)
+                            .font(.system(size: mvFont9))
+                            .foregroundStyle(lev.canLoseMoreThanAccount ? DS.Palette.danger : DS.Palette.warningSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageLeverage.caveat)
+                    }
+                    // Gap risk: a stop is a TRIGGER, not a fill — show the worst-case 20% gap-through loss.
+                    let gapSide: TradeSide = (idea.advice.action == .sell || idea.advice.action == .reduce) ? .short : .long
+                    if let gap = StockSageGapRisk.scenario(side: gapSide, entry: entry, stop: stop,
+                                                           shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
+                        Text("⚠︎ " + gap.verdict)
+                            .font(.system(size: mvFont9))
+                            .foregroundStyle(gap.exceedsAccount ? DS.Palette.danger : DS.Palette.warningSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageGapRisk.caveat)
                     }
                 } else {
                     Text("Enter a valid account size and risk %.").font(.system(size: mvFont9)).foregroundStyle(.secondary)

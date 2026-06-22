@@ -6809,6 +6809,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Wires #3/#4 — GapRisk + Leverage verdicts in the position sizer (+ sizer %% fix)
+**Files:** `Views/MarketsView.swift` (positionSizerPanel), `Salehman AITests/StockSageLeverageTests.swift` (+caveat-presence test).
+**What:** the last two orphaned risk engines now reach the sizer card. (INTEGRATION_AUDIT #4) the static "Notional exceeds your account" string is replaced by `StockSageLeverage.assess(account:notional:entry:).verdict` (liquidation move%/price + can-lose-more-than-account, red when it can), with the engine caveat on .help. (#3) a new line shows `StockSageGapRisk.scenario(...gapPct:0.20)` worst-case verdict — a stop is a TRIGGER, not a fill — side-aware (sell/reduce ⇒ short), red when it exceeds the account, caveat on .help. ALSO fixed MARKETS_UI_AUDIT #4: the "% of the account" next to the at-risk dollars used the REQUESTED risk %; now uses ps.dollarsAtRisk/acct*100 (the floored realized %).
+**Verify:** typecheck clean (StockSageLeverage/GapRisk + DS tokens resolve); render UNVERIFIED (Mac). +caveat-presence test pinning all 3 risk caveats (GapRisk "not a guaranteed fill", LossLimit "not a probability edge", Leverage "more than") so a refactor can't silently drop them. Engines themselves are unit-tested.
+**Result:** ALL the loss-honesty engines (LossLimit banner + GapRisk + Leverage) now reach the owner on screen — the integration audit's orphans are connected. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
