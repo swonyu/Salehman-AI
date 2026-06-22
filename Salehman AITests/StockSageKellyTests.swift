@@ -32,7 +32,7 @@ struct StockSageKellyTests {
         #expect(abs(k.quarterKelly - 0.10) < 1e-9)
         #expect(abs(k.edge - 0.80) < 1e-9)                 // 0.6·2 − 0.4
         #expect(abs(k.suggestedFraction - 0.20) < 1e-9)    // half == cap
-        #expect(abs(k.dollarsToRisk - 2_000) < 1e-6)
+        #expect(abs(k.dollarsToAllocate - 2_000) < 1e-6)   // suggestedFraction 0.20 × $10k account
     }
 
     @Test func noEdgeMeansDoNotBet() {
@@ -62,6 +62,6 @@ struct StockSageKellyTests {
         // R=0 must not divide-by-zero; W clamps to [0,1].
         let k = StockSageKelly.compute(winRate: 2.0, payoffRatio: 0.0, accountSize: -5)
         #expect(k.fullKelly >= 0 && k.fullKelly <= 1)
-        #expect(k.dollarsToRisk >= 0)
+        #expect(k.dollarsToAllocate >= 0)
     }
 }

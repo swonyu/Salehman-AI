@@ -17,7 +17,9 @@ struct KellyResult: Sendable, Equatable {
     let quarterKelly: Double
     /// The recommended fraction: half-Kelly, hard-capped at 20% of the account.
     let suggestedFraction: Double
-    let dollarsToRisk: Double      // suggestedFraction × accountSize
+    let dollarsToAllocate: Double  // suggestedFraction × accountSize — CAPITAL to allocate under
+                                   // the lose-the-whole-bet Kelly model, NOT the stop-risk dollars
+                                   // the position sizer risks (that's ~1% of the account per trade)
     let note: String
     let caveat: String
 }
@@ -59,7 +61,7 @@ enum StockSageKelly {
 
         return KellyResult(edge: edge, fullKelly: fStar, halfKelly: half, quarterKelly: quarter,
                            suggestedFraction: suggested,
-                           dollarsToRisk: suggested * Swift.max(0, accountSize),
+                           dollarsToAllocate: suggested * Swift.max(0, accountSize),
                            note: note, caveat: caveat)
     }
 }

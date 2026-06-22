@@ -6767,6 +6767,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Kelly honesty relabel — "Risk $" → "Allocate $" (capital-to-allocate ≠ stop-risk)
+**Files:** `StockSage/StockSageKelly.swift` (dollarsToRisk → dollarsToAllocate + clarifying doc), `Views/MarketsView.swift` (metric "Risk $"→"Allocate $", subtitle), `Salehman AITests/StockSageKellyTests.swift` (2 refs renamed).
+**What (AUDIT_FINDINGS_2 #2):** Kelly's `dollarsToRisk` = suggestedFraction × account is the CAPITAL to ALLOCATE under the lose-the-whole-bet Kelly model — it was mislabeled in the UI as "Risk $" / "How much to risk per trade", conflating it with the ~1% stop-risk the position sizer actually risks. A user reading "Risk $2000" on a $10k account could think a stop-out loses $2000 when Kelly means "deploy $2000 of capital." Renamed the field to dollarsToAllocate (only 5 refs: decl/ctor/1 UI/2 tests; 0 stragglers), relabeled the metric "Allocate $", and rewrote the subtitle to say it is the capital-allocation fraction, NOT the per-trade stop risk.
+**Verify:** typecheck clean; value unchanged (the existing test pins 0.20×$10k = $2000, just renamed). Honesty: the two distinct sizing concepts (Kelly allocation vs stop-risk) are no longer conflated.
+**Result:** the position-sizer card no longer implies a stop-out risks the full Kelly allocation. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

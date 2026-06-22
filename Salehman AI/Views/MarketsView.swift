@@ -1422,7 +1422,7 @@ struct MarketsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Position sizer (Kelly)").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.kellyHelp)
-                    Text("How much to risk per trade, from your win-rate & payoff.")
+                    Text("Suggested fraction of capital to ALLOCATE (lose-the-whole-bet Kelly sizing) — NOT the ~1% stop-risk the position sizer uses.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -1467,7 +1467,7 @@ struct MarketsView: View {
                 ideaMetric("Full Kelly", String(format: "%.0f%%", k.fullKelly * 100))
                 ideaMetric("Half", String(format: "%.0f%%", k.halfKelly * 100), color: DS.Palette.successSoft)
                 ideaMetric("Suggested", String(format: "%.0f%%", k.suggestedFraction * 100), color: DS.Palette.accent)
-                ideaMetric("Risk $", String(format: "%.0f", k.dollarsToRisk))
+                ideaMetric("Allocate $", String(format: "%.0f", k.dollarsToAllocate))
                 Spacer(minLength: 0)
             }
             Text(k.note).font(.caption2)
