@@ -6668,6 +6668,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EDGE_RESEARCH #3 — time-series (12-1) momentum own-trend filter
+**Files:** `StockSage/StockSageIndicators.swift` (+timeSeriesMomentum, +trendOK), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** `timeSeriesMomentum(closes,lookback:252,skipRecent:21)` = the name's OWN trailing return over `lookback` bars EXCLUDING the most-recent `skipRecent` (the standard 12-1 construction that dodges the 1-month reversal). One of the most replicated cross-asset anomalies; doubles as a crash filter — a long against a name's own downtrend is exactly the trade to veto. `trendOK(...)` is the binary risk-on/off gate (a FILTER, never a forecast). nil when bars insufficient.
+**Verify:** typecheck clean; python-verified — monotone up → +150, down → −71%, a series rising over the lookback but dropping the last 5 bars → still +150 (the skip works), insufficient bars → nil.
+**Result:** the engine now has an absolute own-trend veto to complement the cross-sectional relativeStrength — ready to gate bestOpportunity/the trade gate. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

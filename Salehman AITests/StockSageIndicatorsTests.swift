@@ -108,6 +108,20 @@ struct StockSageIndicatorsTests {
         #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
     }
 
+    @Test func timeSeriesMomentumSkipsTheRecentWindow() {
+        let up = (1...30).map(Double.init)
+        #expect((I.timeSeriesMomentum(up, lookback: 20, skipRecent: 5) ?? -1) > 0)
+        let down = (1...30).reversed().map(Double.init)
+        #expect((I.timeSeriesMomentum(down, lookback: 20, skipRecent: 5) ?? 1) < 0)
+        // Rising over the lookback but DROPPING the last 5 bars → still positive (the skip works):
+        // count 30, lookback 20, skip 5 → from closes[9]=10 to closes[24]=25 → +150%.
+        let c = (1...25).map(Double.init) + [24.0, 22, 20, 18, 16]
+        #expect(abs((I.timeSeriesMomentum(c, lookback: 20, skipRecent: 5) ?? 0) - 150) < 1e-9)
+        #expect(I.trendOK(c, lookback: 20, skipRecent: 5) == true)
+        #expect(I.trendOK(down, lookback: 20, skipRecent: 5) == false)
+        #expect(I.timeSeriesMomentum(up, lookback: 40, skipRecent: 5) == nil)   // not enough bars
+    }
+
     @Test func donchianChannelAndLookAheadFreeBreakout() {
         let highs = (1...30).map(Double.init)            // 1…30
         let lows  = highs.map { $0 - 0.5 }               // 0.5…29.5

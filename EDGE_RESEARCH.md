@@ -20,7 +20,7 @@
 
 **caveat:** Break-even uses the SAME conviction→winProb ESTIMATE the EV engine already disclaims (conviction is not a probability) and ESTIMATED costs (your real spread/slippage differ). It says 'your hit rate must beat THIS to profit after costs' — a falsification bar, not a promise the trade wins.
 
-### ⬜ #3 — Time-series (absolute) momentum trend filter
+### ✅ DONE (engine; gate-wire next) #3 — Time-series (absolute) momentum trend filter
 **edge:** Time-series momentum — a name's own trailing 12-month return predicting its next-month sign — is one of the most replicated cross-asset, cross-era anomalies (Moskowitz–Ooi–Pedersen 2012), and it is the one momentum variant that doubles as a crash filter: TSMOM books cut exposure into downtrends, smoothing the left tail. The engine already has returnOverPeriod and relativeStrength (cross-sectional vs ^GSPC) but NO absolute own-trend sign gate. As a binary risk-on/off FILTER (not a sizing dial) it adds essentially zero turnover beyond the entry decision and composes as a veto in the trade gate.
 
 **signature:** // Extend StockSageIndicators. nonisolated static func timeSeriesMomentum(closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Double?  — own trailing return over `lookback` bars EXCLUDING the most-recent skipRecent (the standard 12-1 construction; reuse returnOverPeriod on a sliced series), nil when bars insufficient. Gate helper nonisolated static func trendOK(closes: [Double]) -> Bool? = sign>0. Wire as a new TradeGateCheck (.warn when own-trend is negative: 'taking a long against the name's own downtrend') and as an optional veto/`note` on bestOpportunity.

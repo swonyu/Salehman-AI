@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 16:40 +03 · Swift files: 246 · Swift LOC: 46221_
+_Generated: 2026-06-22 16:46 +03 · Swift files: 246 · Swift LOC: 46256_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10426,7 +10426,7 @@ enum StockSageGlossary {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (201 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (222 lines) =====
 ```swift
 import Foundation
 
@@ -10609,6 +10609,27 @@ enum StockSageIndicators {
         let atrPct = a / price * 100
         guard atrPct > 0 else { return nil }
         return mom / atrPct
+    }
+
+    /// Time-series (absolute) momentum — the name's OWN trailing return over `lookback` bars
+    /// EXCLUDING the most-recent `skipRecent` (the standard 12-1 construction that avoids the
+    /// 1-month reversal). One of the most replicated cross-asset anomalies, and it doubles as a
+    /// crash filter: a long against a name's own downtrend is the trade to veto. Same sign as the
+    /// trend. nil when there aren't enough bars. Pair with `trendOK` for a binary risk-on/off gate.
+    nonisolated static func timeSeriesMomentum(_ closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Double? {
+        guard lookback > skipRecent, skipRecent >= 0, closes.count > lookback else { return nil }
+        let startIdx = closes.count - 1 - lookback     // `lookback` bars back
+        let endIdx   = closes.count - 1 - skipRecent   // up to `skipRecent` bars ago (the 12-1 skip)
+        guard startIdx >= 0, endIdx > startIdx else { return nil }
+        let past = closes[startIdx]
+        guard past != 0 else { return nil }
+        return (closes[endIdx] - past) / past * 100
+    }
+
+    /// Binary own-trend gate: is time-series momentum positive (risk-on for a long)? nil when
+    /// momentum can't be computed. A FILTER/veto, never a return forecast.
+    nonisolated static func trendOK(_ closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Bool? {
+        timeSeriesMomentum(closes, lookback: lookback, skipRecent: skipRecent).map { $0 > 0 }
     }
 
     /// Donchian channel: the highest high and lowest low over the last `period` bars. nil if
@@ -43755,7 +43776,7 @@ struct StockSageHonestyGuardTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (124 lines) =====
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (138 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43865,6 +43886,20 @@ struct StockSageIndicatorsTests {
         #expect(I.volAdjustedMomentum(closes: short, highs: short, lows: short) == nil)
         let flat = Array(repeating: 100.0, count: 200)
         #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
+    }
+
+    @Test func timeSeriesMomentumSkipsTheRecentWindow() {
+        let up = (1...30).map(Double.init)
+        #expect((I.timeSeriesMomentum(up, lookback: 20, skipRecent: 5) ?? -1) > 0)
+        let down = (1...30).reversed().map(Double.init)
+        #expect((I.timeSeriesMomentum(down, lookback: 20, skipRecent: 5) ?? 1) < 0)
+        // Rising over the lookback but DROPPING the last 5 bars → still positive (the skip works):
+        // count 30, lookback 20, skip 5 → from closes[9]=10 to closes[24]=25 → +150%.
+        let c = (1...25).map(Double.init) + [24.0, 22, 20, 18, 16]
+        #expect(abs((I.timeSeriesMomentum(c, lookback: 20, skipRecent: 5) ?? 0) - 150) < 1e-9)
+        #expect(I.trendOK(c, lookback: 20, skipRecent: 5) == true)
+        #expect(I.trendOK(down, lookback: 20, skipRecent: 5) == false)
+        #expect(I.timeSeriesMomentum(up, lookback: 40, skipRecent: 5) == nil)   // not enough bars
     }
 
     @Test func donchianChannelAndLookAheadFreeBreakout() {
@@ -49555,7 +49590,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7787 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7795 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -56226,6 +56261,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EDGE_RESEARCH #3 — time-series (12-1) momentum own-trend filter
+**Files:** `StockSage/StockSageIndicators.swift` (+timeSeriesMomentum, +trendOK), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** `timeSeriesMomentum(closes,lookback:252,skipRecent:21)` = the name's OWN trailing return over `lookback` bars EXCLUDING the most-recent `skipRecent` (the standard 12-1 construction that dodges the 1-month reversal). One of the most replicated cross-asset anomalies; doubles as a crash filter — a long against a name's own downtrend is exactly the trade to veto. `trendOK(...)` is the binary risk-on/off gate (a FILTER, never a forecast). nil when bars insufficient.
+**Verify:** typecheck clean; python-verified — monotone up → +150, down → −71%, a series rising over the lookback but dropping the last 5 bars → still +150 (the skip works), insufficient bars → nil.
+**Result:** the engine now has an absolute own-trend veto to complement the cross-sectional relativeStrength — ready to gate bestOpportunity/the trade gate. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58790,7 +58833,7 @@ Wiring (exhaustive switch arms all caught by compiler):
 
 **caveat:** Break-even uses the SAME conviction→winProb ESTIMATE the EV engine already disclaims (conviction is not a probability) and ESTIMATED costs (your real spread/slippage differ). It says 'your hit rate must beat THIS to profit after costs' — a falsification bar, not a promise the trade wins.
 
-### ⬜ #3 — Time-series (absolute) momentum trend filter
+### ✅ DONE (engine; gate-wire next) #3 — Time-series (absolute) momentum trend filter
 **edge:** Time-series momentum — a name's own trailing 12-month return predicting its next-month sign — is one of the most replicated cross-asset, cross-era anomalies (Moskowitz–Ooi–Pedersen 2012), and it is the one momentum variant that doubles as a crash filter: TSMOM books cut exposure into downtrends, smoothing the left tail. The engine already has returnOverPeriod and relativeStrength (cross-sectional vs ^GSPC) but NO absolute own-trend sign gate. As a binary risk-on/off FILTER (not a sizing dial) it adds essentially zero turnover beyond the entry decision and composes as a veto in the trade gate.
 
 **signature:** // Extend StockSageIndicators. nonisolated static func timeSeriesMomentum(closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Double?  — own trailing return over `lookback` bars EXCLUDING the most-recent skipRecent (the standard 12-1 construction; reuse returnOverPeriod on a sliced series), nil when bars insufficient. Gate helper nonisolated static func trendOK(closes: [Double]) -> Bool? = sign>0. Wire as a new TradeGateCheck (.warn when own-trend is negative: 'taking a long against the name's own downtrend') and as an optional veto/`note` on bestOpportunity.

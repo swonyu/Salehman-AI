@@ -181,6 +181,27 @@ enum StockSageIndicators {
         return mom / atrPct
     }
 
+    /// Time-series (absolute) momentum — the name's OWN trailing return over `lookback` bars
+    /// EXCLUDING the most-recent `skipRecent` (the standard 12-1 construction that avoids the
+    /// 1-month reversal). One of the most replicated cross-asset anomalies, and it doubles as a
+    /// crash filter: a long against a name's own downtrend is the trade to veto. Same sign as the
+    /// trend. nil when there aren't enough bars. Pair with `trendOK` for a binary risk-on/off gate.
+    nonisolated static func timeSeriesMomentum(_ closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Double? {
+        guard lookback > skipRecent, skipRecent >= 0, closes.count > lookback else { return nil }
+        let startIdx = closes.count - 1 - lookback     // `lookback` bars back
+        let endIdx   = closes.count - 1 - skipRecent   // up to `skipRecent` bars ago (the 12-1 skip)
+        guard startIdx >= 0, endIdx > startIdx else { return nil }
+        let past = closes[startIdx]
+        guard past != 0 else { return nil }
+        return (closes[endIdx] - past) / past * 100
+    }
+
+    /// Binary own-trend gate: is time-series momentum positive (risk-on for a long)? nil when
+    /// momentum can't be computed. A FILTER/veto, never a return forecast.
+    nonisolated static func trendOK(_ closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Bool? {
+        timeSeriesMomentum(closes, lookback: lookback, skipRecent: skipRecent).map { $0 > 0 }
+    }
+
     /// Donchian channel: the highest high and lowest low over the last `period` bars. nil if
     /// fewer than `period` bars. Computed over EXACTLY the slice you pass — so to stay
     /// look-ahead-free in a backtest, pass bars up to but EXCLUDING the current one
