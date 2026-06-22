@@ -113,8 +113,13 @@ enum StockSageBacktester {
                 entryIdx: entryIdx, stop: stop, target: target,
                 opens: opens, highs: highs, lows: lows, closes: closes, n: n, mode: exitMode)
 
-            // Round-trip friction (in price units) eats into the realized R — the very
-            // spread/slippage NetEdge models but the equity curve used to ignore.
+            // Round-trip friction (in price units) eats into realized R, measured against the
+            // PLANNED 1R risk (entry−stop). This is the honest R-multiple: a stop-out costs your
+            // risk distance PLUS the friction, so a loser nets WORSE than −1R (e.g. −1.05), and a
+            // winner banks less than its gross R. (An audit proposed dividing by risk+cost for
+            // "NetEdge consistency" — REJECTED: that redefines the unit and makes losers read as
+            // exactly −1R, HIDING the friction. NetEdge's net R:R is a different quantity.)
+            // costs == nil → costPerShare 0 → r == (exit − entry)/risk, byte-for-byte.
             let costPerShare = costs.map { Swift.max(0, $0.roundTripBps) / 10_000 * entry } ?? 0
             let r = (exitPrice - entry - costPerShare) / risk
             trades.append(BacktestTrade(entryIndex: entryIdx, exitIndex: exitIdx,

@@ -6685,6 +6685,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Backtest cost-R: audit #5 EVALUATED then REJECTED (re-verify discipline) + monotonicity test
+**Files:** `StockSage/StockSageBacktester.swift` (comment only — formula unchanged), `Salehman AITests/StockSageBacktesterTests.swift` (+cost-monotonicity assert). Persisted AUDIT_FINDINGS_2.md.
+**What:** the backtest/portfolio audit proposed dividing realized R by (risk+cost) instead of risk, claiming it makes stop-outs "worse than -1R, NetEdge-consistent". I implemented it, then python-verified the claim — and it was FALSE: its own arithmetic was wrong (-2.1/2.1 = -1.0, NOT -1.0476). The proposed change actually makes a stop-out read as EXACTLY -1R, HIDING the friction on losers. The EXISTING single-sided formula `(exit-entry-cost)/risk` is the honest R-multiple: R is measured against the PLANNED 1R risk, so a loser costs your stop distance PLUS friction = WORSE than -1R (e.g. -1.05). REVERTED the change; added a comment documenting why single-sided is intentional so it isn't "fixed" again; kept a cost-monotonicity test (wider cost → strictly lower totalR). NetEdge's net R:R is a different quantity (a ratio, not a realized R-multiple).
+**Verify:** typecheck clean; python — single-sided stop r=-1.05 (honest, worse than -1R) vs proposed -1.0 (hides friction); nil cost byte-identical.
+**Other audit findings (REAL, queued in AUDIT_FINDINGS_2.md):** #1 isSignificant doesn't gate verdict COLOR (UI), #2 Kelly fraction mislabeled as stop-risk "Risk $" (should be capital-to-allocate), #3 USD-leading FX (USDSAR etc.) never converts, #4 London .L pence treated as pounds → ~100x currency inflation.
+**Result:** caught + rejected a plausible-but-wrong "honesty fix" by measurement, not deference. The re-verify rule paid for itself. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -187,5 +187,9 @@ struct StockSageBacktesterTests {
         #expect(costed.trades == free.trades)        // costs don't change which trades happen
         #expect(costed.totalR <= free.totalR)        // costs never help
         if free.trades > 0 { #expect(costed.totalR < free.totalR) }   // strictly lower once trading
+        // Cost is monotonic: a still-wider cost is strictly worse again (more friction off every
+        // trade's realized R, measured against the planned 1R risk — losers end up worse than −1R).
+        let wider = StockSageNetEdge.CostAssumption(spreadBps: 100, slippageBps: 100, assetClass: "crypto")
+        if free.trades > 0 { #expect(StockSageBacktester.run(up, costs: wider).totalR < costed.totalR) }
     }
 }
