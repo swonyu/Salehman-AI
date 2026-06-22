@@ -175,6 +175,17 @@ struct StockSageExpectedValueTests {
         #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
     }
 
+    @Test func afterCostNegativeFlipIsDemotedBelowCleanSetup() {
+        // Thin crypto flip: +EV pre-cost (rewardR 1.5) but 50bps crypto cost pushes the after-cost
+        // break-even (50%) ABOVE its conviction win-prob (46.5%) → must not out-rank a clean setup.
+        let thin  = idea("BTC-USD", conviction: 0.5, stop: 98, target: 103)
+        let clean = idea("AAPL",    conviction: 0.7, stop: 90, target: 130)   // 13bps, clears easily
+        #expect(EV.rankByEV([thin, clean]).first?.symbol == "AAPL")
+        #expect(EV.bestOpportunity([thin, clean])?.idea.symbol == "AAPL")
+        // The clean setup alone is still a valid best opportunity (not over-demoted).
+        #expect(EV.bestOpportunity([clean])?.idea.symbol == "AAPL")
+    }
+
     @Test func regimeGateKeepsBannedSideFromTopRank() {
         let bear   = MarketRegime(state: .trendingBear, riskScore: -0.5, signals: [], sizingBias: 0.5,  caveat: "x")
         let bull   = MarketRegime(state: .trendingBull, riskScore: 0.6,  signals: [], sizingBias: 1.1,  caveat: "x")

@@ -6735,6 +6735,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EDGE_RESEARCH #2 WIRING — demote after-cost-negative ideas in the ranking
+**Files:** `StockSage/StockSageExpectedValue.swift` (clearsCostAfterFrictions + evRankKey/bestOpportunity), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What:** the break-even-win-rate engine (EDGE #2) is now WIRED into ranking. `clearsCostAfterFrictions(idea)` computes NetEdge.evaluate(entry:price, stop, target, defaultCosts(forSymbol).spread/slip) and checks the idea's conviction-mapped winProbEstimate against NetEdge.breakEvenWinRate (clearsCost). A setup that's +EV on paper but net-negative after its real frictions (a thin, high-cost crypto flip) is demoted by 500_000 in evRankKey (between the conviction band and the regime ban) and EXCLUDED from bestOpportunity. No stop/target ⇒ treated as clearing (unchanged). Existing ranking tests unaffected (their setups clear cost — re-verified).
+**Verify:** typecheck clean; python-verified — thin BTC-USD 100/98/103 conv0.5 at 50bps: after-cost break-even 0.50 > winProb 0.465 ⇒ FAILS (demoted); clean AAPL 100/90/130 conv0.7 at 13bps: break-even 0.253 < 0.511 ⇒ clears. Test: rankByEV([thin,clean]).first == AAPL; bestOpportunity excludes the thin flip.
+**Result:** the board no longer crowns a flip whose costs quietly eat the edge — exactly where small accounts bleed. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

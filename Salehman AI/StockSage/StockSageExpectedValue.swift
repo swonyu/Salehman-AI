@@ -107,8 +107,23 @@ enum StockSageExpectedValue {
     nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea) -> Double? {
         ev(for: idea).map { $0.evR * qualityWeight(idea.advice.conviction) }
     }
+    /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
+    /// high-cost flip can be positive-EV on paper yet net-negative once frictions are paid.
+    /// No defined R (no stop/target) ⇒ treated as clearing (don't demote — unchanged).
+    private nonisolated static func clearsCostAfterFrictions(_ idea: StockSageIdea) -> Bool {
+        guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return true }
+        let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+        guard let ne = StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
+                                                 spreadBps: c.spreadBps, slippageBps: c.slippageBps) else { return true }
+        return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction))
+    }
+
     private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
-        qualityAdjustedEVR(for: idea).map { idea.advice.conviction >= minConvictionToRank ? $0 : $0 - 1000 }
+        guard let base = qualityAdjustedEVR(for: idea) else { return nil }
+        var key = base
+        if idea.advice.conviction < minConvictionToRank { key -= 1000 }       // low-conviction band
+        if !clearsCostAfterFrictions(idea) { key -= 500_000 }                 // costs eat the edge → below clean setups
+        return key
     }
 
     // Regime gate: don't crown a BUY in a crisis/bear tape, or a SHORT in a bull. A banned side
@@ -182,6 +197,7 @@ enum StockSageExpectedValue {
         return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
+                  clearsCostAfterFrictions(idea),                  // …nor a setup that's net-negative after costs
                   let e = ev(for: idea), e.evR > 0 else { return nil }
             return (idea, e)
         }
