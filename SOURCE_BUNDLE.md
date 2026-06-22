@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:13 +03 · Swift files: 238 · Swift LOC: 45103_
+_Generated: 2026-06-22 12:15 +03 · Swift files: 238 · Swift LOC: 45106_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26425,7 +26425,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3129 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3132 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -29444,8 +29444,11 @@ struct MarketsView: View {
 
     /// Sparkline tint by net direction over the shown window.
     private func sparkColor(_ spark: [Double]) -> Color {
-        guard let first = spark.first, let last = spark.last else { return DS.Palette.accent }
-        return last >= first ? DS.Palette.successSoft : DS.Palette.danger
+        guard let first = spark.first, let last = spark.last, first != 0 else { return DS.Palette.accent }
+        let change = (last - first) / abs(first)
+        if change > 0.001 { return DS.Palette.successSoft }   // up >0.1%
+        if change < -0.001 { return DS.Palette.danger }       // down >0.1%
+        return DS.Palette.textSecondary                        // effectively flat → neutral, not a fake "green gain"
     }
 
     // MARK: Empty
@@ -58139,7 +58142,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Compounds the rate-limit risk exactly when the user is watching the app start. Gate Monitor's first refresh behind a short delay (or share the onAppear snapshot) and keep ideas-on-open opt-in + staggered after quotes land.
 **Files:** Salehman AI/Views/MarketsView.swift:124-129; Salehman AI/StockSage/StockSageMonitor.swift:45-50
 
-### ⬜ #30 — Money-velocity card header sizing + neutral sparkline color for flat moves  [low/small, Visual/visual]
+### ✅ DONE (sparkline part) #30 — Money-velocity card header sizing + neutral sparkline color for flat moves  [low/small, Visual/visual]
 **What:** moneyVelocityCard header is 11pt bold while peer card titles (regime, journal) are 14pt semibold, so it reads as a sub-section. sparkColor() returns success for last>=first, so a ranging/flat idea shows green arbitrarily (≥ favors green).
 **Why:** Hierarchy clarity + honest visual encoding. Bump the header to 13-14pt; return a neutral color when |last-first|/first < ~2% so flat ideas don't look like uptrends.
 **Files:** Salehman AI/Views/MarketsView.swift:2106; Salehman AI/Views/MarketsView.swift:2889-2892

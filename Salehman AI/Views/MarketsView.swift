@@ -3015,8 +3015,11 @@ struct MarketsView: View {
 
     /// Sparkline tint by net direction over the shown window.
     private func sparkColor(_ spark: [Double]) -> Color {
-        guard let first = spark.first, let last = spark.last else { return DS.Palette.accent }
-        return last >= first ? DS.Palette.successSoft : DS.Palette.danger
+        guard let first = spark.first, let last = spark.last, first != 0 else { return DS.Palette.accent }
+        let change = (last - first) / abs(first)
+        if change > 0.001 { return DS.Palette.successSoft }   // up >0.1%
+        if change < -0.001 { return DS.Palette.danger }       // down >0.1%
+        return DS.Palette.textSecondary                        // effectively flat → neutral, not a fake "green gain"
     }
 
     // MARK: Empty
