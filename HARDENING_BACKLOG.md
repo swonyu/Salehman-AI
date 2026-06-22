@@ -83,7 +83,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** When volume data is available, add VolumeProfile{crisis<10,thin<100,liquid<1000,deep} and fillConfidence(margin:volumePerDay:buyLimit:)->(score,caveat); show ⚠ "Low volume — may not fill in 4h" when <0.5. Until volume data exists, add a manual "Known thin market?" toggle on listingRow.
 **Why:** gp/hour with no liquidity notion is the single most misleading OSRS surface. Pairs with rank 9's caveat fix. Larger effort because it needs a volume source (RuneLite/official API).
 
-### ⬜ #15 — Partial-profit ladder (scale-out) engine + journal wiring  [high/medium, feature]
+### ✅ DONE #15 — Partial-profit ladder (scale-out) engine + journal wiring  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageProfitLadder.swift (new) + Views/MarketsView.swift
 **What:** struct ProfitLadder/ProfitLevel; StockSageProfitLadder.suggest(entry:stop:target:accountRisk:) returning rungs (e.g. 33% at +1R/+2R/+3R) with caveat "reduces variance, sacrifices extreme winners." Wire into trade-plan export + journal (planned vs actual rungs). Dedup: merges the honesty-gap + feature entries.
 **Why:** Without a ladder the UI silently nudges binary all-or-nothing exits; scale-out enforces discipline. Caveat is load-bearing.

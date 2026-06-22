@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:08 +03 · Swift files: 243 · Swift LOC: 45395_
+_Generated: 2026-06-22 13:18 +03 · Swift files: 245 · Swift LOC: 45477_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11412,6 +11412,50 @@ enum StockSageNetEdge {
 
         return NetEdge(grossRR: grossRR, netRR: netRR, costPerShare: cost,
                        costAsPctOfReward: costPct, netExpectancyR: netExpR, verdict: verdict)
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSagePartialLadder.swift (40 lines) =====
+```swift
+import Foundation
+
+// MARK: - Partial-profit ladder (scale-out plan)
+//
+// Taking the whole position off at the target maximizes R but also variance — one failed
+// breakout and the runner gives it all back. A scale-out ladder banks pieces along the
+// way: it LOWERS the average exit R but locks gains and cuts the chance of a winner
+// round-tripping to break-even. This lays out evenly-spaced rungs from the first R step up
+// to the target, with the blended exit R you'd realize if each fills. Pure + deterministic.
+// Honest: it ASSUMES each level fills — gaps and thin liquidity can skip a rung.
+
+struct LadderRung: Sendable, Equatable, Identifiable {
+    let price: Double
+    let rMultiple: Double   // R banked at this level
+    let fraction: Double    // portion of the position exited here (rungs sum to 1)
+    var id: Double { price }
+}
+
+struct PartialLadder: Sendable, Equatable {
+    let rungs: [LadderRung]
+    let blendedExitR: Double   // Σ fraction · rMultiple — the average R if every rung fills
+}
+
+enum StockSagePartialLadder {
+    /// Evenly-spaced scale-out rungs (equal fractions) from the first R step up to the target
+    /// (the last rung IS the target). Works long and short. nil for a degenerate setup.
+    nonisolated static func levels(entry: Double, stop: Double, target: Double, rungs: Int = 3) -> PartialLadder? {
+        let risk = abs(entry - stop)
+        let reward = abs(target - entry)
+        guard risk > 0, reward > 0, rungs >= 1, entry > 0 else { return nil }
+        let targetR = reward / risk
+        let sign: Double = target > entry ? 1 : -1
+        let frac = 1.0 / Double(rungs)
+        let out = (1...rungs).map { i -> LadderRung in
+            let r = targetR * Double(i) / Double(rungs)
+            return LadderRung(price: entry + sign * r * risk, rMultiple: r, fraction: frac)
+        }
+        return PartialLadder(rungs: out, blendedExitR: out.reduce(0.0) { $0 + $1.fraction * $1.rMultiple })
     }
 }
 ```
@@ -26533,7 +26577,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3160 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3169 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -29324,6 +29368,15 @@ struct MarketsView: View {
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageExpectedValue.caveat)
+                    }
+                }
+                if let stop = a.stopPrice, let target = a.targetPrice,
+                   let ladder = StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3) {
+                    let rungs = ladder.rungs.map { String(format: "%.2f (+%.1fR)", $0.price, $0.rMultiple) }.joined(separator: ", ")
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
+                        Text("Scale-out (⅓ each): \(rungs) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
+                            .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
@@ -43848,6 +43901,43 @@ struct StockSageNetEdgeTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSagePartialLadderTests.swift (33 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Partial-profit ladder (pure)
+
+struct StockSagePartialLadderTests {
+    typealias L = StockSagePartialLadder
+
+    @Test func longLadderEvenlySpacedToTarget() {
+        // entry 100, stop 90 (risk 10), target 130 (3R). 3 rungs → 1R@110, 2R@120, 3R@130.
+        let l = L.levels(entry: 100, stop: 90, target: 130, rungs: 3)!
+        #expect(l.rungs.map(\.price) == [110, 120, 130])
+        #expect(l.rungs.map(\.rMultiple) == [1, 2, 3])
+        #expect(l.rungs.allSatisfy { abs($0.fraction - 1.0 / 3) < 1e-9 })
+        #expect(abs(l.blendedExitR - 2.0) < 1e-9)        // (1+2+3)/3 — scaling out averages to 2R
+        #expect(l.rungs.last?.price == 130)              // last rung is the target
+    }
+
+    @Test func shortLadderMirrors() {
+        // short: entry 100, stop 110 (risk 10), target 80 (2R). 2 rungs → 1R@90, 2R@80.
+        let s = L.levels(entry: 100, stop: 110, target: 80, rungs: 2)!
+        #expect(s.rungs.map(\.price) == [90, 80])
+        #expect(s.rungs.map(\.rMultiple) == [1, 2])
+        #expect(abs(s.blendedExitR - 1.5) < 1e-9)        // (1+2)/2
+    }
+
+    @Test func guardsDegenerate() {
+        #expect(L.levels(entry: 100, stop: 100, target: 130, rungs: 3) == nil)  // zero risk
+        #expect(L.levels(entry: 100, stop: 90, target: 100, rungs: 3) == nil)   // target == entry
+        #expect(L.levels(entry: 100, stop: 90, target: 130, rungs: 0) == nil)   // no rungs
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSagePortfolioAnalyticsTests.swift (109 lines) =====
 ```swift
 import Testing
@@ -48426,7 +48516,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7635 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7640 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54947,6 +55037,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Three surfaces dressed an ESTIMATE in colors that implied more than an estimate. (#8) The "≈ +$X/week" velocity figures (summary card + fast-lane) were success-green — green reads as a realized gain; switched to neutral textSecondary (the "estimate, NOT income" label stays). (#10) The HYPOTHETICAL forward growth projection was colored warningSoft/danger — alarm colors over-dramatize a neutral what-if; switched to .secondary (the "HYPOTHETICAL" label stays). (#9) The gp/hour glossary said "real fills depend on volume" — strengthened to "A CEILING, not a rate you'll hit … real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical." ✅ typecheck clean.
 **Result:** Hardening 1-10 done (the confirmed bugs, both features, the test sweep, the honesty polish). NEXT: OSRS money features #13 (ROI/capital-efficiency) / #15 (partial-profit ladder) / #16 (tax-aware net margin). Loop continues.
 
+## 2026-06-22 · Hardening #15: Partial-profit ladder (scale-out plan)
+**Files:** `StockSage/StockSagePartialLadder.swift` (NEW), `Views/MarketsView.swift` (idea-sheet scale-out line), `Salehman AITests/StockSagePartialLadderTests.swift` (NEW, 3 tests).
+**What & why:** Taking the whole position off at the target maxes R but also variance — one failed breakout and the runner round-trips to break-even. `StockSagePartialLadder.levels(entry:stop:target:rungs:)` lays out evenly-spaced equal-fraction scale-out rungs from the first R step up to the target (last rung = target), works long & short, with the BLENDED exit R if each fills. The idea detail sheet shows "Scale-out (⅓ each): 110 (+1R), 120 (+2R), 130 (+3R) — blended +2.0R. Banks gains + cuts variance vs all-at-target; assumes each level fills." Honest: assumes fills (gaps/thin liquidity skip rungs). 3 tests, PYTHON-VERIFIED: long 100/90/130 → prices [110,120,130], R [1,2,3], blended 2.0; short 100/110/80 → [90,80], [1,2], 1.5; zero-risk/target==entry/0-rungs → nil.
+**Result:** Hardening 1-10 + #15 done. NEXT: #13 GE ROI rank, #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58313,7 +58408,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** When volume data is available, add VolumeProfile{crisis<10,thin<100,liquid<1000,deep} and fillConfidence(margin:volumePerDay:buyLimit:)->(score,caveat); show ⚠ "Low volume — may not fill in 4h" when <0.5. Until volume data exists, add a manual "Known thin market?" toggle on listingRow.
 **Why:** gp/hour with no liquidity notion is the single most misleading OSRS surface. Pairs with rank 9's caveat fix. Larger effort because it needs a volume source (RuneLite/official API).
 
-### ⬜ #15 — Partial-profit ladder (scale-out) engine + journal wiring  [high/medium, feature]
+### ✅ DONE #15 — Partial-profit ladder (scale-out) engine + journal wiring  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageProfitLadder.swift (new) + Views/MarketsView.swift
 **What:** struct ProfitLadder/ProfitLevel; StockSageProfitLadder.suggest(entry:stop:target:accountRisk:) returning rungs (e.g. 33% at +1R/+2R/+3R) with caveat "reduces variance, sacrifices extreme winners." Wire into trade-plan export + journal (planned vs actual rungs). Dedup: merges the honesty-gap + feature entries.
 **Why:** Without a ladder the UI silently nudges binary all-or-nothing exits; scale-out enforces discipline. Caveat is load-bearing.

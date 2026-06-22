@@ -6518,6 +6518,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Three surfaces dressed an ESTIMATE in colors that implied more than an estimate. (#8) The "≈ +$X/week" velocity figures (summary card + fast-lane) were success-green — green reads as a realized gain; switched to neutral textSecondary (the "estimate, NOT income" label stays). (#10) The HYPOTHETICAL forward growth projection was colored warningSoft/danger — alarm colors over-dramatize a neutral what-if; switched to .secondary (the "HYPOTHETICAL" label stays). (#9) The gp/hour glossary said "real fills depend on volume" — strengthened to "A CEILING, not a rate you'll hit … real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical." ✅ typecheck clean.
 **Result:** Hardening 1-10 done (the confirmed bugs, both features, the test sweep, the honesty polish). NEXT: OSRS money features #13 (ROI/capital-efficiency) / #15 (partial-profit ladder) / #16 (tax-aware net margin). Loop continues.
 
+## 2026-06-22 · Hardening #15: Partial-profit ladder (scale-out plan)
+**Files:** `StockSage/StockSagePartialLadder.swift` (NEW), `Views/MarketsView.swift` (idea-sheet scale-out line), `Salehman AITests/StockSagePartialLadderTests.swift` (NEW, 3 tests).
+**What & why:** Taking the whole position off at the target maxes R but also variance — one failed breakout and the runner round-trips to break-even. `StockSagePartialLadder.levels(entry:stop:target:rungs:)` lays out evenly-spaced equal-fraction scale-out rungs from the first R step up to the target (last rung = target), works long & short, with the BLENDED exit R if each fills. The idea detail sheet shows "Scale-out (⅓ each): 110 (+1R), 120 (+2R), 130 (+3R) — blended +2.0R. Banks gains + cuts variance vs all-at-target; assumes each level fills." Honest: assumes fills (gaps/thin liquidity skip rungs). 3 tests, PYTHON-VERIFIED: long 100/90/130 → prices [110,120,130], R [1,2,3], blended 2.0; short 100/110/80 → [90,80], [1,2], 1.5; zero-risk/target==entry/0-rungs → nil.
+**Result:** Hardening 1-10 + #15 done. NEXT: #13 GE ROI rank, #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
+
 ---
 
 ## Standing notes / known issues

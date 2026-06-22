@@ -2789,6 +2789,15 @@ struct MarketsView: View {
                             .help(StockSageExpectedValue.caveat)
                     }
                 }
+                if let stop = a.stopPrice, let target = a.targetPrice,
+                   let ladder = StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3) {
+                    let rungs = ladder.rungs.map { String(format: "%.2f (+%.1fR)", $0.price, $0.rMultiple) }.joined(separator: ", ")
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
+                        Text("Scale-out (⅓ each): \(rungs) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
+                            .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
