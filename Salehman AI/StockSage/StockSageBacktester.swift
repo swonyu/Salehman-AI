@@ -69,6 +69,7 @@ struct BacktestResult: Sendable, Equatable {
 enum ExitMode: Sendable, Equatable {
     case allAtTarget
     case timeStop(maxBars: Int)
+    case chandelierTrail(atrMult: Double, period: Int)
 }
 
 enum StockSageBacktester {
@@ -132,9 +133,23 @@ enum StockSageBacktester {
                                          opens: [Double], highs: [Double], lows: [Double], closes: [Double],
                                          n: Int, mode: ExitMode)
         -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        // Precompute the ratcheting trail once for the chandelier mode (nil otherwise — and
+        // nil if ATR can't be computed, in which case we fall back to the fixed stop, no crash).
+        var trail: [Double]? = nil
+        if case let .chandelierTrail(atrMult, period) = mode {
+            trail = trailLevels(highs: highs, lows: lows, closes: closes,
+                                entryIndex: entryIdx, atrMult: atrMult, period: period)
+        }
         var j = entryIdx
         while j < n {
-            if lows[j] <= stop { return (j, Swift.min(stop, opens[j]), .stop) }
+            // Effective stop this bar. For the chandelier trail, use the PRIOR bar's ratcheted
+            // level (data through j−1 only — no look-ahead), never looser than the initial stop.
+            var effStop = stop
+            if let trail, j > entryIdx + 1 {
+                let pi = (j - 1) - (entryIdx + 1)
+                if pi >= 0, pi < trail.count { effStop = Swift.max(stop, trail[pi]) }
+            }
+            if lows[j] <= effStop { return (j, Swift.min(effStop, opens[j]), .stop) }
             if highs[j] >= target { return (j, target, .target) }
             if case let .timeStop(maxBars) = mode, j - entryIdx >= maxBars {
                 return (j, closes[j], .timeStop)

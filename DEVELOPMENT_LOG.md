@@ -6626,6 +6626,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #2b — wire .chandelierTrail ExitMode (measured A/B vs all-at-target)
+**Files:** `StockSage/StockSageBacktester.swift` (ExitMode +chandelierTrail case; simulateExit uses trailLevels), `Salehman AITests/StockSageBacktesterTests.swift` (+1 A/B test).
+**What:** added `.chandelierTrail(atrMult,period)` to ExitMode and wired it into simulateExit. It applies the PRIOR bar's ratcheted trail level to each bar (data through j−1 only → no look-ahead), never looser than the initial stop; stop still wins ties. ATR-unavailable ⇒ trailLevels nil ⇒ graceful fall back to the fixed stop (no crash). GOLDEN-MASTER intact: .allAtTarget leaves `trail` nil so effStop==stop and the walk is byte-for-byte unchanged.
+**Verify:** typecheck clean; python-verified A/B on a rise-then-pullback long (stop 90/target 200 never hit): allAtTarget rides to the last bar = (idx 13, 112, openAtEnd); chandelierTrail = (idx 10, 118, stop) — exits EARLIER and HIGHER (banks the gain before the pullback eats it). Test pins both exact outcomes + the earlier/higher relations.
+**Result:** the ratcheting trail is now a measurable ExitMode — the backtester can prove whether trailing beats taking the fixed 2:1, on REAL history. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

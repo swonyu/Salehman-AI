@@ -112,6 +112,26 @@ struct StockSageBacktesterTests {
         #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
     }
 
+    @Test func chandelierTrailBanksTheGainEarlierThanAllAtTarget() {
+        // A long that rises to a peak then pulls back. Stop 90 / target 200 are never hit, so
+        // all-at-target rides to the last bar's close (112); the ratcheting trail catches the
+        // pullback and exits EARLIER at a HIGHER price (118) — locking the gain. (python-verified)
+        let c = [100.0, 103, 106, 110, 114, 118, 122, 124, 123, 121, 118, 115, 113, 112]
+        let h = c.map { $0 + 1 }
+        let l = c.map { $0 - 1 }
+        let o = c
+        let n = c.count
+        let all = StockSageBacktester.simulateExit(entryIdx: 3, stop: 90, target: 200,
+                    opens: o, highs: h, lows: l, closes: c, n: n, mode: .allAtTarget)
+        #expect(all.exitIdx == 13 && all.exitPrice == 112 && all.outcome == .openAtEnd)
+        let trail = StockSageBacktester.simulateExit(entryIdx: 3, stop: 90, target: 200,
+                    opens: o, highs: h, lows: l, closes: c, n: n, mode: .chandelierTrail(atrMult: 1.5, period: 3))
+        #expect(trail.outcome == .stop)
+        #expect(trail.exitIdx == 10 && trail.exitPrice == 118)
+        #expect(trail.exitIdx < all.exitIdx)       // exits earlier…
+        #expect(trail.exitPrice > all.exitPrice)   // …and at a higher price (a long's gain banked)
+    }
+
     @Test func foldRangesTileThePostWarmupRegion() {
         let r = StockSageBacktester.foldRanges(n: 350, warmup: 50, folds: 3)
         #expect(r.count == 3)

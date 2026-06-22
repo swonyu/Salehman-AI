@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 15:50 +03 · Swift files: 246 · Swift LOC: 46005_
+_Generated: 2026-06-22 16:00 +03 · Swift files: 246 · Swift LOC: 46040_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9021,7 +9021,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (244 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (259 lines) =====
 ```swift
 import Foundation
 
@@ -9094,6 +9094,7 @@ struct BacktestResult: Sendable, Equatable {
 enum ExitMode: Sendable, Equatable {
     case allAtTarget
     case timeStop(maxBars: Int)
+    case chandelierTrail(atrMult: Double, period: Int)
 }
 
 enum StockSageBacktester {
@@ -9157,9 +9158,23 @@ enum StockSageBacktester {
                                          opens: [Double], highs: [Double], lows: [Double], closes: [Double],
                                          n: Int, mode: ExitMode)
         -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        // Precompute the ratcheting trail once for the chandelier mode (nil otherwise — and
+        // nil if ATR can't be computed, in which case we fall back to the fixed stop, no crash).
+        var trail: [Double]? = nil
+        if case let .chandelierTrail(atrMult, period) = mode {
+            trail = trailLevels(highs: highs, lows: lows, closes: closes,
+                                entryIndex: entryIdx, atrMult: atrMult, period: period)
+        }
         var j = entryIdx
         while j < n {
-            if lows[j] <= stop { return (j, Swift.min(stop, opens[j]), .stop) }
+            // Effective stop this bar. For the chandelier trail, use the PRIOR bar's ratcheted
+            // level (data through j−1 only — no look-ahead), never looser than the initial stop.
+            var effStop = stop
+            if let trail, j > entryIdx + 1 {
+                let pi = (j - 1) - (entryIdx + 1)
+                if pi >= 0, pi < trail.count { effStop = Swift.max(stop, trail[pi]) }
+            }
+            if lows[j] <= effStop { return (j, Swift.min(effStop, opens[j]), .stop) }
             if highs[j] >= target { return (j, target, .target) }
             if case let .timeStop(maxBars) = mode, j - entryIdx >= maxBars {
                 return (j, closes[j], .timeStop)
@@ -42575,7 +42590,7 @@ struct StockSageBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageBacktesterTests.swift (151 lines) =====
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (171 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42689,6 +42704,26 @@ struct StockSageBacktesterTests {
         let s = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
                     opens: opens, highs: highs, lows: lows2, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
         #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
+    }
+
+    @Test func chandelierTrailBanksTheGainEarlierThanAllAtTarget() {
+        // A long that rises to a peak then pulls back. Stop 90 / target 200 are never hit, so
+        // all-at-target rides to the last bar's close (112); the ratcheting trail catches the
+        // pullback and exits EARLIER at a HIGHER price (118) — locking the gain. (python-verified)
+        let c = [100.0, 103, 106, 110, 114, 118, 122, 124, 123, 121, 118, 115, 113, 112]
+        let h = c.map { $0 + 1 }
+        let l = c.map { $0 - 1 }
+        let o = c
+        let n = c.count
+        let all = StockSageBacktester.simulateExit(entryIdx: 3, stop: 90, target: 200,
+                    opens: o, highs: h, lows: l, closes: c, n: n, mode: .allAtTarget)
+        #expect(all.exitIdx == 13 && all.exitPrice == 112 && all.outcome == .openAtEnd)
+        let trail = StockSageBacktester.simulateExit(entryIdx: 3, stop: 90, target: 200,
+                    opens: o, highs: h, lows: l, closes: c, n: n, mode: .chandelierTrail(atrMult: 1.5, period: 3))
+        #expect(trail.outcome == .stop)
+        #expect(trail.exitIdx == 10 && trail.exitPrice == 118)
+        #expect(trail.exitIdx < all.exitIdx)       // exits earlier…
+        #expect(trail.exitPrice > all.exitPrice)   // …and at a higher price (a long's gain banked)
     }
 
     @Test func foldRangesTileThePostWarmupRegion() {
@@ -49298,7 +49333,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7745 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7753 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55927,6 +55962,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #2b — wire .chandelierTrail ExitMode (measured A/B vs all-at-target)
+**Files:** `StockSage/StockSageBacktester.swift` (ExitMode +chandelierTrail case; simulateExit uses trailLevels), `Salehman AITests/StockSageBacktesterTests.swift` (+1 A/B test).
+**What:** added `.chandelierTrail(atrMult,period)` to ExitMode and wired it into simulateExit. It applies the PRIOR bar's ratcheted trail level to each bar (data through j−1 only → no look-ahead), never looser than the initial stop; stop still wins ties. ATR-unavailable ⇒ trailLevels nil ⇒ graceful fall back to the fixed stop (no crash). GOLDEN-MASTER intact: .allAtTarget leaves `trail` nil so effStop==stop and the walk is byte-for-byte unchanged.
+**Verify:** typecheck clean; python-verified A/B on a rise-then-pullback long (stop 90/target 200 never hit): allAtTarget rides to the last bar = (idx 13, 112, openAtEnd); chandelierTrail = (idx 10, 118, stop) — exits EARLIER and HIGHER (banks the gain before the pullback eats it). Test pins both exact outcomes + the earlier/higher relations.
+**Result:** the ratcheting trail is now a measurable ExitMode — the backtester can prove whether trailing beats taking the fixed 2:1, on REAL history. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58484,7 +58527,7 @@ Wiring (exhaustive switch arms all caught by compiler):
 nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil, exitMode: ExitMode = .allAtTarget) -> BacktestResult
 **testIdea:** Calling run(history, exitMode: .allAtTarget) must return BYTE-FOR-BYTE the same BacktestResult as today's run(history) on AAPL/MSFT (golden-master regression — proves the refactor changed nothing for existing callers). Then a synthetic 60-bar uptrend: .allAtTarget hits +2R; .chandelierTrail exits earlier at a lower-but-positive R; .timeStop(maxBars:5) forces openAtEnd at bar entry+5. Assert each mode produces a DISTINCT, hand-computable R.
 
-### ✅ DONE (engine; .chandelierTrail wiring next) #2 — Ratcheting Chandelier exit engine (the upgrade StockSageTrailingStop lacks) + per-bar walk used by ExitMode  [small]
+### ✅ DONE (engine + wired + A/B) #2 — Ratcheting Chandelier exit engine (the upgrade StockSageTrailingStop lacks) + per-bar walk used by ExitMode  [small]
 **signature:** nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double], entryIndex: Int, atrMult: Double = 3.0, period: Int = 14) -> [Double]?  // one ratcheting stop per post-entry bar, monotonic non-decreasing for a long; nil if ATR unavailable
 **testIdea:** 50-bar series, entry at bar 10. New high 110 at bar 30 with ATR=2, mult=3 -> stop 104. New high 115 at bar 40 -> stop 109. Bar 45 retraces to 108 (high still 115) -> stop STAYS 109, never 108-6. Assert: levels is monotonic non-decreasing (zip(levels, levels.dropFirst()).allSatisfy(<=)). Edge: entry == lastIndex -> empty/nil. Cross-check the FINAL element equals StockSageTrailingStop.suggest(...).level on the same window (consistency with the existing static engine).
 
