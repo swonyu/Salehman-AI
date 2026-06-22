@@ -7128,6 +7128,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SELF-CAUGHT (own crash-fix) — sizer overflow guard now uses Int(exactly:) (2^63 boundary)
+**Files:** `StockSage/StockSagePositionSizer.swift`, `Salehman AITests/StockSagePositionSizerTests.swift`.
+**What (regression-hunt wkwumhx5l #1, LOW — a hole in my OWN inf-crash fix 2a46782):** the new guard `raw <= Double(Int.max)` is wrong at the boundary — Double(Int.max) rounds UP to 2^63, so `2^63 <= 2^63` PASSES, then Int(2^63) still TRAPS (the exact persisted-crash class the guard claimed to kill, just at quintillion-scale inputs). Verified by the hunt with a compiled Swift probe. Fix: `guard raw.isFinite, raw >= 0, let shares = Int(exactly: raw) else { return nil }` — Int(exactly:) returns nil for any non-representable value, no boundary hole.
+**Verify:** typecheck EXIT=0; +test asserting size(account: 2^63, rf 1, entry 2, stop 1) == nil (raw rounds to exactly 2^63 → nil, was a trap). RE-TRACED: normal/inf/nan cases unchanged.
+**Result:** the overflow guard is now correct at every value, not just below 2^63 — Int(exactly:) is the right tool. The regression-hunt caught a flaw in my own prior fix (3rd self-caught this session). ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

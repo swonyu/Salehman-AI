@@ -28,9 +28,10 @@ enum StockSagePositionSizer {
         let riskPerShare = abs(entry - stop)
         guard riskPerShare > 0 else { return nil }
         let riskBudget = account * riskFraction
+        // Int(exactly:) is the correct overflow guard: `raw <= Double(Int.max)` PASSES at raw == 2^63
+        // (Double(Int.max) rounds UP to 2^63), then Int(2^63) still traps. Int(exactly:) returns nil there.
         let raw = (riskBudget / riskPerShare).rounded(.down)
-        guard raw.isFinite, raw >= 0, raw <= Double(Int.max) else { return nil }   // never Int(.infinity)/overflow
-        let shares = Int(raw)
+        guard raw.isFinite, raw >= 0, let shares = Int(exactly: raw) else { return nil }
         let notional = Double(shares) * entry
         return PositionSize(
             shares: shares,
