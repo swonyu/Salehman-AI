@@ -6934,6 +6934,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — portfolio total now FX-converts to USD (+ fixes a .L P&L unit regression I introduced)
+**Files:** `Views/MarketsView.swift` (portfolioTotals + fxRatesToUSD/untrackedFXCurrencies helpers, positionRow P&L, portfolioSummary label+note).
+**What (DATA_INTEGRITY #1 + self-caught regression):** (a) #1: portfolioTotals summed GBP+USD+etc at 1:1. Now each holding's value AND cost go through holdingValue (so .L pence ÷100 applies to BOTH) then × its CCY→USD rate (direct CCYUSD=X else inverse 1/USDCCY=X); untracked-FX currencies are EXCLUDED (flagged), never summed at par. Headline relabeled "Portfolio value (USD)" / "Total P&L (USD)" with a $ sign + an exclusion/FX caveat. (b) SELF-CAUGHT: my earlier .L fix (417573d) applied majorUnitValue to VALUE but left cost as raw p.totalCost, so a .L holding's P&L was £value − pence-cost (garbage). Now positionRow + portfolioTotals route COST through holdingValue too — value and cost share units.
+**Verify:** typecheck EXIT=0; python-checked — 400p×10 → £40 → $50.80 (USD); P&L £40−£35 = £5 (was £40−3500 = garbage).
+**Remaining (DATA_INTEGRITY_AUDIT.md): #4 SAMPLE-price leak; #6 what-if sheet banner; FEED_CACHE #2/#3/#4/#6.**
+**Result:** the headline portfolio number is now a real single-currency (USD) total, and every .L holding's P&L is in consistent units. Self-caught a regression from my own prior fix. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -552,11 +552,34 @@ struct MarketsView: View {
         StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: perShare * shares)
     }
 
+    /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
+    private var fxRatesToUSD: [String: Double] {
+        var rates: [String: Double] = ["USD": 1]
+        for ccy in Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) }) where ccy != "USD" {
+            if let r = currentPrice("\(ccy)USD=X"), r > 0 { rates[ccy] = r }
+            else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rates[ccy] = 1 / inv }
+        }
+        return rates
+    }
+
+    /// Currencies in the book with NO tracked FX rate — EXCLUDED from the USD total (never summed 1:1).
+    private var untrackedFXCurrencies: [String] {
+        let rates = fxRatesToUSD
+        return Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) })
+            .filter { rates[$0] == nil }.sorted()
+    }
+
+    /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
+    /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
+    /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
+    /// untrackedFXCurrencies), not counted at par. (Cost uses today's FX, so P&L blends asset + FX.)
     private var portfolioTotals: (cost: Double, value: Double) {
         var cost = 0.0, value = 0.0
+        let rates = fxRatesToUSD
         for p in portfolio.positions {
-            cost += p.totalCost
-            value += holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares)
+            guard let rate = rates[StockSageCurrency.currencyForSymbol(p.symbol)] else { continue }
+            cost += holdingValue(p.symbol, perShare: p.costBasis, shares: p.shares) * rate
+            value += holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate
         }
         return (cost, value)
     }
@@ -605,22 +628,29 @@ struct MarketsView: View {
         let pl = t.value - t.cost
         let plPct = t.cost > 0 ? pl / t.cost * 100 : 0
         let up = pl >= 0
-        return HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Portfolio value").font(.caption).foregroundStyle(.secondary)
-                Text(String(format: "%.2f", t.value))
-                    .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    .contentTransition(.numericText())
-                    .animation(DS.Motion.smooth, value: t.value)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Portfolio value (USD)").font(.caption).foregroundStyle(.secondary)
+                    Text(String(format: "$%.2f", t.value))
+                        .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: t.value)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Total P&L (USD)").font(.caption).foregroundStyle(.secondary)
+                    Text((up ? "+" : "") + String(format: "$%.2f (%+.1f%%)", pl, plPct))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        .contentTransition(.numericText())
+                        .animation(DS.Motion.smooth, value: pl)
+                }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Total P&L").font(.caption).foregroundStyle(.secondary)
-                Text((up ? "+" : "") + String(format: "%.2f (%+.1f%%)", pl, plPct))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
-                    .contentTransition(.numericText())
-                    .animation(DS.Motion.smooth, value: pl)
+            if !untrackedFXCurrencies.isEmpty {
+                Text("Excludes \(untrackedFXCurrencies.joined(separator: ", ")) holdings — no FX rate to convert to USD (track \(untrackedFXCurrencies.first ?? "")USD=X). P&L uses today's FX, so it blends asset + currency moves.")
+                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(DS.Space.md)
@@ -674,7 +704,9 @@ struct MarketsView: View {
     private func positionRow(_ p: PortfolioPosition) -> some View {
         let price = currentPrice(p.symbol)
         let value = holdingValue(p.symbol, perShare: price ?? p.costBasis, shares: p.shares)
-        let pl = value - p.totalCost
+        // Cost through holdingValue too, so a .L holding's P&L isn't £value − pence-cost (per-row
+        // stays in the LOCAL currency; the headline total does the USD conversion).
+        let pl = value - holdingValue(p.symbol, perShare: p.costBasis, shares: p.shares)
         let up = pl >= 0
         let hovered = hoveredPositionID == p.id
         return HStack(spacing: 10) {
