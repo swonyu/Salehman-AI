@@ -184,7 +184,12 @@ final class StockSageStore: ObservableObject {
         // Partial success is honest success: keep the names that priced, and NAME the
         // ones that didn't so the EV ranking isn't silently computed on a subset.
         let analyzed = Set(built.map { $0.symbol.uppercased() })
-        ideasMissing = universe.map(\.symbol).filter { !analyzed.contains($0.uppercased()) }
+        // Indices are DELIBERATELY skipped by buildIdeas (not buyable) — don't report them as fetch
+        // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
+        // button that can never clear.
+        ideasMissing = universe.map(\.symbol).filter {
+            !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
+        }
         ideasUpdated = Date()
     }
 
@@ -209,7 +214,9 @@ final class StockSageStore: ObservableObject {
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         ideas = merged
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
-        ideasMissing = trackedDefs().map(\.symbol).filter { !analyzed.contains($0.uppercased()) }
+        ideasMissing = trackedDefs().map(\.symbol).filter {
+            !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
+        }
         ideasUpdated = Date()
     }
 

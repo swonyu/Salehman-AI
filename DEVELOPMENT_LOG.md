@@ -7076,6 +7076,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SELF-CAUGHT REGRESSION — indices no longer falsely reported as "couldn't be fetched"
+**Files:** `StockSage/StockSageStore.swift` (ideasMissing at refreshIdeas + retryFailedIdeas).
+**What (regression-hunt wguyrdv2s #1, MED — from my OWN commit 3c1fa24):** excluding indices from buildIdeas dropped them from `analyzed`, but `ideasMissing = universe.filter { \!analyzed.contains }` (lines 187/212) still counted them — so ~17 healthy index tickers (^GSPC/^IXIC/^VIX/…) showed PERMANENTLY as "N couldn't be fetched (^GSPC, …)" with a Retry button that can never clear (retryFailedIdeas re-skips them). A false "feed broken" signal — the opposite of the only-real-data honesty the same commit was improving. Fix: both ideasMissing sites now also require `StockSageAllocation.assetClass($0) \!= "Index"` so deliberately-skipped indices aren't reported as failures.
+**Verify:** typecheck EXIT=0; both sites now guard Index (grep ×2). No test references ideasMissing → no RE-TRACE break. Caught by the periodic regression-hunt — typecheck/compile could never see it (a runtime UI count).
+**Result:** the "couldn't be fetched" banner now reflects REAL fetch failures only, not the indices the engine intentionally skips. The periodic regression-hunt earns its keep again. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
