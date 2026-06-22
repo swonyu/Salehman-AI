@@ -7270,6 +7270,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · FIX-FORWARD — 093d621 shipped non-compiling (SwiftUI type-check timeout); fixed
+**Files:** `Views/MarketsView.swift` (journalOpenRow a11y label precomputed to a String).
+**What:** the open-position-verdict commit 093d621 added a 4th `+` clause to journalOpenRow's inline `.accessibilityLabel(...)` concatenation, tipping the whole ViewBuilder body over the Swift type-checker budget → "the compiler is unable to type-check this expression in reasonable time" at MarketsView.swift:1551. It reached origin because I ran typecheck CHAINED with the commit in ONE command (`typecheck; echo EXIT=$?; git commit ...`) instead of gating the commit on EXIT=0 — the same masked-exit class as c6135bb. Fix: build the spoken label as a plain `var a11y: String` (string-append, with `if let`) OUTSIDE the ViewBuilder and pass `.accessibilityLabel(a11y)`. The verdict feature itself (the inline openActions Text + openActionColor) is unchanged and correct.
+**Verify:** typecheck EXIT=0 (run ALONE, EEAD before committing this time). The earlier EXIT=1 was a transient "input file modified during build" race as the test-hardening workflow finished, not a code fault.
+**Lesson (re-affirmed):** NEVER chain `typecheck` with `git commit` — run typecheck, READ EXIT=0, THEN commit as a separate step. SwiftUI multi-clause `.accessibilityLabel` concatenations belong in a precomputed String.
+**Result:** main compiles again; the per-position verdict ships intact. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1538,6 +1538,12 @@ struct MarketsView: View {
         // The FULL live verdict for this position (not just the urgent banner) so every open trade
         // shows its next step: hold / near-stop / in-profit / stop-or-target hit.
         let act = StockSageJournal.openActions([trade], mark: { currentPrice($0) }).first
+        // Build the spoken label as a plain String OUTSIDE the ViewBuilder — the multi-clause `+`
+        // concatenation was tipping journalOpenRow over the SwiftUI type-checker complexity budget.
+        var a11y = "\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
+        a11y += pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price"
+        if let r { a11y += String(format: ", %+.2f R", r) }
+        if let act { a11y += ", \(act.kind.rawValue): \(act.detail)" }
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
@@ -1592,10 +1598,7 @@ struct MarketsView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
-            + (pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price")
-            + (r.map { String(format: ", %+.2f R", $0) } ?? "")
-            + (act.map { ", \($0.kind.rawValue): \($0.detail)" } ?? ""))
+        .accessibilityLabel(a11y)
     }
 
     /// Color the per-position live verdict by urgency: red stop-hit, amber near-stop, green
