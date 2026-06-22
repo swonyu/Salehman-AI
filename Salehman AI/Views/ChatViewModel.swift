@@ -27,6 +27,12 @@ final class ChatViewModel: ObservableObject {
         runningTask?.cancel()
         runningTask = nil
         isRunning = false
+        // The cancelled task returns early at its `if Task.isCancelled` checks
+        // WITHOUT clearing the app-wide running flag, and this method didn't
+        // either — so after a Stop / New Chat, `AppState.aiIsRunning` stayed
+        // stuck `true` and BottomShortcutBar kept showing the "⌘. Stop" hint
+        // and the running animation forever. Clear it here, the single cancel path.
+        AppState.shared.aiIsRunning = false
         MissionProgress.shared.finish()
     }
 

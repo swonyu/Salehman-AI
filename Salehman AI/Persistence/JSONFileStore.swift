@@ -15,7 +15,8 @@ nonisolated final class JSONFileStore<T: Codable> {
 
     init(filename: String, baseDirectory: URL? = nil) {
         let base = baseDirectory
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            ?? (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? fileManager.temporaryDirectory)
                 .appendingPathComponent("SalehmanAI", isDirectory: true)
         try? fileManager.createDirectory(at: base, withIntermediateDirectories: true)
         self.fileURL = base.appendingPathComponent(filename)
