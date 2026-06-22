@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:49 +03 · Swift files: 236 · Swift LOC: 44954_
+_Generated: 2026-06-22 10:54 +03 · Swift files: 236 · Swift LOC: 44968_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11760,7 +11760,7 @@ enum StockSagePositionSizer {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageQuoteService.swift (340 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageQuoteService.swift (354 lines) =====
 ```swift
 import Foundation
 
@@ -11839,12 +11839,27 @@ enum StockSageQuoteService {
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 12
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200,
-              let parsed = parseChart(data) else { return nil }
+        guard let data = await get(req), let parsed = parseChart(data) else { return nil }
         // Preserve the symbol we *asked* for so it maps back to the curated market
         // label (Yahoo echoes its own canonical symbol, which can differ in case).
         return LiveQuote(symbol: symbol, price: parsed.price, previousClose: parsed.previousClose)
+    }
+
+    /// GET a request, returning the 200 body. On a 429/503 (Yahoo's keyless endpoint
+    /// rate-limits under load — the dominant failure mode as the universe grows), back
+    /// off ~1.5s and retry ONCE before giving up. Any other status / transport error → nil.
+    private static func get(_ req: URLRequest) async -> Data? {
+        for attempt in 0..<2 {
+            guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 200 { return data }
+            if (code == 429 || code == 503), attempt == 0 {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                continue
+            }
+            return nil
+        }
+        return nil
     }
 
     // MARK: Parsing (pure — unit-tested without the network)
@@ -11878,8 +11893,7 @@ enum StockSageQuoteService {
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 15
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        guard let data = await get(req) else { return nil }
         return parseHistory(data, symbol: symbol)
     }
 
@@ -47957,7 +47971,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7596 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7602 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54439,6 +54453,12 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** `currencyForSymbol` bucketed every `=X` FX pair as the base currency (USD), so a EURUSD=X holding showed as USD exposure — wrong: holding the pair is long the base vs the quote, i.e. exposure to its NON-base leg. Now parses "BASEQUOTE=X": EURUSD=X → EUR, USDJPY=X → JPY (base USD → the JPY leg), a cross like EURGBP=X → its base EUR. So the currency-exposure breakdown correctly attributes FX holdings to the right currency. 1 updated + 1 new test, PYTHON-VERIFIED: EUR/JPY/SAR/EUR/USD. (Crypto -USD and equities unaffected.)
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 19/32. NEXT: #21 journal a11y / #5 rate-limit. Committed + pushed.
 
+## 2026-06-22 · Backlog #5 (core): 429/503 rate-limit backoff-retry on the feed
+**Files:** `StockSage/StockSageQuoteService.swift` (shared `get(_:)` helper; `fetchOne` + `fetchHistory` routed through it).
+**What & why:** `fetchOne`/`fetchHistory` treated ANY non-200 as a dead miss — so a transient 429/503 (Yahoo's keyless endpoint rate-limits under load, the dominant failure mode now the analyzed core is 185 symbols) silently dropped that symbol and shrank coverage. Added a shared `get(_ req:)` that returns the 200 body, and on a 429/503 backs off ~1.5s and retries ONCE before giving up — recovering most transient rate-limits transparently, no signature churn. No unit test (network I/O; sandbox can't exercise it) — verified by typecheck.
+**Deferred (smaller follow-up):** the UI "temporarily rate-limited vs broken" LABEL needs a FetchOutcome enum threaded up through fetchQuotes/fetchHistories to ~7 callers — left for a focused pass so this stays low-risk.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog ~20/32 (core of #5). NEXT: #11 disk cache (offline last-good) / #21 journal a11y. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57841,7 +57861,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A trader can act on a week-old scan thinking it's fresh. Reuse the regimeIsStale pattern: orange banner when now - ideasUpdated > 4h, with a threshold constant. Small, high-value honesty win that mirrors existing code.
 **Files:** Salehman AI/Views/MarketsView.swift:1839-1887; Salehman AI/Views/MarketsView.swift:207-211
 
-### ⬜ #5 — Distinguish 429/503 rate-limit from feed failure; back off + label cached prices  [high/medium, Data/Feed resilience/perf]
+### ✅ DONE (core; UI-label deferred) #5 — Distinguish 429/503 rate-limit from feed failure; back off + label cached prices  [high/medium, Data/Feed resilience/perf]
 **What:** fetchOne() treats any non-200 as nil — no distinction between 404 (dead symbol) and 429/503 (rate-limited by Yahoo's keyless endpoint). Back-to-back refresh + refreshIdeas + Monitor can trip a 429; the board silently shows partial data with a generic 'couldn't reach feed'.
 **Why:** As the universe grows this becomes the dominant failure mode. Return a Result/FetchError enum, retry once on 429 after ~2s, and surface 'Temporarily rate-limited (showing cached/partial)' instead of a generic error so the trader knows it's transient, not broken.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:68-108; Salehman AI/StockSage/StockSageStore.swift:561-572

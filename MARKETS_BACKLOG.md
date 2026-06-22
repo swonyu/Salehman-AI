@@ -44,7 +44,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A trader can act on a week-old scan thinking it's fresh. Reuse the regimeIsStale pattern: orange banner when now - ideasUpdated > 4h, with a threshold constant. Small, high-value honesty win that mirrors existing code.
 **Files:** Salehman AI/Views/MarketsView.swift:1839-1887; Salehman AI/Views/MarketsView.swift:207-211
 
-### ⬜ #5 — Distinguish 429/503 rate-limit from feed failure; back off + label cached prices  [high/medium, Data/Feed resilience/perf]
+### ✅ DONE (core; UI-label deferred) #5 — Distinguish 429/503 rate-limit from feed failure; back off + label cached prices  [high/medium, Data/Feed resilience/perf]
 **What:** fetchOne() treats any non-200 as nil — no distinction between 404 (dead symbol) and 429/503 (rate-limited by Yahoo's keyless endpoint). Back-to-back refresh + refreshIdeas + Monitor can trip a 429; the board silently shows partial data with a generic 'couldn't reach feed'.
 **Why:** As the universe grows this becomes the dominant failure mode. Return a Result/FetchError enum, retry once on 429 after ~2s, and surface 'Temporarily rate-limited (showing cached/partial)' instead of a generic error so the trader knows it's transient, not broken.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:68-108; Salehman AI/StockSage/StockSageStore.swift:561-572

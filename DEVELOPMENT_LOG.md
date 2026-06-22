@@ -6479,6 +6479,12 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** `currencyForSymbol` bucketed every `=X` FX pair as the base currency (USD), so a EURUSD=X holding showed as USD exposure — wrong: holding the pair is long the base vs the quote, i.e. exposure to its NON-base leg. Now parses "BASEQUOTE=X": EURUSD=X → EUR, USDJPY=X → JPY (base USD → the JPY leg), a cross like EURGBP=X → its base EUR. So the currency-exposure breakdown correctly attributes FX holdings to the right currency. 1 updated + 1 new test, PYTHON-VERIFIED: EUR/JPY/SAR/EUR/USD. (Crypto -USD and equities unaffected.)
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 19/32. NEXT: #21 journal a11y / #5 rate-limit. Committed + pushed.
 
+## 2026-06-22 · Backlog #5 (core): 429/503 rate-limit backoff-retry on the feed
+**Files:** `StockSage/StockSageQuoteService.swift` (shared `get(_:)` helper; `fetchOne` + `fetchHistory` routed through it).
+**What & why:** `fetchOne`/`fetchHistory` treated ANY non-200 as a dead miss — so a transient 429/503 (Yahoo's keyless endpoint rate-limits under load, the dominant failure mode now the analyzed core is 185 symbols) silently dropped that symbol and shrank coverage. Added a shared `get(_ req:)` that returns the 200 body, and on a 429/503 backs off ~1.5s and retries ONCE before giving up — recovering most transient rate-limits transparently, no signature churn. No unit test (network I/O; sandbox can't exercise it) — verified by typecheck.
+**Deferred (smaller follow-up):** the UI "temporarily rate-limited vs broken" LABEL needs a FetchOutcome enum threaded up through fetchQuotes/fetchHistories to ~7 callers — left for a focused pass so this stays low-risk.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog ~20/32 (core of #5). NEXT: #11 disk cache (offline last-good) / #21 journal a11y. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
