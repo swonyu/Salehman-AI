@@ -6970,6 +6970,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — Johannesburg .JO holdings were ~100× too high (cents not normalized)
+**Files:** `StockSage/StockSageCurrency.swift` (minorUnitSuffixes set), `Salehman AITests/StockSageCurrencyTests.swift` (+.JO test).
+**What (engines bughunt wb1jz7iqk #1, HIGH — same class as the .L fix):** JSE (.JO) Yahoo listings are quoted in South African CENTS (ZAc), the same minor-unit convention as London .L pence, but majorUnitValue only special-cased .L. So NPN.JO at 300,000 ZAc (R3,000) flowed through holdingValue → portfolioTotals at 300,000 — ~100× too high — and .JO seeds (NPN.JO/AGL.JO) ship in StockSageQuoteService. Fix: hoisted `minorUnitSuffixes: Set = [".L", ".JO"]` and majorUnitValue ÷100 for any suffix in the set (extensible for future cents-quoted exchanges like .TA agorot).
+**Verify:** typecheck EXIT=0; +test — NPN.JO 300,000 → R3,000 (case-insensitive); .L still 400; AAPL/SAP.DE unchanged.
+**Result:** the second cents-quoted exchange is now normalized; no .JO holding is shown ~100× its real value. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

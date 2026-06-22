@@ -15,7 +15,11 @@ struct StockSageCurrencyTests {
         // BP.L: 100 shares × 400 pence = 40,000 pence raw → £400, NOT £40,000 (~100× bug).
         #expect(CC.majorUnitValue(symbol: "BP.L", rawValue: 40_000) == 400)
         #expect(CC.majorUnitValue(symbol: "bp.l", rawValue: 40_000) == 400)        // case-insensitive
-        // Non-London symbols are unchanged.
+        // Johannesburg .JO is quoted in SA cents (ZAc) — same minor-unit convention as London.
+        // NPN.JO: 300,000 ZAc raw → R3,000, NOT R300,000 (~100× bug).
+        #expect(CC.majorUnitValue(symbol: "NPN.JO", rawValue: 300_000) == 3_000)
+        #expect(CC.majorUnitValue(symbol: "npn.jo", rawValue: 300_000) == 3_000)   // case-insensitive
+        // Non-minor-unit symbols are unchanged.
         #expect(CC.majorUnitValue(symbol: "AAPL", rawValue: 40_000) == 40_000)
         #expect(CC.majorUnitValue(symbol: "SAP.DE", rawValue: 1_000) == 1_000)
     }

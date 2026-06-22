@@ -53,11 +53,15 @@ enum StockSageCurrency {
     /// Best-effort trading currency for a symbol from its market suffix. Crypto (`-USD`),
     /// FX pairs (`=X`), and indices (`^`) map to `base`; an UNKNOWN suffix maps to the suffix
     /// itself, so it surfaces as "unpriced" rather than being silently mislabeled the base.
-    /// Yahoo quotes London ".L" listings in PENCE (a 400 quote is £4, not £400). Normalize a
-    /// raw holding value to the listing's MAJOR currency unit (÷100 for .L, unchanged otherwise)
-    /// so a GBP holding isn't inflated ~100× when rolled into the USD currency exposure.
+    /// Yahoo quotes some listings in a MINOR unit: London ".L" in PENCE and Johannesburg ".JO" in
+    /// SA cents (ZAc) — a 400 quote is £4 / R4, not £400 / R400. Normalize a raw holding value to the
+    /// listing's MAJOR currency unit (÷100 for those, unchanged otherwise) so the holding isn't
+    /// inflated ~100× when rolled into the USD total/exposure. Add new cents-quoted exchanges here.
+    private nonisolated static let minorUnitSuffixes: Set<String> = [".L", ".JO"]
+
     nonisolated static func majorUnitValue(symbol: String, rawValue: Double) -> Double {
-        symbol.uppercased().hasSuffix(".L") ? rawValue / 100 : rawValue
+        let s = symbol.uppercased()
+        return minorUnitSuffixes.contains(where: { s.hasSuffix($0) }) ? rawValue / 100 : rawValue
     }
 
     nonisolated static func currencyForSymbol(_ symbol: String, base: String = "USD") -> String {
