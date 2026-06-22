@@ -10,6 +10,7 @@ import AppKit   // NSPasteboard for the trade-plan copy
 struct MarketsView: View {
     @State private var section: MarketSection
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
+    @State private var showBrowseMarkets = false
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
@@ -1661,8 +1662,15 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
+            Button { showBrowseMarkets = true } label: {
+                Label("Browse all \(StockSageUniverse.catalog.count) markets", systemImage: "square.grid.2x2")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(DS.Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Browse the full searchable directory by region & asset class; tap + to track any (fetches one quote).")
         }
         .animation(DS.Motion.smooth, value: store.addSymbolError)
+        .sheet(isPresented: $showBrowseMarkets) { BrowseMarketsView(store: store) }
     }
 
     private func addWatchSymbol() async {

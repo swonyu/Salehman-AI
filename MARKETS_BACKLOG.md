@@ -69,7 +69,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** The owner wants to grow an edge — knowing an idea reduces book risk is as actionable as a concentration warning. Change the guard to render cc.note unconditionally: 'adds diversification' below 0.8, 'concentration in disguise' at/above. One-line condition change, already-computed data.
 **Files:** Salehman AI/Views/MarketsView.swift:2577-2583; Salehman AI/StockSage/StockSageClusterCheck.swift:42
 
-### ⬜ #10 — Add a 'Browse all markets' directory backed by the existing catalog  [high/medium, Universe/Discovery/feature]
+### ✅ DONE (31ed234+) #10 — Add a 'Browse all markets' directory backed by the existing catalog  [high/medium, Universe/Discovery/feature]
 **What:** VERIFIED: StockSageUniverse already has the two-tier split — `groups` (analyzed core, bulk-fetched) and `catalogExtra` (discovery long-tail, single-fetch on add) merged into `catalog` with a pure `search()`. The add box wires search() as autocomplete (MarketsView ~1630-1639), but `catalog` is never exposed as a browsable, filterable directory and the .all section just mirrors the watchlist.
 **Why:** This is the lazy-analysis backbone for 'list all stocks' that already exists in code but has no surface. Add a 'Browse markets' sheet: paginated/sectioned list over catalog, filter by asset class/region, preview last quote, one-tap add (which lazily fetches just that quote). No change to the per-symbol history feed cost — see universeRecommendation.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:276-339; Salehman AI/Views/MarketsView.swift:1602-1660

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:17 +03 · Swift files: 233 · Swift LOC: 44610_
+_Generated: 2026-06-22 10:20 +03 · Swift files: 234 · Swift LOC: 44744_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -17839,6 +17839,136 @@ struct BottomShortcutBar: View {
 }
 ```
 
+===== FILE: Salehman AI/Views/BrowseMarketsView.swift (126 lines) =====
+```swift
+import SwiftUI
+
+// MARK: - Browse all markets
+//
+// The discovery surface over the full `StockSageUniverse.catalog` (analyzed core +
+// long-tail). Sectioned by market group, searchable, asset-class filterable, with
+// one-tap add. The add path lazily fetches a SINGLE quote (store.addSymbol) — so the
+// directory scales independently of the bulk history feed: browsing costs nothing,
+// only an explicit add touches the network. Honest: catalog symbols are searchable-but-
+// not-scanned until you add them to your watchlist.
+
+struct BrowseMarketsView: View {
+    @ObservedObject var store: StockSageStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var asset: AssetFilter = .all
+
+    enum AssetFilter: String, CaseIterable, Identifiable {
+        case all = "All", stocks = "Stocks", etf = "ETFs", crypto = "Crypto", fx = "Forex", index = "Indices"
+        var id: String { rawValue }
+    }
+
+    private var tracked: Set<String> { Set(store.symbols.map { $0.symbol.uppercased() }) }
+
+    private func matches(_ s: StockSageSymbol) -> Bool {
+        let sym = s.symbol.uppercased()
+        switch asset {
+        case .all:    return true
+        case .crypto: return sym.hasSuffix("-USD")
+        case .fx:     return sym.hasSuffix("=X")
+        case .index:  return sym.hasPrefix("^")
+        case .etf:    return s.market.localizedCaseInsensitiveContains("ETF")
+        case .stocks: return !sym.hasSuffix("-USD") && !sym.hasSuffix("=X") && !sym.hasPrefix("^")
+                          && !s.market.localizedCaseInsensitiveContains("ETF")
+        }
+    }
+
+    private var sections: [(market: String, rows: [StockSageSymbol])] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        let base = q.isEmpty ? StockSageUniverse.catalog : StockSageUniverse.search(q, limit: 500)
+        let filtered = base.filter(matches)
+        return Dictionary(grouping: filtered, by: { $0.market })
+            .map { (market: $0.key, rows: $0.value.sorted { $0.symbol < $1.symbol }) }
+            .sorted { $0.market < $1.market }
+    }
+
+    var body: some View {
+        VStack(spacing: DS.Space.sm) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Browse markets").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                    Text("\(StockSageUniverse.catalog.count) instruments · tap + to track (fetches one live quote)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+                TextField("Search symbol or market…", text: $query)
+                    .textFieldStyle(.plain).font(.system(size: 13))
+                if !query.isEmpty {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+
+            Picker("Asset class", selection: $asset) {
+                ForEach(AssetFilter.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+
+            if let err = store.addSymbolError {
+                Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                    ForEach(sections, id: \.market) { section in
+                        Section {
+                            ForEach(section.rows) { row(_for: $0) }
+                        } header: {
+                            Text(section.market).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 3).padding(.horizontal, 4)
+                                .background(.ultraThinMaterial)
+                        }
+                    }
+                    if sections.isEmpty {
+                        Text("No matches.").font(.caption).foregroundStyle(.secondary).padding()
+                    }
+                }
+            }
+        }
+        .padding(DS.Space.md)
+        .frame(minWidth: 420, minHeight: 520)
+        .background(DS.Palette.surface)
+    }
+
+    @ViewBuilder private func row(_for s: StockSageSymbol) -> some View {
+        let isTracked = tracked.contains(s.symbol.uppercased())
+        HStack(spacing: 10) {
+            Text(s.symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 96, alignment: .leading).lineLimit(1)
+            Text(s.market).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            if isTracked {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(DS.Palette.successSoft)
+                    .accessibilityLabel("\(s.symbol) already tracked")
+            } else if store.isAddingSymbol {
+                ProgressView().controlSize(.small)
+            } else {
+                Button { Task { await store.addSymbol(s.symbol) } } label: {
+                    Image(systemName: "plus.circle.fill").font(.system(size: 15)).foregroundStyle(DS.Palette.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add \(s.symbol), \(s.market)")
+            }
+        }
+        .padding(.vertical, 4).padding(.horizontal, 6)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+```
+
 ===== FILE: Salehman AI/Views/ChatHistoryView.swift (283 lines) =====
 ```swift
 import SwiftUI
@@ -26118,7 +26248,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3053 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3061 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26132,6 +26262,7 @@ import AppKit   // NSPasteboard for the trade-plan copy
 struct MarketsView: View {
     @State private var section: MarketSection
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
+    @State private var showBrowseMarkets = false
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
@@ -27783,8 +27914,15 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
+            Button { showBrowseMarkets = true } label: {
+                Label("Browse all \(StockSageUniverse.catalog.count) markets", systemImage: "square.grid.2x2")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(DS.Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Browse the full searchable directory by region & asset class; tap + to track any (fetches one quote).")
         }
         .animation(DS.Motion.smooth, value: store.addSymbolError)
+        .sheet(isPresented: $showBrowseMarkets) { BrowseMarketsView(store: store) }
     }
 
     private func addWatchSymbol() async {
@@ -47601,7 +47739,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7551 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7556 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54038,6 +54176,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** `refreshIdeas` silently dropped symbols whose history failed mid-fetch, so the EV/velocity ranking was computed on a partial universe with no signal — a honesty gap (a missing NVDA biases "best opportunity"). Now: factored the off-main build into a `nonisolated static buildIdeas(defs:histories:)` reused by both paths; `refreshIdeas` keeps the names that priced AND records `ideasMissing` (universe − analyzed); the ideas header shows "⚠︎ N priced · K couldn't be fetched (AAPL, NVDA…) — ranking covers only what loaded" with a **Retry failed** button → `retryFailedIdeas()` re-fetches ONLY the misses and merges+re-ranks (cheap vs a full scan). Total feed failure still errors as before. typecheck clean (Sendable `StockSagePriceHistory` crosses into the detached task fine).
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 10/32 done (1,2,3,4,6,7,8,9,24,28). NEXT: #10 Browse-all-markets sheet (the catalog discovery UI). Committed + pushed.
 
+## 2026-06-22 · Backlog #10: "Browse all markets" sheet (the real "list all stocks" UI)
+**Files:** `Views/BrowseMarketsView.swift` (NEW), `Views/MarketsView.swift` (state + "Browse all N markets" button + `.sheet`).
+**What & why:** The discovery surface over the full 393-instrument `StockSageUniverse.catalog`. A sheet that lists every catalog symbol SECTIONED by market group (pinned headers), with a live search box (reusing `StockSageUniverse.search`, up to 500 hits) and a segmented **asset-class filter** (All / Stocks / ETFs / Crypto / Forex / Indices, classified by suffix/label). Each row shows symbol + market and a one-tap **＋** that calls `store.addSymbol` — which lazily fetches just that ONE quote; already-tracked rows show a green check. This is the key scaling invariant the research synthesis called for: browsing costs nothing, only an explicit add touches the network, so the directory can grow toward "all stocks" without O(n) history fetches. A "Browse all 393 markets" button sits under the add-ticker box. Honest: catalog symbols are searchable-but-not-scanned until added to the watchlist.
+**Result:** ✅ `tools/typecheck.sh` clean. The owner can now visually browse/filter the whole universe and add anything in one tap. Backlog 11/32 done. NEXT: #5 rate-limit (429) handling + #11 disk cache. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57465,7 +57608,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** The owner wants to grow an edge — knowing an idea reduces book risk is as actionable as a concentration warning. Change the guard to render cc.note unconditionally: 'adds diversification' below 0.8, 'concentration in disguise' at/above. One-line condition change, already-computed data.
 **Files:** Salehman AI/Views/MarketsView.swift:2577-2583; Salehman AI/StockSage/StockSageClusterCheck.swift:42
 
-### ⬜ #10 — Add a 'Browse all markets' directory backed by the existing catalog  [high/medium, Universe/Discovery/feature]
+### ✅ DONE (31ed234+) #10 — Add a 'Browse all markets' directory backed by the existing catalog  [high/medium, Universe/Discovery/feature]
 **What:** VERIFIED: StockSageUniverse already has the two-tier split — `groups` (analyzed core, bulk-fetched) and `catalogExtra` (discovery long-tail, single-fetch on add) merged into `catalog` with a pure `search()`. The add box wires search() as autocomplete (MarketsView ~1630-1639), but `catalog` is never exposed as a browsable, filterable directory and the .all section just mirrors the watchlist.
 **Why:** This is the lazy-analysis backbone for 'list all stocks' that already exists in code but has no surface. Add a 'Browse markets' sheet: paginated/sectioned list over catalog, filter by asset class/region, preview last quote, one-tap add (which lazily fetches just that quote). No change to the per-symbol history feed cost — see universeRecommendation.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:276-339; Salehman AI/Views/MarketsView.swift:1602-1660
