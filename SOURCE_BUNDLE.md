@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 08:51 +03 · Swift files: 220 · Swift LOC: 43582_
+_Generated: 2026-06-22 08:58 +03 · Swift files: 222 · Swift LOC: 43720_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11659,6 +11659,75 @@ enum StockSageUniverse {
 
     /// Distinct exchanges/regions covered — surfaced in the live banner ("N markets").
     static let marketCount: Int = groups.count
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageRebalance.swift (65 lines) =====
+```swift
+import Foundation
+
+// MARK: - Rebalance-to-target
+//
+// Given the current holdings (symbol, market value) and a set of target weights
+// (e.g. inverse-vol risk parity, or equal weight), compute the per-symbol drift and
+// the buy/sell trades that bring the book back to target. A no-trade BAND suppresses
+// tiny drifts so you don't churn (and pay spread/tax) chasing a 0.5% miss. Pure +
+// deterministic. Honest: ignores trading costs, taxes, and min-lot sizing — it's the
+// direction and rough size, not an order ticket.
+
+struct RebalanceTrade: Sendable, Equatable, Identifiable {
+    let symbol: String
+    let currentWeight: Double   // 0–1
+    let targetWeight: Double    // 0–1
+    let deltaValue: Double      // + = buy, − = sell (account currency)
+    var id: String { symbol }
+    nonisolated var action: String { deltaValue > 0 ? "Buy" : (deltaValue < 0 ? "Sell" : "Hold") }
+}
+
+struct RebalancePlan: Sendable, Equatable {
+    let trades: [RebalanceTrade]   // only symbols whose drift exceeds the band
+    let totalValue: Double
+    nonisolated var isBalanced: Bool { trades.isEmpty }
+}
+
+enum StockSageRebalance {
+    /// Trades to move `holdings` toward `targets` (weights need not be normalized — they
+    /// are normalized here). Only drifts whose magnitude exceeds `band` (default 2%) are
+    /// returned. nil if there's nothing invested or no positive target weight.
+    nonisolated static func plan(holdings: [(symbol: String, value: Double)],
+                                 targets: [String: Double], band: Double = 0.02) -> RebalancePlan? {
+        let total = holdings.reduce(0) { $0 + Swift.max(0, $1.value) }
+        guard total > 0 else { return nil }
+
+        let posTargets = targets.mapValues { Swift.max(0, $0) }
+        let tSum = posTargets.values.reduce(0, +)
+        guard tSum > 0 else { return nil }
+        let norm = posTargets.mapValues { $0 / tSum }
+
+        var current: [String: Double] = [:]
+        for h in holdings { current[h.symbol, default: 0] += Swift.max(0, h.value) }
+
+        var trades: [RebalanceTrade] = []
+        for s in Set(current.keys).union(norm.keys).sorted() {
+            let cw = (current[s] ?? 0) / total
+            let tw = norm[s] ?? 0
+            let drift = tw - cw
+            if abs(drift) > band {
+                trades.append(RebalanceTrade(symbol: s, currentWeight: cw, targetWeight: tw, deltaValue: drift * total))
+            }
+        }
+        trades.sort { abs($0.deltaValue) > abs($1.deltaValue) }   // biggest moves first
+        return RebalancePlan(trades: trades, totalValue: total)
+    }
+
+    /// Equal-weight targets over the held symbols — a simple default when no other target
+    /// model is chosen.
+    nonisolated static func equalWeightTargets(_ symbols: [String]) -> [String: Double] {
+        let unique = Array(Set(symbols))
+        guard !unique.isEmpty else { return [:] }
+        let w = 1.0 / Double(unique.count)
+        return Dictionary(uniqueKeysWithValues: unique.map { ($0, w) })
+    }
 }
 ```
 
@@ -25586,7 +25655,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2877 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2901 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26285,6 +26354,30 @@ struct MarketsView: View {
                 }
                 Text("Equalizes risk, not a profit promise. Risk parity can suffer in correlation shocks — keep a cash sleeve.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+                // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
+                // with a 2% no-trade band so you don't churn on tiny drifts.
+                let rebalHoldings = portfolio.positions.map {
+                    (symbol: $0.symbol, value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares)
+                }
+                let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
+                                              uniquingKeysWith: { a, _ in a })
+                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
+                    if plan.isBalanced {
+                        Text("✓ Within 2% of target — no rebalance needed.")
+                            .font(.caption2).foregroundStyle(DS.Palette.successSoft)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("To rebalance (≈$ trades, ignores costs/taxes):")
+                                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
+                            ForEach(plan.trades) { t in
+                                Text("\(t.action) \(String(format: "$%.0f", abs(t.deltaValue))) of \(t.symbol)  (\(String(format: "%.0f%%→%.0f%%", t.currentWeight * 100, t.targetWeight * 100)))")
+                                    .font(.system(size: mvFont9, design: .monospaced))
+                                    .foregroundStyle(t.deltaValue > 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding(DS.Space.md)
@@ -42523,6 +42616,59 @@ struct StockSagePositionSizerTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageRebalanceTests.swift (49 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Rebalance-to-target (pure)
+
+struct StockSageRebalanceTests {
+    typealias RB = StockSageRebalance
+
+    private func trade(_ p: RebalancePlan, _ sym: String) -> RebalanceTrade? {
+        p.trades.first { $0.symbol == sym }
+    }
+
+    @Test func computesDriftTradesOutsideBand() {
+        // A 60% / B 40% → target 50/50: sell 1000 of A, buy 1000 of B (total 10k).
+        let p = RB.plan(holdings: [("A", 6000), ("B", 4000)], targets: ["A": 0.5, "B": 0.5])!
+        #expect(abs(p.totalValue - 10_000) < 1e-9)
+        #expect(abs(trade(p, "A")!.deltaValue - (-1000)) < 1e-9)
+        #expect(abs(trade(p, "B")!.deltaValue - 1000) < 1e-9)
+        #expect(trade(p, "A")!.action == "Sell" && trade(p, "B")!.action == "Buy")
+    }
+
+    @Test func noTradeBandSuppressesSmallDrift() {
+        // Each side drifts only 0.01 < 0.02 band → nothing to do.
+        let p = RB.plan(holdings: [("A", 6000), ("B", 4000)], targets: ["A": 0.59, "B": 0.41], band: 0.02)!
+        #expect(p.trades.isEmpty)
+        #expect(p.isBalanced)
+    }
+
+    @Test func normalizesTargetsAndSellsUntargetedToZero() {
+        // targets sum 0.8 → normalize to A=1.0; B not targeted → sell fully.
+        let p = RB.plan(holdings: [("A", 5000), ("B", 5000)], targets: ["A": 0.8])!
+        #expect(abs(trade(p, "A")!.deltaValue - 5000) < 1e-9)    // cw .5 → tw 1.0 → buy 5000
+        #expect(abs(trade(p, "B")!.deltaValue - (-5000)) < 1e-9) // cw .5 → tw 0 → sell 5000
+    }
+
+    @Test func equalWeightTargetsSumToOne() {
+        let t = RB.equalWeightTargets(["A", "B", "C", "A"])   // dedups
+        #expect(t.count == 3)
+        #expect(abs((t["A"] ?? 0) - 1.0 / 3) < 1e-9)
+        #expect(abs(t.values.reduce(0, +) - 1) < 1e-9)
+    }
+
+    @Test func guardsEmptyOrZero() {
+        #expect(RB.plan(holdings: [], targets: ["A": 1]) == nil)          // nothing invested
+        #expect(RB.plan(holdings: [("A", 1000)], targets: [:]) == nil)    // no targets
+        #expect(RB.plan(holdings: [("A", 0)], targets: ["A": 1]) == nil)  // zero value
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageRegimeTests.swift (67 lines) =====
 ```swift
 import Testing
@@ -46521,7 +46667,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7492 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7497 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -52898,6 +53044,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageGEFlip.swift` (+`BudgetedFlip`/`BudgetPlan`/`bestFlipsForBudget`), `Views/RuneScapeMarketView.swift` (budget field + plan), `Salehman AITests/StockSageGEFlipTests.swift` (+1 test).
 **What & why:** New-value build #2 — turns the fastest-flips list into an actionable allocation for the gp the owner actually has. `bestFlipsForBudget(_ flips:budget:)` greedily allocates the budget to the highest-gp/hour flips, buying `min(buyLimit, remainingGp / buyPrice)` units each, and reports per-flip units/capital/gp-hour + totals. The RuneScape fastest-flips strip gains an inline editable budget field (persisted) and a "Flip: A ×500, B ×100 → ≈X/hr" line. Honesty: estimate, assumes you fill what you buy, fills depend on volume, doesn't reserve gp for slippage; "budget too small" guidance when it can't fund a unit. 1 test, PYTHON-VERIFIED: 50k → A ×500 = 3500 gp/hr only; 200k → full A(7000)+B(1950) = 8950; budget 0 → empty; can't-afford-1-unit → empty.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The OSRS surface now answers "I have N gp — what's the fastest thing to do with it." 2 new-value features today (#84 gate, #85 budget optimizer). NEXT: portfolio rebalance-to-target. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Portfolio rebalance-to-target (concrete $ trades)
+**Files:** `StockSage/StockSageRebalance.swift` (NEW), `Views/MarketsView.swift` (rebalance lines in the risk-parity panel), `Salehman AITests/StockSageRebalanceTests.swift` (NEW, 5 tests).
+**What & why:** New-value build #3 — turns the risk-parity *weights* into actionable *trades*. `StockSageRebalance.plan(holdings:targets:band:)` normalizes the targets, computes each symbol's drift (target − current weight), and returns the buy/sell **$ deltas** for symbols whose drift exceeds a 2% no-trade band (so you don't churn on a 0.5% miss); untargeted holdings are sold to zero. `equalWeightTargets` helper for a simple default. The risk-parity panel now shows "To rebalance: Sell $1,000 of A (60%→50%), Buy $1,000 of B (40%→50%)" — or "✓ within 2% of target." Honest: ignores trading costs/taxes/min-lot — direction + rough size, not an order ticket. 5 tests, PYTHON-VERIFIED: 60/40→50/50 = −1000/+1000; 0.01 drift < 2% band → empty; targets summing 0.8 normalize, untargeted B sells fully; equal-weight dedups & sums to 1; empty/zero guards → nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 3 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance). The owner can now go from "risk-parity says these weights" to "here are the exact trades." NEXT: alert-decision engine. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 

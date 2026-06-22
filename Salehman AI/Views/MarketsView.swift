@@ -695,6 +695,30 @@ struct MarketsView: View {
                 }
                 Text("Equalizes risk, not a profit promise. Risk parity can suffer in correlation shocks — keep a cash sleeve.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+                // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
+                // with a 2% no-trade band so you don't churn on tiny drifts.
+                let rebalHoldings = portfolio.positions.map {
+                    (symbol: $0.symbol, value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares)
+                }
+                let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
+                                              uniquingKeysWith: { a, _ in a })
+                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
+                    if plan.isBalanced {
+                        Text("✓ Within 2% of target — no rebalance needed.")
+                            .font(.caption2).foregroundStyle(DS.Palette.successSoft)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("To rebalance (≈$ trades, ignores costs/taxes):")
+                                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
+                            ForEach(plan.trades) { t in
+                                Text("\(t.action) \(String(format: "$%.0f", abs(t.deltaValue))) of \(t.symbol)  (\(String(format: "%.0f%%→%.0f%%", t.currentWeight * 100, t.targetWeight * 100)))")
+                                    .font(.system(size: mvFont9, design: .monospaced))
+                                    .foregroundStyle(t.deltaValue > 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding(DS.Space.md)
