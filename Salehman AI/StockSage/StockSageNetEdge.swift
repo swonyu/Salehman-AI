@@ -14,8 +14,19 @@ struct NetEdge: Sendable, Equatable {
     let costPerShare: Double
     let costAsPctOfReward: Double    // round-trip cost ÷ gross reward (0–1+)
     let netExpectancyR: Double?      // per 1R of gross risk, if a win probability was supplied
+    /// The win rate you must BEAT to be positive-EV AFTER costs: p* = 1/(1+netRR). It turns
+    /// the cost model into a single falsifiable bar — if your honest hit rate is below this,
+    /// the setup loses money no matter how good the gross R:R looks. nil when netRR ≤ 0 (no
+    /// win rate profits — costs exceed the target).
+    let breakEvenWinRate: Double?
     let verdict: String
     nonisolated var costErodesEdge: Bool { netRR < 1 || costAsPctOfReward > 0.33 }
+    /// Does an estimated win probability clear the after-cost break-even bar? Strictly beats
+    /// it; false when the setup is unprofitable at any win rate (breakEvenWinRate nil).
+    nonisolated func clearsCost(estWinProb: Double) -> Bool {
+        guard let p = breakEvenWinRate else { return false }
+        return estWinProb > p
+    }
 }
 
 enum StockSageNetEdge {
@@ -68,7 +79,11 @@ enum StockSageNetEdge {
         else if costPct > 0.33 { verdict = "Costs eat \(Int((costPct * 100).rounded()))% of the target — thin." }
         else { verdict = "Costs take \(Int((costPct * 100).rounded()))% of the target — acceptable." }
 
+        // The win rate that just breaks even after costs (nil if no win rate can profit).
+        let breakEven: Double? = netRR > 0 ? 1 / (1 + netRR) : nil
+
         return NetEdge(grossRR: grossRR, netRR: netRR, costPerShare: cost,
-                       costAsPctOfReward: costPct, netExpectancyR: netExpR, verdict: verdict)
+                       costAsPctOfReward: costPct, netExpectancyR: netExpR,
+                       breakEvenWinRate: breakEven, verdict: verdict)
     }
 }

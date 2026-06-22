@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 16:32 +03 · Swift files: 246 · Swift LOC: 46192_
+_Generated: 2026-06-22 16:40 +03 · Swift files: 246 · Swift LOC: 46221_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11711,7 +11711,7 @@ enum StockSageMultiTimeframe {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageNetEdge.swift (74 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageNetEdge.swift (89 lines) =====
 ```swift
 import Foundation
 
@@ -11729,8 +11729,19 @@ struct NetEdge: Sendable, Equatable {
     let costPerShare: Double
     let costAsPctOfReward: Double    // round-trip cost ÷ gross reward (0–1+)
     let netExpectancyR: Double?      // per 1R of gross risk, if a win probability was supplied
+    /// The win rate you must BEAT to be positive-EV AFTER costs: p* = 1/(1+netRR). It turns
+    /// the cost model into a single falsifiable bar — if your honest hit rate is below this,
+    /// the setup loses money no matter how good the gross R:R looks. nil when netRR ≤ 0 (no
+    /// win rate profits — costs exceed the target).
+    let breakEvenWinRate: Double?
     let verdict: String
     nonisolated var costErodesEdge: Bool { netRR < 1 || costAsPctOfReward > 0.33 }
+    /// Does an estimated win probability clear the after-cost break-even bar? Strictly beats
+    /// it; false when the setup is unprofitable at any win rate (breakEvenWinRate nil).
+    nonisolated func clearsCost(estWinProb: Double) -> Bool {
+        guard let p = breakEvenWinRate else { return false }
+        return estWinProb > p
+    }
 }
 
 enum StockSageNetEdge {
@@ -11783,8 +11794,12 @@ enum StockSageNetEdge {
         else if costPct > 0.33 { verdict = "Costs eat \(Int((costPct * 100).rounded()))% of the target — thin." }
         else { verdict = "Costs take \(Int((costPct * 100).rounded()))% of the target — acceptable." }
 
+        // The win rate that just breaks even after costs (nil if no win rate can profit).
+        let breakEven: Double? = netRR > 0 ? 1 / (1 + netRR) : nil
+
         return NetEdge(grossRR: grossRR, netRR: netRR, costPerShare: cost,
-                       costAsPctOfReward: costPct, netExpectancyR: netExpR, verdict: verdict)
+                       costAsPctOfReward: costPct, netExpectancyR: netExpR,
+                       breakEvenWinRate: breakEven, verdict: verdict)
     }
 }
 ```
@@ -44552,7 +44567,7 @@ struct StockSageMultiTimeframeTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageNetEdgeTests.swift (64 lines) =====
+===== FILE: Salehman AITests/StockSageNetEdgeTests.swift (78 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -44562,6 +44577,20 @@ import Foundation
 
 struct StockSageNetEdgeTests {
     typealias NE = StockSageNetEdge
+
+    @Test func breakEvenWinRateIsTheAfterCostBar() {
+        // Clean 3:1, zero cost → netRR 3 → break-even p* = 1/(1+3) = 0.25.
+        let e = NE.evaluate(entry: 100, stop: 90, target: 130)!
+        #expect(abs(e.netRR - 3) < 1e-9)
+        #expect(abs((e.breakEvenWinRate ?? -1) - 0.25) < 1e-9)
+        #expect(e.clearsCost(estWinProb: 0.40))      // 40% beats the 25% bar
+        #expect(!e.clearsCost(estWinProb: 0.20))     // 20% below it → fails
+        // Costs that exceed the target → netRR ≤ 0 → no break-even, never clears at any win rate.
+        let dead = NE.evaluate(entry: 100, stop: 99, target: 100.5, spreadBps: 100, slippageBps: 100)!
+        #expect(dead.netRR <= 0)
+        #expect(dead.breakEvenWinRate == nil)
+        #expect(!dead.clearsCost(estWinProb: 0.99))
+    }
 
     @Test func wideSetupBarelyDentedByCosts() {
         // entry 100, stop 95, target 110 → gross 2:1. 30bps round-trip + $0.05 comm = $0.35/sh.
@@ -49526,7 +49555,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7778 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7787 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -56188,6 +56217,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EDGE_RESEARCH #2 — break-even win rate (the after-cost falsification bar)
+**Files:** `StockSage/StockSageNetEdge.swift` (+breakEvenWinRate, +clearsCost), `Salehman AITests/StockSageNetEdgeTests.swift` (+1 test).
+**What:** turned NetEdge's net R:R into a single falsifiable number — the win rate you must BEAT to profit after costs: p* = 1/(1+netRR). nil when netRR ≤ 0 (costs exceed the target — unprofitable at ANY win rate). `clearsCost(estWinProb:)` gates an idea's conviction-mapped win prob against that bar. This is the honest counter to a great-looking gross R:R on a thin, high-turnover flip where costs quietly eat the edge — exactly where small accounts bleed.
+**Verify:** typecheck clean; python-verified — clean 3:1 zero-cost → netRR 3, break-even 0.25 (clears at 40%, fails at 20%); a setup whose costs exceed the target → netRR −0.5, break-even nil, never clears even at 99%.
+**Next:** wire clearsCost into rankByEV to demote after-cost-negative ideas (EDGE_RESEARCH #2 wiring) — its own commit with a demotion-ordering test.
+**Result:** the EV board can now tell the owner the exact hit rate a trade needs to survive its own costs. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58743,7 +58781,7 @@ Wiring (exhaustive switch arms all caught by compiler):
 
 **caveat:** A risk GATE, not a forecast — it brakes size when a name's own vol is historically elevated, it does NOT predict direction. The leverage effect is documented for EQUITIES/CREDIT and weaker for FX/commodities, so the brake is most justified on equity names (state this in the caveat). Percentile-of-own-history is regime-blind: a name living through a structurally high-vol era reads 'calm' at absolutely dangerous vols, so blend an ABSOLUTE-vol anchor (vol/anchor) with the percentile rather than relying on percentile alone.
 
-### ⬜ #2 — Net-edge break-even win rate + cost-gate on every ranked idea
+### ✅ DONE (engine; ranking-wire next) #2 — Net-edge break-even win rate + cost-gate on every ranked idea
 **edge:** The costs argument kills most 'edges', and StockSageNetEdge already nets spread/slippage/commission into a net R:R — but nothing converts that into the single number a trader can falsify against their own hit rate: the break-even win probability p* = 1/(1+netRR). If your honest hit rate is below p*, the setup is negative-EV AFTER costs no matter how good the gross R:R looks. This is pure arithmetic on values NetEdge already computes — near-zero effort, high value, and it hardens the EV board against thin high-turnover flips (exactly where cost eats the edge).
 
 **signature:** // Extend StockSageNetEdge. nonisolated static func breakEvenWinRate(netRR: Double) -> Double? { netRR > 0 ? 1/(1+netRR) : nil }  and add `breakEvenWinRate: Double?` + `clearsCost(estWinProb: Double) -> Bool` to the NetEdge struct, filled in evaluate(...). Then a gate helper: nonisolated static func costClears(idea: StockSageIdea) -> Bool that pulls defaultCosts(forSymbol:), evaluate(entry:stop:target:…), and compares StockSageExpectedValue.winProbEstimate(conviction:) against breakEvenWinRate. Feeds StockSageTradeGate as a new .fail check ('after-cost EV negative') and demotes failing ideas in rankByEV (mirror the existing minConvictionToRank −1000 demotion).

@@ -6659,6 +6659,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EDGE_RESEARCH #2 — break-even win rate (the after-cost falsification bar)
+**Files:** `StockSage/StockSageNetEdge.swift` (+breakEvenWinRate, +clearsCost), `Salehman AITests/StockSageNetEdgeTests.swift` (+1 test).
+**What:** turned NetEdge's net R:R into a single falsifiable number — the win rate you must BEAT to profit after costs: p* = 1/(1+netRR). nil when netRR ≤ 0 (costs exceed the target — unprofitable at ANY win rate). `clearsCost(estWinProb:)` gates an idea's conviction-mapped win prob against that bar. This is the honest counter to a great-looking gross R:R on a thin, high-turnover flip where costs quietly eat the edge — exactly where small accounts bleed.
+**Verify:** typecheck clean; python-verified — clean 3:1 zero-cost → netRR 3, break-even 0.25 (clears at 40%, fails at 20%); a setup whose costs exceed the target → netRR −0.5, break-even nil, never clears even at 99%.
+**Next:** wire clearsCost into rankByEV to demote after-cost-negative ideas (EDGE_RESEARCH #2 wiring) — its own commit with a demotion-ordering test.
+**Result:** the EV board can now tell the owner the exact hit rate a trade needs to survive its own costs. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

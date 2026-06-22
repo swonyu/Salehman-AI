@@ -7,6 +7,20 @@ import Foundation
 struct StockSageNetEdgeTests {
     typealias NE = StockSageNetEdge
 
+    @Test func breakEvenWinRateIsTheAfterCostBar() {
+        // Clean 3:1, zero cost → netRR 3 → break-even p* = 1/(1+3) = 0.25.
+        let e = NE.evaluate(entry: 100, stop: 90, target: 130)!
+        #expect(abs(e.netRR - 3) < 1e-9)
+        #expect(abs((e.breakEvenWinRate ?? -1) - 0.25) < 1e-9)
+        #expect(e.clearsCost(estWinProb: 0.40))      // 40% beats the 25% bar
+        #expect(!e.clearsCost(estWinProb: 0.20))     // 20% below it → fails
+        // Costs that exceed the target → netRR ≤ 0 → no break-even, never clears at any win rate.
+        let dead = NE.evaluate(entry: 100, stop: 99, target: 100.5, spreadBps: 100, slippageBps: 100)!
+        #expect(dead.netRR <= 0)
+        #expect(dead.breakEvenWinRate == nil)
+        #expect(!dead.clearsCost(estWinProb: 0.99))
+    }
+
     @Test func wideSetupBarelyDentedByCosts() {
         // entry 100, stop 95, target 110 → gross 2:1. 30bps round-trip + $0.05 comm = $0.35/sh.
         let e = NE.evaluate(entry: 100, stop: 95, target: 110,
