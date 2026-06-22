@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:42 +03 · Swift files: 240 · Swift LOC: 45237_
+_Generated: 2026-06-22 12:52 +03 · Swift files: 242 · Swift LOC: 45326_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10295,7 +10295,7 @@ enum StockSageInput {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageJournal.swift (599 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageJournal.swift (604 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -10357,6 +10357,11 @@ struct TradeRecord: Codable, Sendable, Equatable, Identifiable {
 
     nonisolated var realizedProfit: Double? { exitPrice.map { profit(at: $0) } }
     nonisolated var realizedR: Double? { exitPrice.flatMap { rMultiple(at: $0) } }
+
+    /// Whole calendar days held — to `closedAt` if closed, else to `now`. Never negative.
+    nonisolated func daysHeld(asOf now: Date) -> Int {
+        Swift.max(0, Int(((closedAt ?? now).timeIntervalSince(openedAt) / 86_400).rounded(.down)))
+    }
 }
 
 /// Aggregate stats over the CLOSED trades — the owner's realized track record.
@@ -13677,6 +13682,43 @@ enum StockSageStrategyBacktest {
             totalR: totalR,
             worstDrawdownR: worstDD,
             caveat: caveat)
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageTimeStop.swift (33 lines) =====
+```swift
+import Foundation
+
+// MARK: - Time stop (age-based / dead-money discipline)
+//
+// A trade that hasn't worked in the time you gave it is tying up capital that could be
+// compounding elsewhere — the slow leak that doesn't show up as a loss. This flags a
+// position past its planned holding window so you decide consciously rather than drift.
+// Pure + deterministic (takes `now` explicitly). Honest: it's a CAPITAL-EFFICIENCY rule,
+// not a signal — it says nothing about whether the trade will still work, only that the
+// clock you set has run out.
+
+struct TimeStopSuggestion: Sendable, Equatable {
+    let daysHeld: Int
+    let daysToHold: Int
+    let daysRemaining: Int   // negative once overdue
+    let shouldExit: Bool     // daysHeld >= daysToHold
+    let rationale: String
+}
+
+enum StockSageTimeStop {
+    /// nil when `daysToHold` isn't positive. Same-day open → 0 days held.
+    nonisolated static func suggest(openedAt: Date, now: Date, daysToHold: Int) -> TimeStopSuggestion? {
+        guard daysToHold > 0 else { return nil }
+        let held = Swift.max(0, Int((now.timeIntervalSince(openedAt) / 86_400).rounded(.down)))
+        let remaining = daysToHold - held
+        let exit = held >= daysToHold
+        let why = exit
+            ? "Held \(held) of ~\(daysToHold) planned days — time-stop reached. If the thesis hasn't played out, the capital may compound better elsewhere (this is a clock, not a sell signal)."
+            : "Day \(held) of ~\(daysToHold) — \(remaining) day\(remaining == 1 ? "" : "s") left on the plan."
+        return TimeStopSuggestion(daysHeld: held, daysToHold: daysToHold,
+                                  daysRemaining: remaining, shouldExit: exit, rationale: why)
     }
 }
 ```
@@ -26491,7 +26533,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3152 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3160 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -27834,6 +27876,14 @@ struct MarketsView: View {
             }
             if let note = trade.note, !note.isEmpty {
                 Text(note).font(.system(size: mvFont9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+            // Time-stop: nudge when a position has outlived its planned hold window (the
+            // asset-class velocity assumption) — dead money the loss column never shows.
+            let plannedHold = trade.symbol.uppercased().hasSuffix("-USD") ? Int(cryptoHoldDays) : Int(equityHoldDays)
+            if let ts = StockSageTimeStop.suggest(openedAt: trade.openedAt, now: Date(), daysToHold: plannedHold), ts.shouldExit {
+                Text("⏳ \(ts.rationale)").font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Time stop: held \(ts.daysHeld) days, past the \(plannedHold) day plan")
             }
             if closingTradeID == trade.id {
                 HStack(spacing: 8) {
@@ -45026,6 +45076,53 @@ struct StockSageStoreTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageTimeStopTests.swift (43 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Time stop (pure)
+
+struct StockSageTimeStopTests {
+    typealias TS = StockSageTimeStop
+    private let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    private func plus(_ days: Double) -> Date { t0.addingTimeInterval(days * 86_400) }
+
+    @Test func countsDaysAndFlagsAtTheLimit() {
+        // Day 5 of a 10-day plan → still running.
+        let mid = TS.suggest(openedAt: t0, now: plus(5), daysToHold: 10)!
+        #expect(mid.daysHeld == 5 && mid.daysRemaining == 5 && !mid.shouldExit)
+        #expect(mid.rationale.contains("5 days left"))
+        // Exactly at the limit (>=) → exit.
+        let at = TS.suggest(openedAt: t0, now: plus(10), daysToHold: 10)!
+        #expect(at.daysHeld == 10 && at.daysRemaining == 0 && at.shouldExit)
+        #expect(at.rationale.lowercased().contains("time-stop reached"))
+        // Overdue.
+        let over = TS.suggest(openedAt: t0, now: plus(12), daysToHold: 10)!
+        #expect(over.daysHeld == 12 && over.daysRemaining == -2 && over.shouldExit)
+    }
+
+    @Test func sameDayAndGuards() {
+        let sameDay = TS.suggest(openedAt: t0, now: t0, daysToHold: 10)!
+        #expect(sameDay.daysHeld == 0 && !sameDay.shouldExit)
+        #expect(TS.suggest(openedAt: t0, now: plus(5), daysToHold: 0) == nil)   // no plan → nil
+        // now before open clamps to 0, not negative.
+        #expect(TS.suggest(openedAt: t0, now: plus(-3), daysToHold: 10)!.daysHeld == 0)
+    }
+
+    @Test func tradeRecordDaysHeld() {
+        // Open trade: held to `now`. Closed: held to closedAt.
+        let open = TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                               openedAt: t0, exitPrice: nil, closedAt: nil)
+        #expect(open.daysHeld(asOf: plus(7)) == 7)
+        let closed = TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                                 openedAt: t0, exitPrice: 110, closedAt: plus(4))
+        #expect(closed.daysHeld(asOf: plus(99)) == 4)   // ignores `now`, uses closedAt
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageTodayPlanTests.swift (37 lines) =====
 ```swift
 import Testing
@@ -48256,7 +48353,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7620 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7625 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54762,6 +54859,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Hardening #4 (feature — highest-value safeguard):** `StockSage/StockSagePortfolioHeat.swift` (NEW) + `Views/MarketsView.swift` (gauge above open journal positions) + `Salehman AITests/StockSagePortfolioHeatTests.swift` (NEW, 3 tests). Ten trades each "1% risk" are 10% of the account on the line at once — exposure nothing surfaced. `StockSagePortfolioHeat.compute(openTrades:accountSize:)` = Σ shares·|entry−stop| ÷ account → heatPct + level (cool<5% / warm<10% / hot≥10%) + verdict + a correlated-gap caveat. The journal shows "🔥 Portfolio heat — 12% of account at open risk — heavy; one bad day hits hard, consider trimming" colored by level. PYTHON-VERIFIED: 10·5+5·20=150→1.5% cool, 70·10=700→7% warm, 120·10=1200→12% hot, empty→0% cool, account 0→nil. ✅ typecheck clean.
 **Result:** Top 3 confirmed bugs + the #1 missing safeguard (PortfolioHeat) shipped. 50-agent sweep backlog in HARDENING_BACKLOG.md. NEXT: #5 boundary test sweep, #7 TimeStop. Loop continues autonomously at 4.7-min cadence.
 
+## 2026-06-22 · Hardening #7: TimeStop (age-based dead-money discipline)
+**Files:** `StockSage/StockSageTimeStop.swift` (NEW), `StockSage/StockSageJournal.swift` (`TradeRecord.daysHeld(asOf:)`), `Views/MarketsView.swift` (journal open-row nudge), `Salehman AITests/StockSageTimeStopTests.swift` (NEW, 3 tests).
+**What & why:** A trade that hasn't worked in the time you gave it ties up capital that could compound elsewhere — a slow leak the loss column never shows. `StockSageTimeStop.suggest(openedAt:now:daysToHold:)` → daysHeld/daysRemaining/shouldExit (held≥plan) + rationale; pure (explicit `now`). `TradeRecord.daysHeld(asOf:)` (to closedAt if closed). The journal open row nudges "⏳ Held N of ~M planned days — time-stop reached…" once a position outlives its asset-class velocity window (crypto 3d / equity 12d default). Honest: a CLOCK, not a sell signal — says nothing about whether the trade still works. 3 tests, PYTHON-VERIFIED: day5/10→(5,5,false), day10→(10,0,true,reached), day12→(12,−2,true), same-day→0, daysToHold 0→nil, now-before-open clamps to 0; TradeRecord.daysHeld open→to now (7), closed→to closedAt (4, ignores now). ✅ typecheck clean.
+**Result:** Hardening 1,2,3,4,6,7 done. NEXT: #5 boundary test sweep, then #8-10 honesty polish / OSRS features. Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58088,7 +58190,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add riskFraction:Double to MoneyVelocitySummary (return block lines 174-181) so callers/UI can verify which fraction produced worstRunDrawdownPct, and pass it into playbook() (pairs with rank 1).
 **Why:** Removes opacity behind the brake estimate; small follow-on to the rank-1 fix.
 
-### ⬜ #7 — TimeStop engine (age-based exit / dead-money flag)  [high/medium, feature]
+### ✅ DONE #7 — TimeStop engine (age-based exit / dead-money flag)  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageTimeStop.swift (new) + StockSageAdvisor.swift
 **What:** nonisolated static func suggest(openedAt:now:daysToHold:) -> TimeStopSuggestion?(shouldExit,daysHeld,daysRemaining,rationale). Add TradeRecord.daysHeld computed prop; flag in RiskFlags when isOpen && daysHeld>daysToHold. Test exact day boundaries, nil dates, same-day=0.
 **Why:** Directly serves "make money faster": frees capital from stale positions. Pure discipline rule, not a signal — honest by construction.

@@ -58,6 +58,11 @@ struct TradeRecord: Codable, Sendable, Equatable, Identifiable {
 
     nonisolated var realizedProfit: Double? { exitPrice.map { profit(at: $0) } }
     nonisolated var realizedR: Double? { exitPrice.flatMap { rMultiple(at: $0) } }
+
+    /// Whole calendar days held — to `closedAt` if closed, else to `now`. Never negative.
+    nonisolated func daysHeld(asOf now: Date) -> Int {
+        Swift.max(0, Int(((closedAt ?? now).timeIntervalSince(openedAt) / 86_400).rounded(.down)))
+    }
 }
 
 /// Aggregate stats over the CLOSED trades — the owner's realized track record.

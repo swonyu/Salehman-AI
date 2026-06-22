@@ -1340,6 +1340,14 @@ struct MarketsView: View {
             if let note = trade.note, !note.isEmpty {
                 Text(note).font(.system(size: mvFont9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
+            // Time-stop: nudge when a position has outlived its planned hold window (the
+            // asset-class velocity assumption) — dead money the loss column never shows.
+            let plannedHold = trade.symbol.uppercased().hasSuffix("-USD") ? Int(cryptoHoldDays) : Int(equityHoldDays)
+            if let ts = StockSageTimeStop.suggest(openedAt: trade.openedAt, now: Date(), daysToHold: plannedHold), ts.shouldExit {
+                Text("⏳ \(ts.rationale)").font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Time stop: held \(ts.daysHeld) days, past the \(plannedHold) day plan")
+            }
             if closingTradeID == trade.id {
                 HStack(spacing: 8) {
                     journalField("Exit px", text: $closeExitText, width: 80)

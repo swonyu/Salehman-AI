@@ -43,7 +43,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add riskFraction:Double to MoneyVelocitySummary (return block lines 174-181) so callers/UI can verify which fraction produced worstRunDrawdownPct, and pass it into playbook() (pairs with rank 1).
 **Why:** Removes opacity behind the brake estimate; small follow-on to the rank-1 fix.
 
-### ⬜ #7 — TimeStop engine (age-based exit / dead-money flag)  [high/medium, feature]
+### ✅ DONE #7 — TimeStop engine (age-based exit / dead-money flag)  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageTimeStop.swift (new) + StockSageAdvisor.swift
 **What:** nonisolated static func suggest(openedAt:now:daysToHold:) -> TimeStopSuggestion?(shouldExit,daysHeld,daysRemaining,rationale). Add TradeRecord.daysHeld computed prop; flag in RiskFlags when isOpen && daysHeld>daysToHold. Test exact day boundaries, nil dates, same-day=0.
 **Why:** Directly serves "make money faster": frees capital from stale positions. Pure discipline rule, not a signal — honest by construction.
