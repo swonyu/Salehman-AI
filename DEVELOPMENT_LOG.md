@@ -6584,6 +6584,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #4 — Donchian channel + look-ahead-free breakout helper
+**Files:** `StockSage/StockSageIndicators.swift` (+donchian, +isBreakout), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** added a real trend-entry building block — `donchian(highs:lows:period:)` → (upper=highest high, lower=lowest low) over exactly the slice passed (nil if < period bars), and `isBreakout(price:channel:)` (strict `price > upper`; equalling the band is NOT a breakout). The doc-comments make the no-look-ahead contract explicit: build the channel on bars EXCLUDING the current one (highs[0..<i]) then test close[i]. Intentionally NOT wired into advise/backtest this tick — a new entry trigger must be measured head-to-head in the backtester (EXIT #1 seam), not blindly stacked onto the score (honesty: don't manufacture signal without measuring it).
+**Verify:** typecheck clean; python-verified — last-20 channel upper 30 / lower 10.5, <20 bars ⇒ nil, breakout fires at 31 not at 29 or 30 (strict >).
+**Result:** a tested, look-ahead-free breakout primitive ready for the measured-A/B entry work. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -180,4 +180,22 @@ enum StockSageIndicators {
         guard atrPct > 0 else { return nil }
         return mom / atrPct
     }
+
+    /// Donchian channel: the highest high and lowest low over the last `period` bars. nil if
+    /// fewer than `period` bars. Computed over EXACTLY the slice you pass — so to stay
+    /// look-ahead-free in a backtest, pass bars up to but EXCLUDING the current one
+    /// (e.g. `highs[0..<i]`), never the bar you're deciding on.
+    nonisolated static func donchian(highs: [Double], lows: [Double], period: Int = 20)
+        -> (upper: Double, lower: Double)? {
+        guard period > 0, highs.count >= period, lows.count >= period,
+              let upper = highs.suffix(period).max(), let lower = lows.suffix(period).min() else { return nil }
+        return (upper, lower)
+    }
+
+    /// A long breakout fires when `price` closes STRICTLY above the channel's upper band
+    /// (equalling the band is not a breakout). Build `channel` on bars excluding the current
+    /// one, then pass the current close, to keep the trigger free of look-ahead.
+    nonisolated static func isBreakout(price: Double, channel: (upper: Double, lower: Double)) -> Bool {
+        price > channel.upper
+    }
 }

@@ -107,4 +107,18 @@ struct StockSageIndicatorsTests {
         let flat = Array(repeating: 100.0, count: 200)
         #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
     }
+
+    @Test func donchianChannelAndLookAheadFreeBreakout() {
+        let highs = (1...30).map(Double.init)            // 1…30
+        let lows  = highs.map { $0 - 0.5 }               // 0.5…29.5
+        let ch = I.donchian(highs: highs, lows: lows, period: 20)!
+        #expect(ch.upper == 30)                          // max of last 20 highs (11…30)
+        #expect(ch.lower == 10.5)                        // min of last 20 lows (10.5…29.5)
+        #expect(I.donchian(highs: Array(highs.prefix(10)), lows: Array(lows.prefix(10)), period: 20) == nil)
+        // Look-ahead-free: channel built on bars [0..<i] (EXCLUDING bar i), then test close[i].
+        let prior = I.donchian(highs: Array(highs.prefix(30)), lows: Array(lows.prefix(30)), period: 20)!
+        #expect(I.isBreakout(price: 31, channel: prior))   // 31 > prior upper 30 → breakout
+        #expect(!I.isBreakout(price: 29, channel: prior))  // below the band → no breakout
+        #expect(!I.isBreakout(price: 30, channel: prior))  // equalling the band is NOT a breakout (strict >)
+    }
 }

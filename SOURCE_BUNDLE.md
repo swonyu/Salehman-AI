@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 15:06 +03 · Swift files: 246 · Swift LOC: 45765_
+_Generated: 2026-06-22 15:14 +03 · Swift files: 246 · Swift LOC: 45797_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10203,7 +10203,7 @@ enum StockSageGlossary {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (183 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (201 lines) =====
 ```swift
 import Foundation
 
@@ -10386,6 +10386,24 @@ enum StockSageIndicators {
         let atrPct = a / price * 100
         guard atrPct > 0 else { return nil }
         return mom / atrPct
+    }
+
+    /// Donchian channel: the highest high and lowest low over the last `period` bars. nil if
+    /// fewer than `period` bars. Computed over EXACTLY the slice you pass — so to stay
+    /// look-ahead-free in a backtest, pass bars up to but EXCLUDING the current one
+    /// (e.g. `highs[0..<i]`), never the bar you're deciding on.
+    nonisolated static func donchian(highs: [Double], lows: [Double], period: Int = 20)
+        -> (upper: Double, lower: Double)? {
+        guard period > 0, highs.count >= period, lows.count >= period,
+              let upper = highs.suffix(period).max(), let lower = lows.suffix(period).min() else { return nil }
+        return (upper, lower)
+    }
+
+    /// A long breakout fires when `price` closes STRICTLY above the channel's upper band
+    /// (equalling the band is not a breakout). Build `channel` on bars excluding the current
+    /// one, then pass the current close, to keep the trigger free of look-ahead.
+    nonisolated static func isBreakout(price: Double, channel: (upper: Double, lower: Double)) -> Bool {
+        price > channel.upper
     }
 }
 ```
@@ -43327,7 +43345,7 @@ struct StockSageHonestyGuardTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (110 lines) =====
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (124 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43437,6 +43455,20 @@ struct StockSageIndicatorsTests {
         #expect(I.volAdjustedMomentum(closes: short, highs: short, lows: short) == nil)
         let flat = Array(repeating: 100.0, count: 200)
         #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
+    }
+
+    @Test func donchianChannelAndLookAheadFreeBreakout() {
+        let highs = (1...30).map(Double.init)            // 1…30
+        let lows  = highs.map { $0 - 0.5 }               // 0.5…29.5
+        let ch = I.donchian(highs: highs, lows: lows, period: 20)!
+        #expect(ch.upper == 30)                          // max of last 20 highs (11…30)
+        #expect(ch.lower == 10.5)                        // min of last 20 lows (10.5…29.5)
+        #expect(I.donchian(highs: Array(highs.prefix(10)), lows: Array(lows.prefix(10)), period: 20) == nil)
+        // Look-ahead-free: channel built on bars [0..<i] (EXCLUDING bar i), then test close[i].
+        let prior = I.donchian(highs: Array(highs.prefix(30)), lows: Array(lows.prefix(30)), period: 20)!
+        #expect(I.isBreakout(price: 31, channel: prior))   // 31 > prior upper 30 → breakout
+        #expect(!I.isBreakout(price: 29, channel: prior))  // below the band → no breakout
+        #expect(!I.isBreakout(price: 30, channel: prior))  // equalling the band is NOT a breakout (strict >)
     }
 }
 ```
@@ -49058,7 +49090,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7703 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7711 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55645,6 +55677,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #4 — Donchian channel + look-ahead-free breakout helper
+**Files:** `StockSage/StockSageIndicators.swift` (+donchian, +isBreakout), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** added a real trend-entry building block — `donchian(highs:lows:period:)` → (upper=highest high, lower=lowest low) over exactly the slice passed (nil if < period bars), and `isBreakout(price:channel:)` (strict `price > upper`; equalling the band is NOT a breakout). The doc-comments make the no-look-ahead contract explicit: build the channel on bars EXCLUDING the current one (highs[0..<i]) then test close[i]. Intentionally NOT wired into advise/backtest this tick — a new entry trigger must be measured head-to-head in the backtester (EXIT #1 seam), not blindly stacked onto the score (honesty: don't manufacture signal without measuring it).
+**Verify:** typecheck clean; python-verified — last-20 channel upper 30 / lower 10.5, <20 bars ⇒ nil, breakout fires at 31 not at 29 or 30 (strict >).
+**Result:** a tested, look-ahead-free breakout primitive ready for the measured-A/B entry work. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -60315,7 +60355,7 @@ VERDICT: Markets tab is real-data-only in substance today; sample data is a tran
 **Signature:** `nonisolated static func relativeStrength(symbolCloses: [Double], benchmarkCloses: [Double], period: Int = 126) -> Double?`
 **Test:** Construct symbol returns of +30% and benchmark +10% over the period → RS > 0 (outperforming). Reverse them → RS < 0. Mismatched-length / too-short series → nil. Then assert a regime-aware consumer (e.g. advise or the ideas ranker) demotes a name that is rising in absolute terms but LAGGING the benchmark, since relative strength is the part of momentum with real forward edge — and that it degrades gracefully (no penalty, no crash) when the benchmark history is absent.
 
-### #4 — Donchian/ATR channel breakout entry (a real trend-entry trigger, not just a trend filter)  [M — two small pure functions in StockSageIndicators; the harder part is unit-proving the exclusion of the current bar so it stays look-ahead-free when the backtester calls it.]
+### ✅ DONE (helpers; wiring deferred to EXIT #1 A/B) #4 — Donchian/ATR channel breakout entry (a real trend-entry trigger, not just a trend filter)  [M — two small pure functions in StockSageIndicators; the harder part is unit-proving the exclusion of the current bar so it stays look-ahead-free when the backtester calls it.]
 **Signature:** `nonisolated static func donchian(highs: [Double], lows: [Double], period: Int = 20) -> (upper: Double, lower: Double)?`
 **Test:** On a monotonic series, upper == max of last `period` highs, lower == min of last `period` lows; insufficient bars → nil. Then test a breakout helper isBreakout(price:channel:) returns true when the latest close exceeds the prior-bar upper band (computed on bars EXCLUDING the current one, to avoid look-ahead) and false otherwise. Critically assert the channel is built from closes[0..<i], never including bar i, mirroring the backtester's no-look-ahead contract.
 
