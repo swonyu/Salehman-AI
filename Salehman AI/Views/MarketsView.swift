@@ -852,8 +852,14 @@ struct MarketsView: View {
 
                 // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
                 // with a 2% no-trade band so you don't churn on tiny drifts.
-                let rebalHoldings = portfolio.positions.map {
-                    (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
+                // Convert each holding to USD BEFORE the plan (mirrors portfolioTotals) — summing
+                // GBP/SAR/JPY at 1:1 skewed the target weights AND mislabeled the trade sizes as "$".
+                // Untracked-FX holdings are excluded (no rate to convert), same as the headline total.
+                let rebalFX = fxRatesToUSD
+                let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+                    guard let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                    return (symbol: p.symbol,
+                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
                 }
                 let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
                                               uniquingKeysWith: { a, _ in a })

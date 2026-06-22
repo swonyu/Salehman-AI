@@ -7296,6 +7296,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · FORMAT/MONEY FIX — rebalance plan converts to USD before summing (no 1:1 currency mix)
+**Files:** `Views/MarketsView.swift` (rebalHoldings FX conversion).
+**What (UI_FORMAT_AUDIT wkdzud2tl #2, MED — wrong-$-total class):** the risk-parity rebalance built rebalHoldings from LOCAL-currency holdingValue with NO * rate, unlike portfolioTotals which multiplies by fxRatesToUSD. StockSageRebalance.plan then summed GBP+USD+SAR+JPY at 1:1 and the UI stamped the deltas "$%.0f" — a fabricated dollar trade size, and the skewed 1:1 weights could suppress a genuinely-needed rebalance. Fix: convert each holding to USD before the plan (× fxRatesToUSD rate), excluding untracked-FX holdings (compactMap, same as the headline total). Now the weights AND the "$" trade labels are truthful.
+**Verify:** typecheck EXIT=0. RE-TRACED: USD-only book → every rate 1.0 → byte-identical to before; StockSageRebalance.plan engine untouched (its tests pass holdings directly). The price-fallback (currentPrice ?? costBasis) is preserved — only the currency conversion is added.
+**Remaining (UI_FORMAT_AUDIT #2 cont.): the allocationPanel slices (~906) + what-if/sizing (~3273) also sum 1:1 — route through the same * rate; #3 humanDollars + #4 RSFormat.gp band-top overflow.**
+**Result:** a multi-currency book no longer produces a fake dollar rebalance trade or skewed parity weights. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
