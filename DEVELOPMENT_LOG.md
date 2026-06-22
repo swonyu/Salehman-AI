@@ -7245,6 +7245,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · DATA-INTEGRITY #3 — a ticker removed mid-fetch can no longer resurrect into ideas/allocator
+**Files:** `StockSage/StockSageStore.swift` (refreshIdeas + retryFailedIdeas post-await reconcile).
+**What (DATA_INTEGRITY_AUDIT wnw1nvskx #3, MED realDataViolation — await interleaving):** refreshIdeas captured `universe = trackedDefs()` BEFORE its fetch awaits, then committed `ideas = ranked` + ideasMissing from that STALE snapshot. A removeSymbol() that landed during the await still had its ticker priced in `built`, so it reappeared in the ranked ideas board AND flowed into the capital allocator (emitting a dollarsAtRisk/notional the owner could copy) — a stale money row for a position the user just dropped. Same hole in retryFailedIdeas (pre-await `defs`/`built`). Fix: mirror refresh()'s liveFiltered reconcile — after the awaits, recompute stillTracked = Set(trackedDefs() uppercased) and filter built/merged to it (and gate ideasMissing on it), so a mid-fetch removal wins. Curated symbols can't be removed, so they always pass.
+**Verify:** typecheck EXIT=0; grep confirms stillTracked applied in BOTH refreshIdeas (ranked + ideasMissing) and retryFailedIdeas (merged). RE-TRACED: in the normal (no concurrent-remove) path, trackedDefs() post-await == universe pre-await, so the filter is a NO-OP → byte-identical ideas ordering; the network-bound fetchers have no unit tests to break. Self-heals next cycle even without the fix, but the allocator path made it a stale money number.
+**Remaining (DATA_INTEGRITY_AUDIT #4 partial-refresh stale holding caveat, #5 future-dated GE leg → age 0).**
+**Result:** removing a ticker mid-scan now removes it everywhere — no resurrected idea, no phantom allocator line. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

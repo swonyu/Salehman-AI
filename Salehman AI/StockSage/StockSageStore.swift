@@ -174,7 +174,12 @@ final class StockSageStore: ObservableObject {
             return
         }
         let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark)
-        let ranked = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+        // Re-reconcile vs the CURRENT tracked set (mirror refresh() at the liveFiltered step): a
+        // removeSymbol() that landed DURING the await must win, else the pre-await `universe` snapshot
+        // resurrects the dropped ticker into ranked ideas AND the capital allocator (a stale $ size).
+        let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
+        let ranked = built.filter { stillTracked.contains($0.symbol.uppercased()) }
+            .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         // Detect alert events vs the PREVIOUS snapshot before replacing it.
         if alertsEnabled, !ideas.isEmpty {
             let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
@@ -188,6 +193,7 @@ final class StockSageStore: ObservableObject {
         // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
         // button that can never clear.
         ideasMissing = universe.map(\.symbol).filter {
+            stillTracked.contains($0.uppercased()) &&                                   // dropped mid-fetch → not "missing"
             !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
         }
         ideasUpdated = Date()
@@ -210,7 +216,11 @@ final class StockSageStore: ObservableObject {
         }
         let built = await Self.buildIdeas(defs: defs, histories: histories)
         let newSyms = Set(built.map { $0.symbol.uppercased() })
+        // Re-reconcile vs the current tracked set (mirror refreshIdeas): a removeSymbol() during the
+        // retry await must not resurrect the dropped ticker via the pre-await `defs`/`built`.
+        let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
         let merged = (ideas.filter { !newSyms.contains($0.symbol.uppercased()) } + built)
+            .filter { stillTracked.contains($0.symbol.uppercased()) }
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         ideas = merged
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
