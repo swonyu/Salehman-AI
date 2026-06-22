@@ -2565,6 +2565,22 @@ struct MarketsView: View {
                         hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
                     tradeGateView(gate)
+
+                    // Concentration-in-disguise: warn if this idea moves in lockstep with
+                    // something already held (series sourced from the ideas board's sparklines).
+                    let candReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
+                    let heldSeries = portfolio.positions.compactMap { p -> (symbol: String, returns: [Double])? in
+                        guard let sp = store.ideas.first(where: { $0.symbol.uppercased() == p.symbol.uppercased() })?.spark,
+                              sp.count >= 2 else { return nil }
+                        return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
+                    }
+                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries),
+                       cc.isConcentrating {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text(cc.note).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
 
                 HStack(spacing: 20) {

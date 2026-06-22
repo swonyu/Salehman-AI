@@ -1,0 +1,54 @@
+import Foundation
+
+// MARK: - Correlation-cluster add pre-check
+//
+// "Diversification" that adds a name moving in lockstep with one you already hold isn't
+// diversification — it's doubling the same bet. Before adding a candidate, this measures
+// its return correlation to each current holding and flags any that are ≥ a threshold
+// (default 0.8): you'd be concentrating, not spreading. Pure + deterministic. Honest:
+// correlation is BACKWARD-looking and rises toward 1 in crashes — exactly when it hurts.
+
+struct ClusterMatch: Sendable, Equatable, Identifiable {
+    let symbol: String
+    let correlation: Double   // −1…1
+    var id: String { symbol }
+}
+
+struct ClusterCheck: Sendable, Equatable {
+    let candidate: String
+    let nearest: ClusterMatch?              // most positively-correlated holding
+    let highlyCorrelated: [ClusterMatch]    // holdings ≥ threshold, highest first
+    let threshold: Double
+
+    nonisolated var isConcentrating: Bool { !highlyCorrelated.isEmpty }
+
+    nonisolated var note: String {
+        guard let top = highlyCorrelated.first ?? nearest else { return "" }
+        let c = String(format: "%.2f", top.correlation)
+        if isConcentrating {
+            return "Adding \(candidate) ≈ doubling down on \(top.symbol) (corr \(c)) — concentration in disguise; correlated names fall together. Correlation is backward-looking and rises in crashes."
+        }
+        return "\(candidate)'s closest holding is \(top.symbol) (corr \(c)) — adds diversification. Correlation is backward-looking and regime-dependent."
+    }
+}
+
+enum StockSageClusterCheck {
+    /// Correlate `candidateReturns` against each holding's return series; flag any ≥ `threshold`.
+    /// nil when there's nothing to compare (no candidate data, or no holdings). The same symbol
+    /// already held is skipped (you can't cluster with yourself).
+    nonisolated static func check(candidate: String, candidateReturns: [Double],
+                                  holdings: [(symbol: String, returns: [Double])],
+                                  threshold: Double = 0.8) -> ClusterCheck? {
+        guard candidateReturns.count >= 2 else { return nil }
+        let others = holdings.filter { $0.symbol.uppercased() != candidate.uppercased() && $0.returns.count >= 2 }
+        guard !others.isEmpty else { return nil }
+
+        let matches = others.map {
+            ClusterMatch(symbol: $0.symbol,
+                         correlation: StockSagePortfolioAnalytics.correlation(candidateReturns, $0.returns))
+        }
+        let nearest = matches.max { $0.correlation < $1.correlation }
+        let hot = matches.filter { $0.correlation >= threshold }.sorted { $0.correlation > $1.correlation }
+        return ClusterCheck(candidate: candidate, nearest: nearest, highlyCorrelated: hot, threshold: threshold)
+    }
+}

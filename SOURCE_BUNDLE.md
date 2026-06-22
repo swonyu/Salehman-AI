@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:32 +03 · Swift files: 230 · Swift LOC: 44293_
+_Generated: 2026-06-22 09:41 +03 · Swift files: 232 · Swift LOC: 44403_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9162,6 +9162,64 @@ enum StockSageBriefingService {
         }
         out += "\n\nTone: \(gainers.count > losers.count ? "Constructive" : losers.count > gainers.count ? "Defensive" : "Neutral")"
         return out
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageClusterCheck.swift (54 lines) =====
+```swift
+import Foundation
+
+// MARK: - Correlation-cluster add pre-check
+//
+// "Diversification" that adds a name moving in lockstep with one you already hold isn't
+// diversification — it's doubling the same bet. Before adding a candidate, this measures
+// its return correlation to each current holding and flags any that are ≥ a threshold
+// (default 0.8): you'd be concentrating, not spreading. Pure + deterministic. Honest:
+// correlation is BACKWARD-looking and rises toward 1 in crashes — exactly when it hurts.
+
+struct ClusterMatch: Sendable, Equatable, Identifiable {
+    let symbol: String
+    let correlation: Double   // −1…1
+    var id: String { symbol }
+}
+
+struct ClusterCheck: Sendable, Equatable {
+    let candidate: String
+    let nearest: ClusterMatch?              // most positively-correlated holding
+    let highlyCorrelated: [ClusterMatch]    // holdings ≥ threshold, highest first
+    let threshold: Double
+
+    nonisolated var isConcentrating: Bool { !highlyCorrelated.isEmpty }
+
+    nonisolated var note: String {
+        guard let top = highlyCorrelated.first ?? nearest else { return "" }
+        let c = String(format: "%.2f", top.correlation)
+        if isConcentrating {
+            return "Adding \(candidate) ≈ doubling down on \(top.symbol) (corr \(c)) — concentration in disguise; correlated names fall together. Correlation is backward-looking and rises in crashes."
+        }
+        return "\(candidate)'s closest holding is \(top.symbol) (corr \(c)) — adds diversification. Correlation is backward-looking and regime-dependent."
+    }
+}
+
+enum StockSageClusterCheck {
+    /// Correlate `candidateReturns` against each holding's return series; flag any ≥ `threshold`.
+    /// nil when there's nothing to compare (no candidate data, or no holdings). The same symbol
+    /// already held is skipped (you can't cluster with yourself).
+    nonisolated static func check(candidate: String, candidateReturns: [Double],
+                                  holdings: [(symbol: String, returns: [Double])],
+                                  threshold: Double = 0.8) -> ClusterCheck? {
+        guard candidateReturns.count >= 2 else { return nil }
+        let others = holdings.filter { $0.symbol.uppercased() != candidate.uppercased() && $0.returns.count >= 2 }
+        guard !others.isEmpty else { return nil }
+
+        let matches = others.map {
+            ClusterMatch(symbol: $0.symbol,
+                         correlation: StockSagePortfolioAnalytics.correlation(candidateReturns, $0.returns))
+        }
+        let nearest = matches.max { $0.correlation < $1.correlation }
+        let hot = matches.filter { $0.correlation >= threshold }.sorted { $0.correlation > $1.correlation }
+        return ClusterCheck(candidate: candidate, nearest: nearest, highlyCorrelated: hot, threshold: threshold)
     }
 }
 ```
@@ -25940,7 +25998,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2985 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3001 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -28509,6 +28567,22 @@ struct MarketsView: View {
                         hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
                     tradeGateView(gate)
+
+                    // Concentration-in-disguise: warn if this idea moves in lockstep with
+                    // something already held (series sourced from the ideas board's sparklines).
+                    let candReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
+                    let heldSeries = portfolio.positions.compactMap { p -> (symbol: String, returns: [Double])? in
+                        guard let sp = store.ideas.first(where: { $0.symbol.uppercased() == p.symbol.uppercased() })?.spark,
+                              sp.count >= 2 else { return nil }
+                        return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
+                    }
+                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries),
+                       cc.isConcentrating {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text(cc.note).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
 
                 HStack(spacing: 20) {
@@ -41476,6 +41550,50 @@ struct StockSageBacktesterTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageClusterCheckTests.swift (40 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Correlation-cluster add pre-check (pure)
+
+struct StockSageClusterCheckTests {
+    typealias CK = StockSageClusterCheck
+
+    // A clean, linearly-related set: A is identical to the candidate (corr +1),
+    // B is its negation (corr −1).
+    private let cand: [Double] = [0.01, -0.02, 0.03, -0.01]
+    private var identical: [Double] { cand }
+    private var negated: [Double] { cand.map { -$0 } }
+
+    @Test func flagsAHighlyCorrelatedHolding() {
+        let r = CK.check(candidate: "NEW",
+                         candidateReturns: cand,
+                         holdings: [("A", identical), ("B", negated)])!
+        #expect(r.isConcentrating)
+        #expect(r.highlyCorrelated.map(\.symbol) == ["A"])           // only the +1 holding
+        #expect(abs(r.highlyCorrelated.first!.correlation - 1) < 1e-9)
+        #expect(r.nearest?.symbol == "A")                            // highest positive corr
+        #expect(r.note.contains("doubling down on A"))
+    }
+
+    @Test func anticorrelatedHoldingIsNotConcentration() {
+        let r = CK.check(candidate: "NEW", candidateReturns: cand, holdings: [("B", negated)])!
+        #expect(!r.isConcentrating)
+        #expect(abs(r.nearest!.correlation - (-1)) < 1e-9)
+        #expect(r.note.contains("adds diversification"))
+    }
+
+    @Test func skipsTheSameSymbolAndGuardsEmpties() {
+        // Candidate already held under the same ticker → skipped → no other holdings → nil.
+        #expect(CK.check(candidate: "A", candidateReturns: cand, holdings: [("a", identical)]) == nil)
+        #expect(CK.check(candidate: "NEW", candidateReturns: cand, holdings: []) == nil)
+        #expect(CK.check(candidate: "NEW", candidateReturns: [0.01], holdings: [("A", identical)]) == nil)  // too short
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageCorrelationClusterTests.swift (60 lines) =====
 ```swift
 import Testing
@@ -47272,7 +47390,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7523 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7528 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53680,6 +53798,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageNetEdge.swift` (NEW), `Views/MarketsView.swift` (net-edge line in the idea detail sheet, after the R:R note), `Salehman AITests/StockSageNetEdgeTests.swift` (NEW, 4 tests).
 **What & why:** New-value build #8 — gross R:R flatters every trade by ignoring the spread you cross twice, slippage, and commission. On a wide 4:1 they barely register; on a thin scalp they can eat the whole edge. `StockSageNetEdge.evaluate(entry:stop:target:spreadBps:slippageBps:commissionPerShare:winProb:)` nets round-trip cost out of the reward AND into the risk → NET R:R, % of the target eaten by costs, optional net expectancy in R, and a verdict (acceptable / thin / R:R<1 / costs-exceed-target). Works long & short (absolute distances). The idea detail sheet shows "After ~15bps est. costs: net R:R 1.8:1 (gross 2.0:1). Costs take 4% of the target — acceptable." Honest: the ~15bps is a LABELED estimate; the help text says real costs differ and thin scalps lose the whole edge. 4 tests, PYTHON-VERIFIED: wide setup (cost $0.35, netRR 1.8037, costPct 3.5%, netExp +0.43R); thin scalp (cost $1.10 > $1 target → netRR −0.048, "Costs exceed the target"); zero-cost = gross unchanged, winProb nil → netExp nil; short 2:1 + degenerate guards → nil.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 8 new-value features today (#84–#91). The owner sees when frictions kill a thin-margin trade BEFORE taking it. NEXT: correlation-cluster add pre-check. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Correlation-cluster add pre-check (concentration in disguise)
+**Files:** `StockSage/StockSageClusterCheck.swift` (NEW), `Views/MarketsView.swift` (warning line in the buy-family idea detail sheet, after the gate), `Salehman AITests/StockSageClusterCheckTests.swift` (NEW, 3 tests).
+**What & why:** New-value build #9 — adding a name that moves in lockstep with one you already hold isn't diversification, it's doubling the same bet. `StockSageClusterCheck.check(candidate:candidateReturns:holdings:threshold:)` correlates the candidate's return series against each holding's (reusing `StockSagePortfolioAnalytics.correlation`), flags any ≥0.8, and returns the nearest match + a plain note. Uses POSITIVE correlation (a −0.9 hedge is not concentration); skips the same ticker; nil when nothing to compare. The buy-family detail sheet warns "Adding NEW ≈ doubling down on HELD (corr 0.86) — concentration in disguise; correlated names fall together," sourcing held series from the ideas board's sparklines and showing ONLY when concentrating. Honesty: the note states correlation is backward-looking and rises in crashes. 3 tests, PYTHON-VERIFIED: identical series → corr +1.0 flagged, negated → −1.0 not flagged (a hedge), nearest = the +1 holding; anti-correlated only → "adds diversification"; same-symbol skip + empty/too-short guards → nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 9 new-value features today (#84–#92). The full pre-trade loop now covers safe→size→net-of-costs→currency→cluster risk. NEXT: stop-vs-ATR realism, or journal expectancy-by-setup. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 
