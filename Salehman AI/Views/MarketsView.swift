@@ -778,6 +778,41 @@ struct MarketsView: View {
                 Text("⚠︎ \(Int(alloc.topClassConcentration * 100))% in one asset class — concentrated.")
                     .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
+
+            // Currency exposure — only worth showing when there's an actual FX dimension.
+            let ccyHoldings = portfolio.positions.map {
+                (value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares,
+                 currency: StockSageCurrency.currencyForSymbol($0.symbol))
+            }
+            let fxRates: [String: Double] = Dictionary(uniqueKeysWithValues:
+                Set(ccyHoldings.map(\.currency)).subtracting(["USD"]).compactMap { ccy -> (String, Double)? in
+                    guard let r = currentPrice("\(ccy)USD=X"), r > 0 else { return nil }
+                    return (ccy, r)
+                })
+            if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
+               cb.exposures.count > 1 || !cb.unpriced.isEmpty {
+                Text("Currency exposure (base USD)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                ForEach(cb.exposures) { e in
+                    HStack(spacing: 8) {
+                        Text(e.currency).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
+                        Text(String(format: "%.0f%%", e.weight * 100)).font(.caption2).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(e.baseValue.formatted(.number.precision(.fractionLength(0)))).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(e.currency): \(Int(e.weight * 100)) percent of the priced book")
+                }
+                if let c = cb.concentration {
+                    Text("⚠︎ \(Int(c.weight * 100))% in \(c.currency) — FX risk (currency moves swing your USD value).")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                if !cb.unpriced.isEmpty {
+                    Text("Unpriced (track \(cb.unpriced.first ?? "")USD=X to convert): \(cb.unpriced.joined(separator: ", ")) — excluded from the split.")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Local prices assumed in each market's currency (London .L in pence may distort). Rates are snapshots; FX moves are real, un-modeled risk.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)

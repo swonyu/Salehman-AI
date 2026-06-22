@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:18 +03 · Swift files: 226 · Swift LOC: 44016_
+_Generated: 2026-06-22 09:26 +03 · Swift files: 228 · Swift LOC: 44177_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9306,6 +9306,80 @@ enum StockSageCorrelationPrecheck {
         return CorrelationPrecheck(verdict: verdict, avgCorrelation: avg, comparedCount: corrs.count,
                                    mostCorrelatedSymbol: most.symbol, mostCorrelation: most.c)
     }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageCurrency.swift (70 lines) =====
+```swift
+import Foundation
+
+// MARK: - Multi-currency exposure
+//
+// Convert a book of holdings (each in its own currency) into one base currency and show
+// how the money is split ACROSS currencies — because a "diversified" book that's 70% in
+// one foreign currency carries an FX risk the per-symbol view hides. Pure + deterministic.
+// Honest: the rates are a snapshot; real FX moves are an un-modeled risk, and any holding
+// whose currency has no rate is EXCLUDED (and named) rather than silently valued at zero.
+
+struct CurrencyExposure: Sendable, Equatable, Identifiable {
+    let currency: String
+    let baseValue: Double   // converted into the base currency
+    let weight: Double      // 0–1 of the (convertible) book
+    var id: String { currency }
+}
+
+struct CurrencyBreakdown: Sendable, Equatable {
+    let base: String
+    let totalBase: Double
+    let exposures: [CurrencyExposure]      // largest first
+    let concentration: CurrencyExposure?   // largest NON-base exposure over the threshold, else nil
+    let unpriced: [String]                 // currencies dropped for lack of a rate
+    nonisolated var hasFXRisk: Bool { concentration != nil }
+}
+
+enum StockSageCurrency {
+    /// Roll holdings up by currency, converted to `base` via `ratesToBase` (units of base per
+    /// 1 unit of the currency; base itself is implicitly 1). Flags the largest non-base
+    /// currency when it exceeds `concentrationThreshold` of the book. nil if nothing convertible.
+    nonisolated static func breakdown(holdings: [(value: Double, currency: String)],
+                                      ratesToBase: [String: Double], base: String,
+                                      concentrationThreshold: Double = 0.25) -> CurrencyBreakdown? {
+        var byCcy: [String: Double] = [:]
+        var unpriced: Set<String> = []
+        for h in holdings {
+            let v = Swift.max(0, h.value)
+            let rate: Double? = (h.currency == base) ? 1.0 : ratesToBase[h.currency]
+            guard let r = rate, r > 0 else { unpriced.insert(h.currency); continue }
+            byCcy[h.currency, default: 0] += v * r
+        }
+        let total = byCcy.values.reduce(0, +)
+        guard total > 0 else { return nil }
+
+        let exposures = byCcy
+            .map { CurrencyExposure(currency: $0.key, baseValue: $0.value, weight: $0.value / total) }
+            .sorted { $0.baseValue > $1.baseValue }
+        let concentration = exposures.first { $0.currency != base && $0.weight > concentrationThreshold }
+        return CurrencyBreakdown(base: base, totalBase: total, exposures: exposures,
+                                 concentration: concentration, unpriced: unpriced.sorted())
+    }
+
+    /// Best-effort trading currency for a symbol from its market suffix. Crypto (`-USD`),
+    /// FX pairs (`=X`), and indices (`^`) map to `base`; an UNKNOWN suffix maps to the suffix
+    /// itself, so it surfaces as "unpriced" rather than being silently mislabeled the base.
+    nonisolated static func currencyForSymbol(_ symbol: String, base: String = "USD") -> String {
+        let s = symbol.uppercased()
+        if s.hasPrefix("^") || s.hasSuffix("=X") || s.hasSuffix("-USD") { return base }
+        guard let dot = s.lastIndex(of: "."), s.index(after: dot) < s.endIndex else { return base }
+        let suffix = String(s[s.index(after: dot)...])
+        return currencyForSuffix[suffix] ?? suffix
+    }
+
+    private nonisolated static let currencyForSuffix: [String: String] = [
+        "SR": "SAR", "L": "GBP", "DE": "EUR", "PA": "EUR", "T": "JPY", "HK": "HKD",
+        "SS": "CNY", "KS": "KRW", "NS": "INR", "AX": "AUD", "SA": "BRL", "TO": "CAD",
+        "SW": "CHF", "AS": "EUR", "MC": "EUR", "MI": "EUR", "ST": "SEK", "AD": "AED",
+        "DU": "AED", "QA": "QAR", "CA": "EGP", "JO": "ZAR", "TW": "TWD", "SI": "SGD", "MX": "MXN",
+    ]
 }
 ```
 
@@ -25808,7 +25882,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2935 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2970 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26589,6 +26663,41 @@ struct MarketsView: View {
             if alloc.topClassConcentration > 0.6 {
                 Text("⚠︎ \(Int(alloc.topClassConcentration * 100))% in one asset class — concentrated.")
                     .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+            }
+
+            // Currency exposure — only worth showing when there's an actual FX dimension.
+            let ccyHoldings = portfolio.positions.map {
+                (value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares,
+                 currency: StockSageCurrency.currencyForSymbol($0.symbol))
+            }
+            let fxRates: [String: Double] = Dictionary(uniqueKeysWithValues:
+                Set(ccyHoldings.map(\.currency)).subtracting(["USD"]).compactMap { ccy -> (String, Double)? in
+                    guard let r = currentPrice("\(ccy)USD=X"), r > 0 else { return nil }
+                    return (ccy, r)
+                })
+            if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
+               cb.exposures.count > 1 || !cb.unpriced.isEmpty {
+                Text("Currency exposure (base USD)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                ForEach(cb.exposures) { e in
+                    HStack(spacing: 8) {
+                        Text(e.currency).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
+                        Text(String(format: "%.0f%%", e.weight * 100)).font(.caption2).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(e.baseValue.formatted(.number.precision(.fractionLength(0)))).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(e.currency): \(Int(e.weight * 100)) percent of the priced book")
+                }
+                if let c = cb.concentration {
+                    Text("⚠︎ \(Int(c.weight * 100))% in \(c.currency) — FX risk (currency moves swing your USD value).")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                if !cb.unpriced.isEmpty {
+                    Text("Unpriced (track \(cb.unpriced.first ?? "")USD=X to convert): \(cb.unpriced.joined(separator: ", ")) — excluded from the split.")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Local prices assumed in each market's currency (London .L in pence may distort). Rates are snapshots; FX moves are real, un-modeled risk.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(DS.Space.md)
@@ -41410,6 +41519,66 @@ struct StockSageCorrelationPrecheckTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageCurrencyTests.swift (56 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Multi-currency exposure (pure)
+
+struct StockSageCurrencyTests {
+    typealias CC = StockSageCurrency
+
+    private func exp(_ b: CurrencyBreakdown, _ ccy: String) -> CurrencyExposure? {
+        b.exposures.first { $0.currency == ccy }
+    }
+
+    @Test func convertsAndWeightsWithoutFXFlagWhenSpread() {
+        let b = CC.breakdown(holdings: [(1000, "USD"), (100, "EUR"), (50, "GBP")],
+                             ratesToBase: ["EUR": 1.1, "GBP": 1.25], base: "USD")!
+        #expect(abs(b.totalBase - 1172.5) < 1e-9)               // 1000 + 110 + 62.5
+        #expect(abs(exp(b, "EUR")!.baseValue - 110) < 1e-9)
+        #expect(abs(exp(b, "GBP")!.baseValue - 62.5) < 1e-9)
+        #expect(abs(exp(b, "USD")!.weight - 1000.0 / 1172.5) < 1e-9)
+        #expect(b.exposures.map(\.currency) == ["USD", "EUR", "GBP"])  // largest first
+        #expect(b.concentration == nil && !b.hasFXRisk)         // no non-base > 25%
+        #expect(b.unpriced.isEmpty)
+    }
+
+    @Test func flagsConcentrationInOneNonBaseCurrency() {
+        let b = CC.breakdown(holdings: [(1000, "USD"), (1000, "EUR")],
+                             ratesToBase: ["EUR": 1.0], base: "USD")!
+        #expect(b.hasFXRisk)
+        #expect(b.concentration?.currency == "EUR")
+        #expect(abs(b.concentration!.weight - 0.5) < 1e-9)
+    }
+
+    @Test func excludesAndNamesUnpricedCurrencies() {
+        let b = CC.breakdown(holdings: [(1000, "USD"), (100, "JPY")],
+                             ratesToBase: [:], base: "USD")!
+        #expect(abs(b.totalBase - 1000) < 1e-9)                 // JPY dropped, not zero-valued
+        #expect(b.unpriced == ["JPY"])
+        #expect(b.exposures.map(\.currency) == ["USD"])
+    }
+
+    @Test func currencyForSymbolFromSuffix() {
+        #expect(CC.currencyForSymbol("AAPL") == "USD")       // US-listed
+        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto
+        #expect(CC.currencyForSymbol("EURUSD=X") == "USD")   // FX pair → base leg
+        #expect(CC.currencyForSymbol("2222.SR") == "SAR")
+        #expect(CC.currencyForSymbol("BP.L") == "GBP")
+        #expect(CC.currencyForSymbol("7203.T") == "JPY")
+        #expect(CC.currencyForSymbol("FOO.ZZ") == "ZZ")      // unknown → suffix (surfaces as unpriced)
+    }
+
+    @Test func guardsNothingConvertible() {
+        #expect(CC.breakdown(holdings: [], ratesToBase: ["EUR": 1.1], base: "USD") == nil)
+        #expect(CC.breakdown(holdings: [(100, "JPY")], ratesToBase: [:], base: "USD") == nil)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageDrawdownTests.swift (45 lines) =====
 ```swift
 import Testing
@@ -46979,7 +47148,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7513 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7518 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53377,6 +53546,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageTodayPlan.swift` (NEW), `Views/MarketsView.swift` ("Copy today's plan" button on the best-opportunity card), `Salehman AITests/StockSageTodayPlanTests.swift` (NEW, 2 tests).
 **What & why:** New-value build #6 — composes the three tested engines (best positive-EV opportunity, the pre-trade `StockSageTradeGate`, and `StockSagePositionSizer`) into ONE copyable ordered checklist: "1. Best bet: SYM (action) — est. EV +X.XXR · 2. Gate: <clear/caution/blocked> (f fail, w warn) · 3. Entry ~E, stop S, target T — N shares ≈ $X at risk (Y% of acct) · 4. Rule: risk small, always a stop, never chase — estimates, not a forecast." The best-opportunity card gains a "Copy today's plan" button (uses the sizer's account/risk% fields + earnings proximity). Honesty: header says "estimates, not advice"; clearing the gate is framed as "not obviously reckless," not a win. 2 tests, HAND-VERIFIED: clear path (stop+4:1 RR+1% → "Clear to trade", size line with shares); no-stop path → "No stop defined" + gate "Don't take this trade" + no size line.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 6 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance, #87 alert engine, #88 yearly P&L, #89 today's plan). One tap now turns "what's best + is it safe + how big" into a single action. NEXT: multi-currency portfolio (FX convert). Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Multi-currency exposure (FX-concentration flag)
+**Files:** `StockSage/StockSageCurrency.swift` (NEW), `Views/MarketsView.swift` ("Currency exposure" section in the allocation panel), `Salehman AITests/StockSageCurrencyTests.swift` (NEW, 5 tests).
+**What & why:** New-value build #7 — a "diversified" book that's 70% in one foreign currency carries an FX risk the per-symbol view hides. `StockSageCurrency.breakdown(holdings:ratesToBase:base:)` converts each holding to a base currency, rolls up exposure per currency (base value + % of book), and flags the largest non-base currency over a 25% threshold. `currencyForSymbol` derives the trading currency from the market suffix (.SR→SAR, .L→GBP, .T→JPY, …; crypto/FX/index→base; UNKNOWN suffix→the suffix, so it surfaces as "unpriced" rather than mislabeled USD). The allocation panel shows the per-currency split + an FX-risk warning, only when there's an actual FX dimension (>1 currency or unpriced). **Honesty (deliberately conservative on real money):** rates come only from tracked `<CCY>USD=X` quotes (unambiguous USD-per-CCY direction); currencies without a tracked rate are EXCLUDED and NAMED, never zero-valued; the caveat explicitly warns that local prices are assumed in each market's currency (London .L in pence may distort) and that FX moves are real, un-modeled risk. 5 tests, PYTHON-VERIFIED: USD+EUR+GBP → total 1172.5, weights 85.3/9.4/5.3%, no flag (largest non-base <25%); 50/50 USD/EUR → EUR flagged; JPY with no rate → excluded + named, total stays 1000; empty/all-unpriced → nil; currencyForSymbol suffix mapping.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 7 new-value features today (#84–#90). The owner can see if their book is secretly an FX bet. NEXT: per-trade R:R-and-cost reality check, or correlation-cluster add pre-check. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 
