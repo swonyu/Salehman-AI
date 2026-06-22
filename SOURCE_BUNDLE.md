@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 16:19 +03 · Swift files: 246 · Swift LOC: 46149_
+_Generated: 2026-06-22 16:32 +03 · Swift files: 246 · Swift LOC: 46192_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8573,7 +8573,7 @@ final class RuneScapeStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (221 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (246 lines) =====
 ```swift
 import Foundation
 
@@ -8615,6 +8615,12 @@ struct TradeAdvice: Sendable, Equatable {
     let suggestedWeight: Double
     /// Always present — the honest reminder.
     let caveat: String
+    /// The ATR multiple used for the stop: 2.0 by default, widened to 2.5 for high-volatility
+    /// names (so normal noise doesn't whipsaw the trade out) and tightened to 1.5 for calm ones.
+    var stopMultiplier: Double = 2.0
+    /// Plain-language reason for the stop width (e.g. "2.5×ATR — sized for 72% volatility"),
+    /// surfaced in the idea detail. nil when volatility wasn't available.
+    var stopReason: String? = nil
 }
 
 // MARK: - StockSageAdvisor
@@ -8757,9 +8763,13 @@ enum StockSageAdvisor {
 
         let isSell = action == .sell || action == .reduce
 
-        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it
-        // (stop ABOVE entry, target BELOW). 2-ATR swing stop, 2:1 reward:risk; 8% fallback.
-        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr)
+        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it.
+        // The ATR multiple now scales with the name's realized volatility (wider for crypto,
+        // tighter for calm equities) so the stop fits the asset, not a one-size guess.
+        let realizedVol = StockSageIndicators.annualizedVolatility(closes)
+        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr, realizedVol: realizedVol)
+        let stopMult = Self.stopMultiple(forVol: realizedVol)
+        let stopReason = realizedVol.map { String(format: "%.1f×ATR stop — sized for %.0f%% annualized volatility", stopMult, $0 * 100) }
 
         // Position size: risk budget ÷ stop distance %, scaled by conviction, capped.
         // Distance is absolute so a short (stop > price) sizes the same as a long.
@@ -8774,18 +8784,33 @@ enum StockSageAdvisor {
 
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
-                           suggestedWeight: weight, caveat: caveat)
+                           suggestedWeight: weight, caveat: caveat,
+                           stopMultiplier: stopMult, stopReason: stopReason)
     }
 
     /// Symmetric 2-ATR swing stop + 2:1 target for an actionable buy/sell. Long: stop
     /// below, target above. Short (sell/reduce): stop ABOVE entry, target BELOW. 8% stop
     /// fallback when no ATR. (nil, nil) for hold/avoid or a non-positive price. Pure.
-    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?)
+    /// ATR multiple for the stop, by realized volatility: a 70%-vol crypto needs a WIDER stop
+    /// (2.5×) so ordinary daily noise doesn't whipsaw it out; a calm name can run a tighter
+    /// 1.5×. nil vol → the documented 2.0× default (so existing callers are unchanged).
+    nonisolated static func stopMultiple(forVol realizedVol: Double?) -> Double {
+        guard let v = realizedVol else { return 2.0 }
+        if v >= 0.70 { return 2.5 } else if v >= 0.40 { return 2.0 } else { return 1.5 }
+    }
+
+    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?,
+                                       realizedVol: Double? = nil)
         -> (stop: Double?, target: Double?) {
         let isBuy = action == .buy || action == .strongBuy
         let isSell = action == .sell || action == .reduce
         guard (isBuy || isSell), price > 0 else { return (nil, nil) }
-        let dist = (atr.map { $0 > 0 ? 2 * $0 : price * 0.08 }) ?? price * 0.08
+        // realizedVol nil → 2×ATR / 8% fallback, BYTE-IDENTICAL to before. When supplied, the
+        // ATR multiple scales with vol, and the no-ATR fallback widens for volatile names
+        // (≈12% at 75% vol vs 8% baseline) — never tighter than 8%.
+        let mult = stopMultiple(forVol: realizedVol)
+        let fallbackPct = realizedVol.map { 0.08 * Swift.max(1.0, $0 / 0.50) } ?? 0.08
+        let dist = (atr.map { $0 > 0 ? mult * $0 : price * fallbackPct }) ?? price * fallbackPct
         if isBuy {
             let s = price - dist
             return (s, price + 2 * (price - s))
@@ -42263,7 +42288,7 @@ struct SparkSeriesTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageAdvisorTests.swift (152 lines) =====
+===== FILE: Salehman AITests/StockSageAdvisorTests.swift (170 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42290,6 +42315,24 @@ struct StockSageAdvisorStopTargetTests {
         // Non-actionable actions get nothing.
         #expect(A.stopTarget(action: .hold, price: 100, atr: 5).stop == nil)
         #expect(A.stopTarget(action: .avoid, price: 100, atr: 5).target == nil)
+    }
+
+    @Test func stopWidthScalesWithRealizedVolatility() {
+        // realizedVol nil → byte-identical to the 2-ATR / 8% behavior.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5).stop == 90)
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil).stop == 92)
+        // High vol → WIDER 2.5×ATR stop (won't whipsaw); calm → tighter 1.5×.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.80).stop == 87.5)  // 2.5×5
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.50).stop == 90.0)  // 2.0×5
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.30).stop == 92.5)  // 1.5×5
+        // No-ATR fallback widens with vol but never tightens below 8%: 0.08·max(1, vol/0.5).
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.75).stop == 88)  // 12%
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.20).stop == 92)  // floored at 8%
+        // The multiplier table itself.
+        #expect(A.stopMultiple(forVol: nil) == 2.0)
+        #expect(A.stopMultiple(forVol: 0.70) == 2.5)
+        #expect(A.stopMultiple(forVol: 0.40) == 2.0)
+        #expect(A.stopMultiple(forVol: 0.39) == 1.5)
     }
 }
 
@@ -49358,6 +49401,47 @@ Code tab's (ring 0.38 rest, capsule menu left of +, hints under the bento), then
 + relaunch (or View ▸ Adopt QA Baselines). If anything looks WRONG in those pictures, post here — I'll fix
 on my next wake. Gate additions requested earlier stand: QAGeometryTests + ChatTabUITests (now 6 flows).
 
+===== FILE: CRYPTO_RISK.md (39 lines) =====
+# Crypto fast-money risk roadmap (wds0l4cpc, 2026-06-22)
+
+4 vetted items from a deep-research workflow (survived rate-limiting). Implement engine-first + python-verified test; re-verify every claim vs REAL source.
+
+### ⬜ #1 — CryptoCostEstimate — tier-aware, labeled crypto round-trip cost (taker fee per side + slippage + half-spread) replacing the flat 50bps default
+**mechanism:** VERIFIED bug: StockSageNetEdge.defaultCosts (StockSageNetEdge.swift:35) returns CostAssumption(spreadBps:30, slippageBps:20)=50bps for ANY '-USD' symbol, and CostAssumption (lines 24-29) models only spread+slippage with ZERO taker fee — BTC and a microcap alt get the same number. Crypto overstates edge more than equities for three mechanical reasons: (1) you cross the spread twice AND pay a taker FEE twice (retail spot taker ~10-40bps/side est. vs ~0-5bps all-in for a zero-commission US large-cap); (2) altcoin spread/slippage scale with size vs a thin book, an order of magnitude past BTC; (3) the advisor's stop/target are crossing (taker) events, not resting limits. Add a richer crypto estimate that COMPOSES with the unchanged evaluate() seam: it emits spread/slippage so NetEdge.evaluate (line 45) consumes it untouched, and a .asCostAssumption bridge keeps StockSageStore:365/577 and MarketsView:2771 byte-compatible. Foundational — specs #2/#3/#4 all depend on CryptoCostEstimate existing, so it ships first.
+
+**signature:** Extend enum StockSageNetEdge. enum CryptoLiquidityTier: String, Sendable { case majorBTCETH, large, mid, thin }. struct CryptoCostEstimate: Sendable, Equatable { let tier: CryptoLiquidityTier; let halfSpreadBps: Double; let slippageBps: Double; let takerFeeBpsPerSide: Double; let estimateLowBps: Double; let estimateHighBps: Double; let assetClass: String /* 'crypto' */; let isEstimate: Bool /* always true */; nonisolated var roundTripBps: Double { 2*halfSpreadBps + slippageBps + 2*takerFeeBpsPerSide }; nonisolated var disclaimer: String /* 'ESTIMATE only — your venue/tier/size differ; not a quote and not a guarantee.' */; nonisolated var asCostAssumption: CostAssumption }. nonisolated static func cryptoTier(forSymbol:advDollar:) -> CryptoLiquidityTier (BTC/ETH-USD -> .majorBTCETH; unknown -USD with advDollar nil -> .mid; advDollar < StockSageLiquidity.thinBelow -> .thin). nonisolated static func cryptoCosts(forSymbol:advDollar:) -> CryptoCostEstimate. Have defaultCosts(forSymbol:)'s '-USD' branch delegate to cryptoCosts(...).asCostAssumption. Midpoint anchors (labeled bands): majorBTCETH half-spread 1-3/slip 3-8/taker 8-20 per side; large 3-8/8-20/10-25; mid 10-25/20-60/15-35; thin 30-80/60-200/20-40 — roundTripBps uses midpoints, low/high surfaced for the UI.
+
+**test:** StockSageCryptoCostTests.swift (swift-testing @Test, @testable import Salehman_AI, mirrors StockSageNetEdgeTests). (a) cryptoTier: BTC/ETH-USD -> .majorBTCETH regardless of advDollar; unknown -USD advDollar nil -> .mid (honesty floor: unknown is NOT assumed liquid); advDollar < StockSageLiquidity.thinBelow -> .thin. (b) Strict monotonic friction: roundTripBps .majorBTCETH < .large < .mid < .thin. (c) roundTripBps == 2*halfSpread + slippage + 2*takerFee to 1e-9. (d) estimateLowBps < roundTripBps < estimateHighBps for every tier (band, never a point). (e) Composition: cryptoCosts('BTC-USD').asCostAssumption into NE.evaluate(entry:100,stop:90,target:130) -> 0 < netRR < gross 3.0; a .thin alt on the SAME 100/90/130 yields netRR strictly < major. (f) Honesty: isEstimate==true; disclaimer.lowercased() contains 'estimate' and NOT 'guarantee'/'guaranteed'. (g) Backward-compat: existing #defaultCostsScaleByAssetClass must stay green.
+
+**caveat:** BLOCKING COLLISION (verified at StockSageNetEdgeTests.swift:42): the existing test asserts defaultCosts('BTC-USD').roundTripBps == 50, but the majorBTCETH midpoint (2*2 + ~5.5 + 2*14 ≈ 37.5bps) != 50. The implementer MUST reconcile this explicitly — either asCostAssumption deliberately preserves the legacy 50bps for the defaultCosts path (cleanest: keep defaultCosts pinned at 50 and expose the richer estimate as a NEW accessor) OR update that single assertion in the same change. Do NOT ship without resolving it or the suite goes red, contradicting 'leave it green'. Every fee/spread is a LABELED ESTIMATE RANGE midpoint, never a venue quote — never imply these are the owner's actual costs. Funding is out of scope (spot-only; see #4). No fabricated exchange fee schedule.
+
+### ⬜ #2 — CryptoNetEdgeHonesty — run the same real history frictionless vs crypto-costed and surface the profit→loss flip + cost-haircut delta
+**mechanism:** VERIFIED: StockSageBacktester.run (StockSageBacktester.swift:118-119) charges round-trip friction exactly ONCE per trade (costPerShare = roundTripBps/10_000 * entry, subtracted a single time) — but crypto pays taker+spread on BOTH the entry AND exit fill, and the advisor's stop/target are taker crossings, so the equity curve still flatters crypto. Worse, nothing currently computes HOW MUCH of the gross edge was friction, so a 'profitable' crypto backtest can be net-negative invisibly. This engine runs the SAME real history twice — frictionless and with cryptoCosts — and reports the delta in avgR/totalR plus the single most important honesty fact: did the strategy flip from profitable to net-negative after costs. It also re-derives a worst-case leg using estimateHighBps (not just the midpoint) so the owner sees the pessimistic band. Matters more for crypto than equities: a US large-cap haircut is ~13bps and rarely flips a result; a thin alt haircut can be 200-400bps round-trip and routinely flips a winner to a loser. COMPOSES on the existing backtester — must reuse run(), never re-implement the walk.
+
+**signature:** New file StockSageCryptoHonesty.swift. struct CryptoNetEdgeHonesty: Sendable, Equatable { let grossAvgR, netAvgRMid, netAvgRWorst, grossTotalR, netTotalRMid: Double; let edgeSurvivesCostsMid, edgeSurvivesCostsWorst: Bool; let frictionDragR: Double /* grossAvgR - netAvgRMid, >=0 */; let trades: Int; let isSignificant: Bool; let verdict, caveat: String }. enum StockSageCryptoHonesty { nonisolated static let significanceFloor = 20; nonisolated static func evaluate(_ history: StockSagePriceHistory, costs: StockSageNetEdge.CryptoCostEstimate, warmup: Int = 200) -> CryptoNetEdgeHonesty }. Internals: gross = StockSageBacktester.run(history, warmup:warmup, costs:nil); netMid = run(.., costs: costs.asCostAssumption); netWorst = run(.., costs: CostAssumption(spreadBps: costs.estimateHighBps, slippageBps:0, assetClass:'crypto-worst')). Verdict branches: !netMid.isSignificant -> 'Too few trades (N) to judge — noise, not edge.'; gross totalR>0 && netMid totalR<=0 -> 'This crypto edge exists ONLY before costs — after ~est. frictions it is net-negative. Do not trade it.'; netWorst totalR<=0 -> 'Edge survives midpoint costs but dies under the high-cost estimate — fragile; treat as unproven.'; else -> 'Edge survives the est. cost haircut at this sample size — still an estimate, past performance is not predictive.'
+
+**test:** StockSageCryptoHonestyTests.swift. Build synthetic StockSagePriceHistory (reuse StockSageBacktesterTests.swift:49 helper idiom — full OHLCV parallel arrays, monotonic dates) long enough to clear warmup and generate >= significanceFloor buys. (a) frictionDragR >= 0 always. (b) netAvgRMid <= grossAvgR and netAvgRWorst <= netAvgRMid. (c) Flip detection: seed a history where gross totalR>0 but the crypto haircut makes netMid totalR<=0 -> edgeSurvivesCostsMid==false AND verdict contains 'net-negative'. (d) Significance gate: <20 trades -> isSignificant==false AND verdict contains 'noise' AND edgeSurvivesCostsMid==false even if avgR>0. (e) Determinism: two identical calls byte-equal. (f) Honesty floor: caveat.lowercased() contains 'estimate' and 'past performance'; verdict never contains 'guarantee'/'guaranteed'/'risk-free' across all branches. (g) Compose-not-duplicate: the gross leg equals StockSageBacktester.run(history, costs:nil) EXACTLY.
+
+**caveat:** HARD DEPENDENCY on #1: evaluate(_:costs:) needs StockSageNetEdge.CryptoCostEstimate with .asCostAssumption and .estimateHighBps, which do NOT exist in the repo today (grep-confirmed: only CostAssumption exists, no high/worst band). NOT buildable standalone — ship #1 first. The honesty check is backward-looking and inherits the backtester's caveats (survivorship, fixed-not-optimized rules, small samples). The worst-case leg uses the estimateHIGH band, still an estimate, not a fabricated extreme. 'edgeSurvivesCostsMid==true' means ONLY 'historically net-positive after estimated costs at this sample', never a profit promise. The stop loss remains the floor.
+
+### ⬜ #3 — CryptoLiquidityGate — SKIP/penalize thin-alt fills the backtester could never have gotten, plus a 24/7 adverse-gap honesty read
+**mechanism:** VERIFIED two crypto overstatements: (1) StockSageBacktester.run (lines 86-125) takes ANY advisor-flagged trade and charges only a flat roundTripBps with NO liquidity gate — but on a thin alt your stop/target size exceeds the visible book, so the 'fill' at the target is fiction (reality: partial fills walking the book, far worse than modeled slippage, or no fill). StockSageLiquidity already tiers ADV (thinBelow=2_000_000, line 35) and isUSDPriced is true for crypto (line 42), so we have the data to SKIP/heavily-penalize trades below a crypto thin floor — mirroring the equity backtester's gap-skip honesty. (2) The gap-honest fill min(stop, open) at line 164 is even MORE important for crypto: 24/7 trading has no session close, but books thin on weekends/low-liquidity hours and stops blow through far past the level. This gate composes IN FRONT of the honesty engine: a thin gate forces edgeSurvivesCostsMid=false (an unfillable edge is not an edge). Returns nil for non-crypto so equities are byte-identical.
+
+**signature:** New file StockSageCryptoLiquidityGate.swift. struct CryptoLiquidityGate: Sendable, Equatable { let advDollar: Double?; let isThinForCrypto: Bool; let cryptoThinFloor: Double; let maxAdverseGapPct: Double; let recommendation: String /* 'skip' | 'limit-only, size down' | 'tradeable' */ }. enum StockSageCryptoLiquidityGate { nonisolated static let cryptoThinFloorUSD = 5_000_000.0 /* LABELED ESTIMATE, owner-tunable */; nonisolated static func assess(symbol:closes:opens:volumes:window:) -> CryptoLiquidityGate? (nil for non-'-USD'); nonisolated static func maxAdverseOvernightGapPct(opens:closes:) -> Double /* max over i of (closes[i-1]-opens[i])/closes[i-1], clamped >=0; 0 if none or mismatched lengths */ }. Wire into CryptoNetEdgeHonesty: add let liquidityGate: CryptoLiquidityGate?; when isThinForCrypto, verdict prepends 'THIN crypto liquidity (~$X/day est.) — modeled fills are optimistic; real slippage is worse. ' and edgeSurvivesCostsMid is forced false. nil gate (path skipped) when StockSageAllocation.assetClass != 'Crypto'.
+
+**test:** StockSageCryptoLiquidityGateTests.swift. (a) maxAdverseOvernightGapPct: prior close 100, next open 85 -> 0.15 within 1e-9; all-up series -> 0; mismatched lengths -> 0 (no crash). (b) assess nil for a non-'-USD' symbol. (c) Thin classification: synthetic crypto ADV < cryptoThinFloorUSD -> isThinForCrypto==true, recommendation=='skip'; ADV well above -> 'tradeable'. (d) Honesty force: a thin gate wired into CryptoNetEdgeHonesty makes a gross-and-net-positive backtest report edgeSurvivesCostsMid==false with verdict containing 'THIN' and 'optimistic'. (e) Equity untouched: assess('AAPL',..) is nil and an equity honesty run is byte-identical with/without the gate path. (f) Honesty floor: recommendation/verdict never contain 'guarantee'/'risk-free'; thin note says 'optimistic'/'worse', never 'safe'. (g) When thin, the verdict carries 'est.' (floor is a labeled estimate).
+
+**caveat:** DEPENDS on #2 (CryptoNetEdgeHonesty) for the wiring target; build the standalone gate file regardless and wire into the real NetEdge/honesty path — do NOT invent a phantom type. Yahoo crypto volume is exchange-AGGREGATED, so it OVERSTATES the depth of any single book you'd actually trade — this makes the gate's conservatism appropriate but the $-floor read rougher than it looks. The $5M/day floor and gap-severity are ESTIMATES from the symbol's own history, not a guarantee of fillability — a deep book can vanish in a stress event. maxAdverseGap is descriptive of the past, not predictive, and on a 24/7 UTC-bucketed candle there is no literal session-close gap (it measures real prior-close-vs-next-open drift). Forcing edgeSurvivesCostsMid=false on thin names is deliberately conservative (false-negatives over false-positives). Perp funding is #4.
+
+### ⬜ #4 — CryptoFundingDrag — recurring perp/leverage funding cost overlay (labeled estimate band) that a spot backtest entirely ignores
+**mechanism:** VERIFIED: the entire StockSage cost stack (NetEdge, Backtester) models ONE-TIME entry/exit frictions only. Perpetual-futures crypto — how most leveraged crypto is actually traded — adds a RECURRING funding payment (commonly ~3x/day) for the whole hold. A spot backtest holding a winner 20 days books zero carry; the same trade on a perp at positive funding pays ~60 times, eating multiple R on a 5x-levered notional. This is the single largest reason a LEVERED crypto backtest overstates edge beyond equities (equities have tiny, well-bounded overnight financing; perp funding is volatile, large, persistently one-sided, and invisible to a price-only backtest). This overlay estimates funding DRAG from a labeled annualized-funding RANGE and the trade's hold duration (StockSageBacktester reports avgHoldBars; StockSageExpectedValue has per-asset hold-days), converts it to an R-haircut on the spot net result, and surfaces 'after est. funding your net edge is X'. It NEVER fabricates a live funding rate — takes a conservative band, states the result swings with regime and can go NEGATIVE (longs get paid).
+
+**signature:** New file StockSageCryptoFunding.swift. struct CryptoFundingDrag: Sendable, Equatable { let leverage, holdDays, annualFundingBpsLow, annualFundingBpsHigh, fundingDragRMid, fundingDragRHigh, netEdgeRAfterFunding: Double; let stillPositiveMid: Bool; let note, caveat: String }. enum StockSageCryptoFunding { nonisolated static let defaultAnnualFundingBps = (low: 300.0, high: 3000.0) /* ESTIMATE band ~3%-30% APR, regime-dependent, can be NEGATIVE; owner-tunable, not a quote */; nonisolated static func drag(spotNetExpectancyR:riskFractionOfNotional:leverage:holdDays:annualFundingBps:) -> CryptoFundingDrag? /* nil if leverage<=0 or holdDays<0 */ }. Math: dailyFunding = annualBps/10_000/365; costFractionOfNotional = dailyFunding*holdDays; as fraction of 1R = leverage*costFractionOfNotional/riskFractionOfNotional; netEdgeRAfterFunding = spotNetExpectancyR - fundingDragRMid. note states the spot net EV, the levered funding haircut over D days, the leftover R, AND that funding can flip sign (negative-funding regime PAYS you to hold); 'Estimate, not a forecast; the stop is still your floor.' Default leverage to 1x so pure spot shows zero drag.
+
+**test:** StockSageCryptoFundingTests.swift. (a) Zero hold OR zero leverage -> fundingDragRMid==0. (b) Monotonic in every driver: drag rises with leverage, with holdDays, with the funding rate (three asserts, others fixed). (c) Algebra: leverage=1, holdDays=365, annual=3650bps(36.5%), riskFractionOfNotional=0.05 -> cost fraction of notional 0.365, as R = 0.365/0.05 = 7.3R within 1e-9. (d) Sign-flip honesty: net edge after funding can go negative even when spotNetExpectancyR>0 -> stillPositiveMid==false AND note contains 'funding'. (e) fundingDragRHigh >= fundingDragRMid. (f) Negative-funding awareness: note ALWAYS mentions funding can flip sign / be paid (assert substring). (g) Honesty floor: caveat contains 'estimate'; note never contains 'guarantee'/'guaranteed'; the word 'forecast' appears only negated ('not a forecast').
+
+**caveat:** Honesty hinges ENTIRELY on UI labeling: the 3%-30% APR default is a fabricated-feeling number unless relentlessly labeled as an owner-tunable estimate that swings with regime and can go negative — tests (f)/(g) enforce the note mentioning sign-flip and the caveat saying 'estimate'/'not a forecast'/no 'guarantee'. Residual risk: a user could still read 'after funding net edge is +Z.ZR' as a prediction rather than a conservative what-if; mandated wording mitigates but does not eliminate. Applies ONLY to levered/perp trades; pure spot has funding=0 (default 1x). Funding is the most regime-dependent cost in crypto and the hardest to estimate honestly — present as a what-if, default to the conservative cost-paying side while disclosing the upside. No live/paid funding feed; if the owner wants real rates, surface them behind a clear estimate-vs-live label, never hardcoded. Numeric inputs (spotNetExpectancyR, holdDays, riskFractionOfNotional) all already exist from real free data.
+
 ===== FILE: DESIGN_RESEARCH_macOS27.md (82 lines) =====
 # Design Research — Swift 6 UI + macOS 27 "Golden Gate" (2026-06-14)
 
@@ -49442,7 +49526,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7769 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7778 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -56095,6 +56179,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · FASTMONEY #2 — volatility-aware ATR stops + 2 research roadmaps persisted
+**Files:** `StockSage/StockSageAdvisor.swift` (stopTarget gains realizedVol + stopMultiple helper; TradeAdvice +stopMultiplier/+stopReason; advise wires annualizedVolatility), `Salehman AITests/StockSageAdvisorTests.swift` (+1 test). Roadmaps: EDGE_RESEARCH.md, CRYPTO_RISK.md.
+**What:** a flat 2×ATR stop whipsaws a 70%-vol crypto out on normal noise. stopTarget now scales the ATR multiple by realized vol — ≥0.70→2.5×, 0.40-0.70→2.0×, <0.40→1.5× — and the no-ATR fallback widens (≈12% at 75% vol vs 8% baseline, never tighter than 8%). realizedVol nil → BYTE-IDENTICAL 2×ATR/8% (existing callers + the symmetric-stop test unchanged). advise() feeds annualizedVolatility(closes) and surfaces stopMultiplier + stopReason on TradeAdvice (defaulted var fields). positionSizeIsHardCapped still caps (verified: weight=0.5·(0.4+0.6·conv) ≥ 0.20 even at the wider 2.5× on the ramp, vol 0.93).
+**Verify:** typecheck clean; python-verified — nil→90/92, 2.5×→87.5, 2.0×→90, 1.5×→92.5, 12% fallback→88, floor→92; mult table 2.0/2.5/2.0/1.5.
+**WORKFLOW BURN NOTE:** launched 5 heavy workflows at once → server-side RATE LIMITING (not usage limit) nulled 3 (allocator/ranking/audit, ~2.4M tokens wasted on null) but 2 (edge-research, crypto-risk) synthesized usable roadmaps. LESSON: cap at 1-2 small concurrent workflows + heavy implementation. CRYPTO_RISK #1 flags a REAL bug (defaultCosts flat 50bps for all -USD ignores taker fees) + a test collision (NetEdgeTests asserts ==50) to reconcile.
+**Result:** stops now fit the asset's real volatility. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58636,6 +58729,56 @@ Wiring (exhaustive switch arms all caught by compiler):
 - `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
 **Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
 
+===== FILE: EDGE_RESEARCH.md (48 lines) =====
+# Documented-edge roadmap (wzd8cbado, 2026-06-22)
+
+5 vetted items from a deep-research workflow (survived rate-limiting). Implement engine-first + python-verified test; re-verify every claim vs REAL source.
+
+### ⬜ #1 — Per-symbol realized-vol regime brake (continuous, absolute-anchored)
+**edge:** Vol clustering + the equity leverage effect are among the most robust facts in finance: high realized vol predicts more high vol, and for risk assets the worst left-tail returns cluster at elevated vol. A per-name realized-vol read turns that into a data-only DE-RISK gate that works on Tadawul/FX/crypto names the VIX can't cover (^VIX is US-equity-only). This is the documented complement to StockSageRegime (market-wide, VIX-driven) — 'detect regime first, then size', but per-symbol and VIX-free.
+
+**signature:** // New file StockSageVolRegime.swift. nonisolated static func regime(closes: [Double], volWindow: Int = 21, historyWindow: Int = 252, periodsPerYear: Double = 252, assetClass: String? = nil) -> VolRegime?  — builds a rolling series of StockSageIndicators.annualizedVolatility over trailing volWindow bars, then ranks the latest via StockSagePortfolioAnalytics.percentile(series, ·); nil when closes.count < volWindow + historyWindow. Companion brake: nonisolated static func sizingMultiplier(percentile: Double, currentVol: Double, medianVol: Double) -> Double — CONTINUOUS, monotone-non-increasing, ≤1, shaped like StockSageExpectedValue.cryptoRiskScaler (reciprocal of vol/anchor, floored), NOT a 4-band step function. struct VolRegime: Sendable, Equatable { current, median, percentile (0..1), sizingMultiplier (≤1), note, caveat }. Composes with StockSageRegime.adjustedWeight(base: market bias × volRegime brake, cap:) and StockSageExpectedValue.cryptoRiskScaler under one cap.
+
+**test:** Synthetic closes whose trailing vol is flat → percentile≈0.5, multiplier==1.0 (no brake when calm). A clean low-then-high-vol regime change → latest percentile near 1.0 and multiplier strictly <1 and ≤ the calm case (monotonicity assert). closes.count just under volWindow+historyWindow → nil. Assert sizingMultiplier is non-increasing across a sweep of percentiles 0→1 and never exceeds 1. Assert caveat is non-empty (caveat-presence sweep, like the existing tests).
+
+**caveat:** A risk GATE, not a forecast — it brakes size when a name's own vol is historically elevated, it does NOT predict direction. The leverage effect is documented for EQUITIES/CREDIT and weaker for FX/commodities, so the brake is most justified on equity names (state this in the caveat). Percentile-of-own-history is regime-blind: a name living through a structurally high-vol era reads 'calm' at absolutely dangerous vols, so blend an ABSOLUTE-vol anchor (vol/anchor) with the percentile rather than relying on percentile alone.
+
+### ⬜ #2 — Net-edge break-even win rate + cost-gate on every ranked idea
+**edge:** The costs argument kills most 'edges', and StockSageNetEdge already nets spread/slippage/commission into a net R:R — but nothing converts that into the single number a trader can falsify against their own hit rate: the break-even win probability p* = 1/(1+netRR). If your honest hit rate is below p*, the setup is negative-EV AFTER costs no matter how good the gross R:R looks. This is pure arithmetic on values NetEdge already computes — near-zero effort, high value, and it hardens the EV board against thin high-turnover flips (exactly where cost eats the edge).
+
+**signature:** // Extend StockSageNetEdge. nonisolated static func breakEvenWinRate(netRR: Double) -> Double? { netRR > 0 ? 1/(1+netRR) : nil }  and add `breakEvenWinRate: Double?` + `clearsCost(estWinProb: Double) -> Bool` to the NetEdge struct, filled in evaluate(...). Then a gate helper: nonisolated static func costClears(idea: StockSageIdea) -> Bool that pulls defaultCosts(forSymbol:), evaluate(entry:stop:target:…), and compares StockSageExpectedValue.winProbEstimate(conviction:) against breakEvenWinRate. Feeds StockSageTradeGate as a new .fail check ('after-cost EV negative') and demotes failing ideas in rankByEV (mirror the existing minConvictionToRank −1000 demotion).
+
+**test:** netRR = 1 → breakEven == 0.5; netRR = 3 → 0.25; netRR ≤ 0 → nil. A wide US-large-cap 4:1 setup → cost barely moves break-even (clears at conviction-mapped p). A thin crypto -USD 1.2:1 flip with 50bps round-trip → break-even jumps above the conviction-mapped winProb → costClears == false. Assert a failing idea sorts below a passing one in rankByEV.
+
+**caveat:** Break-even uses the SAME conviction→winProb ESTIMATE the EV engine already disclaims (conviction is not a probability) and ESTIMATED costs (your real spread/slippage differ). It says 'your hit rate must beat THIS to profit after costs' — a falsification bar, not a promise the trade wins.
+
+### ⬜ #3 — Time-series (absolute) momentum trend filter
+**edge:** Time-series momentum — a name's own trailing 12-month return predicting its next-month sign — is one of the most replicated cross-asset, cross-era anomalies (Moskowitz–Ooi–Pedersen 2012), and it is the one momentum variant that doubles as a crash filter: TSMOM books cut exposure into downtrends, smoothing the left tail. The engine already has returnOverPeriod and relativeStrength (cross-sectional vs ^GSPC) but NO absolute own-trend sign gate. As a binary risk-on/off FILTER (not a sizing dial) it adds essentially zero turnover beyond the entry decision and composes as a veto in the trade gate.
+
+**signature:** // Extend StockSageIndicators. nonisolated static func timeSeriesMomentum(closes: [Double], lookback: Int = 252, skipRecent: Int = 21) -> Double?  — own trailing return over `lookback` bars EXCLUDING the most-recent skipRecent (the standard 12-1 construction; reuse returnOverPeriod on a sliced series), nil when bars insufficient. Gate helper nonisolated static func trendOK(closes: [Double]) -> Bool? = sign>0. Wire as a new TradeGateCheck (.warn when own-trend is negative: 'taking a long against the name's own downtrend') and as an optional veto/`note` on bestOpportunity.
+
+**test:** Monotone-up synthetic closes → tsmom > 0, trendOK == true. Monotone-down → < 0, trendOK == false. A series that's up over 12m but down the last month → with skipRecent=21 the 12-1 value stays positive (asserts the skip works and isn't just last-month return). Insufficient bars → nil. Long-against-downtrend produces a .warn check in the gate.
+
+**caveat:** Momentum is a documented but DECAY-prone and crowded premium with painful multi-year droughts and sharp reversals at turning points (it is a trend FILTER, not an oracle). Here it is used only as a binary own-trend risk-on/off veto, never as a return forecast or a sizing multiplier — the overfit-resistant framing.
+
+### ⬜ #4 — Downside-skew / left-tail read on the per-symbol return distribution
+**edge:** EV and Sharpe both assume symmetric-ish payoffs; a name can have a fine mean and vol while hiding a fat left tail (crash-prone). Realized return SKEWNESS and a historical 1-day 95% downside (the same percentile machinery PortfolioAnalytics.var95 already uses, but per-symbol) flag names whose worst days are far worse than their vol implies — a direct honesty check on 'this setup's stop may gap'. Pure transform of fetched closes, reusing dailyReturns + percentile.
+
+**signature:** // New StockSageReturnShape.swift OR extend Indicators. nonisolated static func returnShape(closes: [Double]) -> ReturnShape?  — over StockSagePortfolioAnalytics.dailyReturns(closes): skewness (3rd standardized moment), downside95 = max(0, -percentile(returns, 0.05)), worstDay = returns.min(); nil when <30 returns. struct ReturnShape: Sendable, Equatable { skewness, downside95, worstDay, isLeftTailed (skew < -0.5), note, caveat }. Composes into StockSageRiskFlags (new flag 'negative skew — left-tailed') and can widen the cryptoRiskScaler brake.
+
+**test:** Symmetric synthetic returns → skewness ≈ 0, isLeftTailed == false. A series with a few large NEGATIVE jumps among small positives → skewness < 0 and isLeftTailed == true; downside95 > 0 and ≥ |median day|. <30 returns → nil. Assert downside95 is non-negative and worstDay ≤ downside-threshold.
+
+**caveat:** Sample skew over a short daily history is NOISY and dominated by a handful of days — it describes the PAST distribution, not the next move, and a single fresh crash can flip it. Use it as a 'this name has historically had ugly down-days' flag that widens the risk brake, never as a probability of a future crash.
+
+### ⬜ #5 — Volatility-of-volatility stability / 'is this setup tradeable' gate
+**edge:** Two names at the same 30% annualized vol are not equal risk if one's vol is steady and the other's vol whips around — unstable vol makes ATR stops and position sizing unreliable (the stop you set today is the wrong width tomorrow). Measuring the dispersion of the rolling realized-vol series (the vol-of-vol, built from the SAME rolling series rank 1 produces) gives a deterministic 'sizing-reliability' read that down-weights names where the sizing inputs themselves are unstable. Cheap once rank 1 exists — it reuses that rolling-vol series.
+
+**signature:** // Extend StockSageVolRegime (depends on rank 1's rolling series). nonisolated static func volStability(closes: [Double], volWindow: Int = 21, historyWindow: Int = 126) -> VolStability?  — coefficient of variation of the rolling annualizedVolatility series (stdev/mean); struct VolStability: Sendable, Equatable { coeffOfVariation, band {steady, choppy, erratic}, sizingReliability (0..1), note, caveat }. Composes as a CONFIDENCE down-weight on Kelly/position size (multiply suggestedFraction), never as a signal.
+
+**test:** A constant-vol synthetic series → coeffOfVariation ≈ 0, band == steady, sizingReliability ≈ 1. A series alternating calm/violent regimes → high CoV, band == erratic, sizingReliability < the steady case. Insufficient bars → nil. Assert sizingReliability is in [0,1] and monotone-decreasing in CoV.
+
+**caveat:** This measures how STABLE the risk inputs are, not whether the trade is good — an erratic-vol name can still be a great setup, it just means your stop width and size are less trustworthy, so trade it smaller. It is a confidence down-weight on SIZING, not an entry/exit signal, and it is backward-looking like every realized-vol stat here.
+
 ===== FILE: EXIT_BACKLOG.md (26 lines) =====
 # Exit/position-management specs (w0y07qrs9, 2026-06-22)
 
@@ -58742,7 +58885,7 @@ _Last updated: 2026-06-08 (added Google Antigravity)._
 **detail:** expectedWeeklyR(_:maxConcurrent:tradingDays:holds:) in StockSageExpectedValue.swift hardcodes tradingDays:Double=5 — that's the US-equity calendar and it undercounts crypto, which trades 24/7 (~7 days). But 7 days at the SAME per-trade risk is dishonest because crypto carries higher variance, so couple the day-count change to a volatility-scaled risk budget. CONCRETE: (1) add `nonisolated static func tradingDaysForLane(_ ideas:[StockSageIdea], holds:VelocityHoldDays=.defaults) -> Double` returning 7.0 when EVERY fast-lane idea is Crypto (StockSageAllocation.assetClass=="Crypto"), 5.0 when equity-only, and a blended round(5 + 2*cryptoFraction) for mixed — so nothing shifts silently for the existing equity case (default still 5). (2) add `nonisolated static func cryptoRiskScaler(annualizedVol:Double, baseline:Double=0.20) -> Double { Swift.max(1.0, annualizedVol/baseline) }` (vol 0.70 -> 3.5; never below 1, so it can only SHRINK risk, never inflate it). (3) feed annualizedVol from the EXISTING StockSageIndicators.annualizedVolatility(closes) — no new math. (4) overload summary() and playbook() to surface the scaled per-trade risk: 'Crypto ~70% vol -> sizing 0.28%/trade (1% / 3.5x) and a 7-day week; even fast money needs brakes.' Keep the old 5-day signature working (callers in MarketsView.moneyVelocityCard line 2382 unchanged unless they opt in). Merges idea #1 (7-day + vol-scaler) with the trading-day half of #9/#10.
 **testOrCheck:** New StockSageCryptoVelocityTests.swift: (a) all-crypto fast lane -> tradingDaysForLane==7; equity-only -> 5; 1 crypto + 2 equity -> 6 (round(5+2*0.33)). (b) cryptoRiskScaler(0.70)==3.5; (0.25)==1.25; (0.10)==1.0 floor (never <1). (c) weeklyR for an all-crypto lane at 7 days > the same lane at 5 days, but modeled $-at-risk per trade is LOWER after the scaler. (d) caveat-presence sweep: playbook output contains 'vol' and 'estimate'/'not income'. Build+test green via the canonical xcodebuild test command.
 
-### ⬜ #2 — Asset-class-aware ATR stop multiple (crypto volatility floor)  [medium]
+### ✅ DONE #2 — Asset-class-aware ATR stop multiple (crypto volatility floor)  [medium]
 **detail:** StockSageAdvisor.stopTarget(action:price:atr:) (lines 164-178) uses a fixed 2-ATR (8% fallback) for every asset. A crypto at ~70% annualized vol has ~3x an equity's daily noise — a flat 2-ATR stop whipsaws out before the move. CONCRETE, backward-compatible: add an overload `stopTarget(action:price:atr:realizedVol:)` where realizedVol is optional; when nil it returns EXACTLY today's 2-ATR result (zero behavior change for existing callers). When realizedVol is supplied: pick the multiple from a small testable table — vol>=0.70 -> 2.5x, 0.40..<0.70 -> 2.0x, <0.40 -> 1.5x; no-ATR fallback becomes 12% for crypto vs 8% otherwise, scaled by (vol/0.50). Surface it WITHOUT breaking the TradeAdvice struct by appending two fields with defaults: `stopMultiplier:Double=2.0` and `stopReason:String?=nil` (e.g. '2.5x ATR — wider for 70% crypto vol'). Wire realizedVol = StockSageIndicators.annualizedVolatility(closes) inside advise(closes:highs:lows:) and pass it through. Show stopReason inline in MarketsView.ideaDetailSheet (line 2671) next to the stop. Merges idea #2 with the stop half of #1.
 **testOrCheck:** New StockSageAdvisorVolatilityTests.swift: simulated 70%-vol crypto -> 2.5x ATR stop (wider than the 2x baseline on identical bars); 50%-vol -> 2.0x; <30% equity -> 1.5x; nil realizedVol -> byte-identical to current stopTarget (regression guard so equity advice is unchanged); <20 bars -> nil vol -> 2x default. Assert stopReason string mentions the multiple and the vol. Verify in MarketsView that the reason renders.
 

@@ -6650,6 +6650,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · FASTMONEY #2 — volatility-aware ATR stops + 2 research roadmaps persisted
+**Files:** `StockSage/StockSageAdvisor.swift` (stopTarget gains realizedVol + stopMultiple helper; TradeAdvice +stopMultiplier/+stopReason; advise wires annualizedVolatility), `Salehman AITests/StockSageAdvisorTests.swift` (+1 test). Roadmaps: EDGE_RESEARCH.md, CRYPTO_RISK.md.
+**What:** a flat 2×ATR stop whipsaws a 70%-vol crypto out on normal noise. stopTarget now scales the ATR multiple by realized vol — ≥0.70→2.5×, 0.40-0.70→2.0×, <0.40→1.5× — and the no-ATR fallback widens (≈12% at 75% vol vs 8% baseline, never tighter than 8%). realizedVol nil → BYTE-IDENTICAL 2×ATR/8% (existing callers + the symmetric-stop test unchanged). advise() feeds annualizedVolatility(closes) and surfaces stopMultiplier + stopReason on TradeAdvice (defaulted var fields). positionSizeIsHardCapped still caps (verified: weight=0.5·(0.4+0.6·conv) ≥ 0.20 even at the wider 2.5× on the ramp, vol 0.93).
+**Verify:** typecheck clean; python-verified — nil→90/92, 2.5×→87.5, 2.0×→90, 1.5×→92.5, 12% fallback→88, floor→92; mult table 2.0/2.5/2.0/1.5.
+**WORKFLOW BURN NOTE:** launched 5 heavy workflows at once → server-side RATE LIMITING (not usage limit) nulled 3 (allocator/ranking/audit, ~2.4M tokens wasted on null) but 2 (edge-research, crypto-risk) synthesized usable roadmaps. LESSON: cap at 1-2 small concurrent workflows + heavy implementation. CRYPTO_RISK #1 flags a REAL bug (defaultCosts flat 50bps for all -USD ignores taker fees) + a test collision (NetEdgeTests asserts ==50) to reconcile.
+**Result:** stops now fit the asset's real volatility. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

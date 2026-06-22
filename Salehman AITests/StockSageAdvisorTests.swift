@@ -24,6 +24,24 @@ struct StockSageAdvisorStopTargetTests {
         #expect(A.stopTarget(action: .hold, price: 100, atr: 5).stop == nil)
         #expect(A.stopTarget(action: .avoid, price: 100, atr: 5).target == nil)
     }
+
+    @Test func stopWidthScalesWithRealizedVolatility() {
+        // realizedVol nil → byte-identical to the 2-ATR / 8% behavior.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5).stop == 90)
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil).stop == 92)
+        // High vol → WIDER 2.5×ATR stop (won't whipsaw); calm → tighter 1.5×.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.80).stop == 87.5)  // 2.5×5
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.50).stop == 90.0)  // 2.0×5
+        #expect(A.stopTarget(action: .buy, price: 100, atr: 5, realizedVol: 0.30).stop == 92.5)  // 1.5×5
+        // No-ATR fallback widens with vol but never tightens below 8%: 0.08·max(1, vol/0.5).
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.75).stop == 88)  // 12%
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.20).stop == 92)  // floored at 8%
+        // The multiplier table itself.
+        #expect(A.stopMultiple(forVol: nil) == 2.0)
+        #expect(A.stopMultiple(forVol: 0.70) == 2.5)
+        #expect(A.stopMultiple(forVol: 0.40) == 2.0)
+        #expect(A.stopMultiple(forVol: 0.39) == 1.5)
+    }
 }
 
 struct StockSageIndicatorTests {

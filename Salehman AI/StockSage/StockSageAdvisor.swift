@@ -38,6 +38,12 @@ struct TradeAdvice: Sendable, Equatable {
     let suggestedWeight: Double
     /// Always present — the honest reminder.
     let caveat: String
+    /// The ATR multiple used for the stop: 2.0 by default, widened to 2.5 for high-volatility
+    /// names (so normal noise doesn't whipsaw the trade out) and tightened to 1.5 for calm ones.
+    var stopMultiplier: Double = 2.0
+    /// Plain-language reason for the stop width (e.g. "2.5×ATR — sized for 72% volatility"),
+    /// surfaced in the idea detail. nil when volatility wasn't available.
+    var stopReason: String? = nil
 }
 
 // MARK: - StockSageAdvisor
@@ -180,9 +186,13 @@ enum StockSageAdvisor {
 
         let isSell = action == .sell || action == .reduce
 
-        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it
-        // (stop ABOVE entry, target BELOW). 2-ATR swing stop, 2:1 reward:risk; 8% fallback.
-        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr)
+        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it.
+        // The ATR multiple now scales with the name's realized volatility (wider for crypto,
+        // tighter for calm equities) so the stop fits the asset, not a one-size guess.
+        let realizedVol = StockSageIndicators.annualizedVolatility(closes)
+        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr, realizedVol: realizedVol)
+        let stopMult = Self.stopMultiple(forVol: realizedVol)
+        let stopReason = realizedVol.map { String(format: "%.1f×ATR stop — sized for %.0f%% annualized volatility", stopMult, $0 * 100) }
 
         // Position size: risk budget ÷ stop distance %, scaled by conviction, capped.
         // Distance is absolute so a short (stop > price) sizes the same as a long.
@@ -197,18 +207,33 @@ enum StockSageAdvisor {
 
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
-                           suggestedWeight: weight, caveat: caveat)
+                           suggestedWeight: weight, caveat: caveat,
+                           stopMultiplier: stopMult, stopReason: stopReason)
     }
 
     /// Symmetric 2-ATR swing stop + 2:1 target for an actionable buy/sell. Long: stop
     /// below, target above. Short (sell/reduce): stop ABOVE entry, target BELOW. 8% stop
     /// fallback when no ATR. (nil, nil) for hold/avoid or a non-positive price. Pure.
-    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?)
+    /// ATR multiple for the stop, by realized volatility: a 70%-vol crypto needs a WIDER stop
+    /// (2.5×) so ordinary daily noise doesn't whipsaw it out; a calm name can run a tighter
+    /// 1.5×. nil vol → the documented 2.0× default (so existing callers are unchanged).
+    nonisolated static func stopMultiple(forVol realizedVol: Double?) -> Double {
+        guard let v = realizedVol else { return 2.0 }
+        if v >= 0.70 { return 2.5 } else if v >= 0.40 { return 2.0 } else { return 1.5 }
+    }
+
+    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?,
+                                       realizedVol: Double? = nil)
         -> (stop: Double?, target: Double?) {
         let isBuy = action == .buy || action == .strongBuy
         let isSell = action == .sell || action == .reduce
         guard (isBuy || isSell), price > 0 else { return (nil, nil) }
-        let dist = (atr.map { $0 > 0 ? 2 * $0 : price * 0.08 }) ?? price * 0.08
+        // realizedVol nil → 2×ATR / 8% fallback, BYTE-IDENTICAL to before. When supplied, the
+        // ATR multiple scales with vol, and the no-ATR fallback widens for volatile names
+        // (≈12% at 75% vol vs 8% baseline) — never tighter than 8%.
+        let mult = stopMultiple(forVol: realizedVol)
+        let fallbackPct = realizedVol.map { 0.08 * Swift.max(1.0, $0 / 0.50) } ?? 0.08
+        let dist = (atr.map { $0 > 0 ? mult * $0 : price * fallbackPct }) ?? price * fallbackPct
         if isBuy {
             let s = price - dist
             return (s, price + 2 * (price - s))
