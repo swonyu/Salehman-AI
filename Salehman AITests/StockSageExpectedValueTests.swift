@@ -157,6 +157,24 @@ struct StockSageExpectedValueTests {
         #expect(empty.contains("1."))
     }
 
+    @Test func tradingDaysForLaneBlendsByCryptoShare() {
+        let btc  = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let eth  = idea("ETH-USD", conviction: 0.9, stop: 90, target: 130)
+        let aapl = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let msft = idea("MSFT", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.tradingDaysForLane([btc, eth]) == 7)            // all crypto → 7-day week
+        #expect(EV.tradingDaysForLane([aapl, msft]) == 5)          // equity only → unchanged 5
+        #expect(EV.tradingDaysForLane([btc, aapl, msft]) == 6)     // 1/3 crypto → round(5 + 0.667) = 6
+        #expect(EV.tradingDaysForLane([]) == 5)                    // empty lane → 5
+    }
+
+    @Test func cryptoRiskScalerOnlyShrinksRisk() {
+        #expect(abs(EV.cryptoRiskScaler(annualizedVol: 0.70) - 3.5) < 1e-9)    // 0.70 / 0.20
+        #expect(abs(EV.cryptoRiskScaler(annualizedVol: 0.25) - 1.25) < 1e-9)
+        #expect(EV.cryptoRiskScaler(annualizedVol: 0.10) == 1.0)               // floored — never inflates risk
+        #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
+    }
+
     @Test func lowConvictionFantasyTargetCannotTopTheBoard() {
         // 18:1 reward:risk but ZERO conviction inflates raw EV to ~5.65R — it must NOT
         // out-rank a real 0.8-conviction 2:1 setup (~0.60R) once quality-adjusted.

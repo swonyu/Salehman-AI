@@ -195,6 +195,27 @@ enum StockSageExpectedValue {
         return wkR * account * riskFraction
     }
 
+    /// Trading days per week for the fast lane. Equities trade ~5 days; crypto is 24/7 (~7).
+    /// Blends by the crypto share of the fast lane: round(5 + 2·cryptoFraction) — all-crypto → 7,
+    /// equity-only → 5 (so nothing shifts for the existing equity case), 1-of-3 crypto → 6.
+    /// Empty lane → 5. NOTE: more trading days ≠ more edge — crypto's extra cadence carries
+    /// extra variance, which `cryptoRiskScaler` sizes DOWN for.
+    nonisolated static func tradingDaysForLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> Double {
+        let lane = fastLane(ideas, holds: holds)
+        guard !lane.isEmpty else { return 5 }
+        let crypto = lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" }.count
+        return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
+    }
+
+    /// How much to SHRINK per-trade risk for an asset's realized volatility: max(1, vol/baseline).
+    /// FLOORED at 1 so it can only reduce risk, never inflate it — even fast money needs brakes.
+    /// e.g. 70%-vol crypto vs a 20% baseline → 3.5× (size 1%/3.5 ≈ 0.29%/trade). Feed `vol` from
+    /// `StockSageIndicators.annualizedVolatility`.
+    nonisolated static func cryptoRiskScaler(annualizedVol: Double, baseline: Double = 0.20) -> Double {
+        guard baseline > 0 else { return 1 }
+        return Swift.max(1, annualizedVol / baseline)
+    }
+
     /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding
     /// setup, and the estimated weekly R — each a value already computed elsewhere,
     /// composed for a single header. All optional; `hasContent` gates the card.
@@ -210,7 +231,8 @@ enum StockSageExpectedValue {
             bestEV: best?.ev.evR,
             fastestSymbol: fastest?.symbol,
             fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
-            weeklyR: expectedWeeklyR(ideas, holds: holds),
+            // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
+            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds), holds: holds),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)

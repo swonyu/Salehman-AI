@@ -6642,6 +6642,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · FASTMONEY #1 — honest crypto 7-day week + volatility-scaled risk
+**Files:** `StockSage/StockSageExpectedValue.swift` (+tradingDaysForLane, +cryptoRiskScaler, summary() weeklyR uses tradingDaysForLane), `Salehman AITests/StockSageExpectedValueTests.swift` (+2 tests).
+**What:** crypto trades 24/7 so the weekly-R cadence was undercounting it at 5 days. `tradingDaysForLane(ideas)` = round(5 + 2·cryptoFraction of the fast lane) — all-crypto → 7, equity-only → 5 (existing case unchanged), 1-of-3 → 6. summary() now feeds it into expectedWeeklyR so an all-crypto lane honestly shows a 7-day week. CRUCIALLY paired with `cryptoRiskScaler(annualizedVol,baseline=0.20)=max(1, vol/baseline)` — FLOORED at 1 so it can only SHRINK per-trade risk (70%-vol crypto → 3.5× → size 1%→~0.29%/trade), never inflate it. More cadence ≠ more edge; crypto's extra variance gets sized down.
+**Verify:** typecheck clean; python-verified — tradingDays 7/5/6/5; cryptoRiskScaler 0.70→3.5, 0.25→1.25, 0.10→1.0 (floor), 0.20→1.0. Existing weekly-R tests pass (explicit-tradingDays / non-nil-only).
+**Result:** the fast lane is faster AND honestly braked — crypto's 7-day cadence shows up, but its risk per trade shrinks with its volatility. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

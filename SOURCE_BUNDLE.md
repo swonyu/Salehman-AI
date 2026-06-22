@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 16:09 +03 · Swift files: 246 · Swift LOC: 46109_
+_Generated: 2026-06-22 16:19 +03 · Swift files: 246 · Swift LOC: 46149_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9861,7 +9861,7 @@ enum StockSageEarnings {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (260 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (282 lines) =====
 ```swift
 import Foundation
 
@@ -10060,6 +10060,27 @@ enum StockSageExpectedValue {
         return wkR * account * riskFraction
     }
 
+    /// Trading days per week for the fast lane. Equities trade ~5 days; crypto is 24/7 (~7).
+    /// Blends by the crypto share of the fast lane: round(5 + 2·cryptoFraction) — all-crypto → 7,
+    /// equity-only → 5 (so nothing shifts for the existing equity case), 1-of-3 crypto → 6.
+    /// Empty lane → 5. NOTE: more trading days ≠ more edge — crypto's extra cadence carries
+    /// extra variance, which `cryptoRiskScaler` sizes DOWN for.
+    nonisolated static func tradingDaysForLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> Double {
+        let lane = fastLane(ideas, holds: holds)
+        guard !lane.isEmpty else { return 5 }
+        let crypto = lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" }.count
+        return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
+    }
+
+    /// How much to SHRINK per-trade risk for an asset's realized volatility: max(1, vol/baseline).
+    /// FLOORED at 1 so it can only reduce risk, never inflate it — even fast money needs brakes.
+    /// e.g. 70%-vol crypto vs a 20% baseline → 3.5× (size 1%/3.5 ≈ 0.29%/trade). Feed `vol` from
+    /// `StockSageIndicators.annualizedVolatility`.
+    nonisolated static func cryptoRiskScaler(annualizedVol: Double, baseline: Double = 0.20) -> Double {
+        guard baseline > 0 else { return 1 }
+        return Swift.max(1, annualizedVol / baseline)
+    }
+
     /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding
     /// setup, and the estimated weekly R — each a value already computed elsewhere,
     /// composed for a single header. All optional; `hasContent` gates the card.
@@ -10075,7 +10096,8 @@ enum StockSageExpectedValue {
             bestEV: best?.ev.evR,
             fastestSymbol: fastest?.symbol,
             fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
-            weeklyR: expectedWeeklyR(ideas, holds: holds),
+            // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
+            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds), holds: holds),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)
@@ -43239,7 +43261,7 @@ struct StockSageEarningsTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (221 lines) =====
+===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (239 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43398,6 +43420,24 @@ struct StockSageExpectedValueTests {
                                                      fastestVelocity: nil, weeklyR: nil, worstRunLosses: nil, worstRunDrawdownPct: nil))
         #expect(empty.contains("stop"))
         #expect(empty.contains("1."))
+    }
+
+    @Test func tradingDaysForLaneBlendsByCryptoShare() {
+        let btc  = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let eth  = idea("ETH-USD", conviction: 0.9, stop: 90, target: 130)
+        let aapl = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let msft = idea("MSFT", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.tradingDaysForLane([btc, eth]) == 7)            // all crypto → 7-day week
+        #expect(EV.tradingDaysForLane([aapl, msft]) == 5)          // equity only → unchanged 5
+        #expect(EV.tradingDaysForLane([btc, aapl, msft]) == 6)     // 1/3 crypto → round(5 + 0.667) = 6
+        #expect(EV.tradingDaysForLane([]) == 5)                    // empty lane → 5
+    }
+
+    @Test func cryptoRiskScalerOnlyShrinksRisk() {
+        #expect(abs(EV.cryptoRiskScaler(annualizedVol: 0.70) - 3.5) < 1e-9)    // 0.70 / 0.20
+        #expect(abs(EV.cryptoRiskScaler(annualizedVol: 0.25) - 1.25) < 1e-9)
+        #expect(EV.cryptoRiskScaler(annualizedVol: 0.10) == 1.0)               // floored — never inflates risk
+        #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
     }
 
     @Test func lowConvictionFantasyTargetCannotTopTheBoard() {
@@ -49402,7 +49442,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7761 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7769 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -56047,6 +56087,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · FASTMONEY #1 — honest crypto 7-day week + volatility-scaled risk
+**Files:** `StockSage/StockSageExpectedValue.swift` (+tradingDaysForLane, +cryptoRiskScaler, summary() weeklyR uses tradingDaysForLane), `Salehman AITests/StockSageExpectedValueTests.swift` (+2 tests).
+**What:** crypto trades 24/7 so the weekly-R cadence was undercounting it at 5 days. `tradingDaysForLane(ideas)` = round(5 + 2·cryptoFraction of the fast lane) — all-crypto → 7, equity-only → 5 (existing case unchanged), 1-of-3 → 6. summary() now feeds it into expectedWeeklyR so an all-crypto lane honestly shows a 7-day week. CRUCIALLY paired with `cryptoRiskScaler(annualizedVol,baseline=0.20)=max(1, vol/baseline)` — FLOORED at 1 so it can only SHRINK per-trade risk (70%-vol crypto → 3.5× → size 1%→~0.29%/trade), never inflate it. More cadence ≠ more edge; crypto's extra variance gets sized down.
+**Verify:** typecheck clean; python-verified — tradingDays 7/5/6/5; cryptoRiskScaler 0.70→3.5, 0.25→1.25, 0.10→1.0 (floor), 0.20→1.0. Existing weekly-R tests pass (explicit-tradingDays / non-nil-only).
+**Result:** the fast lane is faster AND honestly braked — crypto's 7-day cadence shows up, but its risk per trade shrinks with its volatility. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58690,7 +58738,7 @@ _Last updated: 2026-06-08 (added Google Antigravity)._
 - Asset-class-aware ATR stop multiple — the flat 2-ATR stop whipsaws high-vol crypto out before the move; an optional realizedVol param widens the stop to 2.5x at ~70% vol and returns byte-identical results for equities when vol is nil, so it is the highest-impact correctness fix with zero regression risk to existing advice.
 - Always-visible best-move action card with crypto 24/7 variance truth — turns the buried bestOpportunityCard into a one-glance EXECUTE-THIS surface on every tab (symbol, entry, stop, size, why) reusing existing bestOpportunity + positionSizer + TodayPlan, with a concrete 24h-range variance line and warning tint for -USD; small effort, removes the biggest friction between the owner and the single best honest move.
 
-### ⬜ #1 — 7-day trading week for crypto fast lanes (volatility-scaled), honest weekly-R  [medium]
+### ✅ DONE #1 — 7-day trading week for crypto fast lanes (volatility-scaled), honest weekly-R  [medium]
 **detail:** expectedWeeklyR(_:maxConcurrent:tradingDays:holds:) in StockSageExpectedValue.swift hardcodes tradingDays:Double=5 — that's the US-equity calendar and it undercounts crypto, which trades 24/7 (~7 days). But 7 days at the SAME per-trade risk is dishonest because crypto carries higher variance, so couple the day-count change to a volatility-scaled risk budget. CONCRETE: (1) add `nonisolated static func tradingDaysForLane(_ ideas:[StockSageIdea], holds:VelocityHoldDays=.defaults) -> Double` returning 7.0 when EVERY fast-lane idea is Crypto (StockSageAllocation.assetClass=="Crypto"), 5.0 when equity-only, and a blended round(5 + 2*cryptoFraction) for mixed — so nothing shifts silently for the existing equity case (default still 5). (2) add `nonisolated static func cryptoRiskScaler(annualizedVol:Double, baseline:Double=0.20) -> Double { Swift.max(1.0, annualizedVol/baseline) }` (vol 0.70 -> 3.5; never below 1, so it can only SHRINK risk, never inflate it). (3) feed annualizedVol from the EXISTING StockSageIndicators.annualizedVolatility(closes) — no new math. (4) overload summary() and playbook() to surface the scaled per-trade risk: 'Crypto ~70% vol -> sizing 0.28%/trade (1% / 3.5x) and a 7-day week; even fast money needs brakes.' Keep the old 5-day signature working (callers in MarketsView.moneyVelocityCard line 2382 unchanged unless they opt in). Merges idea #1 (7-day + vol-scaler) with the trading-day half of #9/#10.
 **testOrCheck:** New StockSageCryptoVelocityTests.swift: (a) all-crypto fast lane -> tradingDaysForLane==7; equity-only -> 5; 1 crypto + 2 equity -> 6 (round(5+2*0.33)). (b) cryptoRiskScaler(0.70)==3.5; (0.25)==1.25; (0.10)==1.0 floor (never <1). (c) weeklyR for an all-crypto lane at 7 days > the same lane at 5 days, but modeled $-at-risk per trade is LOWER after the scaler. (d) caveat-presence sweep: playbook output contains 'vol' and 'estimate'/'not income'. Build+test green via the canonical xcodebuild test command.
 
