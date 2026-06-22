@@ -6858,6 +6858,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · GRAND-SWEEP #3 (verified) — Monte-Carlo ruin / drawdown distribution
+**Files:** NEW `StockSage/StockSageMonteCarloRuin.swift`, NEW `Salehman AITests/StockSageMonteCarloRuinTests.swift`.
+**What:** the journal showed worst-HISTORICAL streak + a single-path underwater curve — one realized path understates the tail. New seeded Monte-Carlo bootstraps YOUR closed-trade realized-R into many simulated futures at the configured risk fraction (equity compounds by 1+f·R) and reports the DISTRIBUTION: pRuin (equity ≤ ruinLevel 0.5), P(maxDD>20%), median + 95th-pct max drawdown. SplitMix64 PRNG → fully reproducible (same seed = byte-identical), the first seedable RNG in the app. Gated to nil under <20 R-defined trades so a thin log can't manufacture a scary OR falsely-comforting number. Verified build-ready by workflow whi6t1t5a (the re-run verification after the grand-sweep's verify layer had failed).
+**Verify:** typecheck clean; python-verified the model THEN ported to a test: 20×−1R at 10% risk → pRuin 1.0; 20×+0.5R → 0.0; same seed → identical (Equatable); more risk never lowers pRuin; p95MaxDD ≥ medianMaxDD; <20 trades → nil. Caveat names the i.i.d./clustering limitation (under-states clustered-loss tails).
+**Result:** the engine now quantifies the DISTRIBUTION of what could happen — including ruin probability it never named — not just the one path that did. UI surfacing is a follow-up. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
