@@ -19,6 +19,26 @@ struct NetEdge: Sendable, Equatable {
 }
 
 enum StockSageNetEdge {
+    /// A LABELED, asset-class default cost assumption — crypto and thin foreign listings
+    /// carry far wider spreads than US large-caps or FX majors. Estimates, not quotes.
+    struct CostAssumption: Sendable, Equatable {
+        let spreadBps: Double
+        let slippageBps: Double
+        let assetClass: String
+        nonisolated var roundTripBps: Double { spreadBps + slippageBps }
+    }
+
+    /// Pick a sensible round-trip cost estimate from the symbol's asset class (suffix).
+    /// Crypto widest, FX majors tightest; foreign single-listings wider than US large-caps.
+    nonisolated static func defaultCosts(forSymbol symbol: String) -> CostAssumption {
+        let s = symbol.uppercased()
+        if s.hasSuffix("-USD") { return CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "crypto") }      // 50bps
+        if s.hasSuffix("=X")   { return CostAssumption(spreadBps: 4,  slippageBps: 3,  assetClass: "FX") }          // 7bps
+        if s.hasPrefix("^")    { return CostAssumption(spreadBps: 5,  slippageBps: 3,  assetClass: "index") }       // 8bps
+        if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
+        return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
+    }
+
     /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
     /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
     /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.

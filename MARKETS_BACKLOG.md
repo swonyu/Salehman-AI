@@ -104,7 +104,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Garbage-in produces silently-wrong sizing and a confusing dead UI. Add decimalPad + range filtering (0-100 for %, 0+ for price/account/budget) and an inline red 'positive numbers only' state.
 **Files:** Salehman AI/Views/MarketsView.swift:1421-1432; Salehman AI/Views/MarketsView.swift:1224-1230; Salehman AI/Views/RuneScapeMarketView.swift:236
 
-### ⬜ #17 — Asset-class-aware cost assumptions in NetEdge  [medium/small, Risk/Cost/honesty]
+### ✅ DONE #17 — Asset-class-aware cost assumptions in NetEdge  [medium/small, Risk/Cost/honesty]
 **What:** NetEdge is always called with spreadBps=10, slippageBps=5 (15bps round-trip) for every symbol — reasonable for US equities but wrong for crypto and FX. The math is honest but the input isn't asset-class-aware.
 **Why:** Net-edge directly gates whether a trade clears costs; a flat assumption mis-rates crypto/FX edges. Branch on StockSageAllocation.assetClass(symbol) for per-class bps and state the assumption in the NetEdge caveat.
 **Files:** Salehman AI/Views/MarketsView.swift:2612; Salehman AI/StockSage/StockSageAllocation.swift

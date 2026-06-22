@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:27 +03 · Swift files: 236 · Swift LOC: 44850_
+_Generated: 2026-06-22 10:31 +03 · Swift files: 236 · Swift LOC: 44890_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11293,7 +11293,7 @@ enum StockSageMultiTimeframe {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageNetEdge.swift (54 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageNetEdge.swift (74 lines) =====
 ```swift
 import Foundation
 
@@ -11316,6 +11316,26 @@ struct NetEdge: Sendable, Equatable {
 }
 
 enum StockSageNetEdge {
+    /// A LABELED, asset-class default cost assumption — crypto and thin foreign listings
+    /// carry far wider spreads than US large-caps or FX majors. Estimates, not quotes.
+    struct CostAssumption: Sendable, Equatable {
+        let spreadBps: Double
+        let slippageBps: Double
+        let assetClass: String
+        nonisolated var roundTripBps: Double { spreadBps + slippageBps }
+    }
+
+    /// Pick a sensible round-trip cost estimate from the symbol's asset class (suffix).
+    /// Crypto widest, FX majors tightest; foreign single-listings wider than US large-caps.
+    nonisolated static func defaultCosts(forSymbol symbol: String) -> CostAssumption {
+        let s = symbol.uppercased()
+        if s.hasSuffix("-USD") { return CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "crypto") }      // 50bps
+        if s.hasSuffix("=X")   { return CostAssumption(spreadBps: 4,  slippageBps: 3,  assetClass: "FX") }          // 7bps
+        if s.hasPrefix("^")    { return CostAssumption(spreadBps: 5,  slippageBps: 3,  assetClass: "index") }       // 8bps
+        if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
+        return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
+    }
+
     /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
     /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
     /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.
@@ -26285,7 +26305,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3090 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3093 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -28984,19 +29004,22 @@ struct MarketsView: View {
                         Text(rr.note).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let stop = a.stopPrice, let target = a.targetPrice,
-                   let ne = StockSageNetEdge.evaluate(
+                if let stop = a.stopPrice, let target = a.targetPrice {
+                    let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+                    if let ne = StockSageNetEdge.evaluate(
                         entry: idea.price, stop: stop, target: target,
-                        spreadBps: 10, slippageBps: 5,
+                        spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
                         winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target)?.winProbEstimate) {
-                    let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
-                    let body = ne.netRR > 0
-                        ? String(format: "After ~15bps est. costs: net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
-                        : "After ~15bps est. costs: " + ne.verdict
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "scissors").font(.system(size: 11)).foregroundStyle(c)
-                        Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
-                            .help("Nets a ~15bps round-trip spread+slippage estimate out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
+                        let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                        let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs: "
+                        let body = ne.netRR > 0
+                            ? pre + String(format: "net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
+                            : pre + ne.verdict
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "scissors").font(.system(size: 11)).foregroundStyle(c)
+                            Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                                .help("Nets an asset-class round-trip spread+slippage estimate out of the reward:risk (crypto widest, FX/large-cap tightest). Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
+                        }
                     }
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
@@ -43348,7 +43371,7 @@ struct StockSageMultiTimeframeTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageNetEdgeTests.swift (47 lines) =====
+===== FILE: Salehman AITests/StockSageNetEdgeTests.swift (64 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43387,6 +43410,23 @@ struct StockSageNetEdgeTests {
         #expect(abs(e.grossRR - 3) < 1e-9 && abs(e.netRR - 3) < 1e-9)
         #expect(e.costPerShare == 0 && e.costAsPctOfReward == 0)
         #expect(e.netExpectancyR == nil)                  // no winProb → nil
+    }
+
+    @Test func defaultCostsScaleByAssetClass() {
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").assetClass == "crypto")
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").roundTripBps == 50)
+        #expect(NE.defaultCosts(forSymbol: "EURUSD=X").assetClass == "FX")
+        #expect(NE.defaultCosts(forSymbol: "EURUSD=X").roundTripBps == 7)
+        #expect(NE.defaultCosts(forSymbol: "^GSPC").assetClass == "index")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 30)
+        #expect(NE.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
+        #expect(NE.defaultCosts(forSymbol: "AAPL").roundTripBps == 13)
+        // Crypto's wider spread must eat strictly more of the same setup than a US large-cap.
+        let cr = NE.defaultCosts(forSymbol: "BTC-USD"), us = NE.defaultCosts(forSymbol: "AAPL")
+        let eCr = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: cr.spreadBps, slippageBps: cr.slippageBps)!
+        let eUs = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: us.spreadBps, slippageBps: us.slippageBps)!
+        #expect(eCr.netRR < eUs.netRR)
     }
 
     @Test func worksForShortsAndGuardsDegenerate() {
@@ -47853,7 +47893,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7566 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7571 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54305,6 +54345,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** UI fields parsed with `Double(text) ?? 0` / `Int(text) ?? 0`, so "abc"/"1.2.3"/negatives/out-of-range silently became 0 → a wrong $-estimate or P&L with no signal. `StockSageInput` adds pure validators returning nil on bad input: `positiveAmount` (>0, tolerant of ","/spaces), `percent(_:max:)` ((0,max], default 100 — for Kelly/risk %), `positiveInt` (>0, rejects decimals — GE budget/shares). Wired into the GE budget field: invalid non-empty input now shows "Enter a whole number of gp (digits only)" instead of silently flipping to 0. 3 tests, PYTHON-VERIFIED: 10,000→10000, 1.2.3→nil, −5→nil; pct 100→100, 150→nil, 25 cap20→nil; pint 5000000→5000000, 3.5→nil, 1,000→1000. (Reusable for journal-price/sizer fields next.)
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 13/32 done. NEXT: #20 fast-lane warning on summary card / #17 asset-class costs. Committed + pushed.
 
+## 2026-06-22 · Backlog #17: Asset-class-aware NetEdge cost defaults
+**Files:** `StockSage/StockSageNetEdge.swift` (+`CostAssumption` + `defaultCosts(forSymbol:)`), `Views/MarketsView.swift` (idea-sheet net-edge line uses them), `Salehman AITests/StockSageNetEdgeTests.swift` (+1 test).
+**What & why:** The idea-sheet net-edge line hardcoded ~15bps round-trip for everything — but a BTC scalp pays far more spread than an AAPL swing. `defaultCosts(forSymbol:)` returns a LABELED `CostAssumption` by asset class from the suffix: crypto 50bps, intl single-listing 30, US large-cap 13, index 8, FX 7. The line now reads "After ~50bps est. crypto costs: net R:R 2.8:1 (gross 2.9:1)" — honest about which asset class's frictions are assumed. 1 test, PYTHON-VERIFIED: round-trips crypto 50 / FX 7 / index 8 / intl 30 / US 13; same 100→90/130 setup nets strictly LESS for crypto (2.81) than US (2.95).
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 14/32 done. NEXT: #20 fast-lane warning on summary card. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57767,7 +57812,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Garbage-in produces silently-wrong sizing and a confusing dead UI. Add decimalPad + range filtering (0-100 for %, 0+ for price/account/budget) and an inline red 'positive numbers only' state.
 **Files:** Salehman AI/Views/MarketsView.swift:1421-1432; Salehman AI/Views/MarketsView.swift:1224-1230; Salehman AI/Views/RuneScapeMarketView.swift:236
 
-### ⬜ #17 — Asset-class-aware cost assumptions in NetEdge  [medium/small, Risk/Cost/honesty]
+### ✅ DONE #17 — Asset-class-aware cost assumptions in NetEdge  [medium/small, Risk/Cost/honesty]
 **What:** NetEdge is always called with spreadBps=10, slippageBps=5 (15bps round-trip) for every symbol — reasonable for US equities but wrong for crypto and FX. The math is honest but the input isn't asset-class-aware.
 **Why:** Net-edge directly gates whether a trade clears costs; a flat assumption mis-rates crypto/FX edges. Branch on StockSageAllocation.assetClass(symbol) for per-class bps and state the assumption in the NetEdge caveat.
 **Files:** Salehman AI/Views/MarketsView.swift:2612; Salehman AI/StockSage/StockSageAllocation.swift

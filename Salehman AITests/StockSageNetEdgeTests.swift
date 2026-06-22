@@ -37,6 +37,23 @@ struct StockSageNetEdgeTests {
         #expect(e.netExpectancyR == nil)                  // no winProb → nil
     }
 
+    @Test func defaultCostsScaleByAssetClass() {
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").assetClass == "crypto")
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").roundTripBps == 50)
+        #expect(NE.defaultCosts(forSymbol: "EURUSD=X").assetClass == "FX")
+        #expect(NE.defaultCosts(forSymbol: "EURUSD=X").roundTripBps == 7)
+        #expect(NE.defaultCosts(forSymbol: "^GSPC").assetClass == "index")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 30)
+        #expect(NE.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
+        #expect(NE.defaultCosts(forSymbol: "AAPL").roundTripBps == 13)
+        // Crypto's wider spread must eat strictly more of the same setup than a US large-cap.
+        let cr = NE.defaultCosts(forSymbol: "BTC-USD"), us = NE.defaultCosts(forSymbol: "AAPL")
+        let eCr = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: cr.spreadBps, slippageBps: cr.slippageBps)!
+        let eUs = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: us.spreadBps, slippageBps: us.slippageBps)!
+        #expect(eCr.netRR < eUs.netRR)
+    }
+
     @Test func worksForShortsAndGuardsDegenerate() {
         // Short: entry 100, stop 105 (above), target 90 (below) → gross 10/5 = 2:1.
         let s = NE.evaluate(entry: 100, stop: 105, target: 90, spreadBps: 0, slippageBps: 0)!
