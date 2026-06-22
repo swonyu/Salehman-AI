@@ -34,6 +34,28 @@ struct StockSageGEFlipTests {
         #expect(abs(gph - 78.0 * 2_000_000_000 / 4) < 1.0)
     }
 
+    private func flip(_ id: Int, _ name: String, buy: Int, limit: Int, profit: Int, gph: Double) -> GEFlip {
+        GEFlip(itemId: id, name: name, buyPrice: buy, sellPrice: buy + profit, buyLimit: limit,
+               taxPerItem: 0, profitPerItem: profit, gpPerHour: gph)
+    }
+
+    @Test func bestFlipsForBudgetGreedyByVelocity() {
+        let a = flip(1, "A", buy: 100, limit: 1000, profit: 28, gph: 7000)   // full gp/hr 28·1000/4
+        let b = flip(2, "B", buy: 1000, limit: 100, profit: 78, gph: 1950)   // full gp/hr 78·100/4
+        // Budget 50k → funds 500 units of A only (highest gp/hr first): 28·500/4 = 3500.
+        let p1 = StockSageGEFlip.bestFlipsForBudget([b, a], budget: 50_000)
+        #expect(p1.flips.map(\.itemId) == [1])
+        #expect(p1.flips[0].units == 500)
+        #expect(p1.totalCapital == 50_000)
+        #expect(abs(p1.totalGpPerHour - 3500) < 1e-9)
+        // Budget 200k → full A (1000, 7000) + full B (100, 1950) = 8950 gp/hr.
+        let p2 = StockSageGEFlip.bestFlipsForBudget([a, b], budget: 200_000)
+        #expect(p2.flips.map(\.itemId) == [1, 2])
+        #expect(abs(p2.totalGpPerHour - 8950) < 1e-9)
+        #expect(StockSageGEFlip.bestFlipsForBudget([a, b], budget: 0).flips.isEmpty)   // no budget
+        #expect(StockSageGEFlip.bestFlipsForBudget([b], budget: 500).flips.isEmpty)    // can't afford 1 unit
+    }
+
     @Test func flipsRankByGpPerHourDescDroppingLosers() {
         let a = listing(1, "A", low: 1000, high: 1100, limit: 1000)   // tax 22, profit 78 ×1000/4 = 19500
         let b = listing(2, "B", low: 100, high: 130, limit: 10000)    // tax floor(2.6)=2, profit 28 ×10000/4 = 70000

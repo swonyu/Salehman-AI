@@ -16,6 +16,8 @@ struct RuneScapeMarketView: View {
     // Dynamic-Type-aware small fonts (base size at default, scale up when enlarged).
     @ScaledMetric(relativeTo: .caption2) private var rsFont8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var rsFont9: CGFloat = 9
+    /// Gp budget for the "with N gp, flip these" optimizer (persisted; editable inline).
+    @AppStorage("geFlipBudgetGp") private var geBudgetText = "10000000"
 
     private var isSearching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
@@ -224,6 +226,32 @@ struct RuneScapeMarketView: View {
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
                     .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
+
+                // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
+                Divider().overlay(DS.Palette.surfaceStroke)
+                let budget = Int(geBudgetText) ?? 0
+                let plan = StockSageGEFlip.bestFlipsForBudget(flips, budget: budget)
+                HStack(spacing: 6) {
+                    Text("With").font(.system(size: rsFont9)).foregroundStyle(.secondary)
+                    TextField("gp", text: $geBudgetText)
+                        .font(.system(size: rsFont9, design: .monospaced)).foregroundStyle(.white)
+                        .textFieldStyle(.plain).frame(width: 90)
+                        .accessibilityLabel("Flip budget in gp")
+                    Text("gp:").font(.system(size: rsFont9)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if !plan.flips.isEmpty {
+                        Text("≈ \(RSFormat.gp(Int(plan.totalGpPerHour)))/hr")
+                            .font(.system(size: rsFont9, weight: .bold)).foregroundStyle(DS.Palette.successSoft)
+                    }
+                }
+                if !plan.flips.isEmpty {
+                    Text("Flip: " + plan.flips.map { "\($0.name) ×\($0.units.formatted())" }.joined(separator: ", ")
+                         + " — estimate; assumes you fill what you buy, fills depend on volume.")
+                        .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if budget > 0 {
+                    Text("Budget too small to fund a full unit of the fastest flips — raise it.")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.warningSoft.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))

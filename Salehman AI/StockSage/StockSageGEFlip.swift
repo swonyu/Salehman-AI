@@ -25,6 +25,24 @@ struct GEFlip: Sendable, Equatable, Identifiable {
     var id: Int { itemId }
 }
 
+/// One flip in a budget plan: how many units the gp budget funds and the realized
+/// gp/hour for that (possibly limit-or-budget-capped) quantity.
+struct BudgetedFlip: Sendable, Equatable, Identifiable {
+    let itemId: Int
+    let name: String
+    let units: Int          // funded units (≤ buy limit, ≤ what the budget can buy)
+    let capital: Int        // units × buyPrice — gp tied up in this flip
+    let gpPerHour: Double   // profitPerItem × units ÷ 4h (scales down when budget-capped)
+    var id: Int { itemId }
+}
+
+/// A budget allocation across the fastest flips.
+struct BudgetPlan: Sendable, Equatable {
+    let flips: [BudgetedFlip]
+    let totalCapital: Int
+    let totalGpPerHour: Double
+}
+
 enum StockSageGEFlip {
     nonisolated static let windowHours = 4.0      // GE buy limits reset every 4 hours
     nonisolated static let taxCap = 5_000_000     // GE tax is capped per item
@@ -58,5 +76,26 @@ enum StockSageGEFlip {
                           buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
+    }
+
+    /// "With N gp, flip these": greedily allocate the budget to the fastest flips
+    /// (gp/hour desc), buying up to each flip's 4h buy limit or whatever the remaining
+    /// gp affords — whichever is smaller. An ESTIMATE that assumes you fill what you buy;
+    /// real fills depend on volume, and it doesn't reserve gp for slippage.
+    nonisolated static func bestFlipsForBudget(_ flips: [GEFlip], budget: Int) -> BudgetPlan {
+        var remaining = Swift.max(0, budget)
+        var chosen: [BudgetedFlip] = []
+        for f in flips.sorted(by: { $0.gpPerHour > $1.gpPerHour }) {
+            guard remaining > 0, f.buyPrice > 0, f.buyLimit > 0, f.profitPerItem > 0 else { continue }
+            let units = Swift.min(f.buyLimit, remaining / f.buyPrice)   // integer units the gp can buy
+            guard units > 0 else { continue }
+            let capital = units * f.buyPrice
+            chosen.append(BudgetedFlip(itemId: f.itemId, name: f.name, units: units, capital: capital,
+                                       gpPerHour: Double(f.profitPerItem) * Double(units) / windowHours))
+            remaining -= capital
+        }
+        return BudgetPlan(flips: chosen,
+                          totalCapital: chosen.reduce(0) { $0 + $1.capital },
+                          totalGpPerHour: chosen.reduce(0.0) { $0 + $1.gpPerHour })
     }
 }

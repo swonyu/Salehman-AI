@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 08:45 +03 · Swift files: 220 · Swift LOC: 43493_
+_Generated: 2026-06-22 08:51 +03 · Swift files: 220 · Swift LOC: 43582_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9643,7 +9643,7 @@ enum StockSageExpectedValue {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageGEFlip.swift (62 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageGEFlip.swift (101 lines) =====
 ```swift
 import Foundation
 
@@ -9670,6 +9670,24 @@ struct GEFlip: Sendable, Equatable, Identifiable {
     let profitPerItem: Int   // sell − buy − tax
     let gpPerHour: Double     // profitPerItem × buyLimit ÷ 4h window
     var id: Int { itemId }
+}
+
+/// One flip in a budget plan: how many units the gp budget funds and the realized
+/// gp/hour for that (possibly limit-or-budget-capped) quantity.
+struct BudgetedFlip: Sendable, Equatable, Identifiable {
+    let itemId: Int
+    let name: String
+    let units: Int          // funded units (≤ buy limit, ≤ what the budget can buy)
+    let capital: Int        // units × buyPrice — gp tied up in this flip
+    let gpPerHour: Double   // profitPerItem × units ÷ 4h (scales down when budget-capped)
+    var id: Int { itemId }
+}
+
+/// A budget allocation across the fastest flips.
+struct BudgetPlan: Sendable, Equatable {
+    let flips: [BudgetedFlip]
+    let totalCapital: Int
+    let totalGpPerHour: Double
 }
 
 enum StockSageGEFlip {
@@ -9705,6 +9723,27 @@ enum StockSageGEFlip {
                           buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
+    }
+
+    /// "With N gp, flip these": greedily allocate the budget to the fastest flips
+    /// (gp/hour desc), buying up to each flip's 4h buy limit or whatever the remaining
+    /// gp affords — whichever is smaller. An ESTIMATE that assumes you fill what you buy;
+    /// real fills depend on volume, and it doesn't reserve gp for slippage.
+    nonisolated static func bestFlipsForBudget(_ flips: [GEFlip], budget: Int) -> BudgetPlan {
+        var remaining = Swift.max(0, budget)
+        var chosen: [BudgetedFlip] = []
+        for f in flips.sorted(by: { $0.gpPerHour > $1.gpPerHour }) {
+            guard remaining > 0, f.buyPrice > 0, f.buyLimit > 0, f.profitPerItem > 0 else { continue }
+            let units = Swift.min(f.buyLimit, remaining / f.buyPrice)   // integer units the gp can buy
+            guard units > 0 else { continue }
+            let capital = units * f.buyPrice
+            chosen.append(BudgetedFlip(itemId: f.itemId, name: f.name, units: units, capital: capital,
+                                       gpPerHour: Double(f.profitPerItem) * Double(units) / windowHours))
+            remaining -= capital
+        }
+        return BudgetPlan(flips: chosen,
+                          totalCapital: chosen.reduce(0) { $0 + $1.capital },
+                          totalGpPerHour: chosen.reduce(0.0) { $0 + $1.gpPerHour })
     }
 }
 ```
@@ -29423,7 +29462,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (379 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (407 lines) =====
 ```swift
 import SwiftUI
 
@@ -29443,6 +29482,8 @@ struct RuneScapeMarketView: View {
     // Dynamic-Type-aware small fonts (base size at default, scale up when enlarged).
     @ScaledMetric(relativeTo: .caption2) private var rsFont8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var rsFont9: CGFloat = 9
+    /// Gp budget for the "with N gp, flip these" optimizer (persisted; editable inline).
+    @AppStorage("geFlipBudgetGp") private var geBudgetText = "10000000"
 
     private var isSearching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
@@ -29651,6 +29692,32 @@ struct RuneScapeMarketView: View {
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
                     .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
+
+                // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
+                Divider().overlay(DS.Palette.surfaceStroke)
+                let budget = Int(geBudgetText) ?? 0
+                let plan = StockSageGEFlip.bestFlipsForBudget(flips, budget: budget)
+                HStack(spacing: 6) {
+                    Text("With").font(.system(size: rsFont9)).foregroundStyle(.secondary)
+                    TextField("gp", text: $geBudgetText)
+                        .font(.system(size: rsFont9, design: .monospaced)).foregroundStyle(.white)
+                        .textFieldStyle(.plain).frame(width: 90)
+                        .accessibilityLabel("Flip budget in gp")
+                    Text("gp:").font(.system(size: rsFont9)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if !plan.flips.isEmpty {
+                        Text("≈ \(RSFormat.gp(Int(plan.totalGpPerHour)))/hr")
+                            .font(.system(size: rsFont9, weight: .bold)).foregroundStyle(DS.Palette.successSoft)
+                    }
+                }
+                if !plan.flips.isEmpty {
+                    Text("Flip: " + plan.flips.map { "\($0.name) ×\($0.units.formatted())" }.joined(separator: ", ")
+                         + " — estimate; assumes you fill what you buy, fills depend on volume.")
+                        .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if budget > 0 {
+                    Text("Budget too small to fund a full unit of the fastest flips — raise it.")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.warningSoft.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -41317,7 +41384,7 @@ struct StockSageExpectedValueTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageGEFlipTests.swift (45 lines) =====
+===== FILE: Salehman AITests/StockSageGEFlipTests.swift (67 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -41353,6 +41420,28 @@ struct StockSageGEFlipTests {
         let gph = StockSageGEFlip.gpPerHour(buy: 1000, sell: 1100, buyLimit: 2_000_000_000)!
         #expect(gph.isFinite)
         #expect(abs(gph - 78.0 * 2_000_000_000 / 4) < 1.0)
+    }
+
+    private func flip(_ id: Int, _ name: String, buy: Int, limit: Int, profit: Int, gph: Double) -> GEFlip {
+        GEFlip(itemId: id, name: name, buyPrice: buy, sellPrice: buy + profit, buyLimit: limit,
+               taxPerItem: 0, profitPerItem: profit, gpPerHour: gph)
+    }
+
+    @Test func bestFlipsForBudgetGreedyByVelocity() {
+        let a = flip(1, "A", buy: 100, limit: 1000, profit: 28, gph: 7000)   // full gp/hr 28·1000/4
+        let b = flip(2, "B", buy: 1000, limit: 100, profit: 78, gph: 1950)   // full gp/hr 78·100/4
+        // Budget 50k → funds 500 units of A only (highest gp/hr first): 28·500/4 = 3500.
+        let p1 = StockSageGEFlip.bestFlipsForBudget([b, a], budget: 50_000)
+        #expect(p1.flips.map(\.itemId) == [1])
+        #expect(p1.flips[0].units == 500)
+        #expect(p1.totalCapital == 50_000)
+        #expect(abs(p1.totalGpPerHour - 3500) < 1e-9)
+        // Budget 200k → full A (1000, 7000) + full B (100, 1950) = 8950 gp/hr.
+        let p2 = StockSageGEFlip.bestFlipsForBudget([a, b], budget: 200_000)
+        #expect(p2.flips.map(\.itemId) == [1, 2])
+        #expect(abs(p2.totalGpPerHour - 8950) < 1e-9)
+        #expect(StockSageGEFlip.bestFlipsForBudget([a, b], budget: 0).flips.isEmpty)   // no budget
+        #expect(StockSageGEFlip.bestFlipsForBudget([b], budget: 500).flips.isEmpty)    // can't afford 1 unit
     }
 
     @Test func flipsRankByGpPerHourDescDroppingLosers() {
@@ -46432,7 +46521,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7487 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7492 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -52804,6 +52893,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageTradeGate.swift` (NEW), `Views/MarketsView.swift` (verdict block in the detail sheet), `Salehman AITests/StockSageTradeGateTests.swift` (NEW, 6 tests).
 **What & why:** Owner is away a week and wants NONSTOP work — pivoting from (exhausted) audits to BUILDING genuinely-new value that serves "make money" without touching the verified core. First: the discipline layer that stops bad trades BEFORE entry. `StockSageTradeGate.evaluate(hasStop:rewardToRisk:riskFraction:maxRiskFraction:maxCorrelation:daysToEarnings:)` runs five checks and returns a `TradeGateVerdict` (.clear / .caution / .blocked): **BLOCKS** no-stop (undefined risk), over-cap risk (>2% default), and negative skew (<1:1); **CAUTIONS** on thin skew (1–2:1), high book correlation (≥0.8), no target, or earnings ≤3 days; else clear. Decision precedence fail > warn > pass. Honesty: "a discipline checklist, NOT a profit signal — clearing it means the trade isn't obviously reckless, not that it wins." Wired into the buy-family idea detail sheet (verdict + per-check list, color/glyph coded, VoiceOver-combined), fed by the idea's stop/target, the sizer's risk %, and the symbol's earnings-days. 6 tests, HAND-VERIFIED: clean→clear; no-stop→blocked; 3%>2%→blocked; rr 0.8→blocked / 1.5→caution / 2.0→clear; corr 0.85 & earnings 2d→caution; fail trumps warn.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The owner gets one honest go/no-go before risking real money — risk control > signal, made concrete. Committed + pushed. NEXT (new-value backlog): budget-aware OSRS flip optimizer; portfolio rebalance-to-target; alert-decision engine. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Budget-aware OSRS flip optimizer ("with N gp, flip these")
+**Files:** `StockSage/StockSageGEFlip.swift` (+`BudgetedFlip`/`BudgetPlan`/`bestFlipsForBudget`), `Views/RuneScapeMarketView.swift` (budget field + plan), `Salehman AITests/StockSageGEFlipTests.swift` (+1 test).
+**What & why:** New-value build #2 — turns the fastest-flips list into an actionable allocation for the gp the owner actually has. `bestFlipsForBudget(_ flips:budget:)` greedily allocates the budget to the highest-gp/hour flips, buying `min(buyLimit, remainingGp / buyPrice)` units each, and reports per-flip units/capital/gp-hour + totals. The RuneScape fastest-flips strip gains an inline editable budget field (persisted) and a "Flip: A ×500, B ×100 → ≈X/hr" line. Honesty: estimate, assumes you fill what you buy, fills depend on volume, doesn't reserve gp for slippage; "budget too small" guidance when it can't fund a unit. 1 test, PYTHON-VERIFIED: 50k → A ×500 = 3500 gp/hr only; 200k → full A(7000)+B(1950) = 8950; budget 0 → empty; can't-afford-1-unit → empty.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The OSRS surface now answers "I have N gp — what's the fastest thing to do with it." 2 new-value features today (#84 gate, #85 budget optimizer). NEXT: portfolio rebalance-to-target. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 
