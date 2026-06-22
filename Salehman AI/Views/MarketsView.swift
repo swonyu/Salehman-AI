@@ -1160,6 +1160,26 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 if !journal.open.isEmpty {
+                    // Portfolio heat: total open $-at-risk vs account — the exposure ten
+                    // "1% risk" trades hide (they're 10% together).
+                    if let acct = StockSageInput.positiveAmount(sizerAccount),
+                       let heat = StockSagePortfolioHeat.compute(
+                            openTrades: journal.open.map { (shares: $0.shares, entry: $0.entry, stop: $0.stop) },
+                            accountSize: acct) {
+                        let hc: Color = heat.level == .hot ? DS.Palette.danger
+                            : (heat.level == .warm ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "flame.fill").font(.system(size: 11)).foregroundStyle(hc)
+                                Text("Portfolio heat — \(heat.verdict)")
+                                    .font(.system(size: mvFont9, weight: .medium)).foregroundStyle(hc)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Text(heat.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Portfolio heat: \(Int(heat.heatPct * 100)) percent of account at open risk across \(heat.openCount) trades")
+                    }
                     Text("Open").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(journal.open) { journalOpenRow($0) }
                 }

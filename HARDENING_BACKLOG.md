@@ -28,7 +28,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Line 89 already guards so the SAME strong state on consecutive polls does NOT re-alert (severity is therefore medium, not high). But line 94 `lastAlerted = nowStrong` drops any symbol that left strong, so a symbol that goes strong→hold→strong fires the identical alert again. Persist last-alerted per symbol across non-strong states; only reset on a genuine flip.
 **Why:** Repeats an alert the user already saw — erodes trust in the notification, the one push surface.
 
-### ⬜ #4 — PortfolioHeat: live open-risk exposure gauge (engine + Markets header)  [high/medium, feature]
+### ✅ DONE #4 — PortfolioHeat: live open-risk exposure gauge (engine + Markets header)  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSagePortfolioHeat.swift (new) + Views/MarketsView.swift
 **What:** New nonisolated StockSagePortfolioHeat.compute(openTrades:accountSize:) summing shares·|entry-stop| ÷ account → heatPct + verdict + caveat. Render on Markets header: green<5%, yellow<10%, red>10%, tap for per-trade breakdown. Dedup: merges the three input entries (engine, honesty-gap, UI).
 **Why:** Highest-value missing safeguard: 10 trades @1% = 10% live exposure that a gap hits all at once, with no current surface showing it. Caveat must note correlated gaps.

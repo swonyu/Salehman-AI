@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:33 +03 · Swift files: 238 · Swift LOC: 45140_
+_Generated: 2026-06-22 12:42 +03 · Swift files: 240 · Swift LOC: 45237_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11727,6 +11727,53 @@ enum StockSagePortfolioAnalytics {
             }
         }
         return pairs > 0 ? sum / Double(pairs) : 1
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSagePortfolioHeat.swift (43 lines) =====
+```swift
+import Foundation
+
+// MARK: - Portfolio heat (total open risk vs equity)
+//
+// Each trade sized at "1% risk" feels safe in isolation, but ten of them open at once is
+// 10% of the account on the line — exposure a single bad day (or a correlated gap) hits
+// all at once, and nothing else in the app surfaces it. Heat = Σ (shares · |entry−stop|)
+// ÷ account: the fraction of equity you'd lose if every open stop filled. Pure +
+// deterministic. Honest: assumes each stop fills AT its level — a gap can lose more.
+
+struct PortfolioHeat: Sendable, Equatable {
+    let dollarsAtRisk: Double   // Σ open risk in account currency
+    let accountSize: Double
+    let openCount: Int
+    nonisolated var heatPct: Double { accountSize > 0 ? dollarsAtRisk / accountSize : 0 }
+
+    enum Level: String, Sendable { case cool, warm, hot }
+    /// <5% cool, <10% warm, ≥10% hot.
+    nonisolated var level: Level { heatPct < 0.05 ? .cool : (heatPct < 0.10 ? .warm : .hot) }
+
+    nonisolated var verdict: String {
+        let p = Int((heatPct * 100).rounded())
+        switch level {
+        case .cool: return "\(p)% of account at open risk — room to add."
+        case .warm: return "\(p)% of account at open risk — getting full; add carefully."
+        case .hot:  return "\(p)% of account at open risk — heavy; one bad day hits hard, consider trimming."
+        }
+    }
+    nonisolated var caveat: String {
+        "Assumes each stop fills AT its level; a correlated gap can hit several at once for more than this."
+    }
+}
+
+enum StockSagePortfolioHeat {
+    /// Total open risk ÷ account. Each tuple is one OPEN trade (shares, entry, stop).
+    /// nil only when there's no account to measure against; zero open trades → 0% heat.
+    nonisolated static func compute(openTrades: [(shares: Double, entry: Double, stop: Double)],
+                                    accountSize: Double) -> PortfolioHeat? {
+        guard accountSize > 0 else { return nil }
+        let atRisk = openTrades.reduce(0.0) { $0 + Swift.max(0, $1.shares) * abs($1.entry - $1.stop) }
+        return PortfolioHeat(dollarsAtRisk: atRisk, accountSize: accountSize, openCount: openTrades.count)
     }
 }
 ```
@@ -26444,7 +26491,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3132 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3152 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -27608,6 +27655,26 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 if !journal.open.isEmpty {
+                    // Portfolio heat: total open $-at-risk vs account — the exposure ten
+                    // "1% risk" trades hide (they're 10% together).
+                    if let acct = StockSageInput.positiveAmount(sizerAccount),
+                       let heat = StockSagePortfolioHeat.compute(
+                            openTrades: journal.open.map { (shares: $0.shares, entry: $0.entry, stop: $0.stop) },
+                            accountSize: acct) {
+                        let hc: Color = heat.level == .hot ? DS.Palette.danger
+                            : (heat.level == .warm ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "flame.fill").font(.system(size: 11)).foregroundStyle(hc)
+                                Text("Portfolio heat — \(heat.verdict)")
+                                    .font(.system(size: mvFont9, weight: .medium)).foregroundStyle(hc)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Text(heat.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Portfolio heat: \(Int(heat.heatPct * 100)) percent of account at open risk across \(heat.openCount) trades")
+                    }
                     Text("Open").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(journal.open) { journalOpenRow($0) }
                 }
@@ -43851,6 +43918,44 @@ struct StockSagePortfolioBetaTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSagePortfolioHeatTests.swift (34 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Portfolio heat (pure)
+
+struct StockSagePortfolioHeatTests {
+    typealias H = StockSagePortfolioHeat
+
+    @Test func sumsOpenRiskAndLevels() {
+        // 10·|100−95| + 5·|200−180| = 50 + 100 = 150 on a 10k account → 1.5% → cool.
+        let h = H.compute(openTrades: [(10, 100, 95), (5, 200, 180)], accountSize: 10_000)!
+        #expect(abs(h.dollarsAtRisk - 150) < 1e-9)
+        #expect(abs(h.heatPct - 0.015) < 1e-9)
+        #expect(h.level == .cool && h.openCount == 2)
+        #expect(h.verdict.contains("room to add"))
+    }
+
+    @Test func warmAndHotBands() {
+        // 7% → warm.
+        #expect(H.compute(openTrades: [(70, 100, 90)], accountSize: 10_000)!.level == .warm)   // 70·10=700 → 7%
+        // 12% → hot.
+        let hot = H.compute(openTrades: [(120, 100, 90)], accountSize: 10_000)!                 // 120·10=1200 → 12%
+        #expect(hot.level == .hot)
+        #expect(hot.verdict.lowercased().contains("heavy"))
+        #expect(hot.caveat.lowercased().contains("gap"))
+    }
+
+    @Test func guardsAndEmpties() {
+        #expect(H.compute(openTrades: [], accountSize: 10_000)?.dollarsAtRisk == 0)   // no trades → 0% heat (valid)
+        #expect(H.compute(openTrades: [], accountSize: 10_000)?.level == .cool)
+        #expect(H.compute(openTrades: [(10, 100, 95)], accountSize: 0) == nil)        // no account → nil
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSagePortfolioTests.swift (67 lines) =====
 ```swift
 import Testing
@@ -48151,7 +48256,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7619 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7620 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54654,7 +54759,8 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Hardening #1 + #6 (honesty):** `Views/MarketsView`→`StockSage/StockSageExpectedValue.swift` — `MoneyVelocityCopy` playbook hardcoded "1%/trade" while `summary(fraction:)` modeled the drawdown brake at a VARIABLE fraction (label-vs-math drift, an honesty-floor violation at fraction≠0.01). Added `riskFraction` to `MoneyVelocitySummary` (defaulted nonisolated init so existing callers/3 tests still compile), threaded `fraction` through, and the playbook now renders `Int(riskFraction*100)%/trade`. +test: fraction 0.02 → "2%/trade", not "1%/trade". ✅ typecheck clean. Committed 46b4f2b.
 **Hardening #2 (bug):** `StockSage/StockSageJournal.swift` — `holdingPeriod` filtered wins (`>0`) and losses (`<0`), so a breakeven (scratch, profit==0) matched neither and silently vanished from the averages + counts, biasing the discipline read by an invisible sample. Fold scratch into the non-win bucket (`<= 0`) and relabel "losers"→"non-winners" (a scratch is not a loss). +test (exit==entry counts, days visible). Committed 0221437.
 **Hardening #3 (bug):** `StockSage/StockSageMonitor.swift` — `runCycle` did `lastAlerted = nowStrong`, dropping symbols that left "strong", so a strongBuy→hold→strongBuy round-trip re-fired the identical alert. Now MERGES (`for (sym,rec) in nowStrong { lastAlerted[sym] = rec }`) — keeps last-alerted state across non-strong states; a genuine flip (rec differs) still alerts. ✅ typecheck clean.
-**Result:** Top 3 confirmed honesty/correctness bugs fixed. NEXT: #5 boundary test sweep, #4 PortfolioHeat, #7 TimeStop. Loop continues autonomously.
+**Hardening #4 (feature — highest-value safeguard):** `StockSage/StockSagePortfolioHeat.swift` (NEW) + `Views/MarketsView.swift` (gauge above open journal positions) + `Salehman AITests/StockSagePortfolioHeatTests.swift` (NEW, 3 tests). Ten trades each "1% risk" are 10% of the account on the line at once — exposure nothing surfaced. `StockSagePortfolioHeat.compute(openTrades:accountSize:)` = Σ shares·|entry−stop| ÷ account → heatPct + level (cool<5% / warm<10% / hot≥10%) + verdict + a correlated-gap caveat. The journal shows "🔥 Portfolio heat — 12% of account at open risk — heavy; one bad day hits hard, consider trimming" colored by level. PYTHON-VERIFIED: 10·5+5·20=150→1.5% cool, 70·10=700→7% warm, 120·10=1200→12% hot, empty→0% cool, account 0→nil. ✅ typecheck clean.
+**Result:** Top 3 confirmed bugs + the #1 missing safeguard (PortfolioHeat) shipped. 50-agent sweep backlog in HARDENING_BACKLOG.md. NEXT: #5 boundary test sweep, #7 TimeStop. Loop continues autonomously at 4.7-min cadence.
 
 ---
 
@@ -57967,7 +58073,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Line 89 already guards so the SAME strong state on consecutive polls does NOT re-alert (severity is therefore medium, not high). But line 94 `lastAlerted = nowStrong` drops any symbol that left strong, so a symbol that goes strong→hold→strong fires the identical alert again. Persist last-alerted per symbol across non-strong states; only reset on a genuine flip.
 **Why:** Repeats an alert the user already saw — erodes trust in the notification, the one push surface.
 
-### ⬜ #4 — PortfolioHeat: live open-risk exposure gauge (engine + Markets header)  [high/medium, feature]
+### ✅ DONE #4 — PortfolioHeat: live open-risk exposure gauge (engine + Markets header)  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSagePortfolioHeat.swift (new) + Views/MarketsView.swift
 **What:** New nonisolated StockSagePortfolioHeat.compute(openTrades:accountSize:) summing shares·|entry-stop| ÷ account → heatPct + verdict + caveat. Render on Markets header: green<5%, yellow<10%, red>10%, tap for per-trade breakdown. Dedup: merges the three input entries (engine, honesty-gap, UI).
 **Why:** Highest-value missing safeguard: 10 trades @1% = 10% live exposure that a gap hits all at once, with no current surface showing it. Caveat must note correlated gaps.
