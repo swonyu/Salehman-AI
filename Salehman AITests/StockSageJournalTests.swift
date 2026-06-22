@@ -84,15 +84,25 @@ struct StockSageJournalTests {
         #expect(abs(h.avgLossDays - 31) < 1e-9)
         #expect(h.winCount == 2 && h.lossCount == 1)
         #expect(h.ridingLosers)
-        #expect(h.note.contains("ride losers"))
+        #expect(h.note.contains("ride non-winners"))
     }
 
     @Test func holdingPeriodGoodDisciplineAndEmpty() {
         // winners held long (20d), losers cut fast (3d) → not riding losers.
         let h = StockSageJournal.holdingPeriod([held(120, days: 20), held(90, days: 3)])!
         #expect(!h.ridingLosers)
-        #expect(h.note.contains("cut losers fast"))
+        #expect(h.note.contains("cut non-winners fast"))
         #expect(StockSageJournal.holdingPeriod([]) == nil)
+    }
+
+    @Test func holdingPeriodCountsBreakevenAsNonWinner() {
+        // exit 100 == entry 100 → a scratch (profit 0). It must count as a NON-winner,
+        // not silently vanish from the averages/counts.
+        let h = StockSageJournal.holdingPeriod([held(120, days: 5), held(100, days: 40)])!
+        #expect(h.winCount == 1)                    // only the +20 win
+        #expect(h.lossCount == 1)                   // the scratch folded into non-wins
+        #expect(abs(h.avgLossDays - 40) < 1e-9)     // its 40 days are not invisible
+        #expect(h.note.contains("non-winners"))
     }
 
     @Test func expectancyConfidenceBand() {

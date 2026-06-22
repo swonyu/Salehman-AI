@@ -18,7 +18,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** summary() (line 168) accepts fraction:Double=0.01 and computes worstRunDrawdownPct from it, but playbook() (line 186) takes no fraction and hardcodes "(losses) at 1%/trade ≈ -X%" at line 202. Called with fraction=0.02 the drawdown is computed at 2% while the label says 1%.
 **Why:** Direct label-vs-math drift on a RISK number — the exact honesty-floor violation the owner forbids. Confirmed in source.
 
-### ⬜ #2 — holdingPeriod silently excludes breakeven (realizedProfit==0) trades  [high/small, bug]
+### ✅ DONE #2 — holdingPeriod silently excludes breakeven (realizedProfit==0) trades  [high/small, bug]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Lines 370-371 filter wins as profit>0 and losses as profit<0; a closed trade with realizedProfit==0 matches neither and vanishes from avgWinDays/avgLossDays and the win/loss counts. Confirmed in source.
 **Why:** Biases the discipline metric by dropping a real holding-period sample invisibly. Add an avgBreakEvenDays bucket or fold breakeven into the non-win average.

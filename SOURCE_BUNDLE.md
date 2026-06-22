@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:28 +03 · Swift files: 238 · Swift LOC: 45123_
+_Generated: 2026-06-22 12:31 +03 · Swift files: 238 · Swift LOC: 45136_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10295,7 +10295,7 @@ enum StockSageInput {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageJournal.swift (596 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageJournal.swift (599 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -10465,10 +10465,10 @@ struct HoldingPeriod: Sendable, Equatable {
     nonisolated var ridingLosers: Bool { winCount > 0 && lossCount > 0 && avgWinDays < avgLossDays }
 
     nonisolated var note: String {
-        let base = String(format: "Avg hold: winners %.0fd vs losers %.0fd", avgWinDays, avgLossDays)
+        let base = String(format: "Avg hold: winners %.0fd vs non-winners %.0fd", avgWinDays, avgLossDays)
         guard winCount > 0, lossCount > 0 else { return base + "." }
-        if avgWinDays < avgLossDays { return base + " — you cut winners early / ride losers." }
-        if avgWinDays > avgLossDays { return base + " — you give winners room and cut losers fast." }
+        if avgWinDays < avgLossDays { return base + " — you cut winners early / ride non-winners." }
+        if avgWinDays > avgLossDays { return base + " — you give winners room and cut non-winners fast." }
         return base + "."
     }
 }
@@ -10666,8 +10666,11 @@ enum StockSageJournal {
             t.closedAt.map { $0.timeIntervalSince(t.openedAt) / 86_400 }
         }
         let closed = trades.filter { !$0.isOpen }
+        // Wins are strictly profitable; a BREAKEVEN (scratch, profit==0) is a NON-winner,
+        // not a loser — fold it into the non-win bucket (<= 0) so it isn't silently dropped
+        // from the averages/counts (which would bias the discipline read by an invisible sample).
         let wins = closed.filter { ($0.realizedProfit ?? 0) > 0 }.compactMap(days)
-        let losses = closed.filter { ($0.realizedProfit ?? 0) < 0 }.compactMap(days)
+        let losses = closed.filter { ($0.realizedProfit ?? 0) <= 0 }.compactMap(days)
         guard !wins.isEmpty || !losses.isEmpty else { return nil }
         return HoldingPeriod(
             avgWinDays: wins.isEmpty ? 0 : wins.reduce(0, +) / Double(wins.count),
@@ -42985,7 +42988,7 @@ struct StockSageJournalCSVTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageJournalTests.swift (367 lines) =====
+===== FILE: Salehman AITests/StockSageJournalTests.swift (377 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43073,15 +43076,25 @@ struct StockSageJournalTests {
         #expect(abs(h.avgLossDays - 31) < 1e-9)
         #expect(h.winCount == 2 && h.lossCount == 1)
         #expect(h.ridingLosers)
-        #expect(h.note.contains("ride losers"))
+        #expect(h.note.contains("ride non-winners"))
     }
 
     @Test func holdingPeriodGoodDisciplineAndEmpty() {
         // winners held long (20d), losers cut fast (3d) → not riding losers.
         let h = StockSageJournal.holdingPeriod([held(120, days: 20), held(90, days: 3)])!
         #expect(!h.ridingLosers)
-        #expect(h.note.contains("cut losers fast"))
+        #expect(h.note.contains("cut non-winners fast"))
         #expect(StockSageJournal.holdingPeriod([]) == nil)
+    }
+
+    @Test func holdingPeriodCountsBreakevenAsNonWinner() {
+        // exit 100 == entry 100 → a scratch (profit 0). It must count as a NON-winner,
+        // not silently vanish from the averages/counts.
+        let h = StockSageJournal.holdingPeriod([held(120, days: 5), held(100, days: 40)])!
+        #expect(h.winCount == 1)                    // only the +20 win
+        #expect(h.lossCount == 1)                   // the scratch folded into non-wins
+        #expect(abs(h.avgLossDays - 40) < 1e-9)     // its 40 days are not invisible
+        #expect(h.note.contains("non-winners"))
     }
 
     @Test func expectancyConfidenceBand() {
@@ -57937,7 +57950,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** summary() (line 168) accepts fraction:Double=0.01 and computes worstRunDrawdownPct from it, but playbook() (line 186) takes no fraction and hardcodes "(losses) at 1%/trade ≈ -X%" at line 202. Called with fraction=0.02 the drawdown is computed at 2% while the label says 1%.
 **Why:** Direct label-vs-math drift on a RISK number — the exact honesty-floor violation the owner forbids. Confirmed in source.
 
-### ⬜ #2 — holdingPeriod silently excludes breakeven (realizedProfit==0) trades  [high/small, bug]
+### ✅ DONE #2 — holdingPeriod silently excludes breakeven (realizedProfit==0) trades  [high/small, bug]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Lines 370-371 filter wins as profit>0 and losses as profit<0; a closed trade with realizedProfit==0 matches neither and vanishes from avgWinDays/avgLossDays and the win/loss counts. Confirmed in source.
 **Why:** Biases the discipline metric by dropping a real holding-period sample invisibly. Add an avgBreakEvenDays bucket or fold breakeven into the non-win average.

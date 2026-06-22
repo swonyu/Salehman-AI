@@ -166,10 +166,10 @@ struct HoldingPeriod: Sendable, Equatable {
     nonisolated var ridingLosers: Bool { winCount > 0 && lossCount > 0 && avgWinDays < avgLossDays }
 
     nonisolated var note: String {
-        let base = String(format: "Avg hold: winners %.0fd vs losers %.0fd", avgWinDays, avgLossDays)
+        let base = String(format: "Avg hold: winners %.0fd vs non-winners %.0fd", avgWinDays, avgLossDays)
         guard winCount > 0, lossCount > 0 else { return base + "." }
-        if avgWinDays < avgLossDays { return base + " — you cut winners early / ride losers." }
-        if avgWinDays > avgLossDays { return base + " — you give winners room and cut losers fast." }
+        if avgWinDays < avgLossDays { return base + " — you cut winners early / ride non-winners." }
+        if avgWinDays > avgLossDays { return base + " — you give winners room and cut non-winners fast." }
         return base + "."
     }
 }
@@ -367,8 +367,11 @@ enum StockSageJournal {
             t.closedAt.map { $0.timeIntervalSince(t.openedAt) / 86_400 }
         }
         let closed = trades.filter { !$0.isOpen }
+        // Wins are strictly profitable; a BREAKEVEN (scratch, profit==0) is a NON-winner,
+        // not a loser — fold it into the non-win bucket (<= 0) so it isn't silently dropped
+        // from the averages/counts (which would bias the discipline read by an invisible sample).
         let wins = closed.filter { ($0.realizedProfit ?? 0) > 0 }.compactMap(days)
-        let losses = closed.filter { ($0.realizedProfit ?? 0) < 0 }.compactMap(days)
+        let losses = closed.filter { ($0.realizedProfit ?? 0) <= 0 }.compactMap(days)
         guard !wins.isEmpty || !losses.isEmpty else { return nil }
         return HoldingPeriod(
             avgWinDays: wins.isEmpty ? 0 : wins.reduce(0, +) / Double(wins.count),
