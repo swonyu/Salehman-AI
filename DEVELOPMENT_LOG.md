@@ -6874,6 +6874,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · GRAND-SWEEP #2 (verified) — walk-forward decay (in-sample vs out-of-sample edge)
+**Files:** `StockSage/StockSageBacktester.swift` (+WalkForwardDecay + walkForwardDecay), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What:** the pooled Sharpe/avgR answers "did it work overall?" but HIDES whether the edge survived into unseen data. New pure splitter cuts the chronological trades into in-sample (first 70%) and out-of-sample (last 30%), reports isAvgR/oosAvgR + decayRatio (oosAvgR/isAvgR), with isRedFlag when a real in-sample edge keeps <half of it OOS (likely overfit). oosSignificant gates the OOS slice at n>=20. decayRatio 0 when isAvgR<=0 (nothing to decay from → never a false flag). ADDITIVE; trades are chronological (run() cursor only advances) so a positional split IS a time split.
+**Verify:** typecheck EXIT=0 (checked the real exit code, not grep-masked); python-verified then tested: stable +1R→ratio 1.0 no flag; front-loaded (14 win/6 lose)→ratio −1.0 redFlag, oosSignificant false; mild (kept 70%)→ratio 0.7 no flag; no-edge→ratio 0 no flag; <2 trades→zero struct.
+**Process note:** a background workflow draft agent errantly wrote StockSageAfterTax.swift (compile errors) into the repo at 20:07; caught it via diagnostics, removed it, and committed only my own files explicitly (not git add -A). Big workflows write into the live repo — must guard.
+**Result:** the backtester can now flag a rule that backtests beautifully and then bleeds out-of-sample. UI follow-up. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

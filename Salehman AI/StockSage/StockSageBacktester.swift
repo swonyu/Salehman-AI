@@ -62,6 +62,40 @@ struct BacktestResult: Sendable, Equatable {
                                                   totalR: 0, maxDrawdownR: 0, sharpe: 0, avgHoldBars: 0)
 }
 
+/// Edge DECAY across time: the pooled Sharpe/avgR answers "did this work overall?" but hides whether
+/// the edge survived into UNSEEN data. Split the (chronological) trades into in-sample (first part)
+/// and out-of-sample (last `oosFraction`) and compare avg R. A robust rule keeps most of its edge OOS;
+/// an overfit one collapses (ratio → 0 or negative). Suspicion, not proof — pair with sample size.
+struct WalkForwardDecay: Sendable, Equatable {
+    let isAvgR: Double
+    let oosAvgR: Double
+    let decayRatio: Double      // oosAvgR / isAvgR; 0 when isAvgR ≤ 0 (no in-sample edge to decay from)
+    let oosTrades: Int
+    let oosSignificant: Bool    // ≥ 20 OOS trades — below this the OOS slice is itself noise
+    /// Had a real in-sample edge but kept less than half of it out-of-sample → likely overfit.
+    nonisolated var isRedFlag: Bool { isAvgR > 0 && decayRatio < 0.5 }
+}
+
+extension StockSageBacktester {
+    /// Chronological in-sample/out-of-sample split of backtest trades. `trades` come out of run() in
+    /// entry order (the cursor only advances), so a positional split IS a time split — no re-sort.
+    nonisolated static func walkForwardDecay(_ trades: [BacktestTrade],
+                                             oosFraction: Double = 0.30) -> WalkForwardDecay {
+        let n = trades.count
+        guard n >= 2, oosFraction > 0, oosFraction < 1 else {
+            return WalkForwardDecay(isAvgR: 0, oosAvgR: 0, decayRatio: 0, oosTrades: 0, oosSignificant: false)
+        }
+        let oosCount = Swift.max(1, Int((Double(n) * oosFraction).rounded()))
+        let split = n - oosCount
+        let isSlice = trades[0..<split], oosSlice = trades[split..<n]
+        let isAvg = isSlice.isEmpty ? 0 : isSlice.map(\.r).reduce(0, +) / Double(isSlice.count)
+        let oosAvg = oosSlice.isEmpty ? 0 : oosSlice.map(\.r).reduce(0, +) / Double(oosSlice.count)
+        let ratio = isAvg > 0 ? oosAvg / isAvg : 0
+        return WalkForwardDecay(isAvgR: isAvg, oosAvgR: oosAvg, decayRatio: ratio,
+                                oosTrades: oosSlice.count, oosSignificant: oosSlice.count >= 20)
+    }
+}
+
 /// How an open position is closed in the backtest. `.allAtTarget` is the original
 /// behavior (ride to the fixed 2:1 target or the stop); the other modes are measured
 /// head-to-head against it via `run(_:exitMode:)`. (chandelierTrail / scaleOutLadder land

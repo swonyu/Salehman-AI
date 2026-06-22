@@ -30,6 +30,24 @@ struct StockSageBacktesterTests {
         #expect(abs(r.avgHoldBars - 1) < 1e-9)
     }
 
+    @Test func walkForwardDecayFlagsOverfitEdge() {
+        // Stable +1R edge → keeps its edge out-of-sample, ratio ~1, no flag.
+        let stable = StockSageBacktester.walkForwardDecay(Array(repeating: trade(1), count: 20))
+        #expect(abs(stable.decayRatio - 1) < 1e-9 && !stable.isRedFlag)
+        // Front-loaded: first 14 win, last 6 lose → edge collapses OOS → red flag.
+        let front = StockSageBacktester.walkForwardDecay((0..<20).map { trade($0 < 14 ? 1 : -1) })
+        #expect(front.isAvgR > 0 && front.oosAvgR < 0 && front.decayRatio < 0.5 && front.isRedFlag)
+        #expect(!front.oosSignificant)                       // 6 OOS trades < 20 → OOS itself is noise
+        // Mild decay (kept 70% of the edge) is honest but NOT flagged.
+        let mild = StockSageBacktester.walkForwardDecay((0..<20).map { trade($0 < 14 ? 1 : 0.7) })
+        #expect(abs(mild.decayRatio - 0.7) < 1e-9 && !mild.isRedFlag)
+        // No in-sample edge → ratio 0, never a red flag (nothing to decay from).
+        let noEdge = StockSageBacktester.walkForwardDecay(Array(repeating: trade(-1), count: 20))
+        #expect(noEdge.decayRatio == 0 && !noEdge.isRedFlag)
+        // Too few trades → zero struct, no crash.
+        #expect(StockSageBacktester.walkForwardDecay([trade(1)]).decayRatio == 0)
+    }
+
     @Test func summarizeEmptyAndSingleTradeAreSafe() {
         #expect(StockSageBacktester.summarize([]) == BacktestResult.empty)
         let one = StockSageBacktester.summarize([trade(2)])
