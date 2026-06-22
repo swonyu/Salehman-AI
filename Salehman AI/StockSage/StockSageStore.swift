@@ -656,11 +656,14 @@ final class StockSageStore: ObservableObject {
         let preservedUserRows = symbols.filter {
             $0.market == Self.userMarketLabel && !liveKeys.contains($0.symbol.uppercased())
         }
-        replaceAll(live + preservedUserRows, isSample: false)
+        let committed = live + preservedUserRows
+        replaceAll(committed, isSample: false)
         lastUpdated = Date()
-        // Persist this good snapshot for an instant last-good board next launch / offline.
+        // Persist EXACTLY what is on screen (incl. preserved user-added tickers the feed missed this
+        // cycle) — caching only `live` dropped them, so a tracked ticker vanished from the offline /
+        // last-good board on next launch.
         loadedFromCache = false
-        StockSageQuoteCache.from(symbols: live, savedAt: lastUpdated ?? Date()).save()
+        StockSageQuoteCache.from(symbols: committed, savedAt: lastUpdated ?? Date()).save()
     }
 
     func fetchAllSymbols() -> [StockSageSymbol] {

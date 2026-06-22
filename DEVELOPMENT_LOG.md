@@ -7084,6 +7084,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY-FLOW FIX — disk cache now persists user-added tickers (was dropping them offline)
+**Files:** `StockSage/StockSageStore.swift` (refresh commit/cache).
+**What (money-flow sweep wdzfepgrt #8, MED):** refresh() committed `live + preservedUserRows` to the on-screen board (line 659) but saved only `live` to the disk cache (line 663). So a user-added ticker the feed missed THIS cycle was visible now yet absent from the saved snapshot — it vanished from the offline / last-good board on the next launch. Fix: cache EXACTLY what was committed (`let committed = live + preservedUserRows`; save `committed`).
+**Verify:** typecheck EXIT=0. The persisted cache now matches the on-screen board, so a tracked ticker survives a relaunch / offline.
+**Remaining (MONEY_FLOW_AUDIT.md): #4 regime into velocity; #7 retry benchmark; #9 live per-position "act now"; #10 walkForwardDecay UI; #11 PSR row. OSRS #2 stale-as-live.**
+**Result:** the last-good board no longer silently loses a ticker the owner explicitly added. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
