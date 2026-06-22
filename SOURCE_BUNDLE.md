@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:54 +03 · Swift files: 236 · Swift LOC: 44968_
+_Generated: 2026-06-22 11:05 +03 · Swift files: 238 · Swift LOC: 45087_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11760,6 +11760,70 @@ enum StockSagePositionSizer {
 }
 ```
 
+===== FILE: Salehman AI/StockSage/StockSageQuoteCache.swift (60 lines) =====
+```swift
+import Foundation
+
+// MARK: - Disk quote cache
+//
+// Persists the last successful quote per symbol so the board shows real last-good
+// numbers INSTANTLY on launch (and stays useful offline) instead of fabricated sample
+// data, and a refresh re-hammers the feed less. The Codable model + the rebuild/extract
+// are pure (unit-tested); the actual file read/write is a thin Application-Support layer.
+// Honest: rebuilt rows are last-good as of `savedAt`, not live — the UI labels them so.
+
+nonisolated struct StockSageQuoteCache: Codable, Sendable, Equatable {
+    nonisolated struct Entry: Codable, Sendable, Equatable {
+        let symbol: String
+        let price: Double
+        let previousClose: Double
+        let time: Date
+    }
+    var entries: [Entry]
+    var savedAt: Date
+
+    /// Extract a cache from live symbol rows (the last quote per symbol). Touches the
+    /// MainActor-isolated quote models, so it runs on the main actor.
+    @MainActor static func from(symbols: [StockSageSymbol], savedAt: Date) -> StockSageQuoteCache {
+        let entries = symbols.compactMap { s -> Entry? in
+            guard let q = s.latest else { return nil }
+            return Entry(symbol: s.symbol, price: q.price, previousClose: q.previousPrice, time: q.time)
+        }
+        return StockSageQuoteCache(entries: entries, savedAt: savedAt)
+    }
+
+    /// Rebuild watchlist rows from the cache — two quotes (prior close, then last price) so
+    /// the change% reads identically to the live path — labeled via `marketFor`. Builds the
+    /// MainActor-isolated quote models, so it runs on the main actor.
+    @MainActor func symbols(marketFor: (String) -> String) -> [StockSageSymbol] {
+        entries.map { e in
+            StockSageSymbol(symbol: e.symbol, market: marketFor(e.symbol), quotes: [
+                StockSageQuote(price: e.previousClose, previousPrice: e.previousClose, time: e.time.addingTimeInterval(-86_400)),
+                StockSageQuote(price: e.price, previousPrice: e.previousClose, time: e.time),
+            ])
+        }
+    }
+
+    // MARK: Thin file I/O (Application Support)
+
+    nonisolated static func diskURL() -> URL? {
+        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory,
+                                                     in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        return dir.appendingPathComponent("salehman_quote_cache.json")
+    }
+
+    nonisolated static func load() -> StockSageQuoteCache? {
+        guard let url = diskURL(), let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(StockSageQuoteCache.self, from: data)
+    }
+
+    nonisolated func save() {
+        guard let url = Self.diskURL(), let data = try? JSONEncoder().encode(self) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+```
+
 ===== FILE: Salehman AI/StockSage/StockSageQuoteService.swift (354 lines) =====
 ```swift
 import Foundation
@@ -12807,7 +12871,7 @@ enum StockSageSignalEngine {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageStore.swift (658 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageStore.swift (679 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -12844,6 +12908,11 @@ final class StockSageStore: ObservableObject {
     /// Distinguishes the built-in demo data from a real feed, so the UI/tool can
     /// say "sample data" honestly rather than implying live quotes.
     @Published private(set) var isSampleData = true
+    /// True when the board is seeded from the DISK CACHE (real last-good prices) rather
+    /// than sample data or a live fetch — cleared on the next successful refresh.
+    @Published private(set) var loadedFromCache = false
+    /// When the cached snapshot was saved (for an honest "last good as of …" label).
+    @Published private(set) var cacheSavedAt: Date?
 
     /// When the last successful live refresh completed (nil = still on the sample
     /// seed). Drives the "updated HH:mm" status in the Markets header.
@@ -12881,6 +12950,19 @@ final class StockSageStore: ObservableObject {
     private init() {
         userSymbols = (UserDefaults.standard.array(forKey: Self.userSymbolsKey) as? [String]) ?? []
         seedSampleData()
+        loadCachedQuotes()   // prefer real last-good prices over the sample seed when we have them
+    }
+
+    /// Seed the board from the disk cache (last successful quotes) so launch shows real
+    /// last-good numbers instantly + works offline, instead of fabricated sample data.
+    private func loadCachedQuotes() {
+        guard let cache = StockSageQuoteCache.load(), !cache.entries.isEmpty else { return }
+        let labels = Dictionary(trackedDefs().map { ($0.symbol.uppercased(), $0.market) },
+                                uniquingKeysWith: { a, _ in a })
+        symbols = cache.symbols(marketFor: { labels[$0.uppercased()] ?? Self.userMarketLabel })
+        isSampleData = false
+        loadedFromCache = true
+        cacheSavedAt = cache.savedAt
     }
 
     /// Every tracked instrument definition: the curated universe + the user's
@@ -13425,6 +13507,9 @@ final class StockSageStore: ObservableObject {
         }
         replaceAll(live + preservedUserRows, isSample: false)
         lastUpdated = Date()
+        // Persist this good snapshot for an instant last-good board next launch / offline.
+        loadedFromCache = false
+        StockSageQuoteCache.from(symbols: live, savedAt: lastUpdated ?? Date()).save()
     }
 
     func fetchAllSymbols() -> [StockSageSymbol] {
@@ -26340,7 +26425,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3110 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3113 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26651,6 +26736,9 @@ struct MarketsView: View {
     private var headerSubtitle: String {
         if !store.isSampleData, let when = store.lastUpdated {
             return "Live · \(StockSageUniverse.marketCount) market groups · updated \(Self.timeFormatter.string(from: when))"
+        }
+        if store.loadedFromCache, let saved = store.cacheSavedAt {
+            return "Last-good (cached) as of \(Self.timeFormatter.string(from: saved)) · refresh for live"
         }
         return "Rule-based momentum signals · educational, not financial advice"
     }
@@ -43840,6 +43928,45 @@ struct StockSagePositionSizerTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageQuoteCacheTests.swift (35 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Disk quote cache (pure round-trip + rebuild)
+
+@MainActor
+struct StockSageQuoteCacheTests {
+
+    @Test func roundTripsAndRebuildsSymbolsLosslessly() {
+        let t = Date(timeIntervalSince1970: 1_700_000_000)
+        let cache = StockSageQuoteCache(entries: [
+            .init(symbol: "AAPL", price: 110, previousClose: 100, time: t),
+            .init(symbol: "BTC-USD", price: 50, previousClose: 50, time: t),
+        ], savedAt: t)
+
+        // Codable round-trip is exact (default Date strategy).
+        let data = try! JSONEncoder().encode(cache)
+        let back = try! JSONDecoder().decode(StockSageQuoteCache.self, from: data)
+        #expect(back == cache)
+
+        // Rebuild rows — latest price, change%, and label preserved.
+        let syms = cache.symbols(marketFor: { _ in "M" })
+        let aapl = syms.first { $0.symbol == "AAPL" }!
+        #expect(aapl.latest?.price == 110)
+        #expect(abs((aapl.latest?.changePercent ?? 0) - 10) < 1e-9)   // (110−100)/100 = 10%
+        #expect(aapl.market == "M")
+
+        // from(symbols:) is the inverse of symbols(marketFor:).
+        let rebuilt = StockSageQuoteCache.from(symbols: syms, savedAt: t)
+        #expect(rebuilt.entries.count == 2)
+        #expect(rebuilt.entries.first { $0.symbol == "AAPL" }?.price == 110)
+        #expect(rebuilt.entries.first { $0.symbol == "AAPL" }?.previousClose == 100)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageRebalanceTests.swift (49 lines) =====
 ```swift
 import Testing
@@ -47971,7 +48098,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7602 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7607 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54459,6 +54586,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Deferred (smaller follow-up):** the UI "temporarily rate-limited vs broken" LABEL needs a FetchOutcome enum threaded up through fetchQuotes/fetchHistories to ~7 callers — left for a focused pass so this stays low-risk.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog ~20/32 (core of #5). NEXT: #11 disk cache (offline last-good) / #21 journal a11y. Committed + pushed.
 
+## 2026-06-22 · Backlog #11: Disk quote cache (instant last-good board + offline)
+**Files:** `StockSage/StockSageQuoteCache.swift` (NEW), `StockSage/StockSageStore.swift` (load on init + save after refresh + flags), `Views/MarketsView.swift` ("last-good (cached)" banner), `Salehman AITests/StockSageQuoteCacheTests.swift` (NEW, 1 test).
+**What & why:** On launch the board showed fabricated SAMPLE data until a live fetch landed; offline it stayed sample forever. Added `StockSageQuoteCache` — a `nonisolated` Codable model (entries: symbol/price/prevClose/time + savedAt) with pure `from(symbols:)` / `symbols(marketFor:)` (rebuilds two-quote rows so change% matches the live path) and a thin Application-Support JSON load/save. Store: `loadCachedQuotes()` in init prefers real last-good prices over the sample seed (sets `loadedFromCache`/`cacheSavedAt`); `refreshLiveQuotes` saves the snapshot after success. The header reads "Last-good (cached) as of HH:mm · refresh for live" until a live fetch replaces it. **Isolation:** the quote models are MainActor-isolated, so `from`/`symbols` are `@MainActor` while the struct + Codable + file I/O are `nonisolated` (load/save work off the main actor). 1 test (MainActor), HAND-VERIFIED: Codable round-trip exact; rebuild preserves price 110 + change% 10% ((110−100)/100); `from` is the inverse (price 110, prevClose 100).
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 21/32. Launch is now instant + offline-useful with honest cached labeling. NEXT: #21 journal a11y / #25 watchlist-scoped Monitor. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57891,7 +58023,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** This is the lazy-analysis backbone for 'list all stocks' that already exists in code but has no surface. Add a 'Browse markets' sheet: paginated/sectioned list over catalog, filter by asset class/region, preview last quote, one-tap add (which lazily fetches just that quote). No change to the per-symbol history feed cost — see universeRecommendation.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:276-339; Salehman AI/Views/MarketsView.swift:1602-1660
 
-### ⬜ #11 — Disk cache for quotes + recent histories (offline/last-good + faster re-open)  [high/medium, Data/Persistence/perf]
+### ✅ DONE #11 — Disk cache for quotes + recent histories (offline/last-good + faster re-open)  [high/medium, Data/Persistence/perf]
 **What:** Quotes and histories live only in memory. Cold launch with no/slow network shows sample data; refreshIdeas re-downloads ~250-symbol 1-year history (O(n) bandwidth) every time with no resume. No idea-advice cache keyed by symbol+price-hash.
 **Why:** Caching unlocks: offline 'Last updated HH:mm' instead of demo data, resume after a dropped fetch, instant re-open, and graceful partial degradation — and it's the prerequisite for lazy catalog analysis. Persist last-good quotes + top-N histories via JSONEncoder/FileManager; add a 4h TTL idea cache with 'Quick' (cached) vs 'Full' (cache-bust) modes.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/StockSage/StockSageStore.swift:538-582

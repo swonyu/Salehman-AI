@@ -33,6 +33,11 @@ final class StockSageStore: ObservableObject {
     /// Distinguishes the built-in demo data from a real feed, so the UI/tool can
     /// say "sample data" honestly rather than implying live quotes.
     @Published private(set) var isSampleData = true
+    /// True when the board is seeded from the DISK CACHE (real last-good prices) rather
+    /// than sample data or a live fetch — cleared on the next successful refresh.
+    @Published private(set) var loadedFromCache = false
+    /// When the cached snapshot was saved (for an honest "last good as of …" label).
+    @Published private(set) var cacheSavedAt: Date?
 
     /// When the last successful live refresh completed (nil = still on the sample
     /// seed). Drives the "updated HH:mm" status in the Markets header.
@@ -70,6 +75,19 @@ final class StockSageStore: ObservableObject {
     private init() {
         userSymbols = (UserDefaults.standard.array(forKey: Self.userSymbolsKey) as? [String]) ?? []
         seedSampleData()
+        loadCachedQuotes()   // prefer real last-good prices over the sample seed when we have them
+    }
+
+    /// Seed the board from the disk cache (last successful quotes) so launch shows real
+    /// last-good numbers instantly + works offline, instead of fabricated sample data.
+    private func loadCachedQuotes() {
+        guard let cache = StockSageQuoteCache.load(), !cache.entries.isEmpty else { return }
+        let labels = Dictionary(trackedDefs().map { ($0.symbol.uppercased(), $0.market) },
+                                uniquingKeysWith: { a, _ in a })
+        symbols = cache.symbols(marketFor: { labels[$0.uppercased()] ?? Self.userMarketLabel })
+        isSampleData = false
+        loadedFromCache = true
+        cacheSavedAt = cache.savedAt
     }
 
     /// Every tracked instrument definition: the curated universe + the user's
@@ -614,6 +632,9 @@ final class StockSageStore: ObservableObject {
         }
         replaceAll(live + preservedUserRows, isSample: false)
         lastUpdated = Date()
+        // Persist this good snapshot for an instant last-good board next launch / offline.
+        loadedFromCache = false
+        StockSageQuoteCache.from(symbols: live, savedAt: lastUpdated ?? Date()).save()
     }
 
     func fetchAllSymbols() -> [StockSageSymbol] {

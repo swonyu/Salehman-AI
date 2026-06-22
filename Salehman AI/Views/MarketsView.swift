@@ -308,6 +308,9 @@ struct MarketsView: View {
         if !store.isSampleData, let when = store.lastUpdated {
             return "Live · \(StockSageUniverse.marketCount) market groups · updated \(Self.timeFormatter.string(from: when))"
         }
+        if store.loadedFromCache, let saved = store.cacheSavedAt {
+            return "Last-good (cached) as of \(Self.timeFormatter.string(from: saved)) · refresh for live"
+        }
         return "Rule-based momentum signals · educational, not financial advice"
     }
 

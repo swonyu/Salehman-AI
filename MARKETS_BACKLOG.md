@@ -74,7 +74,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** This is the lazy-analysis backbone for 'list all stocks' that already exists in code but has no surface. Add a 'Browse markets' sheet: paginated/sectioned list over catalog, filter by asset class/region, preview last quote, one-tap add (which lazily fetches just that quote). No change to the per-symbol history feed cost — see universeRecommendation.
 **Files:** Salehman AI/StockSage/StockSageQuoteService.swift:276-339; Salehman AI/Views/MarketsView.swift:1602-1660
 
-### ⬜ #11 — Disk cache for quotes + recent histories (offline/last-good + faster re-open)  [high/medium, Data/Persistence/perf]
+### ✅ DONE #11 — Disk cache for quotes + recent histories (offline/last-good + faster re-open)  [high/medium, Data/Persistence/perf]
 **What:** Quotes and histories live only in memory. Cold launch with no/slow network shows sample data; refreshIdeas re-downloads ~250-symbol 1-year history (O(n) bandwidth) every time with no resume. No idea-advice cache keyed by symbol+price-hash.
 **Why:** Caching unlocks: offline 'Last updated HH:mm' instead of demo data, resume after a dropped fetch, instant re-open, and graceful partial degradation — and it's the prerequisite for lazy catalog analysis. Persist last-good quotes + top-N histories via JSONEncoder/FileManager; add a 4h TTL idea cache with 'Quick' (cached) vs 'Full' (cache-bust) modes.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/StockSage/StockSageStore.swift:538-582

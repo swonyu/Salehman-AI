@@ -6485,6 +6485,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Deferred (smaller follow-up):** the UI "temporarily rate-limited vs broken" LABEL needs a FetchOutcome enum threaded up through fetchQuotes/fetchHistories to ~7 callers — left for a focused pass so this stays low-risk.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog ~20/32 (core of #5). NEXT: #11 disk cache (offline last-good) / #21 journal a11y. Committed + pushed.
 
+## 2026-06-22 · Backlog #11: Disk quote cache (instant last-good board + offline)
+**Files:** `StockSage/StockSageQuoteCache.swift` (NEW), `StockSage/StockSageStore.swift` (load on init + save after refresh + flags), `Views/MarketsView.swift` ("last-good (cached)" banner), `Salehman AITests/StockSageQuoteCacheTests.swift` (NEW, 1 test).
+**What & why:** On launch the board showed fabricated SAMPLE data until a live fetch landed; offline it stayed sample forever. Added `StockSageQuoteCache` — a `nonisolated` Codable model (entries: symbol/price/prevClose/time + savedAt) with pure `from(symbols:)` / `symbols(marketFor:)` (rebuilds two-quote rows so change% matches the live path) and a thin Application-Support JSON load/save. Store: `loadCachedQuotes()` in init prefers real last-good prices over the sample seed (sets `loadedFromCache`/`cacheSavedAt`); `refreshLiveQuotes` saves the snapshot after success. The header reads "Last-good (cached) as of HH:mm · refresh for live" until a live fetch replaces it. **Isolation:** the quote models are MainActor-isolated, so `from`/`symbols` are `@MainActor` while the struct + Codable + file I/O are `nonisolated` (load/save work off the main actor). 1 test (MainActor), HAND-VERIFIED: Codable round-trip exact; rebuild preserves price 110 + change% 10% ((110−100)/100); `from` is the inverse (price 110, prevClose 100).
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 21/32. Launch is now instant + offline-useful with honest cached labeling. NEXT: #21 journal a11y / #25 watchlist-scoped Monitor. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
