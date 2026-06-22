@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 07:34 +03 · Swift files: 218 · Swift LOC: 43292_
+_Generated: 2026-06-22 07:46 +03 · Swift files: 218 · Swift LOC: 43302_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -25455,7 +25455,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2822 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2826 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26272,6 +26272,8 @@ struct MarketsView: View {
                                         .frame(width: 26, height: 18)
                                         .overlay(Text(String(format: "%.1f", v))
                                             .font(.system(size: 7, weight: .bold)).foregroundStyle(.white.opacity(0.92)))
+                                        .accessibilityElement(children: .ignore)
+                                        .accessibilityLabel("\(c.symbols[i]) vs \(c.symbols[j]), correlation \(String(format: "%.1f", v))")
                                 }
                             }
                         }
@@ -27511,9 +27513,10 @@ struct MarketsView: View {
                         }
                     }
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
-                        Text(String(format: "Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
-                            .font(.system(size: 9, weight: .medium))
+                        Text(String(format: "⚠︎ Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at 1 percent risk is about %.1f percent drawdown. Size to survive variance.", losses, ddPct * 100))
                     }
                     Text(MoneyVelocityCopy.summary)
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -27574,6 +27577,7 @@ struct MarketsView: View {
                                 Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
                             }.contentShape(Rectangle())
                         }.buttonStyle(LuxPressStyle())
+                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {
@@ -29276,7 +29280,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (370 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (376 lines) =====
 ```swift
 import SwiftUI
 
@@ -29571,7 +29575,13 @@ struct RuneScapeMarketView: View {
         }
         .help(listing.item.examine)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")")
+        .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")"
+            + (price.margin.map { ", margin \(RSFormat.gp($0))" } ?? "")
+            + ({ () -> String in
+                guard let b = price.low, let s = price.high, let lim = listing.item.buyLimit,
+                      let gph = StockSageGEFlip.gpPerHour(buy: b, sell: s, buyLimit: lim) else { return "" }
+                return ", about \(RSFormat.gp(Int(gph))) per hour"
+            }()))
     }
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
@@ -46223,7 +46233,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7466 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7476 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -52574,6 +52584,16 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `PROJECT_CONTEXT.md`, `MARKETS_INTELLIGENCE_RESEARCH.md`.
 **What & why:** Ran a 6-agent security/secrets audit (deterministic grep pre-sweep + adversarial flow analysis) → **0 raw, 0 confirmed**. Verified: API keys live ONLY in the macOS Keychain (`LLM/KeychainStore.swift`), are sent as Authorization HEADERS (never URL query params), and never reach a log/print/error string/UserDefaults/SOURCE_BUNDLE; `.auto` is local-first and no free mode silently calls a paid API (the NVIDIA-NIM free-DeepSeek route is free-tier). The previously-exposed DeepSeek key was already removed from source (2026-06-12). **Secrets posture VERIFIED CLEAN.** Also fixed the canonical docs' stale "GE tax default 1%" → "2% (live since 2025-05-29)" to match the code fix.
 **Result:** 39 review/audit workflows, 64 confirmed defects fixed (security added 0 — clean). Committed + pushed the full body. Autonomous /loop — heavy verification mode.
+
+## 2026-06-21 · Accessibility audit (30 agents, 1.08M tok) → 23 findings; safe subset applied
+**Files:** `Views/MarketsView.swift`, `Views/RuneScapeMarketView.swift`.
+**What & why:** Audited the Markets money-velocity surfaces for legibility/VoiceOver/color-blind access (an app the owner uses daily). 23 confirmed (1 high, 15 medium, 7 low), dominated by fixed sub-9pt fonts (ignore Dynamic Type), color-only red/green cues, and VoiceOver-invisible tappable cards/charts. **Applied the SAFE, zero/low-visual-risk subset** (the rest is a deliberate-design font change I can't visually verify in-sandbox — see TODO):
+- **[HIGH] Drawdown brake** — added a ⚠︎ glyph (color-blind backup so the warning isn't amber-only), bumped 9→10pt semibold, and a spoken `.accessibilityLabel` so VoiceOver announces the worst-run drawdown %.
+- **Fast-lane rows** — `.accessibilityLabel` ("SYM: +R/day velocity, 24/7 volatile, tap for the plan").
+- **Correlation heatmap** — per-cell `.accessibilityElement`/`.accessibilityLabel` ("AAPL vs MSFT, correlation 0.8") — the grid was VoiceOver-invisible.
+- **RuneScape listing rows** — enriched the existing label with margin + gp/hour (the primary money info VoiceOver was omitting).
+**⚠️ TODO (tracked, owner chip):** the bulk of the findings are fixed sub-9pt money/caveat fonts (`$/week`, mover, weekly-R, concentration, compounding/what-if caveats, R-distribution counts, heatmap 7pt cells) that ignore Dynamic Type. Migrating those to scalable text styles changes a dense, deliberately-tuned layout — it needs a running build to eyeball, so it's deferred to the owner rather than done blind.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 40 review/audit workflows. Money-velocity surfaces are now VoiceOver-navigable and the key risk warning is color-blind-safe. Autonomous /loop — heavy verification mode.
 
 ---
 

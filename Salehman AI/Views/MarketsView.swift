@@ -813,6 +813,8 @@ struct MarketsView: View {
                                         .frame(width: 26, height: 18)
                                         .overlay(Text(String(format: "%.1f", v))
                                             .font(.system(size: 7, weight: .bold)).foregroundStyle(.white.opacity(0.92)))
+                                        .accessibilityElement(children: .ignore)
+                                        .accessibilityLabel("\(c.symbols[i]) vs \(c.symbols[j]), correlation \(String(format: "%.1f", v))")
                                 }
                             }
                         }
@@ -2052,9 +2054,10 @@ struct MarketsView: View {
                         }
                     }
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
-                        Text(String(format: "Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
-                            .font(.system(size: 9, weight: .medium))
+                        Text(String(format: "⚠︎ Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at 1 percent risk is about %.1f percent drawdown. Size to survive variance.", losses, ddPct * 100))
                     }
                     Text(MoneyVelocityCopy.summary)
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -2115,6 +2118,7 @@ struct MarketsView: View {
                                 Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
                             }.contentShape(Rectangle())
                         }.buttonStyle(LuxPressStyle())
+                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {

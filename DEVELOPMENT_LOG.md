@@ -6349,6 +6349,16 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Ran a 6-agent security/secrets audit (deterministic grep pre-sweep + adversarial flow analysis) → **0 raw, 0 confirmed**. Verified: API keys live ONLY in the macOS Keychain (`LLM/KeychainStore.swift`), are sent as Authorization HEADERS (never URL query params), and never reach a log/print/error string/UserDefaults/SOURCE_BUNDLE; `.auto` is local-first and no free mode silently calls a paid API (the NVIDIA-NIM free-DeepSeek route is free-tier). The previously-exposed DeepSeek key was already removed from source (2026-06-12). **Secrets posture VERIFIED CLEAN.** Also fixed the canonical docs' stale "GE tax default 1%" → "2% (live since 2025-05-29)" to match the code fix.
 **Result:** 39 review/audit workflows, 64 confirmed defects fixed (security added 0 — clean). Committed + pushed the full body. Autonomous /loop — heavy verification mode.
 
+## 2026-06-21 · Accessibility audit (30 agents, 1.08M tok) → 23 findings; safe subset applied
+**Files:** `Views/MarketsView.swift`, `Views/RuneScapeMarketView.swift`.
+**What & why:** Audited the Markets money-velocity surfaces for legibility/VoiceOver/color-blind access (an app the owner uses daily). 23 confirmed (1 high, 15 medium, 7 low), dominated by fixed sub-9pt fonts (ignore Dynamic Type), color-only red/green cues, and VoiceOver-invisible tappable cards/charts. **Applied the SAFE, zero/low-visual-risk subset** (the rest is a deliberate-design font change I can't visually verify in-sandbox — see TODO):
+- **[HIGH] Drawdown brake** — added a ⚠︎ glyph (color-blind backup so the warning isn't amber-only), bumped 9→10pt semibold, and a spoken `.accessibilityLabel` so VoiceOver announces the worst-run drawdown %.
+- **Fast-lane rows** — `.accessibilityLabel` ("SYM: +R/day velocity, 24/7 volatile, tap for the plan").
+- **Correlation heatmap** — per-cell `.accessibilityElement`/`.accessibilityLabel` ("AAPL vs MSFT, correlation 0.8") — the grid was VoiceOver-invisible.
+- **RuneScape listing rows** — enriched the existing label with margin + gp/hour (the primary money info VoiceOver was omitting).
+**⚠️ TODO (tracked, owner chip):** the bulk of the findings are fixed sub-9pt money/caveat fonts (`$/week`, mover, weekly-R, concentration, compounding/what-if caveats, R-distribution counts, heatmap 7pt cells) that ignore Dynamic Type. Migrating those to scalable text styles changes a dense, deliberately-tuned layout — it needs a running build to eyeball, so it's deferred to the owner rather than done blind.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 40 review/audit workflows. Money-velocity surfaces are now VoiceOver-navigable and the key risk warning is color-blind-safe. Autonomous /loop — heavy verification mode.
+
 ---
 
 ## Standing notes / known issues

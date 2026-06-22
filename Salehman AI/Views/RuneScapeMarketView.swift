@@ -291,7 +291,13 @@ struct RuneScapeMarketView: View {
         }
         .help(listing.item.examine)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")")
+        .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")"
+            + (price.margin.map { ", margin \(RSFormat.gp($0))" } ?? "")
+            + ({ () -> String in
+                guard let b = price.low, let s = price.high, let lim = listing.item.buyLimit,
+                      let gph = StockSageGEFlip.gpPerHour(buy: b, sell: s, buyLimit: lim) else { return "" }
+                return ", about \(RSFormat.gp(Int(gph))) per hour"
+            }()))
     }
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
