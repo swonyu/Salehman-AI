@@ -351,7 +351,12 @@ final class StockSageStore: ObservableObject {
             return
         }
         let results: [BacktestResult] = await Task.detached {
-            symbols.compactMap { histories[$0.uppercased()] }.map { StockSageBacktester.run($0) }
+            symbols.compactMap { sym -> BacktestResult? in
+                guard let h = histories[sym.uppercased()] else { return nil }
+                // Charge each symbol's asset-class round-trip cost so the strategy result
+                // is what you'd net, not a frictionless fantasy.
+                return StockSageBacktester.run(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym))
+            }
         }.value
         strategyBacktest = StockSageStrategyBacktest.aggregate(results)
     }
@@ -561,7 +566,9 @@ final class StockSageStore: ObservableObject {
             return
         }
         // The walk-forward is O(bars²) (advisor re-run each bar) — keep it off-main.
-        backtest = await Task.detached(priority: .userInitiated) { StockSageBacktester.run(history) }.value
+        // Charge the symbol's asset-class round-trip cost so the equity curve is honest.
+        let btCosts = StockSageNetEdge.defaultCosts(forSymbol: symbol)
+        backtest = await Task.detached(priority: .userInitiated) { StockSageBacktester.run(history, costs: btCosts) }.value
         // Buy-and-hold underwater curve over the same 5y window (cheap, O(n)).
         underwater = StockSageDrawdown.underwater(history.closes)
     }

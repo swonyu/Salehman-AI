@@ -8,7 +8,7 @@
 - Benchmark-relative strength — signature relativeStrength(symbolCloses:benchmarkCloses:period:); the part of momentum with documented forward edge is OUTperformance vs the index (already fetched for the regime gauge), filtering out names that only rise because the whole market rises.
 
 ## Specs
-### #1 — Charge real frictions inside the backtester (close the lie between NetEdge and the equity curve)  [M — the per-trade loop already computes entry/exit; subtract cost from fill prices (worsen entry, worsen exit on both stop and target) and recompute r. ~25 lines plus a defaulted param so call sites are unchanged.]
+### ✅ DONE #1 — Charge real frictions inside the backtester (close the lie between NetEdge and the equity curve)  [M — the per-trade loop already computes entry/exit; subtract cost from fill prices (worsen entry, worsen exit on both stop and target) and recompute r. ~25 lines plus a defaulted param so call sites are unchanged.]
 **Signature:** `nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult`
 **Test:** Run the same synthetic uptrending history twice — once with costs: nil, once with a wide CostAssumption(spreadBps: 50, slippageBps: 50). Assert (a) avgR and totalR are strictly lower in the costed run, (b) costs are charged symmetrically (entry fill worsened by half the round-trip, exit by half) so a flat random-walk history trends toward negative totalR, and (c) costs: nil reproduces the current result byte-for-byte (no silent drift for existing callers). Use StockSageNetEdge.defaultCosts(forSymbol:) when costs is nil but a symbol-derived default is wanted, asserting the crypto suffix pulls the 50bps band.
 

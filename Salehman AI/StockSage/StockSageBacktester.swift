@@ -67,7 +67,13 @@ enum StockSageBacktester {
     /// Walk forward over `history`. `warmup` bars are skipped so the 200-day trend
     /// and the other indicators are valid before the first decision (use a multi-year
     /// history so there's room to trade after the warmup).
-    nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200) -> BacktestResult {
+    /// `costs` (optional) charges a round-trip friction (spread+slippage, in bps of the
+    /// fill price) against EVERY trade's R — so the equity curve reflects what you'd
+    /// actually net, not a frictionless fantasy. nil = the original cost-free result,
+    /// byte-for-byte (existing callers/tests unchanged). Pass e.g.
+    /// `StockSageNetEdge.defaultCosts(forSymbol:)` for an asset-class default.
+    nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
         guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return .empty }
@@ -104,7 +110,10 @@ enum StockSageBacktester {
                 j += 1
             }
 
-            let r = (exitPrice - entry) / risk
+            // Round-trip friction (in price units) eats into the realized R — the very
+            // spread/slippage NetEdge models but the equity curve used to ignore.
+            let costPerShare = costs.map { Swift.max(0, $0.roundTripBps) / 10_000 * entry } ?? 0
+            let r = (exitPrice - entry - costPerShare) / risk
             trades.append(BacktestTrade(entryIndex: entryIdx, exitIndex: exitIdx,
                                         entry: entry, exit: exitPrice, r: r, outcome: outcome))
             i = exitIdx + 1   // one position at a time — resume after the close

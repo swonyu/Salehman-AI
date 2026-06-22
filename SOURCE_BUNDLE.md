@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:04 +03 · Swift files: 246 · Swift LOC: 45550_
+_Generated: 2026-06-22 14:17 +03 · Swift files: 246 · Swift LOC: 45587_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -7767,7 +7767,7 @@ nonisolated final class ResumeBox: @unchecked Sendable {
 }
 ```
 
-===== FILE: Salehman AI/Persistence/JSONFileStore.swift (35 lines) =====
+===== FILE: Salehman AI/Persistence/JSONFileStore.swift (36 lines) =====
 ```swift
 import Foundation
 
@@ -7786,7 +7786,8 @@ nonisolated final class JSONFileStore<T: Codable> {
 
     init(filename: String, baseDirectory: URL? = nil) {
         let base = baseDirectory
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            ?? (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? fileManager.temporaryDirectory)
                 .appendingPathComponent("SalehmanAI", isDirectory: true)
         try? fileManager.createDirectory(at: base, withIntermediateDirectories: true)
         self.fileURL = base.appendingPathComponent(filename)
@@ -8954,7 +8955,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (147 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (156 lines) =====
 ```swift
 import Foundation
 
@@ -9025,7 +9026,13 @@ enum StockSageBacktester {
     /// Walk forward over `history`. `warmup` bars are skipped so the 200-day trend
     /// and the other indicators are valid before the first decision (use a multi-year
     /// history so there's room to trade after the warmup).
-    nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200) -> BacktestResult {
+    /// `costs` (optional) charges a round-trip friction (spread+slippage, in bps of the
+    /// fill price) against EVERY trade's R — so the equity curve reflects what you'd
+    /// actually net, not a frictionless fantasy. nil = the original cost-free result,
+    /// byte-for-byte (existing callers/tests unchanged). Pass e.g.
+    /// `StockSageNetEdge.defaultCosts(forSymbol:)` for an asset-class default.
+    nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
         guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return .empty }
@@ -9062,7 +9069,10 @@ enum StockSageBacktester {
                 j += 1
             }
 
-            let r = (exitPrice - entry) / risk
+            // Round-trip friction (in price units) eats into the realized R — the very
+            // spread/slippage NetEdge models but the equity curve used to ignore.
+            let costPerShare = costs.map { Swift.max(0, $0.roundTripBps) / 10_000 * entry } ?? 0
+            let r = (exitPrice - entry - costPerShare) / risk
             trades.append(BacktestTrade(entryIndex: entryIdx, exitIndex: exitIdx,
                                         entry: entry, exit: exitPrice, r: r, outcome: outcome))
             i = exitIdx + 1   // one position at a time — resume after the close
@@ -12996,7 +13006,7 @@ enum StockSageSignalEngine {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageStore.swift (679 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageStore.swift (686 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -13351,7 +13361,12 @@ final class StockSageStore: ObservableObject {
             return
         }
         let results: [BacktestResult] = await Task.detached {
-            symbols.compactMap { histories[$0.uppercased()] }.map { StockSageBacktester.run($0) }
+            symbols.compactMap { sym -> BacktestResult? in
+                guard let h = histories[sym.uppercased()] else { return nil }
+                // Charge each symbol's asset-class round-trip cost so the strategy result
+                // is what you'd net, not a frictionless fantasy.
+                return StockSageBacktester.run(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym))
+            }
         }.value
         strategyBacktest = StockSageStrategyBacktest.aggregate(results)
     }
@@ -13561,7 +13576,9 @@ final class StockSageStore: ObservableObject {
             return
         }
         // The walk-forward is O(bars²) (advisor re-run each bar) — keep it off-main.
-        backtest = await Task.detached(priority: .userInitiated) { StockSageBacktester.run(history) }.value
+        // Charge the symbol's asset-class round-trip cost so the equity curve is honest.
+        let btCosts = StockSageNetEdge.defaultCosts(forSymbol: symbol)
+        backtest = await Task.detached(priority: .userInitiated) { StockSageBacktester.run(history, costs: btCosts) }.value
         // Buy-and-hold underwater curve over the same 5y window (cheap, O(n)).
         underwater = StockSageDrawdown.underwater(history.closes)
     }
@@ -18595,7 +18612,7 @@ struct ChatHistoryView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/ChatViewModel.swift (229 lines) =====
+===== FILE: Salehman AI/Views/ChatViewModel.swift (235 lines) =====
 ```swift
 import SwiftUI
 import Combine
@@ -18626,6 +18643,12 @@ final class ChatViewModel: ObservableObject {
         runningTask?.cancel()
         runningTask = nil
         isRunning = false
+        // The cancelled task returns early at its `if Task.isCancelled` checks
+        // WITHOUT clearing the app-wide running flag, and this method didn't
+        // either — so after a Stop / New Chat, `AppState.aiIsRunning` stayed
+        // stuck `true` and BottomShortcutBar kept showing the "⌘. Stop" hint
+        // and the running animation forever. Clear it here, the single cancel path.
+        AppState.shared.aiIsRunning = false
         MissionProgress.shared.finish()
     }
 
@@ -42273,7 +42296,7 @@ struct StockSageBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageBacktesterTests.swift (67 lines) =====
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (81 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42340,6 +42363,20 @@ struct StockSageBacktesterTests {
         // its 200DMA) must never trigger an entry → zero trades.
         let down = history((0..<260).map { Double(260 - $0) })
         #expect(StockSageBacktester.run(down).trades == 0)
+    }
+
+    @Test func costsNeverFlatterAndNilIsByteForByte() {
+        // A steady uptrend that actually trades (targets 16% above each entry get hit).
+        let up = history((0..<260).map { 100.0 + Double($0) })
+        let free = StockSageBacktester.run(up)
+        // nil costs == the default (no silent drift for existing callers).
+        #expect(StockSageBacktester.run(up, costs: nil) == free)
+        // A wide round-trip cost subtracts from EVERY trade's R: same trades, lower totalR.
+        let wide = StockSageNetEdge.CostAssumption(spreadBps: 50, slippageBps: 50, assetClass: "crypto")
+        let costed = StockSageBacktester.run(up, costs: wide)
+        #expect(costed.trades == free.trades)        // costs don't change which trades happen
+        #expect(costed.totalR <= free.totalR)        // costs never help
+        if free.trades > 0 { #expect(costed.totalR < free.totalR) }   // strictly lower once trading
     }
 }
 ```
@@ -46601,6 +46638,46 @@ struct WebToolsOfflineGateTests {
 **File:** Salehman AI/Views/BrowseMarketsView.swift:71
 **Fix:** The Picker uses `.labelsHidden()` (line 74), hiding the 'Asset class' label from sighted users. The segmented options (All/Stocks/ETFs/...) are self-describing, so VoiceOver is fine, but for visual clarity optionally add a small `Text("Asset class").font(.caption2).foregroundStyle(.secondary)` above. Cosmetic; lowest priority.
 
+===== FILE: APPCORE_BACKLOG.md (38 lines) =====
+# App-core bug backlog (app-core-bughunt wa84658v8, 2026-06-22)
+
+26 agents, 1.5M tokens -> 8 CONFIRMED bugs. #1 fixed in this commit.
+
+Verified all 8 reported bugs against the actual source. Three persistence findings are genuine and high-value: JSONFileStore.swift:18 `.first!` is a real crash path (ranked #1; the safe fallback already exists in PromptLibrary, so it's a one-liner), and ScratchpadStore.save() (line 123) + PromptLibrary.save() (line 50) silently swallow write errors causing data loss (#2, #3). MemoryStore.persist() (line 30) is the same swallowed-error class, but the reported cross-thread *race* is NOT real — the NSLock serializes all writers — so I down-ranked it to medium (#4) and corrected the framing. The ContentView Vision/MainActor finding (#5) is real but a soft stall not a hard freeze (awaits yield, a spinner is shown). The OllamaClient missing-cancellation (#6) is real but low (local, finite stream). The CommandPalette selectedIndex staleness (#7) is cosmetic. The ChatViewModel append race (#8) is essentially a non-bug: the append at line 167 is already guarded by Task.isCancelled at line 161, and stop() already clears the running flags. Ranking is severity-to-effort: the four one-line persistence fixes lead, perf/UX issues follow, cosmetic/non-bugs last. No invented symbols — every line/method referenced was confirmed present.
+
+## Backlog
+### ✅ DONE #1 [high] Force-unwrap crash in JSONFileStore on applicationSupportDirectory lookup
+**File:** Salehman AI/Persistence/JSONFileStore.swift
+**Fix:** Line 18: replace `.first!` with the safe fallback already used in PromptLibrary.fileURL — `let base = baseDirectory ?? (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory).appendingPathComponent("SalehmanAI", isDirectory: true)`. One-line change, removes the only fatal-crash path in the persistence layer; this store backs MemoryStore and ScratchpadStore so the crash blast radius is wide.
+
+### ⬜ #2 [high] Silent data loss in ScratchpadStore.save() (try? swallows every write error)
+**File:** Salehman AI/Persistence/ScratchpadStore.swift
+**Fix:** Line 123: replace `try? store.save(Snapshot(notes: notes, tasks: tasks))` with `do { try store.save(Snapshot(notes: notes, tasks: tasks)) } catch { NSLog("ScratchpadStore.save failed: %@", error.localizedDescription) }`. save() is called after every mutation (addNote/addTask/toggleTask/delete/clear); on encode or atomic-write failure the in-memory state silently diverges and notes/tasks are lost on next launch.
+
+### ⬜ #3 [high] Silent data loss in PromptLibrary.save() (double try? on encode + write)
+**File:** Salehman AI/Persistence/PromptLibrary.swift
+**Fix:** Line 50: replace `if let data = try? JSONEncoder().encode(prompts) { try? data.write(to: fileURL, options: .atomic) }` with `do { let data = try JSONEncoder().encode(prompts); try data.write(to: fileURL, options: .atomic) } catch { NSLog("PromptLibrary.save failed: %@", error.localizedDescription) }`. Failure abandons user prompt edits in memory; next launch reverts to starters.
+
+### ⬜ #4 [medium] MemoryStore.persist() swallows write errors (silent fact loss)
+**File:** Salehman AI/Persistence/MemoryStore.swift
+**Fix:** Line 30: `private nonisolated func persist() { try? store.save(items) }` discards errors from remember()/delete()/clear(). The NSLock already serializes writers, so the cross-thread race in the original report is NOT real — the actual defect is the swallowed error. Change to `do { try store.save(items) } catch { NSLog("MemoryStore.persist failed: %@", error.localizedDescription) }`. Same one-line class of fix as the other stores.
+
+### ⬜ #5 [medium] Main-thread Vision analysis blocks composer when attaching images
+**File:** Salehman AI/Views/ContentView.swift
+**Fix:** Lines 1442/1455/1466 loop `await AttachmentLoader.load(url:)` on the MainActor; for images load() calls `await VisionAnalyzer.describe(url)` (Attachments.swift:95). Because the awaits are sequential, dropping N images serializes N on-device Vision passes before any attachment appears. Run the loads concurrently with a task group / `async let`, or move VisionAnalyzer.describe onto a detached background task inside load() and only hop back to MainActor to build the Attachment. (Not a hard freeze — awaits yield and attachmentLoads drives a spinner — so medium, not high.)
+
+### ⬜ #6 [low] No Task.isCancelled check in OllamaClient.chatStream loop
+**File:** Salehman AI/LLM/OllamaClient.swift
+**Fix:** Loop at lines 440-457 keeps consuming the byte stream and calling onUpdate after the caller cancels. Add `if Task.isCancelled { break }` at the top of the `for try await line in bytes.lines` body so a cancelled generation frees the local model immediately instead of streaming to completion. Low severity (local stream, finite), trivial fix.
+
+### ⬜ #7 [low] CommandPalette selectedIndex can go stale on filter/hover change
+**File:** Salehman AI/Views/CommandPalette.swift
+**Fix:** `.onChange(of: query)` at line 219 only sets `selectedIndex = 0`, but the hover path (line 170) and arrow keys (98-101) set it independently; between a result-list shrink and the next render selectedIndex can exceed filtered.count-1, feeding a stale id to proxy.scrollTo (line 195). Clamp before resetting: `selectedIndex = min(selectedIndex, max(0, filtered.count - 1))`, and clamp in the onHover/arrow handlers too. Cosmetic-only (scroll target), lowest priority.
+
+### ⬜ #8 [low] ChatViewModel auto-continue post-loop flag writes after cancel
+**File:** Salehman AI/Views/ChatViewModel.swift
+**Fix:** The append at line 167 is ALREADY guarded by `if Task.isCancelled { return }` at line 161, so the reported mid-append race does not occur within a turn. The only residual gap is the post-loop flag writes (lines 185-186) and BrainStatus.refresh (190) running after a late cancel — but stop() (lines 26-37) already clears isRunning/aiIsRunning, so this is benign. If hardening anyway, add `guard !Task.isCancelled else { return }` before line 185. Lowest priority; mostly a non-bug.
+
 ===== FILE: ARCHITECTURE.md (458 lines) =====
 <!-- Auto-generated 2026-06-05 by the full-codebase-review workflow (Chat B). Grounded in the real source; refine as the app evolves. -->
 
@@ -48649,7 +48726,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7660 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7671 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55197,6 +55274,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #1: Honest-cost backtester (stop flattering every strategy)
+**Files:** `StockSage/StockSageBacktester.swift` (`run(_:warmup:costs:)`), `StockSage/StockSageStore.swift` (both backtest callers pass real costs), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What & why:** From the 33-agent signal workflow's #1 spec — the backtester charged ZERO trading costs while NetEdge models spread/slippage, so the equity curve flattered every strategy and could lead the owner to over-bet a fake number. `run` now takes an optional `StockSageNetEdge.CostAssumption`; when set it subtracts the round-trip friction (roundTripBps/10000·entry) from EVERY trade's R. nil = the original cost-free result byte-for-byte (existing callers/tests unchanged). The per-symbol AND strategy backtests in the store now pass `StockSageNetEdge.defaultCosts(forSymbol:)` (crypto 50bps, US large-cap 13bps, intl 30, FX 7) so the displayed results are what you'd actually net. Test (relational, sound without exact trade counts): costs:nil == default; a wide cost keeps the same trades but strictly lowers totalR. ✅ typecheck clean.
+**Result:** The owner's backtest now tells the truth about returns. NEXT: signal #2 volume confirmation, #3 relative strength. Loop markets-money-first.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -56310,6 +56394,10 @@ permission classifier blocked the first attempt.
 **What:** Two scoped entry/exit transitions. (1) `ContentView` `RunningProgressView`: wrapped `if vm.isRunning { ... }` in a `VStack(spacing: 0)` with `.animation(DS.Motion.smooth, value: vm.isRunning)` + inner `.transition(.opacity.combined(with: .offset(y: 8)))` — the isolation wrapper ensures only the progress indicator animates, not the entire LazyVStack message list. (2) `KnowledgeView` answer block: wrapped the three children of `if !answer.isEmpty` (Text, optional sources VStack, buttons HStack) in a `VStack(alignment: .leading, spacing: 0)` with `.transition(.opacity.combined(with: .offset(y: 6)))` — parent `askCard` already has `.animation(DS.Motion.smooth, value: answer.isEmpty)`, so the answer fades+slides in from below when it arrives.
 **Files:** `Views/ContentView.swift`, `Views/KnowledgeView.swift`.
 **Commit:** `dbc8f69`
+
+## 2026-06-22 — bug-hunt: stuck `aiIsRunning` flag after Stop / New Chat (Chat A)
+**What:** `ChatViewModel.stop()` reset `self.isRunning` but never cleared the app-wide `AppState.shared.aiIsRunning`. The in-flight `send`/`transcribeMedia` task returns early at its `if Task.isCancelled { return }` checks *without* clearing `aiIsRunning` (only the normal-completion paths do, at lines 180/208/222). So after the user hit ⌘. Stop, the Stop button, Escape, or New Chat (which calls `stop()`), `AppState.aiIsRunning` stayed stuck `true` — `BottomShortcutBar` kept promoting the "⌘. Stop" hint and running its `.animation(value: app.aiIsRunning)` indicator as if a reply were still generating, until the next full send completed. Fix: clear `AppState.shared.aiIsRunning = false` inside `stop()`, the single cancel chokepoint. **Why it matters:** user-visible — the chat bar lies about run state after every cancel/new-chat. **Verify:** code is a one-line set on an already-`@MainActor` method that mirrors the existing `= false` writes on the completion paths; couldn't run `xcodebuild` (sandbox blocks DerivedData writes) but the change is type-trivial.
+**Files:** `Views/ChatViewModel.swift`.
 
 ===== FILE: DEVELOPMENT_LOG_ARCHIVE.md (1421 lines) =====
 # 📓 Development Log — ARCHIVE (2026-06-04 → 2026-06-09)
@@ -59653,7 +59741,7 @@ adversarial review workflows (passes 23–28; the few findings were honesty/labe
 - Benchmark-relative strength — signature relativeStrength(symbolCloses:benchmarkCloses:period:); the part of momentum with documented forward edge is OUTperformance vs the index (already fetched for the regime gauge), filtering out names that only rise because the whole market rises.
 
 ## Specs
-### #1 — Charge real frictions inside the backtester (close the lie between NetEdge and the equity curve)  [M — the per-trade loop already computes entry/exit; subtract cost from fill prices (worsen entry, worsen exit on both stop and target) and recompute r. ~25 lines plus a defaulted param so call sites are unchanged.]
+### ✅ DONE #1 — Charge real frictions inside the backtester (close the lie between NetEdge and the equity curve)  [M — the per-trade loop already computes entry/exit; subtract cost from fill prices (worsen entry, worsen exit on both stop and target) and recompute r. ~25 lines plus a defaulted param so call sites are unchanged.]
 **Signature:** `nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult`
 **Test:** Run the same synthetic uptrending history twice — once with costs: nil, once with a wide CostAssumption(spreadBps: 50, slippageBps: 50). Assert (a) avgR and totalR are strictly lower in the costed run, (b) costs are charged symmetrically (entry fill worsened by half the round-trip, exit by half) so a flat random-walk history trends toward negative totalR, and (c) costs: nil reproduces the current result byte-for-byte (no silent drift for existing callers). Use StockSageNetEdge.defaultCosts(forSymbol:) when costs is nil but a symbol-derived default is wanted, asserting the crypto suffix pulls the 50bps band.
 

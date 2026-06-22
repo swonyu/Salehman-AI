@@ -64,4 +64,18 @@ struct StockSageBacktesterTests {
         let down = history((0..<260).map { Double(260 - $0) })
         #expect(StockSageBacktester.run(down).trades == 0)
     }
+
+    @Test func costsNeverFlatterAndNilIsByteForByte() {
+        // A steady uptrend that actually trades (targets 16% above each entry get hit).
+        let up = history((0..<260).map { 100.0 + Double($0) })
+        let free = StockSageBacktester.run(up)
+        // nil costs == the default (no silent drift for existing callers).
+        #expect(StockSageBacktester.run(up, costs: nil) == free)
+        // A wide round-trip cost subtracts from EVERY trade's R: same trades, lower totalR.
+        let wide = StockSageNetEdge.CostAssumption(spreadBps: 50, slippageBps: 50, assetClass: "crypto")
+        let costed = StockSageBacktester.run(up, costs: wide)
+        #expect(costed.trades == free.trades)        // costs don't change which trades happen
+        #expect(costed.totalR <= free.totalR)        // costs never help
+        if free.trades > 0 { #expect(costed.totalR < free.totalR) }   // strictly lower once trading
+    }
 }

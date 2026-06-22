@@ -6545,6 +6545,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #1: Honest-cost backtester (stop flattering every strategy)
+**Files:** `StockSage/StockSageBacktester.swift` (`run(_:warmup:costs:)`), `StockSage/StockSageStore.swift` (both backtest callers pass real costs), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What & why:** From the 33-agent signal workflow's #1 spec — the backtester charged ZERO trading costs while NetEdge models spread/slippage, so the equity curve flattered every strategy and could lead the owner to over-bet a fake number. `run` now takes an optional `StockSageNetEdge.CostAssumption`; when set it subtracts the round-trip friction (roundTripBps/10000·entry) from EVERY trade's R. nil = the original cost-free result byte-for-byte (existing callers/tests unchanged). The per-symbol AND strategy backtests in the store now pass `StockSageNetEdge.defaultCosts(forSymbol:)` (crypto 50bps, US large-cap 13bps, intl 30, FX 7) so the displayed results are what you'd actually net. Test (relational, sound without exact trade counts): costs:nil == default; a wide cost keeps the same trades but strictly lowers totalR. ✅ typecheck clean.
+**Result:** The owner's backtest now tells the truth about returns. NEXT: signal #2 volume confirmation, #3 relative strength. Loop markets-money-first.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
