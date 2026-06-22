@@ -88,7 +88,9 @@ struct MarketsView: View {
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
     /// heatmap) offscreen; normal use defaults to the watchlist.
-    init(qaSection: MarketSection = .watchlist) { _section = State(initialValue: qaSection) }
+    // Land on the EV-ranked Ideas board on open — the owner's "where's my best move?" answer,
+    // 0 taps in. (The QA harness passes an explicit section so its snapshots stay deterministic.)
+    init(qaSection: MarketSection = .ideas) { _section = State(initialValue: qaSection) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -136,6 +138,9 @@ struct MarketsView: View {
             // snapshot harness so captures stay deterministic and offline.
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refresh()
+            // Auto-scan the EV ideas so the board the app lands on is already populated —
+            // 0 taps from open to the best move. refreshIdeas self-guards re-entry/ToolPolicy.
+            if store.ideas.isEmpty { await store.refreshIdeas() }
             // Snapshot today's money-velocity (one per UTC day) so the trend can build.
             let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime)
             if let wk = snap.weeklyR {

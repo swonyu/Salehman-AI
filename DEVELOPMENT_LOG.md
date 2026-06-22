@@ -6834,6 +6834,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · DECISIVENESS #1 — land on the Ideas board + auto-scan on open (0 taps to the best move)
+**Files:** `Views/MarketsView.swift` (init default + .task), `Tools/QASnapshots.swift` (pin 2 snapshots to .watchlist).
+**What:** the Markets tab opened on the watchlist — the owner had to find and tap "Ideas" then "Refresh" to see the EV-ranked best move. Now `init(qaSection:)` defaults to `.ideas` (RootView's `MarketsView()` lands there), and the on-open `.task` adds `if store.ideas.isEmpty { await store.refreshIdeas() }` right after store.refresh() so the board is already populated AND the money-velocity day-snapshot below it gets real ideas instead of an empty set. refreshIdeas self-guards re-entry/ToolPolicy/non-destructive. The two QA `MarketsView()` snapshots ("markets", "markets_narrow") now pass `.watchlist` explicitly so they stay deterministic (ideas is intentionally empty under --qa); the `.heatmap` snapshot was already explicit.
+**Verify:** typecheck clean; render UNVERIFIED (Mac). App path: open Markets → Ideas board, auto-populated, best opportunity on top. QA snapshots unchanged in intent.
+**Result:** from launch to "what's my best trade right now" is now zero taps — the decisiveness the owner asked for. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

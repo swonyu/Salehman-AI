@@ -107,7 +107,7 @@ enum QASnapshots {
         snap(AgentsView(),         "agents",       "Agents tab", .init(width: 1000, height: 740), in: dir)
         snap(ScratchpadView(),     "notes",        "Notes / scratchpad", .init(width: 1000, height: 700), in: dir)
         snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
-        snap(MarketsView(),        "markets",      "Markets tab", .init(width: 1000, height: 740), in: dir)
+        snap(MarketsView(qaSection: .watchlist), "markets",  "Markets tab", .init(width: 1000, height: 740), in: dir)
         snap(MarketsView(qaSection: .heatmap), "markets_heatmap", "Markets — heatmap sub-section (tile colour-contrast)", .init(width: 1000, height: 640), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
@@ -131,7 +131,7 @@ enum QASnapshots {
         // session.start() (the mic) — an offscreen QA render must not trigger it.
         // ── Responsive: narrow widths catch layout breaks on the flexible tabs ──
         snap(TodayView(),     "today_narrow",     "Today @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
-        snap(MarketsView(),   "markets_narrow",   "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(MarketsView(qaSection: .watchlist), "markets_narrow", "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
         snap(KnowledgeView(), "knowledge_narrow", "Knowledge @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
 
         // Bridge layout + accessibility findings to the audit. MERGE, don't
