@@ -52,3 +52,6 @@ qa/WINDOW_REQUEST
 qa/ADOPT_BASELINES
 qa/baselines/
 qa/history.jsonl
+
+# Workflow agent scratch (skeptic verifiers)
+.skeptic_tmp/
