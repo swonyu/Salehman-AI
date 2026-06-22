@@ -7313,6 +7313,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · SELF-REGRESSION (incomplete fix) — adaptivePrice now covers EVERY per-share site, incl. the trade-WRITE path
+**Files:** `Views/MarketsView.swift` (12 per-share formatters → adaptivePrice).
+**What (regression-hunt w2nflwb9n; my own e4fe29e was an incomplete sweep):** e4fe29e applied adaptivePrice to ONLY the position cost + value rows, leaving every other per-share %.2f formatter rounding a sub-dollar price (XRP/ADA/DOGE) to "0.00". The HIGH/sacred one: prefillTradeFromIdea wrote draftEntry/Stop/Target = "0.00", so logging that idea PERSISTED a TradeRecord with entry=0 — a free-position/infinite-return defect written to the journal. Fixed all per-share sites: prefill entry/stop/target (1540/1544/1545), journal open-row entry + a11y (1563/1572), per-position P&L (786), signal/watchlist price (2015), idea-card Price/Stop/Target on the EV board (2349/2351/2354) AND the detail sheet (3158/3159/3160). draftEntry round-trips (Double("0.0023")=0.0023). 
+**Verify:** typecheck EXIT=0 (separate step); GREP confirms ZERO per-share %.2f stragglers (the guard I missed in e4fe29e — now applied); adaptivePrice keeps the sign for negative P&L; >=$1 path byte-identical (no normal-stock change).
+**Lesson:** a magnitude/precision fix must GREP every sibling formatter, not just the cited sites — the FIRST adaptivePrice commit cited 2 rows and I stopped there.
+**Result:** no surface — display OR the trade-log write — renders a sub-dollar price as "0.00". The only-real-data floor reaches every per-share price + the journal-write path. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

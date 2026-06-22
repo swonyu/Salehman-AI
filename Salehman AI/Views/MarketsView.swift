@@ -783,7 +783,7 @@ struct MarketsView: View {
                     .contentTransition(.numericText())
                     .animation(DS.Motion.smooth, value: value)
                 if price != nil {
-                    Text((up ? "+" : "") + String(format: "%.2f", pl))
+                    Text((up ? "+" : "") + adaptivePrice(pl))
                         .font(.caption).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: pl)
@@ -1537,12 +1537,12 @@ struct MarketsView: View {
     private func prefillTradeFromIdea(_ idea: StockSageIdea) {
         let bearish = idea.advice.action == .sell || idea.advice.action == .reduce
         draftSymbol = idea.symbol
-        draftEntry = String(format: "%.2f", idea.price)
+        draftEntry = adaptivePrice(idea.price)
         // The advisor fills a SIDE-CORRECT stop/target for shorts too (sell stop ABOVE entry, target
         // BELOW) — prefill them regardless of side so a logged short keeps its defined risk. The
         // .map/?? still blanks the genuine degenerate case (advisor returned nil, e.g. huge ATR).
-        draftStop = idea.advice.stopPrice.map { String(format: "%.2f", $0) } ?? ""
-        draftTarget = idea.advice.targetPrice.map { String(format: "%.2f", $0) } ?? ""
+        draftStop = idea.advice.stopPrice.map { adaptivePrice($0) } ?? ""
+        draftTarget = idea.advice.targetPrice.map { adaptivePrice($0) } ?? ""
         draftShares = ""
         draftNote = "From idea: \(idea.advice.action.rawValue), \(Int(idea.advice.conviction * 100))% conviction"
         draftSide = bearish ? .short : .long   // side follows the idea's direction
@@ -1560,7 +1560,7 @@ struct MarketsView: View {
         let act = StockSageJournal.openActions([trade], mark: { currentPrice($0) }).first
         // Build the spoken label as a plain String OUTSIDE the ViewBuilder — the multi-clause `+`
         // concatenation was tipping journalOpenRow over the SwiftUI type-checker complexity budget.
-        var a11y = "\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
+        var a11y = "\(trade.side.rawValue) \(trade.symbol), entry \(adaptivePrice(trade.entry))"
         a11y += pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price"
         if let r { a11y += String(format: ", %+.2f R", r) }
         if let act { a11y += ", \(act.kind.rawValue): \(act.detail)" }
@@ -1569,7 +1569,7 @@ struct MarketsView: View {
                 Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
                 Text(trade.side.rawValue).font(.system(size: mvFont9, weight: .semibold))
                     .foregroundStyle(trade.side == .long ? DS.Palette.successSoft : DS.Palette.danger)
-                Text(String(format: "@ %.2f", trade.entry)).font(.caption2).foregroundStyle(.secondary)
+                Text("@ \(adaptivePrice(trade.entry))").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let pnl, let r {
                     Text(String(format: "%+.2f", pnl)).font(.system(size: 11, weight: .semibold))
@@ -2012,7 +2012,7 @@ struct MarketsView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 if let p = sym.latest?.price {
-                    Text(String(format: "%.2f", p))
+                    Text(adaptivePrice(p))
                         .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: p)
@@ -2346,12 +2346,12 @@ struct MarketsView: View {
                     .accessibilityHidden(true)
             }
             HStack(spacing: 16) {
-                ideaMetric("Price", String(format: "%.2f", idea.price))
+                ideaMetric("Price", adaptivePrice(idea.price))
                 if let stop = a.stopPrice {
-                    ideaMetric("Stop", String(format: "%.2f", stop), color: DS.Palette.danger)
+                    ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
                 }
                 if let target = a.targetPrice {
-                    ideaMetric("Target", String(format: "%.2f", target), color: DS.Palette.successSoft)
+                    ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
                 }
                 if a.suggestedWeight > 0 {
                     ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
@@ -3155,9 +3155,9 @@ struct MarketsView: View {
                 }
 
                 HStack(spacing: 20) {
-                    ideaMetric("Price", String(format: "%.2f", idea.price))
-                    if let s = a.stopPrice { ideaMetric("Stop", String(format: "%.2f", s), color: DS.Palette.danger) }
-                    if let t = a.targetPrice { ideaMetric("Target", String(format: "%.2f", t), color: DS.Palette.successSoft) }
+                    ideaMetric("Price", adaptivePrice(idea.price))
+                    if let s = a.stopPrice { ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.danger) }
+                    if let t = a.targetPrice { ideaMetric("Target", adaptivePrice(t), color: DS.Palette.successSoft) }
                     if a.suggestedWeight > 0 { ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent) }
                     if a.suggestedWeight > 0, let r = store.regime {
                         let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
