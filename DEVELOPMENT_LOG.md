@@ -7119,6 +7119,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · PC-MIGRATION FIX — Ollama server URL accepts a schemeless host:port (was going silently mute)
+**Files:** `App/AppSettings.swift` (ollamaBaseURLCurrent).
+**What (settings bughunt wqew7tt6u #4):** ollamaBaseURLCurrent only trimmed whitespace + stripped trailing slashes — it never ensured an http:// scheme. Typing the PC's Tailscale address in the natural form `100.111.178.2:11434` (no scheme) produced URL(string:) with host=nil (a URL scheme must start with a letter, so "100..." can't be one), so isUp()/hasModel()/generate built requests that never reached the server and the brain silently reported unreachable — even though the host:port was correct. Fix: after trimming, prepend `http://` when no http/https scheme is present. Directly enables the owner's Mac→PC (100.111.178.2:11434) setup to connect even if the scheme is omitted.
+**Verify:** typecheck EXIT=0. Schemeless host:port now normalizes to a reachable http:// URL; an explicit http(s):// is left untouched; empty → the default.
+**Remaining (SETTINGS_BUGHUNT.md): #3 risk%-0 fallback mismatch at the trade-gate; #5 reachability cache not invalidated on URL change (≤30s lag after switching servers).**
+**Result:** pointing the Mac at the always-on PC works even if the owner types just the IP:port. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

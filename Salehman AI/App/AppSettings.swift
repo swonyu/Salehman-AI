@@ -257,7 +257,12 @@ final class AppSettings: ObservableObject {
         var s = (UserDefaults.standard.string(forKey: Keys.ollamaServerURL) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }
-        return s.isEmpty ? ollamaDefaultURL : s
+        if s.isEmpty { return ollamaDefaultURL }
+        // A schemeless host:port (e.g. "100.111.178.2:11434" — the natural Tailscale/LAN form) parses
+        // to a URL with host=nil, so requests silently never reach the server. Default to http://.
+        let lower = s.lowercased()
+        if !lower.hasPrefix("http://"), !lower.hasPrefix("https://") { s = "http://" + s }
+        return s
     }
 
     /// Rotation mode is active when the user checked ≥2 brains to cycle through.
