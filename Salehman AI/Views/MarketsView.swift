@@ -1060,6 +1060,22 @@ struct MarketsView: View {
                         }
                     }
                 }
+                let years = journal.yearlyPnL
+                if !years.isEmpty {
+                    Text("By year (realized — record-keeping, not tax advice)")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    ForEach(years) { yr in
+                        HStack(spacing: 8) {
+                            Text(yr.year).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
+                            Text("\(yr.trades) tr · \(Int(yr.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(yr.realizedDollars.formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))).font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(yr.realizedDollars >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                            Text(String(format: "%+.1fR", yr.totalR)).font(.caption2).foregroundStyle(.secondary)
+                                .frame(width: 56, alignment: .trailing)
+                        }
+                    }
+                }
                 let sides = journal.sideStats
                 if sides.count == 2 {
                     Text("By side").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)

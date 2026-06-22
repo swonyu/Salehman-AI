@@ -147,6 +147,30 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.compoundingCurve([]) == nil)
     }
 
+    @Test func yearlyPnLRollsUpDollarsAndR() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func tr(_ entry: Double, _ exit: Double, _ shares: Double, year: Int) -> TradeRecord {
+            let d = cal.date(from: DateComponents(year: year, month: 6, day: 15))!
+            return TradeRecord(symbol: "X", side: .long, entry: entry, stop: 90, target: nil, shares: shares,
+                               openedAt: d.addingTimeInterval(-86_400), exitPrice: exit, closedAt: d)
+        }
+        // 2025: +100 (entry100→110×10, R+1) and −50 (→95×10, R−0.5). 2026: +100 (→120×5, R+2).
+        let y = StockSageJournal.yearlyPnL([tr(100, 110, 10, year: 2025),
+                                            tr(100, 95, 10, year: 2025),
+                                            tr(100, 120, 5, year: 2026)])
+        #expect(y.map(\.year) == ["2026", "2025"])             // newest first
+        let y25 = y.first { $0.year == "2025" }!
+        #expect(y25.trades == 2 && y25.wins == 1)
+        #expect(abs(y25.realizedDollars - 50) < 1e-9)          // 100 − 50
+        #expect(abs(y25.totalR - 0.5) < 1e-9)                  // 1 − 0.5
+        #expect(abs(y25.winRate - 0.5) < 1e-9)
+        let y26 = y.first { $0.year == "2026" }!
+        #expect(abs(y26.realizedDollars - 100) < 1e-9)
+        #expect(abs(y26.totalR - 2) < 1e-9)
+        #expect(y26.winRate == 1.0)
+        #expect(StockSageJournal.yearlyPnL([]).isEmpty)
+    }
+
     private func closedInMonth(_ y: Int, _ m: Int, exit: Double) -> TradeRecord {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
         let d = cal.date(from: DateComponents(year: y, month: m, day: 15))!

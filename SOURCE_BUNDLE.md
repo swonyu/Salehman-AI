@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:03 +03 · Swift files: 224 · Swift LOC: 43837_
+_Generated: 2026-06-22 09:09 +03 · Swift files: 224 · Swift LOC: 43907_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10093,7 +10093,7 @@ enum StockSageIndicators {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageJournal.swift (566 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageJournal.swift (596 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -10205,6 +10205,17 @@ struct MonthlyPnL: Sendable, Equatable, Identifiable {
     let trades: Int
     let totalR: Double
     var id: String { month }
+}
+
+/// Realized performance for one calendar year (closed trades) — for record-keeping.
+struct YearlyPnL: Sendable, Equatable, Identifiable {
+    let year: String            // "YYYY" (UTC)
+    let trades: Int
+    let wins: Int
+    let winRate: Double         // 0–1
+    let realizedDollars: Double // sum of realized P&L (account currency)
+    let totalR: Double
+    var id: String { year }
 }
 
 /// Realized performance for one sector (closed trades).
@@ -10323,6 +10334,24 @@ enum StockSageJournal {
             out.append(mult)
         }
         return CompoundingCurve(multiples: out, fraction: fraction)
+    }
+
+    /// Realized P&L rolled up by calendar year (UTC) — $ + R + win-rate + count, newest
+    /// first. Closed trades only. For the owner's own record-keeping; NOT tax advice.
+    nonisolated static func yearlyPnL(_ trades: [TradeRecord]) -> [YearlyPnL] {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        var byYear: [String: [TradeRecord]] = [:]
+        for t in trades where !t.isOpen {
+            guard let c = t.closedAt else { continue }
+            byYear[String(cal.component(.year, from: c)), default: []].append(t)
+        }
+        return byYear.map { year, ts in
+            let wins = ts.filter { ($0.realizedProfit ?? 0) > 0 }.count
+            return YearlyPnL(year: year, trades: ts.count, wins: wins,
+                             winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count),
+                             realizedDollars: ts.compactMap(\.realizedProfit).reduce(0, +),
+                             totalR: ts.compactMap(\.realizedR).reduce(0, +))
+        }.sorted { $0.year > $1.year }
     }
 
     /// A HYPOTHETICAL forward account multiple: compound the measured expectancy (R/trade)
@@ -10620,6 +10649,7 @@ final class StockSageJournalStore: ObservableObject {
     var edgeStats: JournalEdge { StockSageJournal.edge(trades) }
     var sectorPnL: [SectorPnL] { StockSageJournal.bySector(trades) }
     var monthlyPnL: [MonthlyPnL] { StockSageJournal.monthlyPnL(trades) }
+    var yearlyPnL: [YearlyPnL] { StockSageJournal.yearlyPnL(trades) }
     var sideStats: [SidePnL] { StockSageJournal.bySide(trades) }
     var streakSummary: JournalStreak? { StockSageJournal.streak(trades) }
     var expectancyCI: ExpectancyCI? { StockSageJournal.expectancyConfidence(trades) }
@@ -25720,7 +25750,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2901 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2917 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26781,6 +26811,22 @@ struct MarketsView: View {
                             Text(String(format: "%+.2fR", mo.totalR)).font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(mo.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                                 .frame(width: 60, alignment: .trailing)
+                        }
+                    }
+                }
+                let years = journal.yearlyPnL
+                if !years.isEmpty {
+                    Text("By year (realized — record-keeping, not tax advice)")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    ForEach(years) { yr in
+                        HStack(spacing: 8) {
+                            Text(yr.year).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
+                            Text("\(yr.trades) tr · \(Int(yr.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(yr.realizedDollars.formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))).font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(yr.realizedDollars >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                            Text(String(format: "%+.1fR", yr.totalR)).font(.caption2).foregroundStyle(.secondary)
+                                .frame(width: 56, alignment: .trailing)
                         }
                     }
                 }
@@ -41854,7 +41900,7 @@ struct StockSageJournalCSVTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageJournalTests.swift (343 lines) =====
+===== FILE: Salehman AITests/StockSageJournalTests.swift (367 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42003,6 +42049,30 @@ struct StockSageJournalTests {
         #expect(abs(c.multiples[1] - 1.0098) < 1e-9)
         #expect(abs(c.finalMultiple - 1.019898) < 1e-9)
         #expect(StockSageJournal.compoundingCurve([]) == nil)
+    }
+
+    @Test func yearlyPnLRollsUpDollarsAndR() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func tr(_ entry: Double, _ exit: Double, _ shares: Double, year: Int) -> TradeRecord {
+            let d = cal.date(from: DateComponents(year: year, month: 6, day: 15))!
+            return TradeRecord(symbol: "X", side: .long, entry: entry, stop: 90, target: nil, shares: shares,
+                               openedAt: d.addingTimeInterval(-86_400), exitPrice: exit, closedAt: d)
+        }
+        // 2025: +100 (entry100→110×10, R+1) and −50 (→95×10, R−0.5). 2026: +100 (→120×5, R+2).
+        let y = StockSageJournal.yearlyPnL([tr(100, 110, 10, year: 2025),
+                                            tr(100, 95, 10, year: 2025),
+                                            tr(100, 120, 5, year: 2026)])
+        #expect(y.map(\.year) == ["2026", "2025"])             // newest first
+        let y25 = y.first { $0.year == "2025" }!
+        #expect(y25.trades == 2 && y25.wins == 1)
+        #expect(abs(y25.realizedDollars - 50) < 1e-9)          // 100 − 50
+        #expect(abs(y25.totalR - 0.5) < 1e-9)                  // 1 − 0.5
+        #expect(abs(y25.winRate - 0.5) < 1e-9)
+        let y26 = y.first { $0.year == "2026" }!
+        #expect(abs(y26.realizedDollars - 100) < 1e-9)
+        #expect(abs(y26.totalR - 2) < 1e-9)
+        #expect(y26.winRate == 1.0)
+        #expect(StockSageJournal.yearlyPnL([]).isEmpty)
     }
 
     private func closedInMonth(_ y: Int, _ m: Int, exit: Double) -> TradeRecord {
@@ -46792,7 +46862,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7503 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7508 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53180,6 +53250,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** New-value build #4 — the pure, tested rule for WHICH events deserve a notification, so the side-effecting `@MainActor` monitor can stay a thin shell over verified logic. `StockSageAlertDecision.evaluate(symbol:recommendation:price:priorPrice:stop:target:lastAlertedRecommendation:)` returns the single most-actionable `StockSageAlert?` with priority: a price level CROSSED this update (stop-down, then target-up) > a strong-signal change; signal alerts dedupe against the last-alerted rec so the same one never repeats; non-strong (buy/hold/sell) stays silent. Honest: "an alert flags an EVENT, not a profit." 6 tests, HAND-VERIFIED: new Strong Buy fires then dedupes; flip on reversal; buy/hold/sell silent; stop cross 95→89 fires once (88→ already-below silent); target cross 115→121 fires once; a fresh stop breach OUTRANKS a coincident strong-sell.
 **Note:** kept as the standalone tested engine this tick — it adds stop/target-cross detection the monitor lacks, ready to wire into `StockSageMonitor.runCycle` (which already dedupes strong recs correctly) without an unverifiable MainActor refactor here.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 4 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance, #87 alert engine). NEXT: multi-currency portfolio, or per-period/tax-lot P&L. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Per-year realized P&L rollup (journal record-keeping)
+**Files:** `StockSage/StockSageJournal.swift` (+`YearlyPnL`/`yearlyPnL` + store accessor), `Views/MarketsView.swift` ("By year" journal section), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
+**What & why:** New-value build #5 — the journal had monthly P&L in R only; added a calendar-year rollup with the **realized $** the owner actually made/lost, plus R, win-rate, and trade count, newest-first — for end-of-year record-keeping. `yearlyPnL(_:)` groups CLOSED trades by UTC year (reusing `TradeRecord.realizedProfit`/`realizedR`). The journal shows "By year (realized — record-keeping, not tax advice): 2026 · 7 tr · 57% win · +$2,340 · +6.1R". Used `.formatted(.number…sign(.always))` for the $ (not the unreliable `%+,.0f` printf grouping). Honest: your own closed trades, NOT tax advice. 1 test, PYTHON-VERIFIED: 2025 = $50/+0.5R/1-of-2 win, 2026 = $100/+2R/1.0 win, sorted [2026, 2025]; empty → [].
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 5 new-value features today (#84–#88). The owner can see realized $ per year at a glance. NEXT: multi-currency portfolio, or a one-tap session/day plan. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 

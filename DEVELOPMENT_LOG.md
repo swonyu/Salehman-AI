@@ -6386,6 +6386,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Note:** kept as the standalone tested engine this tick — it adds stop/target-cross detection the monitor lacks, ready to wire into `StockSageMonitor.runCycle` (which already dedupes strong recs correctly) without an unverifiable MainActor refactor here.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 4 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance, #87 alert engine). NEXT: multi-currency portfolio, or per-period/tax-lot P&L. Committed + pushed. Autonomous /loop — build mode.
 
+## 2026-06-21 · NEW FEATURE: Per-year realized P&L rollup (journal record-keeping)
+**Files:** `StockSage/StockSageJournal.swift` (+`YearlyPnL`/`yearlyPnL` + store accessor), `Views/MarketsView.swift` ("By year" journal section), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
+**What & why:** New-value build #5 — the journal had monthly P&L in R only; added a calendar-year rollup with the **realized $** the owner actually made/lost, plus R, win-rate, and trade count, newest-first — for end-of-year record-keeping. `yearlyPnL(_:)` groups CLOSED trades by UTC year (reusing `TradeRecord.realizedProfit`/`realizedR`). The journal shows "By year (realized — record-keeping, not tax advice): 2026 · 7 tr · 57% win · +$2,340 · +6.1R". Used `.formatted(.number…sign(.always))` for the $ (not the unreliable `%+,.0f` printf grouping). Honest: your own closed trades, NOT tax advice. 1 test, PYTHON-VERIFIED: 2025 = $50/+0.5R/1-of-2 win, 2026 = $100/+2R/1.0 win, sorted [2026, 2025]; empty → [].
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 5 new-value features today (#84–#88). The owner can see realized $ per year at a glance. NEXT: multi-currency portfolio, or a one-tap session/day plan. Committed + pushed. Autonomous /loop — build mode.
+
 ---
 
 ## Standing notes / known issues

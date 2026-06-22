@@ -110,6 +110,17 @@ struct MonthlyPnL: Sendable, Equatable, Identifiable {
     var id: String { month }
 }
 
+/// Realized performance for one calendar year (closed trades) — for record-keeping.
+struct YearlyPnL: Sendable, Equatable, Identifiable {
+    let year: String            // "YYYY" (UTC)
+    let trades: Int
+    let wins: Int
+    let winRate: Double         // 0–1
+    let realizedDollars: Double // sum of realized P&L (account currency)
+    let totalR: Double
+    var id: String { year }
+}
+
 /// Realized performance for one sector (closed trades).
 struct SectorPnL: Sendable, Equatable, Identifiable {
     let sector: String
@@ -226,6 +237,24 @@ enum StockSageJournal {
             out.append(mult)
         }
         return CompoundingCurve(multiples: out, fraction: fraction)
+    }
+
+    /// Realized P&L rolled up by calendar year (UTC) — $ + R + win-rate + count, newest
+    /// first. Closed trades only. For the owner's own record-keeping; NOT tax advice.
+    nonisolated static func yearlyPnL(_ trades: [TradeRecord]) -> [YearlyPnL] {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        var byYear: [String: [TradeRecord]] = [:]
+        for t in trades where !t.isOpen {
+            guard let c = t.closedAt else { continue }
+            byYear[String(cal.component(.year, from: c)), default: []].append(t)
+        }
+        return byYear.map { year, ts in
+            let wins = ts.filter { ($0.realizedProfit ?? 0) > 0 }.count
+            return YearlyPnL(year: year, trades: ts.count, wins: wins,
+                             winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count),
+                             realizedDollars: ts.compactMap(\.realizedProfit).reduce(0, +),
+                             totalR: ts.compactMap(\.realizedR).reduce(0, +))
+        }.sorted { $0.year > $1.year }
     }
 
     /// A HYPOTHETICAL forward account multiple: compound the measured expectancy (R/trade)
@@ -523,6 +552,7 @@ final class StockSageJournalStore: ObservableObject {
     var edgeStats: JournalEdge { StockSageJournal.edge(trades) }
     var sectorPnL: [SectorPnL] { StockSageJournal.bySector(trades) }
     var monthlyPnL: [MonthlyPnL] { StockSageJournal.monthlyPnL(trades) }
+    var yearlyPnL: [YearlyPnL] { StockSageJournal.yearlyPnL(trades) }
     var sideStats: [SidePnL] { StockSageJournal.bySide(trades) }
     var streakSummary: JournalStreak? { StockSageJournal.streak(trades) }
     var expectancyCI: ExpectancyCI? { StockSageJournal.expectancyConfidence(trades) }
