@@ -302,11 +302,11 @@ struct RuneScapeMarketView: View {
                 let up = margin >= 0
                 Text((up ? "+" : "") + RSFormat.gp(margin))
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(up ? Color(white: 0.12) : .white)
+                    .foregroundStyle(up ? Color(white: 0.06) : .white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(up ? DS.Palette.successSoft : DS.Palette.danger, in: Capsule())
                     .frame(width: 70, alignment: .trailing)
-                    .help("Flip margin (buy − sell), before the 1% GE tax")
+                    .help("Flip margin (buy − sell), pre-tax — before the 2% GE sell tax (live since 2025-05-29)")
             } else {
                 Color.clear.frame(width: 70, height: 1)
             }

@@ -71,6 +71,12 @@ final class StockSageMonitor {
     /// (also used by the unit tests / tool, which don't want notifications).
     @discardableResult
     func runCycle(notify: Bool = true) async -> [StockSageSignal] {
+        // NEVER fire a notification on seeded SAMPLE data: seedSampleData() plants two
+        // strong movers (2222.SR, NVDA), so a failed first-launch refresh would push a
+        // "Strong Buy" built on hardcoded demo prices — an honesty-floor violation. Still
+        // return the signals so the tests/tool exercise the logic without notifications,
+        // and don't poison `lastAlerted` with sample state (real data must alert fresh).
+        let liveNotify = notify && !StockSageStore.shared.isSampleData
         var strong: [StockSageSignal] = []
         var nowStrong: [String: StockSageRecommendation] = [:]
         for symbol in StockSageStore.shared.fetchAllSymbols() {
@@ -80,12 +86,12 @@ final class StockSageMonitor {
             nowStrong[signal.symbol] = signal.recommendation
             // Fire only when this symbol's strong signal is NEW or has FLIPPED
             // (Strong Buy ⇄ Strong Sell) — not the same alert on every poll.
-            if notify, lastAlerted[signal.symbol] != signal.recommendation {
+            if liveNotify, lastAlerted[signal.symbol] != signal.recommendation {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
         // Forget symbols that fell out of "strong" so they can alert again later.
-        if notify { lastAlerted = nowStrong }
+        if liveNotify { lastAlerted = nowStrong }
         return strong
     }
 

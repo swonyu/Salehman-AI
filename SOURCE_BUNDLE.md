@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:55 +03 · Swift files: 233 · Swift LOC: 44534_
+_Generated: 2026-06-22 10:10 +03 · Swift files: 233 · Swift LOC: 44562_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11087,7 +11087,7 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (104 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (110 lines) =====
 ```swift
 import Foundation
 import UserNotifications
@@ -11162,6 +11162,12 @@ final class StockSageMonitor {
     /// (also used by the unit tests / tool, which don't want notifications).
     @discardableResult
     func runCycle(notify: Bool = true) async -> [StockSageSignal] {
+        // NEVER fire a notification on seeded SAMPLE data: seedSampleData() plants two
+        // strong movers (2222.SR, NVDA), so a failed first-launch refresh would push a
+        // "Strong Buy" built on hardcoded demo prices — an honesty-floor violation. Still
+        // return the signals so the tests/tool exercise the logic without notifications,
+        // and don't poison `lastAlerted` with sample state (real data must alert fresh).
+        let liveNotify = notify && !StockSageStore.shared.isSampleData
         var strong: [StockSageSignal] = []
         var nowStrong: [String: StockSageRecommendation] = [:]
         for symbol in StockSageStore.shared.fetchAllSymbols() {
@@ -11171,12 +11177,12 @@ final class StockSageMonitor {
             nowStrong[signal.symbol] = signal.recommendation
             // Fire only when this symbol's strong signal is NEW or has FLIPPED
             // (Strong Buy ⇄ Strong Sell) — not the same alert on every poll.
-            if notify, lastAlerted[signal.symbol] != signal.recommendation {
+            if liveNotify, lastAlerted[signal.symbol] != signal.recommendation {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
         // Forget symbols that fell out of "strong" so they can alert again later.
-        if notify { lastAlerted = nowStrong }
+        if liveNotify { lastAlerted = nowStrong }
         return strong
     }
 
@@ -12631,7 +12637,7 @@ enum StockSageSector {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageSignalEngine.swift (68 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageSignalEngine.swift (74 lines) =====
 ```swift
 import Foundation
 
@@ -12669,7 +12675,13 @@ enum StockSageSignalEngine {
     static func generateSignal(symbol: String,
                                currentPrice: Double,
                                previousPrice: Double) -> StockSageSignal {
-        let changePercent = previousPrice == 0 ? 0 : ((currentPrice - previousPrice) / previousPrice) * 100
+        // Defensive: a corrupt or missing price (≤0) must not masquerade as a confident
+        // "consolidating" hold — say so honestly and keep the function total.
+        guard currentPrice > 0, previousPrice > 0 else {
+            return StockSageSignal(symbol: symbol, recommendation: .hold,
+                                   confidence: 0.5, reason: "No valid price to assess")
+        }
+        let changePercent = ((currentPrice - previousPrice) / previousPrice) * 100
         let absChange = abs(changePercent)
 
         let recommendation: StockSageRecommendation
@@ -26071,7 +26083,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3033 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3040 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26084,10 +26096,10 @@ import AppKit   // NSPasteboard for the trade-plan copy
 /// built show a clear "coming soon".
 struct MarketsView: View {
     @State private var section: MarketSection
-    @State private var sort: MarketSort = .feed
+    @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
-    @State private var ideaSort: IdeaSort = .ev
+    @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
 
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
     /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
@@ -26131,8 +26143,8 @@ struct MarketsView: View {
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
     /// Detail-sheet position sizer inputs.
-    @State private var sizerAccount = "10000"
-    @State private var sizerRiskPct = "1"
+    @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
+    @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
     /// Focus identity for the three add-holding fields → accent focus glow,
     /// matching the app's other primary inputs.
     private enum AddField: Hashable { case symbol, shares, cost }
@@ -26222,7 +26234,7 @@ struct MarketsView: View {
         HStack(spacing: 8) {
             Circle().fill(DS.Palette.successSoft).frame(width: 7, height: 7)
                 .shadow(color: DS.Palette.successSoft.opacity(0.7), radius: 4)
-            Text("Live worldwide quotes across \(StockSageUniverse.marketCount) markets. Prices may be delayed ~15 min — educational, not financial advice.")
+            Text("Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice.")
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -26373,7 +26385,7 @@ struct MarketsView: View {
     /// otherwise the educational tagline.
     private var headerSubtitle: String {
         if !store.isSampleData, let when = store.lastUpdated {
-            return "Live · \(StockSageUniverse.marketCount) world markets · updated \(Self.timeFormatter.string(from: when))"
+            return "Live · \(StockSageUniverse.marketCount) market groups · updated \(Self.timeFormatter.string(from: when))"
         }
         return "Rule-based momentum signals · educational, not financial advice"
     }
@@ -27838,7 +27850,7 @@ struct MarketsView: View {
     private func recTextColor(_ r: StockSageRecommendation) -> Color {
         switch r {
         case .sell, .strongSell: return .white
-        default:                 return Color(white: 0.12)
+        default:                 return Color(white: 0.06)   // darker ink → AA contrast on bright pastels
         }
     }
 
@@ -27950,7 +27962,7 @@ struct MarketsView: View {
                     .font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trade ideas").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                    Text("Rules-based what / when / how-much across \(StockSageUniverse.marketCount) world markets, on 1-year history.")
+                    Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -27971,8 +27983,12 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
             }
             if let when = store.ideasUpdated {
-                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
-                    .font(.caption2).foregroundStyle(.secondary)
+                let stale = when.timeIntervalSinceNow < -4 * 3600   // scan older than 4h
+                Text(stale
+                     ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.rawValue.lowercased())"
+                     : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
+                    .font(.caption2).foregroundStyle(stale ? DS.Palette.warningSoft : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let err = store.ideasError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
@@ -28681,11 +28697,14 @@ struct MarketsView: View {
                               sp.count >= 2 else { return nil }
                         return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
                     }
-                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries),
-                       cc.isConcentrating {
+                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
+                        // Show the verdict either way: a warning when it concentrates,
+                        // an affirmation when it genuinely diversifies the book.
+                        let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                        let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
                         HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                            Text(cc.note).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
+                            Text(cc.note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -28988,7 +29007,7 @@ struct MarketsView: View {
     private func actionTextColor(_ a: TradeAdvice.Action) -> Color {
         switch a {
         case .reduce, .sell, .avoid: return .white
-        default:                     return Color(white: 0.12)
+        default:                     return Color(white: 0.06)   // darker ink → AA contrast on bright pastels
         }
     }
 
@@ -30409,11 +30428,11 @@ struct RuneScapeMarketView: View {
                 let up = margin >= 0
                 Text((up ? "+" : "") + RSFormat.gp(margin))
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(up ? Color(white: 0.12) : .white)
+                    .foregroundStyle(up ? Color(white: 0.06) : .white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(up ? DS.Palette.successSoft : DS.Palette.danger, in: Capsule())
                     .frame(width: 70, alignment: .trailing)
-                    .help("Flip margin (buy − sell), before the 1% GE tax")
+                    .help("Flip margin (buy − sell), pre-tax — before the 2% GE sell tax (live since 2025-05-29)")
             } else {
                 Color.clear.frame(width: 70, height: 1)
             }
@@ -43994,7 +44013,7 @@ struct StockSageStrategyBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageTests.swift (297 lines) =====
+===== FILE: Salehman AITests/StockSageTests.swift (306 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -44038,6 +44057,15 @@ struct StockSageSignalEngineTests {
 
     @Test func holdConfidenceIsFlat() {
         #expect(signal(100, 100).confidence == 0.65)
+    }
+
+    @Test func invalidPricesHoldHonestlyNotConsolidating() {
+        // ≤0 prices must not read as a confident "consolidating" hold.
+        for s in [signal(0, 100), signal(100, 0), signal(-5, 100)] {
+            #expect(s.recommendation == .hold)
+            #expect(s.confidence == 0.5)
+            #expect(s.reason == "No valid price to assess")
+        }
     }
 
     @Test func confidenceCappedAtNinetyTwo() {
@@ -47525,7 +47553,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7533 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7546 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53943,6 +53971,19 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageQuoteService.swift` (`StockSageUniverse` rebuilt — two-tier core+catalog + `search`), `Views/MarketsView.swift` (catalog autocomplete in the add-ticker box), `Salehman AITests/StockSageUniverseTests.swift` (NEW, 2 tests).
 **What & why:** Owner asked to "list all stocks & make it perfect." Reworked the universe into TWO tiers so coverage scales WITHOUT hammering the keyless Yahoo feed: (1) `groups` = the ANALYZED CORE, expanded 99→**185** liquid names — US by sector (mega-tech, semis, software, financials, health, consumer, energy/industrials) + broad/sector ETFs + expanded international blue-chips across 24 exchanges + 18 indices + 8 FX + 10 crypto; bulk history-fetched for the board/ideas/heatmap/allocation. (2) `catalogExtra` = a DISCOVERY long-tail (US growth/financials/health/consumer/REITs, more ETFs, more global, more crypto/FX) — searchable + one-tap addable but NOT bulk-fetched (adding one fetches just its quote). `catalog` = core+extra deduped = **393** unique. New pure `StockSageUniverse.search(query:limit:)` (exact→prefix→substring→market-label, bounded) powers a live autocomplete dropdown under the "Track any ticker" box: type "aap"→AAPL, "BTC"→BTC-USD, tap to add. Feed safety: refresh is user-triggered + chunked (6 concurrent) + the existing <50% coverage guard keeps the last-good snapshot on a partial outage, so 185 is just a slower manual refresh, never a broken one. 2 tests: catalog is a deduped superset of core; search ranks exact-first, case-insensitive, bounded, empty/no-match → []. python-verified counts: core 185 (0 dups), catalog 393.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The Markets tab now covers ~2× the analyzed names and ~400 searchable — the owner can find/add effectively any liquid global stock. A `markets-deep-research` Workflow (8 parallel surface readers → synthesis) is running to produce the prioritized "make it perfect" backlog. Committed + pushed. Autonomous build mode.
+
+## 2026-06-22 · Markets deep-research Workflow → top-8 quick-win fixes (honesty + a11y + persistence)
+**Files:** `StockSage/StockSageMonitor.swift`, `StockSage/StockSageSignalEngine.swift`, `Views/MarketsView.swift`, `Views/RuneScapeMarketView.swift`, `Salehman AITests/StockSageTests.swift` (+1 test).
+**What & why:** A 9-agent `markets-deep-research` Workflow (8 parallel surface readers → 1 synthesis, ~767k subagent tokens) produced a verified, value-ranked 32-item "make it perfect" backlog. Implemented the top quick-wins (mostly small diffs reusing existing patterns), prioritizing honesty-floor items:
+- **#1 (HIGH bug, honesty):** `StockSageMonitor.runCycle` had NO sample-data guard — `seedSampleData()` seeds two strong movers (2222.SR, NVDA), so a failed first-launch refresh would push a real "Strong Buy" notification on hardcoded demo prices. Fixed: `liveNotify = notify && !isSampleData` — suppresses notifications + avoids poisoning `lastAlerted` on sample data, still returns signals for the tests/tool.
+- **#6 (HIGH bug, honesty):** `StockSageSignalEngine.generateSignal` now guards `currentPrice>0 && previousPrice>0` → an honest "No valid price to assess" hold (conf 0.5) instead of a confident "consolidating". +1 test (python-verified: (0,100)/(100,0)/(−5,100) → hold/0.5).
+- **#2/#8 (HIGH ux):** `sizerAccount`, `sizerRiskPct`, watchlist `sort`, `ideaSort` migrated @State→@AppStorage — they no longer silently reset every launch (the $/week estimates + daily "strongest signal" sort persist).
+- **#4 (HIGH honesty):** stale-ideas banner — "Analyzed …" turns orange ">4h old; re-scan" past 4h, mirroring the regime-stale pattern.
+- **#7 (HIGH a11y):** rec/action badge ink 0.12→0.06 white (AA contrast on bright pastels); same on the GE margin chip.
+- **#9 (HIGH ux):** the cluster-check note now renders unconditionally — the "adds diversification" affirmation (computed but previously discarded) shows alongside the concentration warning.
+- **#24 (honesty copy):** "N markets" → "N market groups (185 names)"/"analyzed core" — the count was groups, not exchanges.
+- **#28 (honesty):** GE margin tooltip "before the 1% GE tax" → "pre-tax — before the 2% GE sell tax (live 2025-05-29)", matching the implemented 0.02 rate.
+**Result:** ✅ `tools/typecheck.sh` clean. 8 backlog items fixed; remaining 24 (partial-ideas rendering, 429 backoff+cache, browse-all-markets sheet, short-side stops, FX-leg parsing, …) queued for the autonomous loop. Committed + pushed.
 
 ---
 

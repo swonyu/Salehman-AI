@@ -34,7 +34,13 @@ enum StockSageSignalEngine {
     static func generateSignal(symbol: String,
                                currentPrice: Double,
                                previousPrice: Double) -> StockSageSignal {
-        let changePercent = previousPrice == 0 ? 0 : ((currentPrice - previousPrice) / previousPrice) * 100
+        // Defensive: a corrupt or missing price (≤0) must not masquerade as a confident
+        // "consolidating" hold — say so honestly and keep the function total.
+        guard currentPrice > 0, previousPrice > 0 else {
+            return StockSageSignal(symbol: symbol, recommendation: .hold,
+                                   confidence: 0.5, reason: "No valid price to assess")
+        }
+        let changePercent = ((currentPrice - previousPrice) / previousPrice) * 100
         let absChange = abs(changePercent)
 
         let recommendation: StockSageRecommendation

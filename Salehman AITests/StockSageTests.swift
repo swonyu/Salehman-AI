@@ -42,6 +42,15 @@ struct StockSageSignalEngineTests {
         #expect(signal(100, 100).confidence == 0.65)
     }
 
+    @Test func invalidPricesHoldHonestlyNotConsolidating() {
+        // ≤0 prices must not read as a confident "consolidating" hold.
+        for s in [signal(0, 100), signal(100, 0), signal(-5, 100)] {
+            #expect(s.recommendation == .hold)
+            #expect(s.confidence == 0.5)
+            #expect(s.reason == "No valid price to assess")
+        }
+    }
+
     @Test func confidenceCappedAtNinetyTwo() {
         // A 50% move would push raw confidence well past the cap.
         #expect(signal(100, 150).confidence == 0.92)

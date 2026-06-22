@@ -9,10 +9,10 @@ import AppKit   // NSPasteboard for the trade-plan copy
 /// built show a clear "coming soon".
 struct MarketsView: View {
     @State private var section: MarketSection
-    @State private var sort: MarketSort = .feed
+    @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
-    @State private var ideaSort: IdeaSort = .ev
+    @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
 
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
     /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
@@ -56,8 +56,8 @@ struct MarketsView: View {
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
     /// Detail-sheet position sizer inputs.
-    @State private var sizerAccount = "10000"
-    @State private var sizerRiskPct = "1"
+    @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
+    @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
     /// Focus identity for the three add-holding fields → accent focus glow,
     /// matching the app's other primary inputs.
     private enum AddField: Hashable { case symbol, shares, cost }
@@ -147,7 +147,7 @@ struct MarketsView: View {
         HStack(spacing: 8) {
             Circle().fill(DS.Palette.successSoft).frame(width: 7, height: 7)
                 .shadow(color: DS.Palette.successSoft.opacity(0.7), radius: 4)
-            Text("Live worldwide quotes across \(StockSageUniverse.marketCount) markets. Prices may be delayed ~15 min — educational, not financial advice.")
+            Text("Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice.")
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -298,7 +298,7 @@ struct MarketsView: View {
     /// otherwise the educational tagline.
     private var headerSubtitle: String {
         if !store.isSampleData, let when = store.lastUpdated {
-            return "Live · \(StockSageUniverse.marketCount) world markets · updated \(Self.timeFormatter.string(from: when))"
+            return "Live · \(StockSageUniverse.marketCount) market groups · updated \(Self.timeFormatter.string(from: when))"
         }
         return "Rule-based momentum signals · educational, not financial advice"
     }
@@ -1763,7 +1763,7 @@ struct MarketsView: View {
     private func recTextColor(_ r: StockSageRecommendation) -> Color {
         switch r {
         case .sell, .strongSell: return .white
-        default:                 return Color(white: 0.12)
+        default:                 return Color(white: 0.06)   // darker ink → AA contrast on bright pastels
         }
     }
 
@@ -1875,7 +1875,7 @@ struct MarketsView: View {
                     .font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trade ideas").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                    Text("Rules-based what / when / how-much across \(StockSageUniverse.marketCount) world markets, on 1-year history.")
+                    Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -1896,8 +1896,12 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
             }
             if let when = store.ideasUpdated {
-                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
-                    .font(.caption2).foregroundStyle(.secondary)
+                let stale = when.timeIntervalSinceNow < -4 * 3600   // scan older than 4h
+                Text(stale
+                     ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.rawValue.lowercased())"
+                     : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
+                    .font(.caption2).foregroundStyle(stale ? DS.Palette.warningSoft : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let err = store.ideasError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
@@ -2606,11 +2610,14 @@ struct MarketsView: View {
                               sp.count >= 2 else { return nil }
                         return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
                     }
-                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries),
-                       cc.isConcentrating {
+                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
+                        // Show the verdict either way: a warning when it concentrates,
+                        // an affirmation when it genuinely diversifies the book.
+                        let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                        let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
                         HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                            Text(cc.note).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
+                            Text(cc.note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -2913,7 +2920,7 @@ struct MarketsView: View {
     private func actionTextColor(_ a: TradeAdvice.Action) -> Color {
         switch a {
         case .reduce, .sell, .avoid: return .white
-        default:                     return Color(white: 0.12)
+        default:                     return Color(white: 0.06)   // darker ink → AA contrast on bright pastels
         }
     }
 
