@@ -1148,10 +1148,13 @@ struct MarketsView: View {
                 if sides.count == 2 {
                     Text("By side").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(sides) { s in
+                        let rel = StockSageJournal.reliability(s)
                         HStack(spacing: 8) {
                             Text(s.side.rawValue).font(.system(size: 11)).foregroundStyle(.white).frame(width: 60, alignment: .leading)
-                            Text("\(s.trades) tr · \(Int(s.winRate * 100))% win · \(String(format: "%+.2f", s.avgR))R avg")
-                                .font(.caption2).foregroundStyle(.secondary)
+                            Text(rel.isReliable
+                                 ? "\(s.trades) tr · \(Int(s.winRate * 100))% win · \(String(format: "%+.2f", s.avgR))R avg"
+                                 : "\(s.trades) tr · \(rel.tooFewLabel)")
+                                .font(.caption2).foregroundStyle(rel.isReliable ? Color.secondary : DS.Palette.warningSoft)
                             Spacer()
                             Text(String(format: "%+.2fR", s.totalR)).font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
@@ -1163,16 +1166,23 @@ struct MarketsView: View {
                 if sectors.count >= 2 {
                     Text("By sector").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(sectors) { sec in
+                        let rel = StockSageJournal.reliability(sec)
                         HStack(spacing: 8) {
                             Text(sec.sector).font(.system(size: 11)).foregroundStyle(.white)
                                 .frame(width: 96, alignment: .leading).lineLimit(1)
-                            Text("\(sec.trades) tr · \(Int(sec.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
+                            Text(rel.isReliable ? "\(sec.trades) tr · \(Int(sec.winRate * 100))% win"
+                                                : "\(sec.trades) tr · \(rel.tooFewLabel)")
+                                .font(.caption2).foregroundStyle(rel.isReliable ? Color.secondary : DS.Palette.warningSoft)
                             Spacer()
                             Text(String(format: "%+.2fR", sec.totalR)).font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(sec.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                                 .frame(width: 60, alignment: .trailing)
                         }
                     }
+                }
+                if sides.count == 2 || sectors.count >= 2 {
+                    Text(StockSageJournal.attributionCaveat)
+                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
 

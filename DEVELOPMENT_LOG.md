@@ -6842,6 +6842,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Honesty FIX — per-bucket reliability gate (a live small-sample lie in the journal)
+**Files:** `StockSage/StockSageJournal.swift` (+BucketReliability + reliability + attributionCaveat), `Views/MarketsView.swift` (gate By-side/By-sector rows + caveat), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
+**What (journal-attribution audit wxankvlmr #2, VERIFIED real):** bySector(:529) and bySide(:495) emit win%/avgR for ANY n≥1, and MarketsView rendered a 1-trade sector identically to a 40-trade edge — while the honesty floor exists everywhere ELSE (systemHealth n≥20 :298, kellyInputs n≥10 :336). That is a small-sample lie on a money surface. Added a pure BucketReliability(n,minN,isReliable,tooFewLabel) + reliability(SectorPnL/SidePnL, minN:5) + an attributionCaveat string; the By-side/By-sector rows now show "too few to tell (n=…, need 5)" in warningSoft for thin buckets while KEEPING the trade count + totalR (facts), and a one-line descriptive-not-predictive caveat under the blocks. ADDITIVE — bySector/bySide math untouched.
+**Verify:** typecheck clean; +test — bucketReliability(4) not reliable / (5) reliable, tooFewLabel has "n=4"+"need 5", SectorPnL(trades:2) gated, SidePnL(trades:8) reliable, caveat says "not predictive".
+**Result:** the journal no longer presents 2-trade noise as an edge — it says so. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

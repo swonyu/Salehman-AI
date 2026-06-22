@@ -136,6 +136,16 @@ struct SectorPnL: Sendable, Equatable, Identifiable {
     var id: String { sector }
 }
 
+/// Honesty gate for per-bucket attribution (by-side / by-sector / by-setup): a bucket with too
+/// few closed trades is mostly luck, so the UI can show "too few to tell" instead of a win% that
+/// reads like an edge. Same min-n discipline systemHealth (n≥20) and kellyInputs (n≥10) already use.
+struct BucketReliability: Sendable, Equatable {
+    let n: Int
+    let minN: Int
+    nonisolated var isReliable: Bool { n >= minN }
+    nonisolated var tooFewLabel: String { "too few to tell (n=\(n), need \(minN))" }
+}
+
 /// Best/worst closed trade + the current consecutive win-or-loss streak.
 struct JournalStreak: Sendable, Equatable {
     let bestR: Double
@@ -538,6 +548,22 @@ enum StockSageJournal {
         }
         .sorted { $0.totalR > $1.totalR }
     }
+
+    /// Is a bucket's win%/avgR worth believing, or small-sample noise? Applies the journal's
+    /// existing min-n discipline to per-bucket attribution, which previously had none.
+    nonisolated static func bucketReliability(closedWithR n: Int, minN: Int = 5) -> BucketReliability {
+        BucketReliability(n: n, minN: minN)
+    }
+    nonisolated static func reliability(_ s: SectorPnL, minN: Int = 5) -> BucketReliability {
+        BucketReliability(n: s.trades, minN: minN)
+    }
+    nonisolated static func reliability(_ s: SidePnL, minN: Int = 5) -> BucketReliability {
+        BucketReliability(n: s.trades, minN: minN)
+    }
+
+    /// Disclaimer for every per-bucket attribution row — descriptive of the past, not predictive.
+    nonisolated static let attributionCaveat =
+        "Per-bucket win%/R describes what already happened in your own log — it is not predictive. Small buckets are mostly luck."
 
     nonisolated static let caveat =
         "Your own trade record — not advice. P&L/R are computed from the prices you entered; a journal documents decisions, it doesn't validate them."

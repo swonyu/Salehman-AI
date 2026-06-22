@@ -1,208 +1,87 @@
-# Journal signal-attribution roadmap (wrk0orqi1, 2026-06-22)
+# Journal edge-attribution roadmap (wxankvlmr, 2026-06-22)
 
-5 items — the learn-what-works loop. Tag trades w/ entry signal (optional defaulted fields, old records decode), measure realized expectancy per signal. RE-VERIFY vs source.
+4 items — which setups/regimes/holds actually pay, with min-n honesty floor. #2 (reliability gate on bySector/bySide — a REAL shipped small-sample lie) DONE. RE-VERIFY vs source.
 
-### ⬜ #1 — Add optional, defaulted signal-attribution fields to TradeRecord (old records stay decodable)
-**mechanism:** In /Users/saleh/Desktop/Salehman AI/Salehman AI/StockSage/StockSageJournal.swift, add NEW stored properties to `struct TradeRecord` (lines 12-66), modeled exactly on `var note: String?` (line 29) — the same optional-defaulted idiom already shipped in persisted data under the `stocksage.journal.v1` UserDefaults key (StockSageJournalStore.load/save:593-603). VERIFIED: `note` is a `var String?` with synthesized Codable and no custom CodingKeys/init(from:), so Swift's synthesized decoder maps a missing key to nil — that IS the backward-compat mechanism and it's load-bearing (load() at line 595 uses `try?`, so any decode throw silently wipes the whole journal). Store the signal as PRIMITIVES, NOT the `TradeAdvice` type: VERIFIED `TradeAdvice` (StockSageAdvisor.swift:10-47) is `Sendable, Equatable` but NOT Codable and lives outside the journal module — embedding it would force a Codable conformance and couple the pure model to the advisor. Add after line 29:
-    var signalAction: String?     // TradeAdvice.Action.rawValue, e.g. "Strong Buy"
-    var signalConviction: Double? // 0...1 raw advisor conviction
-    var signalRegime: String?     // TradeAdvice.Regime.rawValue, e.g. "Bullish trend"
-Extend the memberwise init (lines 31-38) with three TRAILING defaulted params `signalAction: String? = nil, signalConviction: Double? = nil, signalRegime: String? = nil` and assign them. Appending at the END keeps EVERY existing call site source-compatible (the test helper `tSym`/`t` at StockSageJournalTests.swift:14-19, `StockSageJournalStore.add`, and `saveDraftTrade` at MarketsView.swift:1285). Add `nonisolated var isFromSignal: Bool { signalAction != nil }`. Do NOT add a custom init(from:)/CodingKeys — synthesis already defaults missing keys for Optionals; a hand-written one risks breaking decode of the other fields.
+### ⬜ #1 — Edge attribution by inferred SETUP TYPE (expectancy-R + n per bucket)
+**mechanism:** Add a pure, additive classifier + aggregator to enum StockSageJournal (StockSageJournal.swift) that answers the prompt's #1 question — WHICH KIND of trade pays — directly off real logged data, with the small-sample floor built into the helper itself (not bolted on). (1) TradeSetup enum (breakout/pullback/meanRevert/momentum/unclassified, String-raw, CaseIterable). (2) Pure `inferSetup(note:side:)`: lowercase the existing free-text note (TradeRecord.note, VERIFIED at StockSageJournal.swift:29 — the sole place setup intent is logged; populated at MarketsView.swift:1340, or auto-prefilled 'From idea: <action>, <conviction>% conviction' at MarketsView.swift:1368), match ordered keyword sets (breakout→pullback→meanRevert→momentum, first set wins); nil/empty/unrecognized → .unclassified (explicit, never a fabricated guess). (3) Aggregator `bySetup(_:minTrades:5)` mirrors the VERIFIED bySector idiom (StockSageJournal.swift:529-540): filter !isOpen, group by inferSetup, compactMap realizedR, emit a SetupPnL ONLY for buckets with >= minTrades closed-with-R trades; thinner buckets dropped; nil if NO bucket clears the floor. Sort best-expectancy (avgR) desc. (4) Store: `var setupPnL: [SetupPnL]?` beside sectorPnL (VERIFIED store cluster, StockSageJournal.swift:561). (5) UI additive: a 'By setup' block in the journal panel right after the VERIFIED 'By sector' block (MarketsView.swift:1162-1176), same row style / DS.Palette tokens, gated on `if let setups = journal.setupPnL` — renders nothing when nil. Ranked #1 because it is single-file, zero-migration, reads only existing fields, the honesty floor is intrinsic to the helper (returns nil rather than attributing off noise), and it is the most direct answer to 'which setup pays' — the prompt's stated priority.
 
-**signature:** struct TradeRecord: Codable, Sendable, Equatable, Identifiable {
-  // existing fields … var note: String?
-  var signalAction: String?
-  var signalConviction: Double?
-  var signalRegime: String?
-  init(id: UUID = UUID(), symbol: String, side: Side, entry: Double, stop: Double,
-       target: Double?, shares: Double, openedAt: Date,
-       exitPrice: Double? = nil, closedAt: Date? = nil, note: String? = nil,
-       signalAction: String? = nil, signalConviction: Double? = nil, signalRegime: String? = nil)
-  nonisolated var isFromSignal: Bool { signalAction != nil }
+**signature:** enum TradeSetup: String, Codable, Sendable, CaseIterable { case breakout="Breakout", pullback="Pullback", meanRevert="Mean-revert", momentum="Momentum", unclassified="Unclassified" }
+struct SetupPnL: Sendable, Equatable, Identifiable { let setup: TradeSetup; let trades: Int; let wins: Int; let totalR: Double; let avgR: Double; let winRate: Double; let isReliable: Bool; var id: String { setup.rawValue } }
+extension StockSageJournal {
+  nonisolated static func inferSetup(note: String?, side: TradeRecord.Side) -> TradeSetup
+  nonisolated static func bySetup(_ trades: [TradeRecord], minTrades: Int = 5) -> [SetupPnL]?
 }
+// StockSageJournalStore (~line 561): var setupPnL: [SetupPnL]? { StockSageJournal.bySetup(trades) }
 
-**test:** In StockSageJournalTests.swift (Swift Testing — `import Testing`, `@testable import Salehman_AI`). VERIFIED Side raw values are "Long"/"Short" (lines 13-16), so the legacy JSON below is valid.
+**test:** VERIFIED reusable: tests live in Salehman AITests/StockSageJournalTests.swift (Swift Testing @Test/#expect). The file's tSym helper does NOT set note, so a note-carrying variant is needed (the spec supplies one). The realized-R math (R=(exit-100)/10 for entry 100/stop 90) is exactly what the file already uses (held() at line 74). Three tests are python-verifiable as pure arithmetic over deterministic fixtures:
+1) inferSetupMatchesKeywordsDeterministically: 'clean breakout over 52w high'→.breakout; 'buy the dip / pullback to support'→.pullback; 'overbought, fade the move'→.meanRevert; 'From idea: Strong Buy, 80% conviction'→.momentum; nil and '   '→.unclassified; ordering 'breakout off a pullback'→.breakout (breakout set checked first).
+2) bySetupReportsExpectancyAndSampleSizePerBucket: 5 breakouts (3×+2R, 2×−1R → totalR +4, avgR +0.8, win 0.6) + 5 pullbacks (1×+2R, 4×−1R → totalR −2, avgR −0.4, win 0.2): out.count==2, out[0].setup==.breakout (best expectancy first), out[0].avgR≈0.8 && totalR≈4 && winRate≈0.6 && isReliable, out[1].avgR≈−0.4.
+3) bySetupDropsThinBucketsAndNilsWhenNothingQualifies: 5 breakouts + 2 pullbacks(minTrades 5) → count==1 (.breakout only); open trade (exit nil) → nil; 3 breakouts (minTrades 5) → nil; [] → nil.
+Run: xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO -only-testing:"Salehman AITests" 2>&1 | tee /tmp/salehman_build.log | tail -25
 
-@Test func oldRecordWithoutSignalFieldsStillDecodes() throws {
-  let legacy = "[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"symbol\":\"AAPL\",\"side\":\"Long\",\"entry\":100,\"stop\":90,\"shares\":10,\"openedAt\":0}]"
-  let recs = try JSONDecoder().decode([TradeRecord].self, from: Data(legacy.utf8))
-  #expect(recs.count == 1)
-  #expect(recs[0].signalAction == nil)
-  #expect(recs[0].signalConviction == nil)
-  #expect(recs[0].signalRegime == nil)
-  #expect(recs[0].isFromSignal == false)
-  #expect(recs[0].symbol == "AAPL")
-}
-@Test func signalFieldsRoundTrip() throws {
-  let t = TradeRecord(symbol: "NVDA", side: .long, entry: 100, stop: 90, target: 120,
-                      shares: 5, openedAt: Date(timeIntervalSince1970: 0),
-                      signalAction: "Strong Buy", signalConviction: 0.82, signalRegime: "Bullish trend")
-  let back = try JSONDecoder().decode(TradeRecord.self, from: JSONEncoder().encode(t))
-  #expect(back.signalAction == "Strong Buy")
-  #expect(back.signalConviction == 0.82)
-  #expect(back.isFromSignal == true)
-  #expect(back == t)   // Equatable now includes the new fields
-}
-Verify: `xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO -only-testing:"Salehman AITests"` 2>&1 | tee /tmp/salehman_build.log | tail -25 — confirm the BUILD + all-tests-passed tail line.
+**caveat:** SETUP IS INFERRED, NOT DECLARED: there is no structured setup field on TradeRecord (VERIFIED: lines 12-38 have no setup), so classification reads the owner's free-text note — a note that never mentions the strategy lands in .unclassified (explicit, never guessed). Honesty floor is intrinsic and matches the engine's existing nil-when-too-few discipline (kellyInputs minTrades:10 at :336, classifyHealth minTrades:20 at :298, ExpectancyCI.isSignificant at :155): bySetup emits a bucket ONLY at >= minTrades (default 5) closed-with-R trades, drops thinner buckets, and returns nil when nothing qualifies so the UI shows nothing rather than edge-attributing off noise. Open trades and undefined-R trades (entry==stop, realizedR==nil) contribute nothing — nothing is simulated. Treat buckets as directional, not proof; the standing journal caveat ('a journal documents decisions, it doesn't validate them', StockSageJournal.swift:543) still applies. Natural follow-up (out of scope): a structured setup picker in the add-trade form so classification becomes exact instead of keyword-inferred. Log a dated DEVELOPMENT_LOG.md entry after implementing (CLAUDE.md standing directive); this is Chat A's Views/Markets + StockSage lane.
 
-**caveat:** Equatable synthesis now compares the three fields: any pre-existing test that builds two 'equal' records where one was constructed with a tag and the other without will newly differ — intended. The fields are only populated on the prefill-from-idea path (rank 2); manually-typed trades leave them nil, so ALL attribution analytics MUST filter on `isFromSignal`/non-nil and report coverage (e.g. "42 of 60 closed trades carry a signal"), never assume universal attributability. Storing the raw STRING (not the enum) means a future rename of a `TradeAdvice.Action` raw value won't retro-rewrite history (correct — history is immutable) but grouping code must compare against current raw values and tolerate unknown legacy strings. Do NOT touch StockSageJournalCSV in this step (rank 5).
+### ✅ DONE #2 — Per-bucket reliability gate (min-n honesty layer) for ALL journal attribution
+**mechanism:** VERIFIED PROBLEM: bySector/bySide (and monthly/yearly) emit per-bucket win-rate and total-R for ANY n>=1, and MarketsView renders e.g. a 1-trade sector identically to a 40-trade edge — the 'By sector' loop (MarketsView.swift:1162-1176) and 'By side' loop (1147-1161) both print win%/avgR with NO minimum-sample gate (grep for minN/bucketReliability/'too few' returns nothing in the journal). The honesty floor exists everywhere ELSE (SystemHealth minTrades:20 at :298, kellyInputs minTrades:10 at :336, ExpectancyCI.isSignificant=|mean|>=stdErr at :155) but was never applied to per-bucket attribution. ADDITIVE FIX: (1) pure BucketReliability struct (n, minN, isReliable = n>=minN, tooFewLabel) near the struct cluster (~line 137). (2) bucketReliability(closedWithR:minN:5) + reliability(_ SectorPnL) / reliability(_ SidePnL) overloads next to bySector (~line 540). (3) one canonical attributionCaveat string near the existing caveat (:542). (4) optional store accessors near :561. (5) UI: in the By-sector and By-side loops, gate ONLY the win%/avgR VERDICT fragment — when !isReliable render tooFewLabel in DS.Palette.warningSoft while KEEPING the trade count and totalR visible (facts, not inferences); render attributionCaveat once under each header, mirroring how compounding/projection captions already disclaim. Ranked #2 because it is the load-bearing honesty guard the prompt mandates 'on every bucket' — it hardens the ALREADY-SHIPPED bySector/bySide rows (the live small-sample lie) and every future bucket (setup, hold-length) inherits the same gate. It is single-file-logic + a surgical UI gate, zero migration.
 
-### ⬜ #2 — Populate the signal fields on prefill-from-idea, carried through the draft to the saved record
-**mechanism:** VERIFIED the record is built in `saveDraftTrade()` (MarketsView.swift:1282-1293) from @State draft fields, NOT in `prefillTradeFromIdea` (1307-1321) which only fills text fields — so the signal must be carried through draft state. The idea's signal is reached via `idea.advice.action.rawValue` / `idea.advice.conviction` / `idea.advice.regime.rawValue` (StockSageStore.swift:10 → StockSageAdvisor.swift:25-29). NOTE: the source-of-truth here is `TradeAdvice`, NOT `StockSageRecommendation` (StockSageSignalEngine.swift:11-17) — the two enums share the 'Strong Buy'/'Buy'/'Sell' raw strings but `prefillTradeFromIdea` only has a `TradeAdvice`, so standardize on `TradeAdvice.Action.rawValue`. Steps: (1) Add `@State private var draftSignal: (action: String, conviction: Double, regime: String)? = nil` next to `draftNote` (line 62). (2) In `prefillTradeFromIdea`, after the existing assignments (the human-readable `draftNote = "From idea: …"` at line 1316 STAYS — it's user prose; this is the machine-readable tag), set `draftSignal = (idea.advice.action.rawValue, idea.advice.conviction, idea.advice.regime.rawValue)`. (3) In `saveDraftTrade()` pass them into the `TradeRecord(...)` call (lines 1285-1288): `signalAction: draftSignal?.action, signalConviction: draftSignal?.conviction, signalRegime: draftSignal?.regime`. (4) Add `draftSignal = nil` to the existing reset block (line 1290) AND clear it whenever a FRESH manual add opens, so a stale idea-signal can't attach to a hand-typed trade. The existing `isLoggableIdea` gate (1300-1305) already restricts prefill to Buy/Strong Buy/Sell/Reduce — Hold/Avoid never prefill, so they never tag. Use `idea.advice.conviction` (raw 0–1 signal strength), NOT any EV-mapped win-prob.
-
-**signature:** // MarketsView.swift
-@State private var draftSignal: (action: String, conviction: Double, regime: String)? = nil
-
-private func prefillTradeFromIdea(_ idea: StockSageIdea) {
-  // …existing field fills (draftSymbol/draftEntry/draftStop/draftTarget/draftNote/draftSide)…
-  draftSignal = (idea.advice.action.rawValue, idea.advice.conviction, idea.advice.regime.rawValue)
-}
-private func saveDraftTrade() {
-  // …existing guards…
-  let trade = TradeRecord(symbol: …, side: draftSide, entry: e, stop: st,
-                          target: Double(draftTarget), shares: sh, openedAt: Date(),
-                          note: trimmedNote.isEmpty ? nil : trimmedNote,
-                          signalAction: draftSignal?.action,
-                          signalConviction: draftSignal?.conviction,
-                          signalRegime: draftSignal?.regime)
-  journal.add(trade)
-  // …existing resets at line 1290… ; draftSignal = nil
-}
-
-**test:** `saveDraftTrade`/`prefillTradeFromIdea` are private SwiftUI view methods (not headlessly unit-testable), so assert the DATA CONTRACT at the TradeRecord layer with a hand-mirrored mapping. In StockSageJournalTests.swift:
-
-@Test func recordBuiltFromIdeaSignalCarriesAttribution() {
-  let t = TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 92, target: 120,
-                      shares: 10, openedAt: Date(timeIntervalSince1970: 0),
-                      note: "From idea: Strong Buy, 82% conviction",
-                      signalAction: TradeAdvice.Action.strongBuy.rawValue,
-                      signalConviction: 0.82,
-                      signalRegime: TradeAdvice.Regime.bullTrend.rawValue)
-  #expect(t.signalAction == "Strong Buy")
-  #expect(t.signalRegime == "Bullish trend")
-  #expect(t.isFromSignal)
-}
-@Test func manuallyLoggedTradeHasNoSignal() {
-  let t = TradeRecord(symbol: "X", side: .long, entry: 10, stop: 9, target: nil,
-                      shares: 1, openedAt: Date(timeIntervalSince1970: 0))
-  #expect(t.isFromSignal == false)
-}
-Verify with the canonical `xcodebuild test … -only-testing:"Salehman AITests"` and confirm the BUILD SUCCEEDED / all-passed tail line.
-
-**caveat:** The owner can edit prefilled entry/stop/side before saving — so a saved record's `signalAction` reflects the SIGNAL that triggered the log, not necessarily the hand-tuned numbers (correct for attribution: we credit the signal, not the levels), meaning downstream analytics must not assume `entry`/`stop` equal the idea's original price/stop. A per-tuple `@State` is not Equatable/animatable; if it must drive view diffing later, model it as a small Equatable struct. MarketsView is Chat A's Markets lane — claim it in COORDINATION.md before editing. This prefill path is the ONLY producer wired here; any future entry point won't tag unless it passes the same three args.
-
-### ⬜ #3 — Pure StockSageJournal.bySignalAction(_:) + SignalPnL — realized R grouped by signal, coverage-honest
-**mechanism:** Add a pure `nonisolated static` analyzer to `enum StockSageJournal` (StockSageJournal.swift), cloning the proven `bySector(_:)` (lines 529-540) and `SectorPnL` (lines 130-137) shape byte-for-byte — VERIFIED both already filter `!isOpen`, count wins via `realizedProfit > 0`, sum `realizedR`, compute winRate, and sort by totalR descending; reuse those exact idioms so the math stays identical to every other aggregate. Two structural differences from `bySector`: (1) the grouping key is `t.signalAction` instead of `StockSageSector.sector(t.symbol)`; (2) trades with NO signal are EXCLUDED, not bucketed: `for t in closed { guard let a = t.signalAction, !a.isEmpty else { continue }; groups[a, default: []].append(t) }` — keeping a legacy untagged trade out so it can't masquerade as a strategy. Sort best-first by `totalR` (ties by `trades` desc for determinism). ALSO add `signalCoverage(_:)` returning `(attributed: Int, unattributed: Int)` over CLOSED trades so coverage is reported, not assumed. Expose both on `StockSageJournalStore` as computed passthroughs next to `sectorPnL` (line 561): `var signalPnL: [SignalPnL] { StockSageJournal.bySignalAction(trades) }`. Add a `caveat` string constant alongside the existing `StockSageJournal.caveat` (line 542-543) — the journal-wide caveat sweep (tasks #71/#76, both VERIFIED completed) enforces caveat presence on journal analytics.
-
-**signature:** struct SignalPnL: Sendable, Equatable, Identifiable {
-  let action: String        // signalAction raw value
-  let trades: Int
-  let wins: Int
-  let totalR: Double
-  let avgR: Double
-  let winRate: Double        // 0–1
-  var id: String { action }
+**signature:** struct BucketReliability: Sendable, Equatable {
+  let n: Int; let minN: Int
+  nonisolated var isReliable: Bool { n >= minN }
+  nonisolated var tooFewLabel: String { "too few trades to tell (n=\(n), need \(minN))" }
 }
 extension StockSageJournal {
-  nonisolated static func bySignalAction(_ trades: [TradeRecord]) -> [SignalPnL]
-  nonisolated static func signalCoverage(_ trades: [TradeRecord]) -> (attributed: Int, unattributed: Int)
+  nonisolated static func bucketReliability(closedWithR n: Int, minN: Int = 5) -> BucketReliability
+  nonisolated static func reliability(_ s: SectorPnL, minN: Int = 5) -> BucketReliability
+  nonisolated static func reliability(_ s: SidePnL, minN: Int = 5) -> BucketReliability
+  nonisolated static let attributionCaveat = "Per-bucket edge below is DESCRIPTIVE of what already happened in your own log — not PREDICTIVE. Small buckets are mostly luck; a positive past bucket does not mean the next trade there wins."
 }
-// StockSageJournalStore:
-var signalPnL: [SignalPnL] { StockSageJournal.bySignalAction(trades) }
+// StockSageJournalStore: func sectorReliability(_:minN:) / sideReliability(_:minN:)
 
-**test:** In StockSageJournalTests.swift, modeled on the existing `bySectorGroupsAndSortsByTotalR` style:
+**test:** VERIFIED: bySector exists (StockSageJournal.swift:529) and StockSageSector.sector maps symbols (e.g. JPM→Financials, AAPL→Technology) so the bucket-count test is real, not mocked. Append to StockSageJournalTests.swift (pure, no UserDefaults). Python-verifiable as integer comparisons over fixed counts:
+1) bucketReliabilityGatesSmallSamples: bucketReliability(closedWithR:1,minN:5) → !isReliable, tooFewLabel contains 'too few' & 'n=1' & '5'; closedWithR:5→isReliable; :6→isReliable; :4→!isReliable (>= boundary, matching the >= used in SystemHealth).
+2) bucketReliabilityReadsRealBucketCounts: build [tSym("JPM",exit:130)] + 6×tSym("AAPL",exit:120); bySector → Financials bucket n=1 (!reliable, minN:5), Technology n=6 (reliable); bySide → long n=7 reliable at minN:5, !reliable at minN:8.
+3) attributionCaveatIsDescriptiveNotPredictive: lowercased caveat contains 'descriptive' && 'not' && 'predictive'.
+The existing caveat-presence sweep tests (tasks #71/#76) give a template for asserting disclaimer strings.
+Run the canonical xcodebuild test command and confirm ** TEST SUCCEEDED **.
 
-@Test func bySignalActionGroupsRealizedRAndExcludesUntaggedAndOpen() {
-  func rec(_ action: String?, exit: Double?, closed: Bool = true) -> TradeRecord {
-    TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
-                openedAt: Date(timeIntervalSince1970: 0), exitPrice: exit,
-                closedAt: closed ? Date(timeIntervalSince1970: 100) : nil, signalAction: action)
-  }
-  let trades = [
-    rec("Strong Buy", exit: 120),               // +2R
-    rec("Strong Buy", exit: 90),                // −1R
-    rec("Buy",        exit: 130),               // +3R
-    rec("Buy",        exit: 110, closed: false),// OPEN → excluded
-    rec(nil,          exit: 130),               // manual → excluded from grouping, counted unattributed
-  ]
-  let g = StockSageJournal.bySignalAction(trades)
-  #expect(g.count == 2)
-  #expect(g.first?.action == "Buy" && g.first?.totalR == 3)   // best-first by totalR
-  let sb = g.first { $0.action == "Strong Buy" }!
-  #expect(sb.trades == 2 && sb.wins == 1)
-  #expect(abs(sb.totalR - 1.0) < 1e-9)
-  #expect(abs(sb.avgR - 0.5) < 1e-9)
-  #expect(abs(sb.winRate - 0.5) < 1e-9)
-  let cov = StockSageJournal.signalCoverage(trades)
-  #expect(cov.attributed == 3)   // 3 closed tagged
-  #expect(cov.unattributed == 1) // 1 closed manual
-  #expect(StockSageJournal.bySignalAction([]).isEmpty)
+**caveat:** ADDITIVE only — adds new pure types/helpers/strings and gates ONLY the per-bucket VERDICT text; removes no existing stat, mutates no shared global, edits no project.pbxproj (lives in StockSageJournal.swift, which already compiles), reads exclusively from real logged closed-with-R TradeRecords — never fabricates a trade or number. Sample-floor scope honesty: the gate uses SectorPnL.trades / SidePnL.trades, which count CLOSED trades; a closed trade logged with entry==stop has realizedR==nil and is already excluded from totalR/avgR (VERIFIED: bySector at :535 compactMaps realizedR, totalR uses only defined-R), so the gate can OVER-count n by those rare zero-risk trades — making a bucket read as MORE reliable than its R-bearing count. If exactness matters, the clean follow-up is a SEPARATE additive change adding closedWithR:Int to SectorPnL/SidePnL and gating on that. minN default 5 is a per-bucket noise floor, intentionally distinct from the 20-trade whole-system floor and the 10-trade sizing floor — keep it a parameter (unit-testable, tunable) and do not silently raise it without a dev-log entry. Append a dated DEVELOPMENT_LOG.md entry (CLAUDE.md); Chat A lane.
+
+### ⬜ #3 — Realized R attribution by HOLD-LENGTH bucket (intraday / days / weeks)
+**mechanism:** New pure helper StockSageJournal.byHoldLength(_:) added to enum StockSageJournal (StockSageJournal.swift), mirroring the VERIFIED bySide/bySector/holdingPeriod pattern. Fully ADDITIVE — no existing struct, helper, or call site changes. Uses ONLY real logged trades: filter !isOpen, require closedAt, compactMap realizedR (so entry==stop undefined-R trades are excluded, like every edge helper). Hold per trade is closedAt.timeIntervalSince(openedAt) — the SAME basis holdingPeriod already uses (VERIFIED StockSageJournal.swift:371-372). Buckets lower-exclusive/upper-inclusive so each closed trade lands once (matching the rDistribution partition convention at :388-404): INTRADAY held < 1 day (<86_400s); DAYS 1d <= held < 7d; WEEKS held >= 7d. Per non-empty bucket report n (trades), wins (realizedProfit>0, consistent with bySide at :501), winRate, totalR, avgR — directly answering 'are the winners the quick ones or the held ones?'. Empty buckets omitted (like bySide). New HoldBucketPnL struct + ordered HoldBucket enum (intraday→days→weeks) keep display order stable. Store: `var holdLengthPnL: [HoldBucketPnL]` beside sideStats/sectorPnL (~:561). UI: inside the VERIFIED `if s.closed > 0` block (MarketsView.swift:994, next to journal.holdingPeriod), an additive read-only rows section gated `if !journal.holdLengthPnL.isEmpty`, rendering `label · n · win% · avg R` with the established ideaMetric/Text(.caption2) styling and the success/danger color rule (avgR>=0 → successSoft else danger, the VERIFIED rule at MarketsView.swift:1001). Ranked #3: another clean, single-file, zero-migration 'which-bucket-pays' slice — but answers a SECONDARY question (speed vs patience) and, per its own caveat, ships WITHOUT a significance test, so it benefits from being applied AFTER the rank-2 reliability layer exists.
+
+**signature:** enum HoldBucket: String, Sendable, CaseIterable {
+  case intraday = "Intraday (<1d)"; case days = "Days (1–7d)"; case weeks = "Weeks (>7d)"
+  nonisolated static func of(_ t: TradeRecord) -> HoldBucket?
 }
-Verify with the canonical `xcodebuild test …` command; confirm BUILD + all-tests-passed tail.
-
-**caveat:** Because untagged trades are dropped, `bySignalAction(trades).map(\.trades).reduce(0,+)` need NOT equal `stats(trades).closed` — intentional, not a bug; assert it so a future 'fix' doesn't re-bucket untagged into a fake group. This measures ASSOCIATION (self-reported labels), not causation — garbage tagging in = garbage attribution out; state that in the `caveat` constant. Win count uses `realizedProfit > 0` (strict), so breakeven is a non-win, matching `bySector`/`bySide`. Per-action samples for a real owner are tiny — any UI MUST show n and lean on the existing significance machinery (ExpectancyCI.isSignificant, tradesToSignificance) before drawing conclusions; never present a 2-trade 'Strong Buy edge' as real. Keep the function PURE/nonisolated and pass `trades` in (like `bySector`/`edge`) so it's deterministic under parallel tests.
-
-### ⬜ #4 — StockSageJournal.whatWorked(_:) — copyable 'what actually worked' summary with the load-bearing caveat
-**mechanism:** Build a pure `nonisolated static func whatWorked(_ trades:) -> String?` on `enum StockSageJournal` from `bySignalAction(trades)` (rank 3), following the 'namespaced static returns text' pattern the journal/velocity copy buttons already paste. Return `nil` when `bySignalAction` is empty (no tagged closed trades) so the UI can HIDE the button — VERIFIED that mirrors how `compoundingCurve`/`expectancyConfidence`/`streak` (lines 232/425/437) all return optionals on a thin record. When non-nil: `let best = list.first!; let worst = list.last!`; render best and worst by realized R (totalR plus avgR/winRate/trades for context), formatting signed R as `%+.2fR` exactly like the existing journal copy. If best == worst (single signal), say so honestly rather than printing identical rows. ALWAYS append a closing caveat line stating this is the owner's OWN small-sample history, descriptive not predictive — reuse the tone of `StockSageJournal.caveat` (lines 542-543) and `ExpectancyCI.note` (lines 157-160). Expose on the store: `var whatWorkedSummary: String? { StockSageJournal.whatWorked(trades) }` next to line 561-574.
-
-**signature:** extension StockSageJournal {
-  /// Copyable best/worst-by-realized-R summary from signal attribution, with an
-  /// explicit 'your own small-sample history, not predictive' caveat. nil when no
-  /// signal-tagged closed trades exist.
-  nonisolated static func whatWorked(_ trades: [TradeRecord]) -> String?
+struct HoldBucketPnL: Sendable, Equatable, Identifiable {
+  let bucket: HoldBucket; let trades: Int; let wins: Int; let winRate: Double; let totalR: Double; let avgR: Double
+  var id: String { bucket.rawValue }
 }
-// StockSageJournalStore:
-var whatWorkedSummary: String? { StockSageJournal.whatWorked(trades) }
+extension StockSageJournal { nonisolated static func byHoldLength(_ trades: [TradeRecord]) -> [HoldBucketPnL] }
+// StockSageJournalStore: var holdLengthPnL: [HoldBucketPnL] { StockSageJournal.byHoldLength(trades) }
 
-**test:** In StockSageJournalTests.swift, feeding the same tagged set as the rank-3 test:
+**test:** VERIFIED reusable: StockSageJournalTests.swift already has held(_ exit:days:) (line 74) which sets openedAt=0, closedAt=days·86_400 — exactly the hold-length basis, so no new fixture machinery and the days→seconds conversion is exercised through real timestamps. Python-verifiable as bucket arithmetic + boundary partition:
+byHoldLengthBucketsAndAttributesR: [held(120,days:0.5), held(90,days:3), held(110,days:5), held(120,days:10)] → buckets ==[.intraday,.days,.weeks] (empty omitted, ordered); intraday n=1,win=1,avgR=2,winRate=1; days n=2,win=1,totalR=0,avgR=0,winRate=0.5 ((−1+1)/2); weeks n=1,avgR=2. Boundaries land once: held(_,days:1)→.days (not intraday), held(_,days:7)→.weeks (not days), no .intraday. Open trade (still open) and entry==stop (undefined R) excluded; [] → empty.
+Run the canonical xcodebuild test command; confirm ** TEST SUCCEEDED **.
 
-@Test func whatWorkedNamesBestAndWorstByRealizedRAndCarriesCaveat() {
-  let trades = [ /* Strong Buy +2R, Strong Buy −1R (totalR +1), Buy +3R */ ]
-  let text = StockSageJournal.whatWorked(trades)!
-  #expect(text.contains("Buy"))                    // best, +3R
-  #expect(text.contains("Strong Buy"))             // worst, +1R
-  #expect(text.range(of: "Buy")!.lowerBound < text.range(of: "Strong Buy")!.lowerBound)
-  // caveat presence (matches sweep tests #71/#76):
-  #expect(text.lowercased().contains("your") || text.lowercased().contains("own"))
-  #expect(text.lowercased().contains("sample") || text.lowercased().contains("not predict"))
+**caveat:** (1) DESCRIPTIVE, NOT CAUSAL — a bucket's avgR difference can be sample noise, not a real speed-vs-patience edge; this helper carries NO significance test (unlike expectancyConfidence), so on a thin log (n=1–2 per bucket) the comparison is meaningless. This is exactly why it should ship after / alongside the rank-2 reliability gate, which can wrap each HoldBucketPnL with the same min-n verdict. (2) The 1d/7d cuts are calendar-duration on closedAt−openedAt, NOT market sessions — a Friday→Monday hold counts as 3 days though 1 session elapsed; this matches the existing holdingPeriod convention (raw seconds/86_400, VERIFIED :371) so the two stay consistent, but it is an approximation of 'intraday'. (3) Inherits the model's data-entry trust (standing StockSageJournal.caveat, :543): R is computed purely from the prices/timestamps the owner logged; a mis-stamped closedAt mis-buckets the trade. (4) The owner's OWN realized record — never advice. Append a dated DEVELOPMENT_LOG.md entry (CLAUDE.md); Chat A lane.
+
+### ⬜ #4 — Attribution by MARKET REGIME at entry (persisted RegimePnL rollup)
+**mechanism:** Answers 'does my edge only exist in one tape?' — slice realized R by the MARKET REGIME the trade was opened in (the journal currently slices by side/sector/month/year but never by regime). CRITICAL HONESTY CONSTRAINT correctly handled: the regime is the market STATE at entry and cannot be reconstructed after the fact (that would be backfilled guesswork), so it must be STAMPED AT ENTRY and stored. STEP 1 — additive persisted field on TradeRecord mirroring the VERIFIED `note` precedent (StockSageJournal.swift:27-29): `var regimeAtEntry: String?` as the LAST init param, defaulted nil. Stored as MarketRegime.State.rawValue String — VERIFIED necessary because MarketRegime.State is `enum State: String, Sendable` (StockSageRegime.swift:18) and is NOT Codable, so a plain optional String keeps the existing JSONEncoder→UserDefaults('stocksage.journal.v1', VERIFIED :553/:600) path zero-migration and old records decode cleanly (same proven pattern as note). STEP 2 — stamp at log time in saveDraftTrade (VERIFIED MarketsView.swift:1334-1341; store.regime is in scope at :183/:214): pass `regimeAtEntry: store.regime?.state.rawValue` into the init; nil when no gauge has run → 'Unknown'. STEP 3 — byRegime(_:) helper composed like bySector, returning RegimePnL (regime label, trades, wins, totalR, avgR, winRate, stdErrR) and REUSING the VERIFIED expectancyConfidence(ts)?.stdErrR (:425-433) so the small-sample flag is structural; nil-stamp trades bucket as 'Unknown' (never assigned a regime), sorted by totalR desc with 'Unknown' always last; isThin when trades<5 || stdErrR==nil || |avgR|<stdErrR. Store: `var regimePnL`. Ranked LAST because it is the ONLY spec that (a) mutates the persisted TradeRecord shape + adds a write site (highest blast radius, needs the backward-compat decode test), and (b) is FORWARD-ONLY — every already-logged trade buckets as 'Unknown', so it surfaces nothing useful until new stamped trades accrue. Highest risk, slowest payoff.
+
+**signature:** struct TradeRecord { /* …existing… */ var regimeAtEntry: String? }  // last init param, defaulted nil
+struct RegimePnL: Sendable, Equatable, Identifiable {
+  let regime: String; let trades: Int; let wins: Int; let totalR: Double; let avgR: Double; let winRate: Double; let stdErrR: Double?
+  var id: String { regime }
+  var isThin: Bool { trades < 5 || stdErrR == nil || (stdErrR.map { abs(avgR) < $0 } ?? true) }
 }
-@Test func whatWorkedNilWhenNoTaggedClosedTrades() {
-  #expect(StockSageJournal.whatWorked([]) == nil)
-  let untagged = TradeRecord(symbol: "X", side: .long, entry: 10, stop: 9, target: nil, shares: 1,
-                             openedAt: Date(timeIntervalSince1970: 0), exitPrice: 11,
-                             closedAt: Date(timeIntervalSince1970: 100))
-  #expect(StockSageJournal.whatWorked([untagged]) == nil)
-}
-Verify with the canonical `xcodebuild test …`; confirm BUILD + all-passed tail.
+extension StockSageJournal { nonisolated static func byRegime(_ trades: [TradeRecord]) -> [RegimePnL] }
+// StockSageJournalStore: var regimePnL: [RegimePnL] { StockSageJournal.byRegime(trades) }
+// MarketsView.saveDraftTrade(): TradeRecord(..., note: ..., regimeAtEntry: store.regime?.state.rawValue)
 
-**caveat:** The caveat line is load-bearing and tested — never let a refactor drop it; it's the honesty floor the journal-wide caveat sweep enforces. Keep the function PURE (no store access, no Date.now) so it's deterministic under parallel tests. Do NOT claim statistical significance in the copy — `bySignalAction` rows can be n=1; the text DESCRIBES, it does not validate (same stance as `StockSageJournal.caveat`). The Copy-button wiring (reuse the verbatim NSPasteboard idiom at MarketsView.swift:952-953 / 2234-2235, gate on `if let text = store.whatWorkedSummary`) is Chat A's Markets lane — claim MarketsView in COORDINATION.md first.
+**test:** VERIFIED: MarketRegime.State.trendingBull/.trendingBear exist (StockSageRegime.swift:19-20) so the test labels are real. Two python-verifiable tests (append to StockSageJournalTests.swift):
+1) byRegimeSplitsEdgeAcrossTapesAndBucketsUnknownLast: bull 3 trades (+2,+1,+3 → totalR 6, avgR 2, win 1.0); bear 2 (−1,−0.5 → totalR −1.5, avgR −0.75, win 0); nil-stamp 1 (+2R → Unknown); 1 OPEN bull → excluded. r.count==3, r.last.regime=="Unknown", bull.avgR>0 && bear.avgR<0 (the whole point: edge is regime-dependent), Unknown n=1 stdErrR==nil && isThin; byRegime([]).isEmpty.
+2) tradeRecordRegimeFieldIsBackwardCompatible: decode a legacy JSON blob WITHOUT regimeAtEntry → t.regimeAtEntry==nil. This is the load-bearing migration test — it must pass to prove old persisted data decodes clean (the existing persistence key is unchanged; the existing decode at :595 must not break).
+Run the canonical xcodebuild test command; confirm ** TEST SUCCEEDED ** AND that no existing test (which never passes regimeAtEntry) fails to compile — the defaulted-nil last param preserves every call site including tSym/t/held/seq.
 
-### ⬜ #5 — (Optional) Export the signal tag in CSV — only if you bump header + row + test together
-**mechanism:** VERIFIED `StockSageJournalCSV` (StockSageJournalCSV.swift) has a FIXED header string at line 11 (`"symbol,side,entry,stop,target,shares,openedAt,exitPrice,closedAt,realizedR,note"`) and writes the row fields in StockSageJournalCSV.csv (lines 16-29), with `note` appended last at line 28. VERIFIED the CSV test (StockSageJournalCSVTests.swift:16) asserts `lines[0] == StockSageJournalCSV.header` BYTE-FOR-BYTE — so the column contract is enforced and any addition MUST update header + row builder + test in the SAME change or the suite breaks. If (and only if) the owner wants tags to survive export, append `signalAction` AFTER `note`: header becomes `…,note,signal`, and add `f.append(t.signalAction ?? "")` after line 28 (escaped via the existing `escape`). This is STRICTLY optional and additive — the attribution report (ranks 3-4) works purely off in-app records and does NOT require CSV. Leave CSV untouched otherwise.
-
-**signature:** // StockSageJournalCSV.swift
-static let header = "symbol,side,entry,stop,target,shares,openedAt,exitPrice,closedAt,realizedR,note,signal"
-// in csv(_:), after `f.append(t.note ?? "")`:
-f.append(t.signalAction ?? "")
-
-**test:** In StockSageJournalCSVTests.swift, update the existing header assertion AND add a round-trip:
-
-@Test func headerIncludesSignalColumn() {
-  #expect(StockSageJournalCSV.header.hasSuffix(",signal"))
-  #expect(StockSageJournalCSV.header.split(separator: ",").count == 12)
-}
-@Test func taggedTradeEmitsSignalInLastColumn() {
-  let t = TradeRecord(symbol: "NVDA", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
-                      openedAt: Date(timeIntervalSince1970: 0), signalAction: "Strong Buy")
-  let row = StockSageJournalCSV.csv([t]).split(separator: "\n").map(String.init)[1]
-  #expect(row.hasSuffix(",Strong Buy"))
-}
-@Test func untaggedTradeEmitsEmptyTrailingSignalCell() {
-  let t = TradeRecord(symbol: "X", side: .long, entry: 10, stop: 9, target: nil, shares: 1,
-                      openedAt: Date(timeIntervalSince1970: 0))
-  let row = StockSageJournalCSV.csv([t]).split(separator: "\n").map(String.init)[1]
-  #expect(row.hasSuffix(","))   // empty signal cell, no trailing data
-}
-IMPORTANT: also fix any EXISTING CSV test that hard-codes the old 11-column header or row length, or it will fail. Verify with the canonical `xcodebuild test …`; confirm BUILD + all-passed tail.
-
-**caveat:** Do this ONLY as one atomic change (header + row + every affected test) — a partial edit breaks the byte-exact header assertion at StockSageJournalCSVTests.swift:16 and any column-count test. A comma inside an action string is impossible today (the five `TradeAdvice.Action` raw values are comma-free) but the existing `escape` (lines 36-40) already handles it for safety, so route the value through it. This step is genuinely optional: skip it unless the owner asks for tags in exports — the learn-what-works loop (ranks 1→4) is complete without CSV. After ANY of these changes: run the canonical build+test piped to /tmp/salehman_build.log | tail -25, regenerate SOURCE_BUNDLE.md via `bash tools/bundle_source.sh` (never Read it), update PROJECT_CONTEXT.md (new TradeRecord fields + attribution analytics), and append a dated DEVELOPMENT_LOG.md entry — all standing owner directives.
+**caveat:** A per-regime slice is a SMALL SAMPLE of an already-small journal: dividing N closed trades across 4 regime states + Unknown makes each bucket far noisier than the lifetime number — a 'bull +2R' off 3 trades is essentially luck. That is why RegimePnL.isThin and per-bucket stdErrR are surfaced (reusing the VERIFIED expectancyConfidence math): any bucket where |avgR|<stdErr or n<5 must read as not-yet-distinguishable-from-noise, mirroring ExpectancyCI.isSignificant (:155) — never as a proven regime edge. The 'Unknown' bucket (trades logged before stamping, or before any gauge ran) is genuinely un-attributable and must be labeled so, NOT folded into a regime — and on this codebase that is initially EVERY existing trade (forward-only). The regime is a coarse 4-state gauge captured ONCE at entry and never updated as the tape shifts mid-hold; it biases sizing, not direction (StockSageRegime caveat). HONEST FRAMING: this is a hypothesis-generator ('where did my logged edge come from?'), not a verdict — a single-regime edge is a flag to keep logging in the other regimes, not license to size up. Risk note: this is the only spec touching the persisted TradeRecord and a write site (MarketsView.saveDraftTrade), so the backward-compat decode test is mandatory and a project.pbxproj edit is NOT needed (the field lives in the existing StockSageJournal.swift). Append a dated DEVELOPMENT_LOG.md entry (CLAUDE.md); Chat A Views/Markets + StockSage lane.

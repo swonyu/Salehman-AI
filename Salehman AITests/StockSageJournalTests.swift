@@ -18,6 +18,21 @@ struct StockSageJournalTests {
                     exitPrice: exit, closedAt: exit == nil ? nil : Date(timeIntervalSince1970: 100))
     }
 
+    @Test func perBucketReliabilityGatesSmallSamples() {
+        // The min-n honesty gate: a thin bucket is "too few to tell", a full one is reliable.
+        #expect(!StockSageJournal.bucketReliability(closedWithR: 4).isReliable)   // < 5 default
+        #expect(StockSageJournal.bucketReliability(closedWithR: 5).isReliable)    // == 5
+        let thin = StockSageJournal.bucketReliability(closedWithR: 4)
+        #expect(thin.tooFewLabel.contains("n=4") && thin.tooFewLabel.contains("need 5"))
+        // Overloads read the bucket's own trade count.
+        let thinSector = SectorPnL(sector: "Tech", trades: 2, wins: 2, totalR: 4, winRate: 1)
+        let fullSide = SidePnL(side: .long, trades: 8, wins: 5, totalR: 3, avgR: 0.4, winRate: 0.625)
+        #expect(!StockSageJournal.reliability(thinSector).isReliable)
+        #expect(StockSageJournal.reliability(fullSide).isReliable)
+        // The row caveat is honest: descriptive of the past, not predictive.
+        #expect(StockSageJournal.attributionCaveat.lowercased().contains("not predictive"))
+    }
+
     @Test func longProfitAndRMultiple() {
         let trade = t(.long, entry: 100, stop: 90, shares: 10)   // risk/share = 10
         #expect(trade.profit(at: 120) == 200)                    // (120−100)*10
