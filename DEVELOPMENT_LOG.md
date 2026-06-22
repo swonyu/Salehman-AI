@@ -6560,6 +6560,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #2 — volume confirmation (real volumes, never fabricated)
+**Files:** `StockSage/StockSageIndicators.swift` (+volumeConfirmation), `StockSage/StockSageAdvisor.swift` (wire into advise(history:)), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** the advisor never read the REAL fetched volume series. Added pure `volumeConfirmation(closes:volumes:lookback:recentBars:)` → (confirmed, ratio) comparing recent-3-bar avg vs prior-20-bar avg; nil when volumes absent/zero (FX/indices) so nothing is invented. `advise(history:)` now passes `history.volumes` and nudges the signal MAGNITUDE ±0.05 (confirmed ⇒ stronger, thin ⇒ weaker) — never flips direction. `advise(closes:highs:lows:)` keeps `volumes: nil` default ⇒ byte-for-byte unchanged for the backtester and all close-only callers.
+**Verify:** typecheck clean; python-verified literals — surge(22×100+3×200)=ratio 2.0 confirmed, fade(+3×50)=0.5 not-confirmed, all-zero/len-mismatch/too-short ⇒ nil.
+**Result:** ideas now weigh whether a move has real participation. ✅ On-theme for "only real data."
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

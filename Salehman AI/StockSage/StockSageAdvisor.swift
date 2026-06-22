@@ -58,12 +58,15 @@ enum StockSageAdvisor {
     /// Advice straight from a fetched candle history — wires the live OHLC feed
     /// (`StockSageQuoteService.fetchHistory`) to the rules below, ATR stops included.
     nonisolated static func advise(history: StockSagePriceHistory) -> TradeAdvice {
-        advise(closes: history.closes, highs: history.highs, lows: history.lows)
+        advise(closes: history.closes, highs: history.highs, lows: history.lows, volumes: history.volumes)
     }
 
-    /// Advice from a daily close history (+ optional highs/lows for ATR stops).
-    /// Series are newest-last. Conservative "Hold" when history is too short.
-    nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil) -> TradeAdvice {
+    /// Advice from a daily close history (+ optional highs/lows for ATR stops, and
+    /// optional REAL volumes for participation confirmation). Series are newest-last.
+    /// Conservative "Hold" when history is too short. Passing `volumes: nil` (the default)
+    /// leaves the result byte-for-byte identical to before volume confirmation existed.
+    nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil,
+                                   volumes: [Double]? = nil) -> TradeAdvice {
         guard closes.count >= 30, let price = closes.last, price > 0 else {
             return TradeAdvice(action: .hold, conviction: 0, regime: .range,
                                rationale: ["Not enough price history to judge."],
@@ -116,6 +119,20 @@ enum StockSageAdvisor {
         } else {
             if rsi > 80 { score -= 0.10; rationale.append("RSI > 80 — extended; trail stops") }
             else if rsi < 20 { score += 0.10; rationale.append("RSI < 20 — washed out") }
+        }
+
+        // Volume confirmation (real volumes only): a directional move carried by
+        // above-average participation is more trustworthy; one on thin volume is suspect.
+        // Nudges the MAGNITUDE of the existing signal (±0.05), never flips its direction,
+        // and does nothing when volumes are absent/zero (FX, indices) — so the
+        // close-only callers (e.g. the backtester) are unchanged.
+        if let volumes, abs(score) > 0,
+           let vc = StockSageIndicators.volumeConfirmation(closes: closes, volumes: volumes) {
+            let dir = score >= 0 ? 1.0 : -1.0
+            score += dir * (vc.confirmed ? 0.05 : -0.05)
+            rationale.append(vc.confirmed
+                ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
+                : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
         }
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range

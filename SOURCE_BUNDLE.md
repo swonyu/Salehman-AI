@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:34 +03 · Swift files: 246 · Swift LOC: 45626_
+_Generated: 2026-06-22 14:46 +03 · Swift files: 246 · Swift LOC: 45681_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8549,7 +8549,7 @@ final class RuneScapeStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (179 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (196 lines) =====
 ```swift
 import Foundation
 
@@ -8611,12 +8611,15 @@ enum StockSageAdvisor {
     /// Advice straight from a fetched candle history — wires the live OHLC feed
     /// (`StockSageQuoteService.fetchHistory`) to the rules below, ATR stops included.
     nonisolated static func advise(history: StockSagePriceHistory) -> TradeAdvice {
-        advise(closes: history.closes, highs: history.highs, lows: history.lows)
+        advise(closes: history.closes, highs: history.highs, lows: history.lows, volumes: history.volumes)
     }
 
-    /// Advice from a daily close history (+ optional highs/lows for ATR stops).
-    /// Series are newest-last. Conservative "Hold" when history is too short.
-    nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil) -> TradeAdvice {
+    /// Advice from a daily close history (+ optional highs/lows for ATR stops, and
+    /// optional REAL volumes for participation confirmation). Series are newest-last.
+    /// Conservative "Hold" when history is too short. Passing `volumes: nil` (the default)
+    /// leaves the result byte-for-byte identical to before volume confirmation existed.
+    nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil,
+                                   volumes: [Double]? = nil) -> TradeAdvice {
         guard closes.count >= 30, let price = closes.last, price > 0 else {
             return TradeAdvice(action: .hold, conviction: 0, regime: .range,
                                rationale: ["Not enough price history to judge."],
@@ -8669,6 +8672,20 @@ enum StockSageAdvisor {
         } else {
             if rsi > 80 { score -= 0.10; rationale.append("RSI > 80 — extended; trail stops") }
             else if rsi < 20 { score += 0.10; rationale.append("RSI < 20 — washed out") }
+        }
+
+        // Volume confirmation (real volumes only): a directional move carried by
+        // above-average participation is more trustworthy; one on thin volume is suspect.
+        // Nudges the MAGNITUDE of the existing signal (±0.05), never flips its direction,
+        // and does nothing when volumes are absent/zero (FX, indices) — so the
+        // close-only callers (e.g. the backtester) are unchanged.
+        if let volumes, abs(score) > 0,
+           let vc = StockSageIndicators.volumeConfirmation(closes: closes, volumes: volumes) {
+            let dir = score >= 0 ? 1.0 : -1.0
+            score += dir * (vc.confirmed ? 0.05 : -0.05)
+            rationale.append(vc.confirmed
+                ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
+                : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
         }
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range
@@ -10161,7 +10178,7 @@ enum StockSageGlossary {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (137 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (155 lines) =====
 ```swift
 import Foundation
 
@@ -10298,6 +10315,24 @@ enum StockSageIndicators {
         let past = closes[closes.count - 1 - period]
         guard past != 0, let last = closes.last else { return nil }
         return (last - past) / past * 100
+    }
+
+    /// Is the latest move backed by REAL volume? Compares the last `recentBars` of the
+    /// (real, fetched) volume series against the `lookback` bars before them. ratio = recent
+    /// avg ÷ prior avg; confirmed when ratio ≥ 1 (above-average participation). Returns nil
+    /// when volumes are absent/all-zero (FX & indices have none) — never invents a number.
+    nonisolated static func volumeConfirmation(closes: [Double], volumes: [Double],
+                                               lookback: Int = 20, recentBars: Int = 3)
+        -> (confirmed: Bool, ratio: Double)? {
+        guard volumes.count == closes.count, lookback > 0, recentBars > 0,
+              volumes.count >= lookback + recentBars else { return nil }
+        let recent = volumes.suffix(recentBars)
+        let prior  = volumes.dropLast(recentBars).suffix(lookback)
+        let recentAvg = recent.reduce(0, +) / Double(recent.count)
+        let priorAvg  = prior.reduce(0, +) / Double(prior.count)
+        guard priorAvg > 0 else { return nil }   // no real volume to compare against
+        let ratio = recentAvg / priorAvg
+        return (confirmed: ratio >= 1.0, ratio: ratio)
     }
 }
 ```
@@ -43232,7 +43267,7 @@ struct StockSageHonestyGuardTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (66 lines) =====
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (86 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43298,6 +43333,26 @@ struct StockSageIndicatorsTests {
         let closes = (0..<60).map { 100.0 + Double($0) }           // steady ramp, enough data
         let m = I.macd(closes)!
         #expect(abs(m.histogram - (m.macd - m.signal)) < 1e-9)     // histogram is defined as macd − signal
+    }
+
+    @Test func volumeConfirmationComparesRecentToPriorRealVolume() {
+        let closes = (0..<25).map { Double($0) }                    // 25 bars (content irrelevant)
+        // 22 bars at 100 then 3 at 200: prior-20 avg = 100, recent-3 avg = 200 → ratio 2.0.
+        let surge = Array(repeating: 100.0, count: 22) + Array(repeating: 200.0, count: 3)
+        let up = I.volumeConfirmation(closes: closes, volumes: surge)!
+        #expect(abs(up.ratio - 2.0) < 1e-9)
+        #expect(up.confirmed)                                       // ≥1 → above-average participation
+        // 22 at 100 then 3 at 50 → recent avg 50 / prior 100 = 0.5 → not confirmed.
+        let fade = Array(repeating: 100.0, count: 22) + Array(repeating: 50.0, count: 3)
+        let down = I.volumeConfirmation(closes: closes, volumes: fade)!
+        #expect(abs(down.ratio - 0.5) < 1e-9)
+        #expect(!down.confirmed)
+        // No real volume (FX/index) → nil, never a fabricated ratio.
+        #expect(I.volumeConfirmation(closes: closes, volumes: Array(repeating: 0.0, count: 25)) == nil)
+        // Mismatched length and too-short series → nil (no decision, no crash).
+        #expect(I.volumeConfirmation(closes: closes, volumes: Array(repeating: 1.0, count: 24)) == nil)
+        #expect(I.volumeConfirmation(closes: Array(closes.prefix(10)),
+                                     volumes: Array(repeating: 1.0, count: 10)) == nil)
     }
 }
 ```
@@ -48919,7 +48974,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7679 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7687 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55482,6 +55537,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #2 — volume confirmation (real volumes, never fabricated)
+**Files:** `StockSage/StockSageIndicators.swift` (+volumeConfirmation), `StockSage/StockSageAdvisor.swift` (wire into advise(history:)), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** the advisor never read the REAL fetched volume series. Added pure `volumeConfirmation(closes:volumes:lookback:recentBars:)` → (confirmed, ratio) comparing recent-3-bar avg vs prior-20-bar avg; nil when volumes absent/zero (FX/indices) so nothing is invented. `advise(history:)` now passes `history.volumes` and nudges the signal MAGNITUDE ±0.05 (confirmed ⇒ stronger, thin ⇒ weaker) — never flips direction. `advise(closes:highs:lows:)` keeps `volumes: nil` default ⇒ byte-for-byte unchanged for the backtester and all close-only callers.
+**Verify:** typecheck clean; python-verified literals — surge(22×100+3×200)=ratio 2.0 confirmed, fade(+3×50)=0.5 not-confirmed, all-zero/len-mismatch/too-short ⇒ nil.
+**Result:** ideas now weigh whether a move has real participation. ✅ On-theme for "only real data."
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -60762,4 +60825,85 @@ ship one with confidence.
 ### ⬜ #17 — Promote priceColumn label color to DS.Palette.textSecondary
 **File:** Salehman AI/Views/RuneScapeMarketView.swift
 **Change:** Line 349: priceColumn label uses raw .secondary. MarketsView parityRow uses explicit DS.Palette.textSecondary (white 0.66). Swap to DS.Palette.textSecondary for token consistency across the two markets surfaces. Pixel-safe (near-identical rendered value, deliberate token).
+
+===== FILE: WINDOWS_HOST_SETUP.md (79 lines) =====
+# Windows 11 Pro — always-on Salehman host + remote control
+
+Goal: the **Windows PC runs everything always-on** (the local Salehman LLM brain + the
+autonomous Claude Code dev loop), you build/verify the Swift app on the **Mac** when you
+want, and you can **remote-control the PC from anywhere** (Mac, phone, any browser).
+
+> ⚠️ **The one thing Windows CANNOT do:** compile/verify this app. It's a macOS/Xcode
+> Swift app — `xcodebuild` + SwiftUI + the MainActor-isolation toolchain are Mac-only.
+> So on Windows the loop *edits and commits* code but cannot run `tools/typecheck.sh`.
+> **You (or Claude on the Mac) pull `main` and build there to catch errors.** See §F.
+
+---
+
+## A. Make the PC stay on forever
+Settings → System → Power:
+- **Sleep / Screen → Never** (on AC).
+- PowerShell (admin): `powercfg /change standby-timeout-ac 0` and `powercfg /change hibernate-timeout-ac 0`.
+- Optional: Control Panel → Power Options → choose **High performance**; disable "Fast startup."
+- Leave it plugged in. That's it — it's now a 24/7 server.
+
+## B. The brain — Ollama always-on (local, no API keys)
+1. Install **Ollama for Windows**: <https://ollama.com/download>. It installs a background
+   service on `http://localhost:11434` and **auto-starts at login** (GPU-accelerated if you
+   have an NVIDIA GPU — ideal for the always-on PC).
+2. Load the Salehman model:
+   - If it's on Hugging Face: `ollama pull <hf-repo>` (or `ollama run <model>` once to fetch).
+   - If you have a local GGUF + Modelfile: `ollama create salehman -f Modelfile`.
+3. Make it reachable on the LAN/Tailscale (so the Mac app can use it): set env var
+   `OLLAMA_HOST=0.0.0.0:11434` (System → Environment Variables) and restart Ollama.
+4. **In the Mac Salehman app**, point the *Custom server / Ollama* brain at the PC:
+   `http://<pc-tailscale-name>:11434`. Now the always-on PC is the brain for the app —
+   from anywhere. (Local-first still holds: Ollama needs **no API keys**.)
+
+## C. The dev loop — Claude Code on the PC (WSL2)
+1. Install WSL2 + Ubuntu: PowerShell (admin) → `wsl --install` → reboot.
+2. In Ubuntu: install Node LTS (`nvm` or `apt`), then
+   `npm install -g @anthropic-ai/claude-code`.
+3. `claude` once to log in (your Anthropic account — separate from the app's provider keys).
+4. Clone the repo there: `git clone <your-remote> "Salehman AI"` (git/`main` is the source
+   of truth — every backlog + DEVELOPMENT_LOG carries over).
+5. Start the autonomous loop from the running session (or `/loop`). It picks up
+   `HARDENING_BACKLOG.md`, `SIGNAL_BACKLOG.md`, `OSRS_BACKLOG.md`, `RANKING_BACKLOG.md`, etc.
+   and continues — committing + pushing as it goes.
+   - **Caveat:** it will **skip `tools/typecheck.sh`** (no Swift on Windows). Tell it so in
+     the loop prompt: *"Windows host — cannot typecheck; make conservative edits, mark Swift
+     changes UNVERIFIED, the Mac verifies."* Keep changes small + reviewable.
+
+## D. Remote control from anywhere (free)
+1. Install **Tailscale** (<https://tailscale.com>) on the **PC, the Mac, and your phone** —
+   same account. Now all three are on a private network reachable anywhere, no port-forwarding.
+2. Pick your control surface:
+   - **Remote Desktop (Windows 11 Pro has this built in):** Settings → System → Remote Desktop
+     → On. From the Mac use *Microsoft Remote Desktop*; from the phone the RD app —
+     connect to the PC's Tailscale name. Full desktop from anywhere.
+   - **SSH/terminal:** install OpenSSH Server on Windows (or just `ssh` into WSL) →
+     `ssh you@<pc-tailscale-name>` → `claude`. Drive the loop from a terminal anywhere.
+   - **Browser/phone:** <https://claude.ai/code> to drive Claude Code sessions remotely.
+
+## E. Secrets — what travels and what doesn't
+- **Ollama:** no keys (local).
+- **Claude Code:** its own login on the PC (do it once with `claude`).
+- **The app's provider keys** (NVIDIA/HF/etc.) live in the **macOS Keychain** and stay on
+  the Mac — the local-first brain doesn't need them. If you ever paste a key in chat, rotate it.
+
+## F. The verification handoff (important)
+Because Windows can't build the Swift app, adopt this rhythm so nothing rots:
+1. The PC loop edits + commits + pushes to `main` (Swift changes flagged UNVERIFIED).
+2. On the **Mac**, periodically: `git pull` → open in Xcode (⌘B) or run the canonical
+   `xcodebuild … build` + `xcodebuild test …`. Fix any breakage (or have Claude-on-Mac do it).
+3. Treat the Mac as the **CI gate** before you trust a green build. The PC is the tireless
+   author; the Mac is the verifier.
+
+---
+
+### TL;DR
+- PC: Ollama (brain) + Claude Code in WSL2 (dev loop), Tailscale, never sleeps → always-on.
+- Mac: `git pull` + Xcode build/verify when you want → the truth machine.
+- Control from anywhere: Tailscale + Remote Desktop / SSH, or claude.ai/code.
+- Everything the loop does is in `main`, so any machine resumes the work; only the Mac proves it compiles.
 

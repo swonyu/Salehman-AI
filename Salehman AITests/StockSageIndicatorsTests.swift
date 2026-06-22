@@ -63,4 +63,24 @@ struct StockSageIndicatorsTests {
         let m = I.macd(closes)!
         #expect(abs(m.histogram - (m.macd - m.signal)) < 1e-9)     // histogram is defined as macd − signal
     }
+
+    @Test func volumeConfirmationComparesRecentToPriorRealVolume() {
+        let closes = (0..<25).map { Double($0) }                    // 25 bars (content irrelevant)
+        // 22 bars at 100 then 3 at 200: prior-20 avg = 100, recent-3 avg = 200 → ratio 2.0.
+        let surge = Array(repeating: 100.0, count: 22) + Array(repeating: 200.0, count: 3)
+        let up = I.volumeConfirmation(closes: closes, volumes: surge)!
+        #expect(abs(up.ratio - 2.0) < 1e-9)
+        #expect(up.confirmed)                                       // ≥1 → above-average participation
+        // 22 at 100 then 3 at 50 → recent avg 50 / prior 100 = 0.5 → not confirmed.
+        let fade = Array(repeating: 100.0, count: 22) + Array(repeating: 50.0, count: 3)
+        let down = I.volumeConfirmation(closes: closes, volumes: fade)!
+        #expect(abs(down.ratio - 0.5) < 1e-9)
+        #expect(!down.confirmed)
+        // No real volume (FX/index) → nil, never a fabricated ratio.
+        #expect(I.volumeConfirmation(closes: closes, volumes: Array(repeating: 0.0, count: 25)) == nil)
+        // Mismatched length and too-short series → nil (no decision, no crash).
+        #expect(I.volumeConfirmation(closes: closes, volumes: Array(repeating: 1.0, count: 24)) == nil)
+        #expect(I.volumeConfirmation(closes: Array(closes.prefix(10)),
+                                     volumes: Array(repeating: 1.0, count: 10)) == nil)
+    }
 }

@@ -134,4 +134,22 @@ enum StockSageIndicators {
         guard past != 0, let last = closes.last else { return nil }
         return (last - past) / past * 100
     }
+
+    /// Is the latest move backed by REAL volume? Compares the last `recentBars` of the
+    /// (real, fetched) volume series against the `lookback` bars before them. ratio = recent
+    /// avg ÷ prior avg; confirmed when ratio ≥ 1 (above-average participation). Returns nil
+    /// when volumes are absent/all-zero (FX & indices have none) — never invents a number.
+    nonisolated static func volumeConfirmation(closes: [Double], volumes: [Double],
+                                               lookback: Int = 20, recentBars: Int = 3)
+        -> (confirmed: Bool, ratio: Double)? {
+        guard volumes.count == closes.count, lookback > 0, recentBars > 0,
+              volumes.count >= lookback + recentBars else { return nil }
+        let recent = volumes.suffix(recentBars)
+        let prior  = volumes.dropLast(recentBars).suffix(lookback)
+        let recentAvg = recent.reduce(0, +) / Double(recent.count)
+        let priorAvg  = prior.reduce(0, +) / Double(prior.count)
+        guard priorAvg > 0 else { return nil }   // no real volume to compare against
+        let ratio = recentAvg / priorAvg
+        return (confirmed: ratio >= 1.0, ratio: ratio)
+    }
 }
