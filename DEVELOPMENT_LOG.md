@@ -6710,6 +6710,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · RANKING regime-gate — no BUY ranks #1 in a crisis/bear, no SHORT in a bull
+**Files:** `StockSage/StockSageExpectedValue.swift` (rankByEV/bestOpportunity gain optional MarketRegime), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What:** the EV ranking ignored the market regime — a BUY could be crowned "best opportunity" in a VIX-40 crisis (exactly when an intraday stop gets gapped through). Added an optional `regime: MarketRegime? = nil` to rankByEV + bestOpportunity. A banned side (buy in crisis/bear, sell-family in bull) is demoted by 1_000_000 in the rank key — an order of magnitude past the conviction band — so it always sorts below every non-banned idea; bestOpportunity returns nil when buys are banned. DISPLAYED EV never changes (key-only). nil regime ⇒ BYTE-IDENTICAL to before (every existing caller/test unchanged). Re-verified vs source: MarketRegime.State {trendingBull/Bear/ranging/crisis}; TradeAdvice has NO .short (sell-family = .sell/.reduce); ev() uses abs() so sells get a valid rank key.
+**Swift 6 fix:** RankSide's synthesized Equatable was MainActor-isolated under a nonisolated func → rewrote the ban predicate with `if case` instead of `==`.
+**Verify:** typecheck clean; python-verified — no-regime/ranging/bull → WIN(buy) first, bear/crisis → DN(sell) first, bestOpportunity(buy) nil in bear/crisis, non-nil in bull.
+**Result:** the board won't steer the owner long into a crashing tape (or short into a rally). ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

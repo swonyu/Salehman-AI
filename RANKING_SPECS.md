@@ -2,7 +2,7 @@
 
 5 vetted items (survived rate-limiting). RE-VERIFY each claim vs REAL source; engine-first + python-verified test.
 
-### ⬜ #1 — Regime-gate the EV ranking: no BUY ranks #1 in crisis/bear, no SHORT-side in a bull
+### ✅ DONE #1 — Regime-gate the EV ranking: no BUY ranks #1 in crisis/bear, no SHORT-side in a bull
 **signature:** Add ONE trailing, defaulted-nil parameter to the two public ranking entry points in Salehman AI/StockSage/StockSageExpectedValue.swift. Both keep byte-for-byte current behavior when regime is nil, so every existing caller and test compiles and passes unchanged:
 
   nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil) -> [StockSageIdea]

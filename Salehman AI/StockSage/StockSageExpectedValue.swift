@@ -110,6 +110,32 @@ enum StockSageExpectedValue {
     private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
         qualityAdjustedEVR(for: idea).map { idea.advice.conviction >= minConvictionToRank ? $0 : $0 - 1000 }
     }
+
+    // Regime gate: don't crown a BUY in a crisis/bear tape, or a SHORT in a bull. A banned side
+    // is demoted by 1_000_000 (an order of magnitude past the conviction band) so it always ranks
+    // below every non-banned idea. The DISPLAYED EV never changes — only the ranking key.
+    private enum RankSide { case buyFamily, sellFamily, neutral }
+    private nonisolated static func side(_ idea: StockSageIdea) -> RankSide {
+        switch idea.advice.action {
+        case .buy, .strongBuy: return .buyFamily
+        case .sell, .reduce:   return .sellFamily
+        case .hold, .avoid:    return .neutral
+        }
+    }
+    private nonisolated static func bannedFromTopRank(_ s: RankSide, regime: MarketRegime.State) -> Bool {
+        switch regime {
+        case .crisis, .trendingBear:                            // no BUY ranks #1 in a risk-off tape
+            if case .buyFamily = s { return true }; return false
+        case .trendingBull:                                     // no SHORT ranks #1 in a bull
+            if case .sellFamily = s { return true }; return false
+        case .ranging:               return false               // neutral regime gates nothing
+        }
+    }
+    private nonisolated static func regimeAdjustedEVRankKey(for idea: StockSageIdea, regime: MarketRegime?) -> Double? {
+        guard let base = evRankKey(for: idea) else { return nil }   // nil-EV ideas still fall last, unchanged
+        guard let r = regime else { return base }                   // nil regime → IDENTICAL to today
+        return bannedFromTopRank(side(idea), regime: r.state) ? base - 1_000_000 : base
+    }
     private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays) -> Double? {
         guard let q = qualityAdjustedEVR(for: idea),
               let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
@@ -136,9 +162,9 @@ enum StockSageExpectedValue {
 
     /// Ideas sorted by EV (best bet first). Ideas without a defined EV fall to the
     /// bottom keeping their original relative order (stable).
-    nonisolated static func rankByEV(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
+    nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (evRankKey(for: a.element), evRankKey(for: b.element)) {
+            switch (regimeAdjustedEVRankKey(for: a.element, regime: regime), regimeAdjustedEVRankKey(for: b.element, regime: regime)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -149,8 +175,11 @@ enum StockSageExpectedValue {
 
     /// The single best BET right now: the buy-family idea with the highest POSITIVE
     /// expected value. nil if no buy idea has positive EV (don't manufacture one).
-    nonisolated static func bestOpportunity(_ ideas: [StockSageIdea]) -> (idea: StockSageIdea, ev: ExpectedValue)? {
-        ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
+    nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil) -> (idea: StockSageIdea, ev: ExpectedValue)? {
+        // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
+        // stop gets gapped through. (nil regime → no gate, identical to before.)
+        if let r = regime, bannedFromTopRank(.buyFamily, regime: r.state) { return nil }
+        return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   let e = ev(for: idea), e.evR > 0 else { return nil }

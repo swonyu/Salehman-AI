@@ -175,6 +175,26 @@ struct StockSageExpectedValueTests {
         #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
     }
 
+    @Test func regimeGateKeepsBannedSideFromTopRank() {
+        let bear   = MarketRegime(state: .trendingBear, riskScore: -0.5, signals: [], sizingBias: 0.5,  caveat: "x")
+        let bull   = MarketRegime(state: .trendingBull, riskScore: 0.6,  signals: [], sizingBias: 1.1,  caveat: "x")
+        let crisis = MarketRegime(state: .crisis,       riskScore: -0.9, signals: [], sizingBias: 0.25, caveat: "x")
+        let rng    = MarketRegime(state: .ranging,      riskScore: 0,    signals: [], sizingBias: 1,    caveat: "x")
+        let buy  = idea("WIN", action: .buy,  conviction: 0.9, stop: 90,  target: 130)
+        let sell = idea("DN",  action: .sell, conviction: 0.8, stop: 110, target: 80)
+        // Backward compat: nil regime is identical to no regime.
+        #expect(EV.rankByEV([buy, sell]).map(\.symbol) == EV.rankByEV([buy, sell], regime: nil).map(\.symbol))
+        // Risk-off (bear/crisis): no BUY ranks #1, and bestOpportunity (buy-only) returns nil.
+        #expect(EV.rankByEV([buy, sell], regime: bear).first?.symbol == "DN")
+        #expect(EV.bestOpportunity([buy], regime: bear) == nil)
+        #expect(EV.bestOpportunity([buy], regime: crisis) == nil)
+        // Bull: no SHORT ranks #1; the buy is the best opportunity.
+        #expect(EV.rankByEV([buy, sell], regime: bull).first?.symbol == "WIN")
+        #expect(EV.bestOpportunity([buy], regime: bull)?.idea.symbol == "WIN")
+        // Ranging gates nothing → identical ordering to no regime.
+        #expect(EV.rankByEV([buy, sell], regime: rng).map(\.symbol) == EV.rankByEV([buy, sell]).map(\.symbol))
+    }
+
     @Test func lowConvictionFantasyTargetCannotTopTheBoard() {
         // 18:1 reward:risk but ZERO conviction inflates raw EV to ~5.65R — it must NOT
         // out-rank a real 0.8-conviction 2:1 setup (~0.60R) once quality-adjusted.
