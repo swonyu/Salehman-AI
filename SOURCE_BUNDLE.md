@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:26 +03 · Swift files: 228 · Swift LOC: 44177_
+_Generated: 2026-06-22 09:32 +03 · Swift files: 230 · Swift LOC: 44293_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11188,6 +11188,64 @@ enum StockSageMultiTimeframe {
         if last > sma + band { return .up }
         if last < sma - band { return .down }
         return .flat
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageNetEdge.swift (54 lines) =====
+```swift
+import Foundation
+
+// MARK: - Cost-aware R:R (net edge after frictions)
+//
+// Gross reward:risk flatters every trade — it ignores the spread you cross twice, slippage,
+// and commission. On a wide 4:1 setup the costs barely register; on a thin, high-turnover
+// flip they can eat the entire edge. This nets them out: round-trip cost shrinks the reward
+// AND widens the risk, so the NET R:R is what you actually trade. Pure + deterministic.
+// Honest: the cost inputs are ESTIMATES — your real spread/slippage will differ.
+
+struct NetEdge: Sendable, Equatable {
+    let grossRR: Double
+    let netRR: Double               // after round-trip costs (can be ≤0 if costs exceed the target)
+    let costPerShare: Double
+    let costAsPctOfReward: Double    // round-trip cost ÷ gross reward (0–1+)
+    let netExpectancyR: Double?      // per 1R of gross risk, if a win probability was supplied
+    let verdict: String
+    nonisolated var costErodesEdge: Bool { netRR < 1 || costAsPctOfReward > 0.33 }
+}
+
+enum StockSageNetEdge {
+    /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
+    /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
+    /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.
+    nonisolated static func evaluate(entry: Double, stop: Double, target: Double,
+                                     spreadBps: Double = 0, slippageBps: Double = 0,
+                                     commissionPerShare: Double = 0,
+                                     winProb: Double? = nil) -> NetEdge? {
+        let grossReward = abs(target - entry)
+        let grossRisk = abs(entry - stop)
+        guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
+
+        let cost = Swift.max(0, spreadBps + slippageBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
+        let netReward = grossReward - cost
+        let netRisk = grossRisk + cost
+        let grossRR = grossReward / grossRisk
+        let netRR = netReward / netRisk
+        let costPct = cost / grossReward
+
+        let netExpR: Double? = winProb.map { p in
+            let pp = Swift.min(1, Swift.max(0, p))
+            return (pp * netReward - (1 - pp) * netRisk) / grossRisk
+        }
+
+        let verdict: String
+        if netRR <= 0 { verdict = "Costs exceed the target — don't take this." }
+        else if netRR < 1 { verdict = "After costs R:R < 1 — skip." }
+        else if costPct > 0.33 { verdict = "Costs eat \(Int((costPct * 100).rounded()))% of the target — thin." }
+        else { verdict = "Costs take \(Int((costPct * 100).rounded()))% of the target — acceptable." }
+
+        return NetEdge(grossRR: grossRR, netRR: netRR, costPerShare: cost,
+                       costAsPctOfReward: costPct, netExpectancyR: netExpR, verdict: verdict)
     }
 }
 ```
@@ -25882,7 +25940,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2970 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2985 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -28474,6 +28532,21 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "scalemass.fill").font(.system(size: 11)).foregroundStyle(c)
                         Text(rr.note).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let stop = a.stopPrice, let target = a.targetPrice,
+                   let ne = StockSageNetEdge.evaluate(
+                        entry: idea.price, stop: stop, target: target,
+                        spreadBps: 10, slippageBps: 5,
+                        winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target)?.winProbEstimate) {
+                    let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                    let body = ne.netRR > 0
+                        ? String(format: "After ~15bps est. costs: net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
+                        : "After ~15bps est. costs: " + ne.verdict
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "scissors").font(.system(size: 11)).foregroundStyle(c)
+                        Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                            .help("Nets a ~15bps round-trip spread+slippage estimate out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
                     }
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
@@ -42733,6 +42806,57 @@ struct StockSageMultiTimeframeTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageNetEdgeTests.swift (47 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Cost-aware net edge (pure)
+
+struct StockSageNetEdgeTests {
+    typealias NE = StockSageNetEdge
+
+    @Test func wideSetupBarelyDentedByCosts() {
+        // entry 100, stop 95, target 110 → gross 2:1. 30bps round-trip + $0.05 comm = $0.35/sh.
+        let e = NE.evaluate(entry: 100, stop: 95, target: 110,
+                            spreadBps: 20, slippageBps: 10, commissionPerShare: 0.05, winProb: 0.5)!
+        #expect(abs(e.grossRR - 2) < 1e-9)
+        #expect(abs(e.costPerShare - 0.35) < 1e-9)
+        #expect(abs(e.netRR - 9.65 / 5.35) < 1e-9)        // 1.8037…
+        #expect(abs(e.costAsPctOfReward - 0.035) < 1e-9)  // 3.5% of the target
+        #expect(abs(e.netExpectancyR! - 0.43) < 1e-9)     // (.5·9.65 − .5·5.35)/5
+        #expect(!e.costErodesEdge)
+        #expect(e.verdict.contains("acceptable"))
+    }
+
+    @Test func thinScalpEatenAliveByCosts() {
+        // entry 100, stop 99, target 101 → gross 1:1. 100bps + $0.10 = $1.10/sh > the $1 target.
+        let e = NE.evaluate(entry: 100, stop: 99, target: 101,
+                            spreadBps: 50, slippageBps: 50, commissionPerShare: 0.10)!
+        #expect(abs(e.costPerShare - 1.10) < 1e-9)
+        #expect(e.netRR <= 0)                              // net reward negative
+        #expect(e.costErodesEdge)
+        #expect(e.verdict.contains("Costs exceed the target"))
+    }
+
+    @Test func zeroCostsLeaveGrossUnchanged() {
+        let e = NE.evaluate(entry: 100, stop: 90, target: 130)!
+        #expect(abs(e.grossRR - 3) < 1e-9 && abs(e.netRR - 3) < 1e-9)
+        #expect(e.costPerShare == 0 && e.costAsPctOfReward == 0)
+        #expect(e.netExpectancyR == nil)                  // no winProb → nil
+    }
+
+    @Test func worksForShortsAndGuardsDegenerate() {
+        // Short: entry 100, stop 105 (above), target 90 (below) → gross 10/5 = 2:1.
+        let s = NE.evaluate(entry: 100, stop: 105, target: 90, spreadBps: 0, slippageBps: 0)!
+        #expect(abs(s.grossRR - 2) < 1e-9)
+        #expect(NE.evaluate(entry: 100, stop: 100, target: 110) == nil)  // zero risk
+        #expect(NE.evaluate(entry: 100, stop: 95, target: 100) == nil)   // zero reward
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSagePortfolioAnalyticsTests.swift (109 lines) =====
 ```swift
 import Testing
@@ -47148,7 +47272,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7518 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7523 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53551,6 +53675,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageCurrency.swift` (NEW), `Views/MarketsView.swift` ("Currency exposure" section in the allocation panel), `Salehman AITests/StockSageCurrencyTests.swift` (NEW, 5 tests).
 **What & why:** New-value build #7 — a "diversified" book that's 70% in one foreign currency carries an FX risk the per-symbol view hides. `StockSageCurrency.breakdown(holdings:ratesToBase:base:)` converts each holding to a base currency, rolls up exposure per currency (base value + % of book), and flags the largest non-base currency over a 25% threshold. `currencyForSymbol` derives the trading currency from the market suffix (.SR→SAR, .L→GBP, .T→JPY, …; crypto/FX/index→base; UNKNOWN suffix→the suffix, so it surfaces as "unpriced" rather than mislabeled USD). The allocation panel shows the per-currency split + an FX-risk warning, only when there's an actual FX dimension (>1 currency or unpriced). **Honesty (deliberately conservative on real money):** rates come only from tracked `<CCY>USD=X` quotes (unambiguous USD-per-CCY direction); currencies without a tracked rate are EXCLUDED and NAMED, never zero-valued; the caveat explicitly warns that local prices are assumed in each market's currency (London .L in pence may distort) and that FX moves are real, un-modeled risk. 5 tests, PYTHON-VERIFIED: USD+EUR+GBP → total 1172.5, weights 85.3/9.4/5.3%, no flag (largest non-base <25%); 50/50 USD/EUR → EUR flagged; JPY with no rate → excluded + named, total stays 1000; empty/all-unpriced → nil; currencyForSymbol suffix mapping.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 7 new-value features today (#84–#90). The owner can see if their book is secretly an FX bet. NEXT: per-trade R:R-and-cost reality check, or correlation-cluster add pre-check. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Cost-aware R:R (net edge after frictions)
+**Files:** `StockSage/StockSageNetEdge.swift` (NEW), `Views/MarketsView.swift` (net-edge line in the idea detail sheet, after the R:R note), `Salehman AITests/StockSageNetEdgeTests.swift` (NEW, 4 tests).
+**What & why:** New-value build #8 — gross R:R flatters every trade by ignoring the spread you cross twice, slippage, and commission. On a wide 4:1 they barely register; on a thin scalp they can eat the whole edge. `StockSageNetEdge.evaluate(entry:stop:target:spreadBps:slippageBps:commissionPerShare:winProb:)` nets round-trip cost out of the reward AND into the risk → NET R:R, % of the target eaten by costs, optional net expectancy in R, and a verdict (acceptable / thin / R:R<1 / costs-exceed-target). Works long & short (absolute distances). The idea detail sheet shows "After ~15bps est. costs: net R:R 1.8:1 (gross 2.0:1). Costs take 4% of the target — acceptable." Honest: the ~15bps is a LABELED estimate; the help text says real costs differ and thin scalps lose the whole edge. 4 tests, PYTHON-VERIFIED: wide setup (cost $0.35, netRR 1.8037, costPct 3.5%, netExp +0.43R); thin scalp (cost $1.10 > $1 target → netRR −0.048, "Costs exceed the target"); zero-cost = gross unchanged, winProb nil → netExp nil; short 2:1 + degenerate guards → nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 8 new-value features today (#84–#91). The owner sees when frictions kill a thin-margin trade BEFORE taking it. NEXT: correlation-cluster add pre-check. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 

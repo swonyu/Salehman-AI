@@ -2591,6 +2591,21 @@ struct MarketsView: View {
                     }
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
+                   let ne = StockSageNetEdge.evaluate(
+                        entry: idea.price, stop: stop, target: target,
+                        spreadBps: 10, slippageBps: 5,
+                        winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target)?.winProbEstimate) {
+                    let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                    let body = ne.netRR > 0
+                        ? String(format: "After ~15bps est. costs: net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
+                        : "After ~15bps est. costs: " + ne.verdict
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "scissors").font(.system(size: 11)).foregroundStyle(c)
+                        Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                            .help("Nets a ~15bps round-trip spread+slippage estimate out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
+                    }
+                }
+                if let stop = a.stopPrice, let target = a.targetPrice,
                    let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "dollarsign.circle.fill").font(.system(size: 11))

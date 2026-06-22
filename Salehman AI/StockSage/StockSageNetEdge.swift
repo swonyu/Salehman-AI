@@ -1,0 +1,54 @@
+import Foundation
+
+// MARK: - Cost-aware R:R (net edge after frictions)
+//
+// Gross reward:risk flatters every trade — it ignores the spread you cross twice, slippage,
+// and commission. On a wide 4:1 setup the costs barely register; on a thin, high-turnover
+// flip they can eat the entire edge. This nets them out: round-trip cost shrinks the reward
+// AND widens the risk, so the NET R:R is what you actually trade. Pure + deterministic.
+// Honest: the cost inputs are ESTIMATES — your real spread/slippage will differ.
+
+struct NetEdge: Sendable, Equatable {
+    let grossRR: Double
+    let netRR: Double               // after round-trip costs (can be ≤0 if costs exceed the target)
+    let costPerShare: Double
+    let costAsPctOfReward: Double    // round-trip cost ÷ gross reward (0–1+)
+    let netExpectancyR: Double?      // per 1R of gross risk, if a win probability was supplied
+    let verdict: String
+    nonisolated var costErodesEdge: Bool { netRR < 1 || costAsPctOfReward > 0.33 }
+}
+
+enum StockSageNetEdge {
+    /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
+    /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
+    /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.
+    nonisolated static func evaluate(entry: Double, stop: Double, target: Double,
+                                     spreadBps: Double = 0, slippageBps: Double = 0,
+                                     commissionPerShare: Double = 0,
+                                     winProb: Double? = nil) -> NetEdge? {
+        let grossReward = abs(target - entry)
+        let grossRisk = abs(entry - stop)
+        guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
+
+        let cost = Swift.max(0, spreadBps + slippageBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
+        let netReward = grossReward - cost
+        let netRisk = grossRisk + cost
+        let grossRR = grossReward / grossRisk
+        let netRR = netReward / netRisk
+        let costPct = cost / grossReward
+
+        let netExpR: Double? = winProb.map { p in
+            let pp = Swift.min(1, Swift.max(0, p))
+            return (pp * netReward - (1 - pp) * netRisk) / grossRisk
+        }
+
+        let verdict: String
+        if netRR <= 0 { verdict = "Costs exceed the target — don't take this." }
+        else if netRR < 1 { verdict = "After costs R:R < 1 — skip." }
+        else if costPct > 0.33 { verdict = "Costs eat \(Int((costPct * 100).rounded()))% of the target — thin." }
+        else { verdict = "Costs take \(Int((costPct * 100).rounded()))% of the target — acceptable." }
+
+        return NetEdge(grossRR: grossRR, netRR: netRR, costPerShare: cost,
+                       costAsPctOfReward: costPct, netExpectancyR: netExpR, verdict: verdict)
+    }
+}
