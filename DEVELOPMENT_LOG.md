@@ -7171,6 +7171,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · AGENTS confirmed (16) + honesty fix — no fabricated 0.0% P&L on a 0-cost lot
+**Files:** `Views/MarketsView.swift` (portfolio P&L percent). Verified `.claude/agents/` fleet (read-only this session).
+**Agents:** owner asked to find 16 specialized agents that learn over time + activate skills — they EXIST and are sound: `.claude/agents/AGENTS.md` rosters all 16 (markets-strategist, runelite-plugin-dev, brain-router, chat-ui-engineer, swiftui-perf-tuner, security-warden, test-author, qa-visual-inspector, effort-engine-tuner, agents-backbone-dev, persistence-keeper, voice-transcribe-dev, tools-policy-engineer, docs-historian, design-system-stylist, release-shipper). Each reads/append `learnings/<name>.md` (file-based learn-over-time loop) + activates its named project skills via the Skill tool. KNOWN-STALE (sandbox-blocked from editing `.claude/agents` this session): each still says "No Workflow tool" — superseded by the 2026-06-20 CLAUDE.md amendment (Workflows ≤30 allowed); harmless since subagents run solo regardless.
+**Honesty fix (REALDATA_VERIFICATION wtexg5a6u #3):** portfolio P&L printed "(+0.0%)" when a holding has cost basis 0 but a live value (gifted/0-cost lot) — the percent return is mathematically undefined there, so 0.0% was fabricated. Now shows the real dollar P&L always + "(—%)" when cost==0 (matches the rest of the honest-placeholder view). typecheck EXIT=0.
+**Result:** the 16-agent fleet is confirmed live; one more fabricated number removed from the money surface. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -653,7 +653,10 @@ struct MarketsView: View {
                         // Nothing priced/convertible → don't paint a fake green +$0.00 P&L.
                         Text("— no priced holdings").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
                     } else {
-                        Text((up ? "+" : "") + String(format: "$%.2f (%+.1f%%)", pl, plPct))
+                        // Percent return is undefined when cost basis is 0 (e.g. gifted/0-cost lots) —
+                        // show the real dollar P&L but "—%" instead of a fabricated +0.0%.
+                        Text((up ? "+" : "") + String(format: "$%.2f", pl)
+                             + (t.cost > 0 ? String(format: " (%+.1f%%)", plPct) : " (—%)"))
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                             .contentTransition(.numericText())
