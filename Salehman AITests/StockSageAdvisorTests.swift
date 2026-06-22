@@ -25,6 +25,19 @@ struct StockSageAdvisorStopTargetTests {
         #expect(A.stopTarget(action: .avoid, price: 100, atr: 5).target == nil)
     }
 
+    @Test func ownDowntrendVetoesALongScore() {
+        // Deep 12-1 downtrend, sharp rally only in the last ~15 bars: the advisor is bullish on
+        // the recent price, but the name's OWN 12-1 trend is down → the momentum veto fires.
+        let vShape: [Double] = (0..<260).map { i in
+            i <= 244 ? 300 - Double(i) * (220.0 / 244) : 80 + Double(i - 244) * (170.0 / 15)
+        }
+        #expect(StockSageIndicators.trendOK(vShape) == false)
+        #expect(StockSageAdvisor.advise(closes: vShape).rationale.contains { $0.contains("12-1 downtrend") })
+        // A clean uptrend (12-1 up) is NOT vetoed.
+        let up = (1...260).map(Double.init)
+        #expect(!StockSageAdvisor.advise(closes: up).rationale.contains { $0.contains("12-1 downtrend") })
+    }
+
     @Test func stopWidthScalesWithRealizedVolatility() {
         // realizedVol nil → byte-identical to the 2-ATR / 8% behavior.
         #expect(A.stopTarget(action: .buy, price: 100, atr: 5).stop == 90)

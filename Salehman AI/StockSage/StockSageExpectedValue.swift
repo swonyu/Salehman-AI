@@ -265,8 +265,11 @@ enum StockSageExpectedValue {
     /// setup, and the estimated weekly R — each a value already computed elsewhere,
     /// composed for a single header. All optional; `hasContent` gates the card.
     nonisolated static func summary(_ ideas: [StockSageIdea], trades: [TradeRecord] = [],
-                                    fraction: Double = 0.01, holds: VelocityHoldDays = .defaults) -> MoneyVelocitySummary {
-        let best = bestOpportunity(ideas)
+                                    fraction: Double = 0.01, holds: VelocityHoldDays = .defaults,
+                                    regime: MarketRegime? = nil) -> MoneyVelocitySummary {
+        // Regime-aware so the card's displayed "best bet" matches the regime-gated nav target
+        // (a risk-off tape suppresses the best-buy on BOTH). nil regime → identical to before.
+        let best = bestOpportunity(ideas, regime: regime)
         let fastest = fastLane(ideas, holds: holds).first
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)

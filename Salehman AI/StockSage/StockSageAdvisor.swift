@@ -170,6 +170,14 @@ enum StockSageAdvisor {
             else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }
         }
 
+        // Time-series (12-1) own-trend crash filter: veto a long-side score when the name is in
+        // its OWN downtrend (the documented TSMOM crash-protection). −0.20 — strong enough to flip
+        // a marginal buy to a hold/avoid. nil (insufficient bars) ⇒ no veto, unchanged.
+        if score > 0, StockSageIndicators.trendOK(closes) == false {
+            score -= 0.20
+            rationale.append("Against the name's own 12-1 downtrend — momentum veto")
+        }
+
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range
 
         // Score → action. In a choppy regime with no edge, prefer "Avoid" (stand

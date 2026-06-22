@@ -137,7 +137,7 @@ struct MarketsView: View {
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refresh()
             // Snapshot today's money-velocity (one per UTC day) so the trend can build.
-            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime)
             if let wk = snap.weeklyR {
                 velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
             }
@@ -1915,6 +1915,7 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             ideasHeader
             bestOpportunityCard
+            capitalAllocationCard
             fastLaneStrip
             alertsPanel
             strategyBacktestPanel
@@ -1964,7 +1965,7 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:       sorted = StockSageExpectedValue.rankByEV(store.ideas)
+        case .ev:       sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime)
         case .velocity: sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
         case .signal:   sorted = store.ideas
         }
@@ -2188,7 +2189,7 @@ struct MarketsView: View {
 
     // Best opportunity now — the single highest positive-EV buy idea (money velocity).
     @ViewBuilder private var bestOpportunityCard: some View {
-        if let best = StockSageExpectedValue.bestOpportunity(store.ideas) {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime) {
             let idea = best.idea, ev = best.ev
             VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
@@ -2248,17 +2249,74 @@ struct MarketsView: View {
         }
     }
 
+    // Capital allocation — turns the whole ranked board into a concrete "how much in each"
+    // plan via StockSageCapitalAllocator (half-Kelly, edge-weighted, heat-capped). Fed the
+    // real board (store.ideas) and the user's editable account. Hidden until there's an
+    // account AND at least one fundable position — never a manufactured plan.
+    @ViewBuilder private var capitalAllocationCard: some View {
+        if let acct = StockSageInput.positiveAmount(sizerAccount) {
+            let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct)
+            if !plan.positions.isEmpty {
+                let heatColor: Color = plan.totalHeat > 0.06 ? DS.Palette.warningSoft : DS.Palette.successSoft
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chart.pie.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
+                        Text("Deploy capital — allocation plan").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                        Spacer()
+                        ideaMetric("Open heat", String(format: "%.1f%%", plan.totalHeat * 100), color: heatColor)
+                        if plan.scaleApplied < 1 {
+                            ideaMetric("Cap scale", String(format: "%.0f%%", plan.scaleApplied * 100), color: DS.Palette.warningSoft)
+                        }
+                    }
+                    ForEach(plan.positions) { p in
+                        HStack(spacing: 12) {
+                            Text(p.symbol).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                                .frame(width: 64, alignment: .leading)
+                            ideaMetric("Risk", String(format: "%.2f%%", p.riskFraction * 100))
+                            ideaMetric("Shares", "\(p.shares)")
+                            ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
+                            ideaMetric("Notional", String(format: "$%.0f", p.notional))
+                            ideaMetric("EV", String(format: "%+.2fR", p.evR), color: DS.Palette.successSoft)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    HStack(spacing: 6) {
+                        Spacer()
+                        Button {
+                            let lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
+                                + plan.positions.map { p in
+                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · EV \(String(format: "%+.2fR", p.evR))"
+                                }
+                                + [plan.caveat]
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+                        } label: {
+                            Label("Copy allocation plan", systemImage: "doc.on.doc").font(.system(size: mvFont9, weight: .medium))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                        .help("Copy the half-Kelly, heat-capped allocation across the board to the clipboard. Estimates, not advice.")
+                    }
+                    Text(plan.caveat)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+            }
+        }
+    }
+
     // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
     // visible across every section. Tappable to the best opportunity's plan.
     @ViewBuilder private var moneyVelocityCard: some View {
         // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
         // track the same fraction the rest of the card uses (was a hardcoded 1%).
         let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds)
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
-                if let best = StockSageExpectedValue.bestOpportunity(store.ideas) { selectedIdea = best.idea }
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime) { selectedIdea = best.idea }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
