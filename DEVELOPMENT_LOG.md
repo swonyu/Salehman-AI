@@ -6743,6 +6743,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · COMPLETENESS #1 — StockSageLossLimit (the halt-after-a-bad-run circuit breaker)
+**Files:** NEW `StockSage/StockSageLossLimit.swift`, NEW `Salehman AITests/StockSageLossLimitTests.swift` (+7 tests). Re-verified TradeRecord (closedAt/realizedProfit/realizedR/isOpen) + breakeven-breaks-streak vs source.
+**What:** the app sizes every trade to ~1% but had NOTHING that says STOP after a red run — the #1 way retail blows up (revenge/over-sizing after a streak). Pure `evaluate(closedTrades:policy:now:calendar:)` → LossLimitState {ok/warn/halted} from today's + this-week's realized $ AND R, plus the consecutive-loss run. Halts when any limit (maxDaily/WeeklyLoss[R]) is breached OR lossRun ≥ standDownLossRun; warns in the warnFraction band. now injected for determinism; OPEN trades (closedAt nil) contribute 0; a breakeven (R==0) or win breaks the run (matches the journal streak). Caveat embedded: a BEHAVIORAL brake, not a probability edge (markets have no memory); only sees logged+closed trades.
+**Verify:** typecheck clean; python-verified — loss-run [−1,−1,−1]=3, [−1,0,−1]=1 (scratch breaks it), open=0; daily −$200 vs $150 limit halts, −$100 vs $130 warns (77%), +$200 ok. 7 tests incl. yesterday-excluded-from-today + open-ignored.
+**Result:** the engine can now slam the brakes after a bad day/week/streak — the single highest-value survival guardrail. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
