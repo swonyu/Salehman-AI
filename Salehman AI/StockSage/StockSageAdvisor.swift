@@ -72,8 +72,12 @@ enum StockSageAdvisor {
     /// Advice from a daily close history (+ optional highs/lows for ATR stops, optional REAL
     /// volumes for participation confirmation, and optional benchmark closes for relative
     /// strength). Series are newest-last. Conservative "Hold" when history is too short.
-    /// All the optional inputs default to nil, which leaves the result byte-for-byte
-    /// identical to the close-only signal — so the backtester and other callers are unchanged.
+    /// HONESTY NOTE: the `volumes` and `benchmarkCloses` terms are gated on those inputs (nil ⇒
+    /// not applied). But passing `highs`/`lows` ALSO enables the ATR stop and the volatility-
+    /// adjusted-momentum nudge, and the stop width always scales with realized volatility derived
+    /// from `closes` — so a close-only call and a highs/lows call are NOT identical, and any
+    /// caller that supplies highs/lows (including the backtester) gets the fuller signal. (Only
+    /// `stopTarget` with `realizedVol: nil` is byte-identical to the legacy 2-ATR stop.)
     nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil,
                                    volumes: [Double]? = nil, benchmarkCloses: [Double]? = nil) -> TradeAdvice {
         guard closes.count >= 30, let price = closes.last, price > 0 else {
@@ -236,6 +240,7 @@ enum StockSageAdvisor {
         let dist = (atr.map { $0 > 0 ? mult * $0 : price * fallbackPct }) ?? price * fallbackPct
         if isBuy {
             let s = price - dist
+            guard s > 0 else { return (nil, nil) }   // ATR ≥ price ⇒ no sane long stop — untradeable
             return (s, price + 2 * (price - s))
         } else {
             let s = price + dist

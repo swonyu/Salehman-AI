@@ -36,6 +36,9 @@ struct StockSageAdvisorStopTargetTests {
         // No-ATR fallback widens with vol but never tightens below 8%: 0.08·max(1, vol/0.5).
         #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.75).stop == 88)  // 12%
         #expect(A.stopTarget(action: .buy, price: 100, atr: nil, realizedVol: 0.20).stop == 92)  // floored at 8%
+        // Huge ATR (≥ price) → no sane long stop → drop the plan (nil), never a negative stop.
+        #expect(A.stopTarget(action: .buy, price: 10, atr: 8, realizedVol: 0.75).stop == nil)   // 2.5×8=20 ≥ 10
+        #expect(A.stopTarget(action: .buy, price: 10, atr: 8, realizedVol: 0.75).target == nil)
         // The multiplier table itself.
         #expect(A.stopMultiple(forVol: nil) == 2.0)
         #expect(A.stopMultiple(forVol: 0.70) == 2.5)

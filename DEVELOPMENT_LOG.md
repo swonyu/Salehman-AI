@@ -6676,6 +6676,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Audit fixes — 1 HONESTY bug + 1 money-display bug + 1 stop guard (self-caught)
+**Files:** `StockSage/StockSageAdvisor.swift` (false docstring corrected; long-stop positive guard), `Views/MarketsView.swift` (weekly-$ uses tradingDaysForLane), `Salehman AITests/StockSageAdvisorTests.swift` (+stop-floor assert). Roadmaps persisted: ALLOC_SPECS, RANKING_SPECS, COMPLETENESS, AUDIT_FINDINGS.
+**The exit-realism audit (own workflow) caught 2 bugs I introduced this session + 1 latent:** (#1 HIGH honesty) advise() docstring claimed "byte-for-byte identical / backtester unchanged" — FALSE: volAdjustedMomentum (gated on highs/lows) + realizedVol stop-scaling DO move the backtester. Rewrote the docstring to state the truth (highs/lows enable ATR stop + vol-momentum; stop width always scales with realized vol from closes; close-only ≠ highs/lows; backtester gets the fuller signal). The strategy change is legit (backtester re-measures it; relational tests hold) — the LIE was the sin, now removed. (#3 MEDIUM money) summary R/week used tradingDaysForLane (5-7) but $/week defaulted to 5 → the two numbers couldn't reconcile for crypto lanes; both MarketsView call sites now pass tradingDaysForLane. (#2 LOW) long ATR stop could go negative for ATR≥price names → guard returns (nil,nil) (untradeable), mirroring the short-side degenerate drop.
+**Verify:** typecheck clean; python-verified — R/$ parity ratio 1.0 at crypto fractions 0/1/3-of-3 (D=5/6/7); stop nil when 2.5×8≥price 10.
+**WORKFLOW BURN:** 4 SMALL workflows (4-6 agents) ALL synthesized clean — confirms pacing fix. Landed: CapitalAllocator (python-verified pins), regime/liquidity-gate sigs, loss-limit circuit breaker, real bid/ask parsing.
+**Result:** honesty restored + a real money-display bug fixed, both surfaced by our own adversarial audit. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
