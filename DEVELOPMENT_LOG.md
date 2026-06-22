@@ -6719,6 +6719,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Currency exposure: London .L ~100x bug FIXED + USD-leading FX fallback
+**Files:** `StockSage/StockSageCurrency.swift` (+majorUnitValue), `Views/MarketsView.swift` (ccyHoldings + fxRates), `Salehman AITests/StockSageCurrencyTests.swift` (+1 test).
+**What (AUDIT_FINDINGS_2 #4, real high-impact):** Yahoo quotes London ".L" listings in PENCE (a 400 quote is £4), but ccyHoldings multiplied the pence quote as pounds → a GBP holding was inflated ~100× when converted to USD (the code even admitted "London .L in pence may distort" but never fixed it). Added pure testable `StockSageCurrency.majorUnitValue(symbol:rawValue:)` (÷100 for .L, unchanged otherwise) and wired it into the holding value. **(#3)** the fxRates builder only requested CCYUSD=X, so USD-leading tracked pairs (USDSAR=X, USDJPY=X…) never converted → those currencies dropped to "unpriced"; added an inverse fallback (USDCCY=X → 1/rate).
+**Verify:** typecheck clean; python-verified — BP.L 100sh×400p = £400 → $508 (NOT the buggy $50,800); AAPL/SAP.DE unchanged; inverse SAR 1/3.75 → 100 SAR = $26.67. Test pins majorUnitValue (case-insensitive .L ÷100, non-London unchanged).
+**Result:** currency exposure is no longer 100× wrong for UK holdings, and SAR/JPY/CNY/CAD/CHF books actually convert instead of vanishing. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

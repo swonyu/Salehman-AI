@@ -796,14 +796,19 @@ struct MarketsView: View {
             }
 
             // Currency exposure — only worth showing when there's an actual FX dimension.
-            let ccyHoldings = portfolio.positions.map {
-                (value: (currentPrice($0.symbol) ?? $0.costBasis) * $0.shares,
-                 currency: StockSageCurrency.currencyForSymbol($0.symbol))
+            let ccyHoldings = portfolio.positions.map { pos -> (value: Double, currency: String) in
+                let raw = (currentPrice(pos.symbol) ?? pos.costBasis) * pos.shares
+                // London .L is quoted in pence — normalize to pounds so GBP isn't inflated ~100×.
+                return (value: StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: raw),
+                        currency: StockSageCurrency.currencyForSymbol(pos.symbol))
             }
             let fxRates: [String: Double] = Dictionary(uniqueKeysWithValues:
                 Set(ccyHoldings.map(\.currency)).subtracting(["USD"]).compactMap { ccy -> (String, Double)? in
-                    guard let r = currentPrice("\(ccy)USD=X"), r > 0 else { return nil }
-                    return (ccy, r)
+                    // Prefer the direct CCYUSD=X rate; fall back to the inverse USDCCY=X (1/rate),
+                    // since the tracked FX universe often quotes the USD-leading pair (USDSAR=X, …).
+                    if let r = currentPrice("\(ccy)USD=X"), r > 0 { return (ccy, r) }
+                    if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { return (ccy, 1.0 / inv) }
+                    return nil
                 })
             if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
                cb.exposures.count > 1 || !cb.unpriced.isEmpty {

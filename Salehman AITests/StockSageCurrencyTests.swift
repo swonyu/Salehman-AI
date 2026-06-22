@@ -11,6 +11,15 @@ struct StockSageCurrencyTests {
         b.exposures.first { $0.currency == ccy }
     }
 
+    @Test func majorUnitValueNormalizesLondonPence() {
+        // BP.L: 100 shares × 400 pence = 40,000 pence raw → £400, NOT £40,000 (~100× bug).
+        #expect(CC.majorUnitValue(symbol: "BP.L", rawValue: 40_000) == 400)
+        #expect(CC.majorUnitValue(symbol: "bp.l", rawValue: 40_000) == 400)        // case-insensitive
+        // Non-London symbols are unchanged.
+        #expect(CC.majorUnitValue(symbol: "AAPL", rawValue: 40_000) == 40_000)
+        #expect(CC.majorUnitValue(symbol: "SAP.DE", rawValue: 1_000) == 1_000)
+    }
+
     @Test func convertsAndWeightsWithoutFXFlagWhenSpread() {
         let b = CC.breakdown(holdings: [(1000, "USD"), (100, "EUR"), (50, "GBP")],
                              ratesToBase: ["EUR": 1.1, "GBP": 1.25], base: "USD")!
