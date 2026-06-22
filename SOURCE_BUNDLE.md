@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 08:58 +03 · Swift files: 222 · Swift LOC: 43720_
+_Generated: 2026-06-22 09:03 +03 · Swift files: 224 · Swift LOC: 43837_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8717,6 +8717,71 @@ enum StockSageAdvisor {
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat)
     }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageAlertDecision.swift (61 lines) =====
+```swift
+import Foundation
+
+// MARK: - Alert decision (what's worth a notification)
+//
+// Pure, stateless decision: given a symbol's current state + a little prior context
+// (its previous price, and the recommendation it was LAST alerted on), decide whether
+// THIS update warrants a fresh notification — and never re-fire the same one. Keeping
+// this pure means the (@MainActor, side-effecting) monitor stays a thin shell over a
+// tested rule. Honest: an alert flags an EVENT, not a profit — act with your own plan.
+
+struct StockSageAlert: Sendable, Equatable {
+    enum Kind: String, Sendable {
+        case newStrongBuy  = "Strong Buy"
+        case newStrongSell = "Strong Sell"
+        case flip          = "Signal flip"
+        case stopBreach    = "Stop breached"
+        case targetHit     = "Target hit"
+    }
+    let symbol: String
+    let kind: Kind
+    let reason: String
+}
+
+enum StockSageAlertDecision {
+    /// Decide the single most-actionable alert for this update, or nil to stay silent.
+    /// Priority: a price level CROSSED this bar (stop, then target) beats a signal change;
+    /// signal alerts dedupe against `lastAlertedRecommendation` so the same one never repeats.
+    nonisolated static func evaluate(symbol: String,
+                                     recommendation: StockSageRecommendation,
+                                     price: Double,
+                                     priorPrice: Double,
+                                     stop: Double?,
+                                     target: Double?,
+                                     lastAlertedRecommendation: StockSageRecommendation?) -> StockSageAlert? {
+        // 1. Stop crossed DOWN through the level this update (priorPrice above, now at/below).
+        if let s = stop, s > 0, priorPrice > s, price <= s {
+            return StockSageAlert(symbol: symbol, kind: .stopBreach,
+                                  reason: "\(symbol) hit its stop (\(fmt(price)) ≤ \(fmt(s))) — the setup is invalidated; risk is realized.")
+        }
+        // 2. Target crossed UP through the level this update.
+        if let t = target, t > 0, priorPrice < t, price >= t {
+            return StockSageAlert(symbol: symbol, kind: .targetHit,
+                                  reason: "\(symbol) reached its target (\(fmt(price)) ≥ \(fmt(t))) — consider taking profit or trailing the stop.")
+        }
+        // 3. Strong-signal events only (buy/sell/hold don't notify), deduped vs last alert.
+        let isStrong = recommendation == .strongBuy || recommendation == .strongSell
+        guard isStrong, recommendation != lastAlertedRecommendation else { return nil }
+
+        let flipped = (recommendation == .strongBuy && lastAlertedRecommendation == .strongSell)
+            || (recommendation == .strongSell && lastAlertedRecommendation == .strongBuy)
+        if flipped {
+            return StockSageAlert(symbol: symbol, kind: .flip,
+                                  reason: "\(symbol) FLIPPED to \(recommendation.rawValue) — re-evaluate any open position.")
+        }
+        return StockSageAlert(symbol: symbol,
+                              kind: recommendation == .strongBuy ? .newStrongBuy : .newStrongSell,
+                              reason: "\(symbol): new \(recommendation.rawValue) signal — check the plan before acting.")
+    }
+
+    private nonisolated static func fmt(_ v: Double) -> String { String(format: "%.2f", v) }
 }
 ```
 
@@ -40794,6 +40859,66 @@ struct StockSageAdvisorTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageAlertDecisionTests.swift (56 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Alert decision (pure)
+
+struct StockSageAlertDecisionTests {
+    typealias AD = StockSageAlertDecision
+
+    @Test func newStrongSignalAlertsOnceThenDedupes() {
+        // First time we see a Strong Buy (nothing alerted before) → fire.
+        let a = AD.evaluate(symbol: "AAPL", recommendation: .strongBuy, price: 100, priorPrice: 100,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .newStrongBuy)
+        // Same Strong Buy already alerted → silent (dedupe).
+        #expect(AD.evaluate(symbol: "AAPL", recommendation: .strongBuy, price: 101, priorPrice: 100,
+                            stop: 90, target: 120, lastAlertedRecommendation: .strongBuy) == nil)
+    }
+
+    @Test func flipFiresWhenStrongReverses() {
+        let a = AD.evaluate(symbol: "T", recommendation: .strongBuy, price: 100, priorPrice: 100,
+                            stop: 90, target: 120, lastAlertedRecommendation: .strongSell)
+        #expect(a?.kind == .flip)
+    }
+
+    @Test func nonStrongSignalsStaySilent() {
+        for rec in [StockSageRecommendation.buy, .hold, .sell] {
+            #expect(AD.evaluate(symbol: "X", recommendation: rec, price: 100, priorPrice: 100,
+                                stop: 90, target: 120, lastAlertedRecommendation: nil) == nil)
+        }
+    }
+
+    @Test func stopCrossFiresOnceOnTheCrossing() {
+        // Crossed DOWN through 90 this update (95 → 89): fire.
+        #expect(AD.evaluate(symbol: "X", recommendation: .buy, price: 89, priorPrice: 95,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)?.kind == .stopBreach)
+        // Already below before (89 → 88): no fresh cross → silent.
+        #expect(AD.evaluate(symbol: "X", recommendation: .buy, price: 88, priorPrice: 89,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil) == nil)
+    }
+
+    @Test func targetCrossFiresOnceOnTheCrossing() {
+        #expect(AD.evaluate(symbol: "X", recommendation: .buy, price: 121, priorPrice: 115,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)?.kind == .targetHit)
+        // Already above before → silent.
+        #expect(AD.evaluate(symbol: "X", recommendation: .buy, price: 122, priorPrice: 121,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil) == nil)
+    }
+
+    @Test func stopBreachOutranksASignalChange() {
+        // Both a fresh stop cross AND a new strong-sell signal → the stop breach wins (more actionable).
+        let a = AD.evaluate(symbol: "X", recommendation: .strongSell, price: 89, priorPrice: 95,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .stopBreach)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageAlertsTests.swift (56 lines) =====
 ```swift
 import Testing
@@ -46667,7 +46792,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7497 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7503 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53049,6 +53174,12 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageRebalance.swift` (NEW), `Views/MarketsView.swift` (rebalance lines in the risk-parity panel), `Salehman AITests/StockSageRebalanceTests.swift` (NEW, 5 tests).
 **What & why:** New-value build #3 — turns the risk-parity *weights* into actionable *trades*. `StockSageRebalance.plan(holdings:targets:band:)` normalizes the targets, computes each symbol's drift (target − current weight), and returns the buy/sell **$ deltas** for symbols whose drift exceeds a 2% no-trade band (so you don't churn on a 0.5% miss); untargeted holdings are sold to zero. `equalWeightTargets` helper for a simple default. The risk-parity panel now shows "To rebalance: Sell $1,000 of A (60%→50%), Buy $1,000 of B (40%→50%)" — or "✓ within 2% of target." Honest: ignores trading costs/taxes/min-lot — direction + rough size, not an order ticket. 5 tests, PYTHON-VERIFIED: 60/40→50/50 = −1000/+1000; 0.01 drift < 2% band → empty; targets summing 0.8 normalize, untargeted B sells fully; equal-weight dedups & sums to 1; empty/zero guards → nil.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 3 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance). The owner can now go from "risk-parity says these weights" to "here are the exact trades." NEXT: alert-decision engine. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: Alert-decision engine (what's worth a notification)
+**Files:** `StockSage/StockSageAlertDecision.swift` (NEW), `Salehman AITests/StockSageAlertDecisionTests.swift` (NEW, 6 tests).
+**What & why:** New-value build #4 — the pure, tested rule for WHICH events deserve a notification, so the side-effecting `@MainActor` monitor can stay a thin shell over verified logic. `StockSageAlertDecision.evaluate(symbol:recommendation:price:priorPrice:stop:target:lastAlertedRecommendation:)` returns the single most-actionable `StockSageAlert?` with priority: a price level CROSSED this update (stop-down, then target-up) > a strong-signal change; signal alerts dedupe against the last-alerted rec so the same one never repeats; non-strong (buy/hold/sell) stays silent. Honest: "an alert flags an EVENT, not a profit." 6 tests, HAND-VERIFIED: new Strong Buy fires then dedupes; flip on reversal; buy/hold/sell silent; stop cross 95→89 fires once (88→ already-below silent); target cross 115→121 fires once; a fresh stop breach OUTRANKS a coincident strong-sell.
+**Note:** kept as the standalone tested engine this tick — it adds stop/target-cross detection the monitor lacks, ready to wire into `StockSageMonitor.runCycle` (which already dedupes strong recs correctly) without an unverifiable MainActor refactor here.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 4 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance, #87 alert engine). NEXT: multi-currency portfolio, or per-period/tax-lot P&L. Committed + pushed. Autonomous /loop — build mode.
 
 ---
 
