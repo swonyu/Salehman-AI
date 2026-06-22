@@ -71,6 +71,29 @@ struct StockSageExpectedValueTests {
         #expect(lane.map(\.symbol) == ["BTC-USD", "AAPL"])                    // crypto first (faster turnover)
     }
 
+    @Test func imminentEarningsDemotesInTheRank() {
+        // Two identical equity buys — only the earnings calendar differs.
+        let a = idea("AAPL", conviction: 0.8, stop: 98, target: 110)
+        let b = idea("MSFT", conviction: 0.8, stop: 98, target: 110)
+        // No earnings data → original order preserved on BOTH boards (byte-stable default).
+        #expect(EV.rankByEV([a, b]).map(\.symbol) == ["AAPL", "MSFT"])
+        #expect(EV.rankByVelocity([a, b]).map(\.symbol) == ["AAPL", "MSFT"])
+        // AAPL reports in 2 days (imminent — a stop may gap through it); MSFT in 30 (clear).
+        let earnings: [String: EarningsProximity] = [
+            "AAPL": EarningsProximity(daysUntil: 2, severity: .imminent),
+            "MSFT": EarningsProximity(daysUntil: 30, severity: .clear),
+        ]
+        #expect(EV.rankByEV([a, b], earnings: earnings).map(\.symbol) == ["MSFT", "AAPL"])       // imminent sinks
+        #expect(EV.rankByVelocity([a, b], earnings: earnings).map(\.symbol) == ["MSFT", "AAPL"])
+        // The penalty fires ONLY on a real .imminent date — unknown / .soon / .clear are 0 (only-real-data).
+        #expect(EV.earningsRankPenalty(for: a, earnings: earnings) == 2000)
+        #expect(EV.earningsRankPenalty(for: b, earnings: earnings) == 0)                          // .clear → 0
+        #expect(EV.earningsRankPenalty(for: a, earnings: [:]) == 0)                               // unknown → 0
+        #expect(EV.earningsRankPenalty(for: a, earnings: ["AAPL": EarningsProximity(daysUntil: 7, severity: .soon)]) == 0)
+        // Band invariant the constant relies on: above conviction(1000)+maxEV, below cost(500k)/regime(1M).
+        #expect(1000 + 50.0 < 2000 && 2000 < 500_000 && 500_000 < 1_000_000)
+    }
+
     @Test func velocityLaneIsBuyOnly() {
         // A SHORT with a valid positive-EV 2:1 setup must NOT enter the velocity / Fast Lane (it
         // cannot compound like a long, and the best-opportunity card already bars it) — even though

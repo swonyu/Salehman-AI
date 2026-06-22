@@ -7211,6 +7211,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · MONEY (alpha) — earnings-gated EV/velocity rank: imminent binary-event risk demotes an idea
+**Files:** `StockSage/StockSageExpectedValue.swift` (earningsRankPenalty + rankByEV/rankByVelocity earnings overload), `Views/MarketsView.swift` (pass store.earnings), `Salehman AITests/StockSageExpectedValueTests.swift` (+test). Persisted ALPHA_EDGE_SWEEP.md (sweep w9lozzift, 31 agents).
+**What (#1, highest-$ + protective):** ranking an idea #1 the night before it reports earnings put the owner largest sized position into the one setup where a protective stop is least likely to hold — an overnight gap opens through it, turning a planned −1R into an un-modeled multi-R loss. New pure earningsRankPenalty(for:earnings:) subtracts 2000 from the rank key ONLY when the SAME already-fetched EarningsProximity is .imminent (≤3 days). Unknown (no map entry) + .soon + .clear → 0, so absence is never assumed dangerous (only-real-data). 2000 sits above the conviction band (1000)+max base EV (~28.6) but below cost (500k)/regime (1M) — an imminent-earnings idea sinks below clean peers yet still ranks above cost-failed/regime-banned ones. rankByEV/rankByVelocity gain a defaulted earnings:[:] param (empty → byte-identical order); MarketsView passes store.earnings. Displayed EV/velocity unchanged — only the key shifts; the per-idea EarningsProximity.note stays the load-bearing disclosure.
+**Verify:** typecheck EXIT=0; python-verified band invariant (1028.6<2000<500000<1000000); +test (identical AAPL/MSFT buys → no-earnings order unchanged; AAPL imminent vs MSFT clear → AAPL sinks on BOTH boards; penalty 2000 imminent / 0 clear / 0 unknown / 0 soon). RE-TRACED: defaulted earnings → all existing rank/velocity tests byte-stable (velocityLaneIsBuyOnly etc.).
+**Result:** capital now flows to setups whose stop can actually bound the loss — the night before earnings, that idea steps aside for a clean peer. Only-real-data: no fetched date = no demotion. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

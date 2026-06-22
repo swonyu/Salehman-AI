@@ -122,6 +122,21 @@ enum StockSageExpectedValue {
         return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction))
     }
 
+    /// Imminent-earnings (binary-event) demotion for the rank keys. ONLY a real fetched `.imminent`
+    /// date (≤3 days) is penalized — an UNKNOWN symbol (no map entry) and `.soon`/`.clear` return 0,
+    /// so absence is never assumed dangerous (only-real-data). 2000 sits above the conviction band
+    /// (1000) and the max base EV (~28.6) but below the cost (500k) and regime (1M) bands — so an
+    /// imminent-earnings idea sinks below every clean same-or-lower-EV peer, yet still ranks above a
+    /// cost-failed or regime-banned one. The DISPLAYED EV/velocity never changes — only the rank key.
+    /// Rationale: a protective stop is an intraday promise an overnight earnings gap opens through;
+    /// ranking such an idea #1 the night before it reports puts the biggest position where the stop
+    /// is least likely to hold. The per-idea EarningsProximity.note stays the load-bearing disclosure.
+    nonisolated static func earningsRankPenalty(for idea: StockSageIdea,
+                                                earnings: [String: EarningsProximity]) -> Double {
+        guard let prox = earnings[idea.symbol.uppercased()] else { return 0 }   // unknown → not penalized
+        return prox.severity == .imminent ? 2000 : 0
+    }
+
     private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
         guard let base = qualityAdjustedEVR(for: idea) else { return nil }
         var key = base
@@ -169,9 +184,14 @@ enum StockSageExpectedValue {
         return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
     }
 
-    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
-        ideas.enumerated().sorted { a, b in
-            switch (velocityRankKey(for: a.element, holds: holds), velocityRankKey(for: b.element, holds: holds)) {
+    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
+                                           earnings: [String: EarningsProximity] = [:]) -> [StockSageIdea] {
+        // Demote imminent-earnings ideas inside the velocity key (empty earnings → 0 → unchanged order).
+        func key(_ idea: StockSageIdea) -> Double? {
+            velocityRankKey(for: idea, holds: holds).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+        }
+        return ideas.enumerated().sorted { a, b in
+            switch (key(a.element), key(b.element)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -188,9 +208,14 @@ enum StockSageExpectedValue {
 
     /// Ideas sorted by EV (best bet first). Ideas without a defined EV fall to the
     /// bottom keeping their original relative order (stable).
-    nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil) -> [StockSageIdea] {
-        ideas.enumerated().sorted { a, b in
-            switch (regimeAdjustedEVRankKey(for: a.element, regime: regime), regimeAdjustedEVRankKey(for: b.element, regime: regime)) {
+    nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
+                                     earnings: [String: EarningsProximity] = [:]) -> [StockSageIdea] {
+        // Demote imminent-earnings ideas inside the EV key (empty earnings → 0 → unchanged order).
+        func key(_ idea: StockSageIdea) -> Double? {
+            regimeAdjustedEVRankKey(for: idea, regime: regime).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+        }
+        return ideas.enumerated().sorted { a, b in
+            switch (key(a.element), key(b.element)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
