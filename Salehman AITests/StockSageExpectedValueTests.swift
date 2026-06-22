@@ -228,6 +228,22 @@ struct StockSageExpectedValueTests {
         #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
     }
 
+    @Test func earningsPenaltyStacksBelowACostFailedPeerAndNeverResurrectsANilKey() {
+        // BTC: imminent earnings (−2000) AND after-cost negative (−500k); ETH: cost-fail only; AAPL: clean.
+        // The bands stack, so BTC sinks BELOW the cost-only-failed ETH, and both below the clean AAPL.
+        let thin    = idea("BTC-USD", conviction: 0.5, stop: 98, target: 103)
+        let costOnly = idea("ETH-USD", conviction: 0.5, stop: 98, target: 103)
+        let clean   = idea("AAPL", conviction: 0.7, stop: 90, target: 130)
+        let earnings: [String: EarningsProximity] = ["BTC-USD": EarningsProximity(daysUntil: 2, severity: .imminent)]
+        #expect(EV.rankByEV([thin, costOnly, clean], earnings: earnings).map(\.symbol) == ["AAPL", "ETH-USD", "BTC-USD"])
+        // The penalty is applied via .map on the rank key, so it can NEVER resurrect a nil (no-EV) key:
+        // two stop/target-less buys both rank nil → stable input order, the imminent one does not float up.
+        let nilA = idea("NOEVA", conviction: 0.9, stop: nil, target: nil)   // imminent + nil EV key
+        let nilB = idea("NOEVB", conviction: 0.9, stop: nil, target: nil)   // clean + nil EV key
+        let earn2: [String: EarningsProximity] = ["NOEVA": EarningsProximity(daysUntil: 1, severity: .imminent)]
+        #expect(EV.rankByEV([nilB, nilA], earnings: earn2).map(\.symbol) == ["NOEVB", "NOEVA"])
+    }
+
     @Test func afterCostNegativeFlipIsDemotedBelowCleanSetup() {
         // Thin crypto flip: +EV pre-cost (rewardR 1.5) but 50bps crypto cost pushes the after-cost
         // break-even (50%) ABOVE its conviction win-prob (46.5%) → must not out-rank a clean setup.

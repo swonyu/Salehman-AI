@@ -7279,6 +7279,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · TEST-HARDENING — 3 untested money-engine branches pinned (short verdicts, earnings band stacking, nil-key safety)
+**Files:** `Salehman AITests/StockSageJournalTests.swift`, `StockSageExpectedValueTests.swift`. Persisted TEST_HARDENING.md (sweep wmagiftnw; #3/#4/#9 DONE).
+**What:** added deterministic tests for branches the test-hardening sweep flagged as untested + regression-prone. (#3) openActions SHORT in-profit/near-stop — the rNow branches were only covered for LONG; a short profits as price FALLS so the R sign flips (verified vs rMultiple: short entry 100/stop 110 → at 90 = +1R inProfit, at 107.5 = −0.75R nearStop). (#4) earnings penalty (−2000) STACKS with the after-cost-fail band (−500k): an imminent+cost-failed BTC sinks below a cost-failed-only ETH, both below clean AAPL → order [AAPL, ETH, BTC]. (#9) the penalty is applied via .map on the rank key, so it can NEVER resurrect a nil (no stop/target → no-EV) key — two nil-key buys keep stable input order, the imminent one does not float up.
+**Verify:** app-target typecheck EXIT=0 (only test files touched); every assertion RE-TRACED against the engine source (rMultiple sign, the −500k/−1000/−2000 bands, the key .map nil-propagation). xcodebuild test runs on the owner machine (sandbox blocks it) — assertions verified by source trace, mirroring proven test constructs.
+**Result:** the short-side position verdict, the earnings/cost band stacking, and the nil-key guard are now pinned — a silent regression in any would fail a test instead of misleading a money decision. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

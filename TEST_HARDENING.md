@@ -31,7 +31,7 @@
 }
 ```
 
-### ⬜ #3 [high] — SHORT in-profit and near-stop verdicts (side-aware rNow path)
+### ✅ DONE #3 [high] — SHORT in-profit and near-stop verdicts (side-aware rNow path)
 **file:** /Users/saleh/Desktop/Salehman AI/Salehman AITests/StockSageJournalTests.swift
 ```swift
 @Test func openActionsShortSideInProfitAndNearStop() {
@@ -45,7 +45,7 @@
 }
 ```
 
-### ⬜ #4 [high] — Earnings (-2000) stacked with cost-fail (-500k) sorts below cost-only-failed peer
+### ✅ DONE #4 [high] — Earnings (-2000) stacked with cost-fail (-500k) sorts below cost-only-failed peer
 **file:** /Users/saleh/Desktop/Salehman AI/Salehman AITests/StockSageExpectedValueTests.swift
 ```swift
 @Test func earningsStacksBelowCostFailedPeer() {
@@ -104,7 +104,7 @@
 }
 ```
 
-### ⬜ #9 [medium] — nil-key fall-through: imminent-earnings idea with nil base key stays nil (not -2000)
+### ✅ DONE #9 [medium] — nil-key fall-through: imminent-earnings idea with nil base key stays nil (not -2000)
 **file:** /Users/saleh/Desktop/Salehman AI/Salehman AITests/StockSageExpectedValueTests.swift
 ```swift
 @Test func earningsPenaltyNeverResurrectsANilKey() {

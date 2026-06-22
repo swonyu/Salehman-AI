@@ -33,6 +33,9 @@ struct StockSageJournalTests {
         let short = open(.short, 110, 80)
         #expect(StockSageJournal.openActions([short], mark: at(111)).first?.kind == .stopHit)   // at/above stop
         #expect(StockSageJournal.openActions([short], mark: at(79)).first?.kind == .targetHit)  // at/below target
+        // Short rNow-branches: a short PROFITS as price falls, so the R sign convention flips.
+        #expect(StockSageJournal.openActions([short], mark: at(90)).first?.kind == .inProfit)    // +1R short
+        #expect(StockSageJournal.openActions([short], mark: at(107.5)).first?.kind == .nearStop) // −0.75R short
         // No mark / closed trade → skipped.
         #expect(StockSageJournal.openActions([long], mark: { _ in nil }).isEmpty)
         // Urgent (stop hit) sorts before in-profit.
