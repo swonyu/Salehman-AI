@@ -144,6 +144,33 @@ enum StockSageBacktester {
         return (n - 1, closes[n - 1], .openAtEnd)
     }
 
+    /// Ratcheting Chandelier trail for a LONG. For each bar AFTER entry, the raw stop is
+    /// (highest high SINCE ENTRY) − atrMult·ATR(through that bar); the emitted level is then
+    /// ratcheted so it can only RISE — the up-only discipline `StockSageTrailingStop.suggest`
+    /// deliberately omits, and the single behavior that most removes blow-ups. Each level uses
+    /// only data through its own bar (no look-ahead). Returns one level per post-entry bar
+    /// (entryIndex+1 … last); empty when entry IS the last bar; nil on misaligned arrays, a
+    /// bad index, or when ATR can't be computed for some bar. On a clean uptrend the final
+    /// element equals `suggest(...).level` on the same window (consistency with the static engine).
+    nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double],
+                                        entryIndex: Int, atrMult: Double = 3, period: Int = 14) -> [Double]? {
+        let n = closes.count
+        guard highs.count == n, lows.count == n, n > 0,
+              entryIndex >= 0, entryIndex < n, atrMult > 0 else { return nil }
+        if entryIndex == n - 1 { return [] }            // no bars after entry
+        var levels: [Double] = []
+        var anchorHigh = highs[entryIndex]              // highest high since entry (monotonic ↑)
+        var ratchet = -Double.greatestFiniteMagnitude
+        for b in (entryIndex + 1)..<n {
+            anchorHigh = Swift.max(anchorHigh, highs[b])
+            guard let atr = StockSageIndicators.atr(highs: Array(highs[0...b]), lows: Array(lows[0...b]),
+                                                    closes: Array(closes[0...b]), period: period) else { return nil }
+            ratchet = Swift.max(ratchet, anchorHigh - atrMult * atr)   // up-only
+            levels.append(ratchet)
+        }
+        return levels
+    }
+
     /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).
     /// Pure index math (no data) so the partition itself is unit-tested. Empty if folds<1 or
     /// there are no post-warmup bars.

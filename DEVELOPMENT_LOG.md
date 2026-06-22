@@ -6617,6 +6617,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #2 — ratcheting Chandelier trail engine (the up-only stop)
+**Files:** `StockSage/StockSageBacktester.swift` (+trailLevels), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What:** `trailLevels(highs:lows:closes:entryIndex:atrMult:period:)→[Double]?` — for each bar after entry, raw stop = (highest high SINCE ENTRY) − atrMult·ATR(through that bar), then RATCHETED so the level can only RISE. That up-only ratchet is exactly the discipline the static `TrailingStop.suggest` omits, and the single behavior that most removes blow-ups (a stop that can't fall). Each level uses only data through its own bar (no look-ahead). One level per post-entry bar; empty when entry IS the last bar; nil on misaligned arrays / bad index / no-ATR.
+**Verify:** typecheck clean; python-verified — count 39 (entry+1…last), anchor monotonic, and on a clean uptrend since-entry-max == suffix(period)-max at the final bar so `levels.last == TrailingStop.suggest(...).level` (same atr call, ratchet doesn't bind). Test asserts monotonic non-decreasing + final-match + empty(entry==last) + nil(out-of-range).
+**Next:** wire a `.chandelierTrail(atrMult,period)` ExitMode into simulateExit using these levels (the prior-bar trail applied to each bar, to keep the no-look-ahead contract) — deferred a tick to get the intrabar timing rigorous.
+**Result:** the ratcheting-stop engine is built + verified, ready to be A/B-measured against .allAtTarget. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -65,6 +65,23 @@ struct StockSageBacktesterTests {
         #expect(StockSageBacktester.run(down).trades == 0)
     }
 
+    @Test func trailLevelsRatchetUpAndMatchSuggestAtTheEnd() {
+        let closes = (1...60).map(Double.init)            // clean monotonic uptrend
+        let highs  = closes.map { $0 + 0.5 }
+        let lows   = closes.map { $0 - 0.5 }
+        let levels = StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes,
+                                                     entryIndex: 20, atrMult: 3, period: 14)!
+        #expect(levels.count == 39)                       // entryIndex+1 … last = 21…59
+        // Up-only ratchet: a long's stop never falls.
+        #expect(zip(levels, levels.dropFirst()).allSatisfy { $0 <= $1 })
+        // Final element consistent with the static Chandelier engine on the same series.
+        let s = StockSageTrailingStop.suggest(highs: highs, lows: lows, closes: closes, multiple: 3, period: 14)!
+        #expect(abs(levels.last! - s.level) < 1e-9)
+        // entry == last bar → no post-entry bars; out-of-range index → nil.
+        #expect(StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes, entryIndex: 59)!.isEmpty)
+        #expect(StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes, entryIndex: 60) == nil)
+    }
+
     @Test func exitModeAllAtTargetIsGoldenMaster() {
         // The seam must not change anything: default run == explicit .allAtTarget, on real-ish series.
         let up = history((0..<260).map { 100.0 + Double($0) })
