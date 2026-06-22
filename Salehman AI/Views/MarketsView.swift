@@ -972,6 +972,8 @@ struct MarketsView: View {
                 }.buttonStyle(LuxPressStyle())
             }
 
+            lossLimitBanner   // STOP-TRADING / approaching-limit circuit breaker (above system-health)
+
             if let health = journal.systemHealth {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: healthIcon(health.verdict)).font(.system(size: 11)).foregroundStyle(healthColor(health.verdict))
@@ -1232,6 +1234,46 @@ struct MarketsView: View {
         case .developing: return "chart.line.uptrend.xyaxis"
         case .unproven: return "questionmark.circle"
         case .negative: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    // The loss-limit circuit breaker, surfaced. R-based + loss-streak policy (no account needed):
+    // halts after 3 daily / 6 weekly R lost or a 3-loss streak. A behavioral brake, not advice.
+    @ViewBuilder private var lossLimitBanner: some View {
+        let state = StockSageLossLimit.evaluate(
+            closedTrades: journal.trades,
+            policy: LossLimitPolicy(maxDailyLossR: 3, maxWeeklyLossR: 6, standDownLossRun: 3),
+            now: Date())
+        switch state.status {
+        case .ok:
+            EmptyView()
+        case .halted:
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                    Text("STOP TRADING").font(.system(size: 12, weight: .heavy)).foregroundStyle(.white)
+                    Spacer()
+                }
+                if let reason = state.haltReason {
+                    Text(reason).font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+                }
+                Text(state.caveat).font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.82)).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.danger.opacity(0.85), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.danger, lineWidth: 1.5))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Stop trading. \(state.haltReason ?? ""). \(state.caveat)")
+        case .warn:
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                Text(String(format: "Approaching your loss limit \u{2014} %d-loss run. Ease off and size down.", state.lossRun))
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 4)
+            .accessibilityLabel("Approaching loss limit. Loss run \(state.lossRun). Ease off and size down.")
         }
     }
 

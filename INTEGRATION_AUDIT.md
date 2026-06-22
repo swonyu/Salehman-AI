@@ -2,7 +2,7 @@
 
 6 built-but-disconnected engines. #2 (trendOK veto into advise) WIRED. Rest: wire into the live path.
 
-### ⬜ #1 — StockSageLossLimit circuit breaker is orphaned — no post-loss-streak halt anywhere in the app
+### ✅ DONE #1 — StockSageLossLimit circuit breaker is orphaned — no post-loss-streak halt anywhere in the app
 **builtEngine:** Salehman AI/StockSage/StockSageLossLimit.swift — StockSageLossLimit.evaluate(closedTrades:policy:now:calendar:) (signature confirmed at line 52) -> LossLimitState (status ok/warn/halted, dailyRealized, weeklyRealized, lossRun, haltReason, caveat); LossLimitPolicy(maxDailyLoss/maxWeeklyLoss/maxDailyLossR/maxWeeklyLossR/standDownLossRun/warnFraction) at line 13, init at line 21.
 
 **wiredInto:** NOTHING. Natural home: the journal panel in Salehman AI/Views/MarketsView.swift (~line 1040), where journal.streakSummary is already rendered and journal.trades is already in scope.

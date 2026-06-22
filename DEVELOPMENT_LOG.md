@@ -6791,6 +6791,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Wire #1 — LossLimit STOP-TRADING banner surfaced in the journal panel
+**Files:** `Views/MarketsView.swift` (+lossLimitBanner @ViewBuilder + call site). Verified DS tokens exist (danger ×69, Radius.small/card, warningSoft, Space.sm all used in-file); journal.trades in scope.
+**What (INTEGRATION_AUDIT #1, the top orphan):** StockSageLossLimit (the circuit breaker) had ZERO app callers — built + tested but invisible. Wired it into tradeJournalPanel above the system-health verdict: a red "STOP TRADING" banner (haltReason + caveat) on .halted, an amber "approaching your loss limit" on .warn, nothing on .ok. Policy is R-based + streak (maxDailyLossR 3 / maxWeeklyLossR 6 / standDownLossRun 3) so it needs NO account input. Behavioral-brake caveat shown verbatim. Also confirmed the regime-gate is ALREADY wired (rankByEV/bestOpportunity call sites at MarketsView 1968/2192/2319 pass store.regime) — not an orphan.
+**Verify:** typecheck clean (engine + DS tokens resolve). UNVERIFIED render (Mac build) — the engine itself is unit-tested (7 tests); this is the display wire.
+**Remaining orphans (INTEGRATION_AUDIT): #3 GapRisk + #4 Leverage in positionSizerPanel (next), #5 cache-age label.**
+**Result:** the #1 survival guardrail now actually reaches the screen — a bad run shows STOP, not silence. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
