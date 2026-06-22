@@ -173,9 +173,14 @@ enum StockSageQuoteService {
 
         var dt: [Date] = [], o: [Double] = [], h: [Double] = [], l: [Double] = [], c: [Double] = [], v: [Double] = []
         for i in 0..<n {
+            // Reject non-positive OHLC — a 0/negative close from the feed would become latestClose
+            // and feed price×shares / EV / sizing (mirrors parseChart's `price > 0`). Volume left
+            // unguarded: 0 volume is legitimate for FX and indices.
             guard let ts = number(timestamps[i]),
-                  let oo = number(opens[i]), let hh = number(highs[i]),
-                  let ll = number(lows[i]), let cc = number(closes[i]) else { continue }
+                  let oo = number(opens[i]), oo > 0,
+                  let hh = number(highs[i]), hh > 0,
+                  let ll = number(lows[i]), ll > 0,
+                  let cc = number(closes[i]), cc > 0 else { continue }
             dt.append(Date(timeIntervalSince1970: ts))
             o.append(oo); h.append(hh); l.append(ll); c.append(cc)
             v.append(i < volumes.count ? (number(volumes[i]) ?? 0) : 0)

@@ -6925,6 +6925,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — parseHistory rejects 0/negative OHLC (was corrupting computed money figures)
+**Files:** `StockSage/StockSageQuoteService.swift` (parseHistory positivity guard), NEW `Salehman AITests/StockSageQuoteServiceTests.swift`. Persisted FEED_CACHE_AUDIT.md (7 findings).
+**What (feed-cache audit wujphmi3c #1, VERIFIED real — the single finding that corrupts a COMPUTED number, not just mislabels a real one):** parseChart guards `price > 0` (:114) but parseHistory (:176-178) accepted any parseable number, so a 0 or negative close/open/high/low from the feed became a valid bar → closes.last → latestClose → StockSageIdea(price:) + currentValue price×shares + EV + sizing. Added oo>0/hh>0/ll>0/cc>0 to the per-bar guard (volume left unguarded — 0 is legit for FX/indices), mirroring parseChart. Purely additive.
+**Verify:** typecheck EXIT=0; +test — a 4-bar feed with a 0 close and a negative low drops both, closes == [10,12] all >0; an all-bad feed → <2 valid bars → nil.
+**Remaining data-LAYER (FEED_CACHE_AUDIT.md): #2 failed-refresh leaves stale under green Live (lastRefreshFailedAt); #3 cache no max-age gate; #4 regularMarketTime never parsed (quote restamped now()); #5 preserved-stale watchlist rows; #6 partial-coverage drops symbols silently; #7 sample-vs-cache message.**
+**Result:** a garbage feed price can no longer flow into a money calculation — caught at the parse boundary. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
