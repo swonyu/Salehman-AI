@@ -2769,20 +2769,39 @@ struct MarketsView: View {
                     }
                     // Real-edge confidence: PSR (sample/skew/fat-tail haircut) + out-of-sample decay (overfit).
                     if let psr = bt.probabilisticSharpe {
-                        Text(String(format: "Real-edge confidence (PSR): %.0f%% — P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar.", psr * 100))
-                            .font(.caption2)
-                            .foregroundStyle(psr > 0.95 ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .help(StockSageDeflatedSharpe.caveat)
+                        // Glyph + PASS/BELOW word so the verdict survives color-blindness (successSoft and
+                        // warningSoft collapse to the same hue under deuteranopia) + a spoken a11y label.
+                        let pass = psr > 0.95
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                            Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar).", psr * 100, pass ? "PASS" : "BELOW BAR"))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(String(format: "Real edge confidence, probabilistic Sharpe ratio %.0f percent, %@ the 95 percent bar.", psr * 100, pass ? "passes" : "below"))
+                        .accessibilityHint(StockSageDeflatedSharpe.caveat)
+                        .help(StockSageDeflatedSharpe.caveat)
                     }
                     if let d = bt.decay {
                         let tail = d.isRedFlag ? " — RED FLAG: likely overfit; the edge collapsed out-of-sample."
                                                : (d.oosSignificant ? "." : " — OOS sample thin (<20), low confidence.")
-                        Text(String(format: "Out-of-sample: kept %.0f%% of the edge (in-sample %+.2fR → out-of-sample %+.2fR)%@",
-                                    d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
-                            .font(.caption2)
-                            .foregroundStyle(d.isRedFlag ? DS.Palette.danger : .secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            if d.isRedFlag {
+                                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10))
+                            }
+                            Text(String(format: "Out-of-sample: kept %.0f%% of the edge (in-sample %+.2fR → out-of-sample %+.2fR)%@",
+                                        d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(d.isRedFlag ? DS.Palette.danger : .secondary)
+                        .accessibilityElement(children: .combine)
+                        // Speak the in→out transition (the "→" glyph is dropped by VoiceOver).
+                        .accessibilityLabel(String(format: "Out of sample, kept %.0f percent of the edge. In sample %+.2f R falling to out of sample %+.2f R.%@",
+                                                    d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
                     }
                     if let u = store.underwater, !u.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {

@@ -7203,6 +7203,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · A11Y — the "is the edge real" verdicts (PSR + decay) now color-blind + VoiceOver safe
+**Files:** `Views/MarketsView.swift` (backtest PSR + out-of-sample decay rows).
+**What (A11Y_BUGHUNT woobpb79o #3/#5/#7):** the two headline backtest-trust stats were signalled by tint alone + read badly by VoiceOver. PSR: successSoft vs warningSoft collapse to the same hue under deuteranopia, so a 97% PASS and a 92% FAIL looked identical, and "(PSR)"/">95%" were mis-spoken. Now a state glyph (checkmark.seal vs exclamationmark.triangle) + an inline PASS / BELOW BAR word + a spoken accessibilityLabel ("probabilistic Sharpe ratio N percent, passes/below the 95 percent bar") with the engine caveat moved to accessibilityHint. Decay: added an octagon glyph on the RED-FLAG (overfit) case + an accessibilityLabel that speaks the in->out transition ("in sample +x.xx R falling to out of sample +y.yy R") since VoiceOver drops the "→".
+**Verify:** typecheck EXIT=0. UI label/glyph only — no logic/struct change, no test impact.
+**Result:** a color-blind or screen-reader owner can now tell a real, out-of-sample-validated edge from an overfit one — the two stats that decide whether to trust a backtest. Remaining A11Y (#4/#6/#8/#9/#10): ruin-line label, stale-chip contrast, Dynamic-Type on RS gp prices. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
