@@ -71,6 +71,17 @@ struct StockSageExpectedValueTests {
         #expect(lane.map(\.symbol) == ["BTC-USD", "AAPL"])                    // crypto first (faster turnover)
     }
 
+    @Test func velocityLaneIsBuyOnly() {
+        // A SHORT with a valid positive-EV 2:1 setup must NOT enter the velocity / Fast Lane (it
+        // cannot compound like a long, and the best-opportunity card already bars it) — even though
+        // its evR > 0 would have passed the old gross-EV gate.
+        let buy  = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        let sell = idea("ETH-USD", action: .sell, conviction: 0.9, stop: 110, target: 80)
+        #expect(EV.ev(for: sell).map { $0.evR > 0 } == true)               // the short IS positive-EV…
+        #expect(EV.fastLane([buy, sell]).map(\.symbol) == ["BTC-USD"])      // …yet excluded from the lane
+        #expect(EV.rankByVelocity([sell, buy]).first?.symbol == "BTC-USD") // and falls last in velocity rank
+    }
+
     @Test func expectedWeeklyRSumsTopVelocities() {
         let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)    // vel 1.228/12
         let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130) // vel 1.228/3

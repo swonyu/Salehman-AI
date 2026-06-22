@@ -7049,6 +7049,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY-FLOW BUG FIX — velocity lane is now buy-only + after-cost screened
+**Files:** `StockSage/StockSageExpectedValue.swift` (velocityRankKey), `Salehman AITests/StockSageExpectedValueTests.swift` (+test).
+**What (money-flow sweep wdzfepgrt #3 + #5):** velocityRankKey gated only on conviction, so (a) a SHORT (sell/reduce) with a valid positive-EV setup topped the Fast Lane / "fastest compounding" card — while bestOpportunity and CapitalAllocator correctly require buy-family; and (b) the after-cost demotion that evRankKey applies (−500_000 when \!clearsCostAfterFrictions) was MISSING, so a thin high-cost crypto flip could lead on gross EV. Fix (one function, propagates to BOTH fastLane and rankByVelocity which call it): `guard case .buyFamily = side(idea)` (sells → nil → excluded from fastLane, last in rankByVelocity), and `if \!clearsCostAfterFrictions(idea) { return v - 500_000 }`.
+**Verify:** typecheck EXIT=0. RE-TRACED all velocity/fast-lane tests: existing ideas are buy-family + clear cost (wide setups) → byte-identical order; the excluded `neg`/`junk` were already out via evR>0 / conviction floor. +test: a positive-EV short is excluded from fastLane + ranks last.
+**Remaining (MONEY_FLOW_AUDIT.md): #2 indices/FX as buyable ideas; #4 regime dropped into velocity; #6 RS on FX/indices; #7 retry benchmark; #8 cache drops user tickers; #9/#10/#11 gaps.**
+**Result:** the Fast Lane and best-opportunity card now agree — only real, cost-clearing, buy-side compounding candidates lead the velocity board. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

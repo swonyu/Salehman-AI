@@ -156,9 +156,16 @@ enum StockSageExpectedValue {
         return bannedFromTopRank(side(idea), regime: r.state) ? base - 1_000_000 : base
     }
     private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays) -> Double? {
+        // Velocity is the BUY-side compounding lane (matches bestOpportunity / CapitalAllocator) —
+        // a short does not compound the same way, so only buy-family ideas qualify. (Fixes a short
+        // topping the Fast Lane while it is correctly barred from the best-opportunity card.)
+        guard case .buyFamily = side(idea) else { return nil }
         guard let q = qualityAdjustedEVR(for: idea),
               let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
         let v = q / hold
+        // After-cost screen (mirrors evRankKey): a setup net-negative after frictions can't lead the
+        // velocity board either — otherwise a thin, high-cost crypto flip tops it on gross EV.
+        if !clearsCostAfterFrictions(idea) { return v - 500_000 }
         return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
     }
 
