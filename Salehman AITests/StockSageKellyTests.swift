@@ -6,6 +6,22 @@ import Foundation
 
 struct StockSageKellyTests {
 
+    @Test func portfolioCapPinsBookHeatToTheCeiling() {
+        // Ten half-Kelly bets at 0.20 each → requested 2.0 (2× the account, a ruin setup per-position
+        // Kelly can't see). Cap 0.30 scales every position by 0.15 → book heat pinned to 0.30.
+        let pc = StockSageKelly.portfolioCap(Array(repeating: 0.20, count: 10), maxPortfolioHeat: 0.30)
+        #expect(abs(pc.bookRequestedHeat - 2.0) < 1e-9)
+        #expect(abs(pc.scaleApplied - 0.15) < 1e-9)
+        #expect(abs((pc.scaledFractions.first ?? 0) - 0.03) < 1e-9)
+        #expect(abs(pc.bookHeat - 0.30) < 1e-9)              // pinned to the cap, NOT 2.0
+        // Under the cap → untouched (no-op scale).
+        let under = StockSageKelly.portfolioCap([0.05, 0.04], maxPortfolioHeat: 0.30)
+        #expect(under.scaleApplied == 1 && abs(under.bookHeat - 0.09) < 1e-9)
+        // Empty / cap-0 → zero heat, no NaN, no negative.
+        #expect(StockSageKelly.portfolioCap([], maxPortfolioHeat: 0.30).bookHeat == 0)
+        #expect(StockSageKelly.portfolioCap([0.5], maxPortfolioHeat: 0).bookHeat == 0)
+    }
+
     @Test func inputsFromBacktestStats() {
         // payoff = avgWin ÷ avgLoss = 2.0 / 1.0 = 2.0
         let i = StockSageKelly.inputs(winRate: 0.55, avgWinR: 2.0, avgLossR: 1.0)!

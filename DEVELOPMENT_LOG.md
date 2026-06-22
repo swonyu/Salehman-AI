@@ -7162,6 +7162,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY (ruin guard) — portfolio-level Kelly heat cap (book can't over-bet past a ceiling)
+**Files:** `StockSage/StockSageKelly.swift` (+PortfolioKelly + portfolioCap), `Salehman AITests/StockSageKellyTests.swift` (+test). Persisted PORTFOLIO_STRATEGY.md (portfolio-strategy sweep w5kagzxd3).
+**What (#1, highest-$ + most buildable):** per-position Kelly sees ONE trade — ten genuinely-high-edge ideas each earn the full half-Kelly cap (0.20), so naive sizing risks 10×0.20 = 2.0 → a 2× leveraged book a single Kelly call cannot detect (the named ruin gap). New pure portfolioCap(_ fractions:maxPortfolioHeat:0.30) uniformly scales the book: scale = requested>cap ? cap/requested : 1; book heat = min(requested, cap). Composes the verified suggestedFraction + CapitalAllocator's proven uniform-scaling math; cap clamped [0,1]; empty/negative/cap-0 → zero heat, no NaN. Caveat inherits Kelly's + "caps SUMMED stop-risk, not joint tail risk — correlated names can still gap together" (#3 correlation-heat is the complement, queued).
+**Verify:** typecheck EXIT=0; python-verified THEN tested — [0.20]×10 → requested 2.0, scale 0.15, each 0.03, book heat 0.30 (pinned, not 2.0); under-cap [0.05,0.04] untouched (0.09); empty/cap-0 → 0. RE-TRACED: pure additive func on the enum, no existing Kelly test touched.
+**Result:** on a $10k account, ten full-Kelly ideas would risk $20k of stops; portfolioCap pins it to $3k — $17k of catastrophic over-bet removed in one deterministic pass. UI surfacing (sum journal.open suggestedFractions → show book heat vs cap) is a follow-up.
+**Result:** ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

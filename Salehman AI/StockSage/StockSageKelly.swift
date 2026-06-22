@@ -24,6 +24,18 @@ struct KellyResult: Sendable, Equatable {
     let caveat: String
 }
 
+/// A whole BOOK of per-position Kelly fractions scaled to a portfolio heat ceiling. Per-position
+/// Kelly sees one trade at a time — ten half-Kelly bets at 0.20 each sum to 2.0× the account (a
+/// 2× leveraged ruin setup no single Kelly call can detect). This pins the SUMMED stop-risk to a cap.
+struct PortfolioKelly: Sendable, Equatable {
+    let scaledFractions: [Double]    // each per-position fraction after uniform down-scaling
+    let bookRequestedHeat: Double    // Σ requested per-position fractions (could exceed 1.0)
+    let bookHeat: Double             // Σ scaled = min(requested, cap)
+    let scaleApplied: Double         // 1.0 when under the cap, else cap/requested
+    let maxPortfolioHeat: Double
+    let caveat: String
+}
+
 enum StockSageKelly {
     nonisolated static let caveat = "Kelly assumes your win-rate and payoff estimates are accurate — they rarely are. Use a fraction (¼–½) and a hard cap; over-betting compounds into ruin."
 
@@ -63,5 +75,20 @@ enum StockSageKelly {
                            suggestedFraction: suggested,
                            dollarsToAllocate: suggested * Swift.max(0, accountSize),
                            note: note, caveat: caveat)
+    }
+
+    /// Scale a book of per-position fractions (each already half-Kelly-capped via suggestedFraction)
+    /// so their SUM never exceeds `maxPortfolioHeat` — the collective over-bet per-position Kelly
+    /// can't see. Uniform scaling preserves the per-position ranking; under the cap it's a no-op.
+    nonisolated static func portfolioCap(_ perPositionFractions: [Double],
+                                         maxPortfolioHeat: Double = 0.30) -> PortfolioKelly {
+        let cap = Swift.min(1, Swift.max(0, maxPortfolioHeat))
+        let fracs = perPositionFractions.map { Swift.max(0, $0) }      // no negative bets
+        let requested = fracs.reduce(0, +)
+        let scale = (requested > cap && requested > 0) ? cap / requested : 1
+        let scaled = fracs.map { $0 * scale }
+        return PortfolioKelly(scaledFractions: scaled, bookRequestedHeat: requested,
+                              bookHeat: scaled.reduce(0, +), scaleApplied: scale, maxPortfolioHeat: cap,
+                              caveat: caveat + " Caps SUMMED stop-risk, not joint tail risk — correlated names can still gap together past this.")
     }
 }
