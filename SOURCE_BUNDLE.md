@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:18 +03 · Swift files: 245 · Swift LOC: 45477_
+_Generated: 2026-06-22 13:27 +03 · Swift files: 245 · Swift LOC: 45505_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9873,7 +9873,7 @@ enum StockSageExpectedValue {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageGEFlip.swift (101 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageGEFlip.swift (111 lines) =====
 ```swift
 import Foundation
 
@@ -9900,6 +9900,10 @@ struct GEFlip: Sendable, Equatable, Identifiable {
     let profitPerItem: Int   // sell − buy − tax
     let gpPerHour: Double     // profitPerItem × buyLimit ÷ 4h window
     var id: Int { itemId }
+
+    /// Return on capital per flip cycle = net profit ÷ gp tied up. Surfaces capital
+    /// efficiency: a cheap item at 8% beats a 5M item at 0.5% per unit of gp you have.
+    nonisolated var roiPct: Double { buyPrice > 0 ? Double(profitPerItem) / Double(buyPrice) * 100 : 0 }
 }
 
 /// One flip in a budget plan: how many units the gp budget funds and the realized
@@ -9953,6 +9957,12 @@ enum StockSageGEFlip {
                           buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
+    }
+
+    /// Flips ranked by capital efficiency (ROI% per cycle) rather than gp/hour — surfaces
+    /// the cheap, high-turnover items that compound a small bankroll fastest.
+    nonisolated static func bestFlipsByROI(_ flips: [GEFlip]) -> [GEFlip] {
+        flips.filter { $0.profitPerItem > 0 && $0.buyPrice > 0 }.sorted { $0.roiPct > $1.roiPct }
     }
 
     /// "With N gp, flip these": greedily allocate the budget to the fastest flips
@@ -30745,7 +30755,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (411 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (415 lines) =====
 ```swift
 import SwiftUI
 
@@ -30975,6 +30985,10 @@ struct RuneScapeMarketView: View {
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
                     .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
+                if let topROI = StockSageGEFlip.bestFlipsByROI(flips).first {
+                    Text("Best ROI/cycle: \(topROI.name) +\(String(format: "%.1f", topROI.roiPct))% on \(RSFormat.gp(topROI.buyPrice))/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated).")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+                }
 
                 // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
                 Divider().overlay(DS.Palette.surfaceStroke)
@@ -42939,7 +42953,7 @@ struct StockSageExpectedValueTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageGEFlipTests.swift (67 lines) =====
+===== FILE: Salehman AITests/StockSageGEFlipTests.swift (81 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42980,6 +42994,20 @@ struct StockSageGEFlipTests {
     private func flip(_ id: Int, _ name: String, buy: Int, limit: Int, profit: Int, gph: Double) -> GEFlip {
         GEFlip(itemId: id, name: name, buyPrice: buy, sellPrice: buy + profit, buyLimit: limit,
                taxPerItem: 0, profitPerItem: profit, gpPerHour: gph)
+    }
+
+    @Test func roiRanksByCapitalEfficiency() {
+        let a = flip(1, "cheap", buy: 100, limit: 100, profit: 8, gph: 0)     // 8% ROI/cycle
+        let b = flip(2, "mid", buy: 1000, limit: 100, profit: 50, gph: 0)      // 5%
+        let c = flip(3, "pricey", buy: 10_000, limit: 100, profit: 50, gph: 0) // 0.5%
+        #expect(abs(a.roiPct - 8) < 1e-9)
+        #expect(abs(b.roiPct - 5) < 1e-9)
+        #expect(abs(c.roiPct - 0.5) < 1e-9)
+        // Cheap, high-turnover item ranks first by capital efficiency (not gp/hour).
+        #expect(StockSageGEFlip.bestFlipsByROI([c, b, a]).map(\.itemId) == [1, 2, 3])
+        // Non-positive profit / zero buy are filtered out.
+        let loss = flip(4, "loss", buy: 100, limit: 100, profit: -5, gph: 0)
+        #expect(!StockSageGEFlip.bestFlipsByROI([a, loss]).contains { $0.itemId == 4 })
     }
 
     @Test func bestFlipsForBudgetGreedyByVelocity() {
@@ -48516,7 +48544,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7640 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7645 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55042,6 +55070,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Taking the whole position off at the target maxes R but also variance — one failed breakout and the runner round-trips to break-even. `StockSagePartialLadder.levels(entry:stop:target:rungs:)` lays out evenly-spaced equal-fraction scale-out rungs from the first R step up to the target (last rung = target), works long & short, with the BLENDED exit R if each fills. The idea detail sheet shows "Scale-out (⅓ each): 110 (+1R), 120 (+2R), 130 (+3R) — blended +2.0R. Banks gains + cuts variance vs all-at-target; assumes each level fills." Honest: assumes fills (gaps/thin liquidity skip rungs). 3 tests, PYTHON-VERIFIED: long 100/90/130 → prices [110,120,130], R [1,2,3], blended 2.0; short 100/110/80 → [90,80], [1,2], 1.5; zero-risk/target==entry/0-rungs → nil.
 **Result:** Hardening 1-10 + #15 done. NEXT: #13 GE ROI rank, #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
 
+## 2026-06-22 · Hardening #13: GE ROI%/capital-efficiency ranking
+**Files:** `StockSage/StockSageGEFlip.swift` (`GEFlip.roiPct` + `bestFlipsByROI`), `Views/RuneScapeMarketView.swift` (best-ROI line), `Salehman AITests/StockSageGEFlipTests.swift` (+1 test).
+**What & why:** Ranking flips only by gp/hour or raw margin favors expensive items and hides what compounds a SMALL bankroll fastest. `GEFlip.roiPct` = profitPerItem (already net of the 2% GE tax) ÷ buyPrice; `bestFlipsByROI` sorts desc (filters non-positive profit / zero buy). The fastest-flips strip now adds "Best ROI/cycle: <item> +8.0% on <buy>/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated)." 1 test, PYTHON-VERIFIED: buy 100/profit 8 → 8%, 1000/50 → 5%, 10000/50 → 0.5%, ranked [cheap, mid, pricey], loss filtered. ✅ typecheck clean.
+**Result:** Hardening 1-10, 13, 15 done. NEXT: #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58398,7 +58431,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add calibrationNote(journalTrades:assumes:VelocityHoldDays)->String? computing actual avg hold by asset class from closed trades and returning a note when it diverges >20% from the tuned assumption (crypto 3d, equity 12d). Surface on the velocity card.
 **Why:** If the owner actually holds crypto 5d vs the assumed 3d, every velocity rank is silently off ~67%. Closes a real drift between assumption and measured behavior.
 
-### ⬜ #13 — Buy-limit-aware ROI%/capital-efficiency ranking for GE flips  [high/medium, feature]
+### ✅ DONE #13 — Buy-limit-aware ROI%/capital-efficiency ranking for GE flips  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageGEFlip.swift
 **What:** Add GEFlipMetric{gpPerHour,roiPercent,gpPerHourPerCapital}, roiPercent(buy:sell:rate:), gpPerHourPerCapital(=profitPerItem/buyPrice), and bestFlipsForBudgetByROI(budget:). Make fastestFlipsStrip sort toggle (default gp/hour). Tests for roiPercent + ROI-sorted budget.
 **Why:** For a fixed account capital is the bottleneck; pure gp/hour picks capital-hungry flips with worse efficiency. Surfaces fast-recycling flips. Caveat: assumes 4h tie-up.

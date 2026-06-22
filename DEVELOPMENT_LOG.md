@@ -6523,6 +6523,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Taking the whole position off at the target maxes R but also variance — one failed breakout and the runner round-trips to break-even. `StockSagePartialLadder.levels(entry:stop:target:rungs:)` lays out evenly-spaced equal-fraction scale-out rungs from the first R step up to the target (last rung = target), works long & short, with the BLENDED exit R if each fills. The idea detail sheet shows "Scale-out (⅓ each): 110 (+1R), 120 (+2R), 130 (+3R) — blended +2.0R. Banks gains + cuts variance vs all-at-target; assumes each level fills." Honest: assumes fills (gaps/thin liquidity skip rungs). 3 tests, PYTHON-VERIFIED: long 100/90/130 → prices [110,120,130], R [1,2,3], blended 2.0; short 100/110/80 → [90,80], [1,2], 1.5; zero-risk/target==entry/0-rungs → nil.
 **Result:** Hardening 1-10 + #15 done. NEXT: #13 GE ROI rank, #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
 
+## 2026-06-22 · Hardening #13: GE ROI%/capital-efficiency ranking
+**Files:** `StockSage/StockSageGEFlip.swift` (`GEFlip.roiPct` + `bestFlipsByROI`), `Views/RuneScapeMarketView.swift` (best-ROI line), `Salehman AITests/StockSageGEFlipTests.swift` (+1 test).
+**What & why:** Ranking flips only by gp/hour or raw margin favors expensive items and hides what compounds a SMALL bankroll fastest. `GEFlip.roiPct` = profitPerItem (already net of the 2% GE tax) ÷ buyPrice; `bestFlipsByROI` sorts desc (filters non-positive profit / zero buy). The fastest-flips strip now adds "Best ROI/cycle: <item> +8.0% on <buy>/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated)." 1 test, PYTHON-VERIFIED: buy 100/profit 8 → 8%, 1000/50 → 5%, 10000/50 → 0.5%, ranked [cheap, mid, pricey], loss filtered. ✅ typecheck clean.
+**Result:** Hardening 1-10, 13, 15 done. NEXT: #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
+
 ---
 
 ## Standing notes / known issues

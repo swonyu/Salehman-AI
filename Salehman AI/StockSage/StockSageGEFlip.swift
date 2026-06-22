@@ -23,6 +23,10 @@ struct GEFlip: Sendable, Equatable, Identifiable {
     let profitPerItem: Int   // sell − buy − tax
     let gpPerHour: Double     // profitPerItem × buyLimit ÷ 4h window
     var id: Int { itemId }
+
+    /// Return on capital per flip cycle = net profit ÷ gp tied up. Surfaces capital
+    /// efficiency: a cheap item at 8% beats a 5M item at 0.5% per unit of gp you have.
+    nonisolated var roiPct: Double { buyPrice > 0 ? Double(profitPerItem) / Double(buyPrice) * 100 : 0 }
 }
 
 /// One flip in a budget plan: how many units the gp budget funds and the realized
@@ -76,6 +80,12 @@ enum StockSageGEFlip {
                           buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
+    }
+
+    /// Flips ranked by capital efficiency (ROI% per cycle) rather than gp/hour — surfaces
+    /// the cheap, high-turnover items that compound a small bankroll fastest.
+    nonisolated static func bestFlipsByROI(_ flips: [GEFlip]) -> [GEFlip] {
+        flips.filter { $0.profitPerItem > 0 && $0.buyPrice > 0 }.sorted { $0.roiPct > $1.roiPct }
     }
 
     /// "With N gp, flip these": greedily allocate the budget to the fastest flips

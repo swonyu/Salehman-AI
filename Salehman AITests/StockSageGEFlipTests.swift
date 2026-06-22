@@ -39,6 +39,20 @@ struct StockSageGEFlipTests {
                taxPerItem: 0, profitPerItem: profit, gpPerHour: gph)
     }
 
+    @Test func roiRanksByCapitalEfficiency() {
+        let a = flip(1, "cheap", buy: 100, limit: 100, profit: 8, gph: 0)     // 8% ROI/cycle
+        let b = flip(2, "mid", buy: 1000, limit: 100, profit: 50, gph: 0)      // 5%
+        let c = flip(3, "pricey", buy: 10_000, limit: 100, profit: 50, gph: 0) // 0.5%
+        #expect(abs(a.roiPct - 8) < 1e-9)
+        #expect(abs(b.roiPct - 5) < 1e-9)
+        #expect(abs(c.roiPct - 0.5) < 1e-9)
+        // Cheap, high-turnover item ranks first by capital efficiency (not gp/hour).
+        #expect(StockSageGEFlip.bestFlipsByROI([c, b, a]).map(\.itemId) == [1, 2, 3])
+        // Non-positive profit / zero buy are filtered out.
+        let loss = flip(4, "loss", buy: 100, limit: 100, profit: -5, gph: 0)
+        #expect(!StockSageGEFlip.bestFlipsByROI([a, loss]).contains { $0.itemId == 4 })
+    }
+
     @Test func bestFlipsForBudgetGreedyByVelocity() {
         let a = flip(1, "A", buy: 100, limit: 1000, profit: 28, gph: 7000)   // full gp/hr 28·1000/4
         let b = flip(2, "B", buy: 1000, limit: 100, profit: 78, gph: 1950)   // full gp/hr 78·100/4

@@ -226,6 +226,10 @@ struct RuneScapeMarketView: View {
                 Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
                     .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help(StockSageGlossary.explain(.gpPerHour))
+                if let topROI = StockSageGEFlip.bestFlipsByROI(flips).first {
+                    Text("Best ROI/cycle: \(topROI.name) +\(String(format: "%.1f", topROI.roiPct))% on \(RSFormat.gp(topROI.buyPrice))/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated).")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+                }
 
                 // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
                 Divider().overlay(DS.Palette.surfaceStroke)

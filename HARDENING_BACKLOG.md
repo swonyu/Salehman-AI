@@ -73,7 +73,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add calibrationNote(journalTrades:assumes:VelocityHoldDays)->String? computing actual avg hold by asset class from closed trades and returning a note when it diverges >20% from the tuned assumption (crypto 3d, equity 12d). Surface on the velocity card.
 **Why:** If the owner actually holds crypto 5d vs the assumed 3d, every velocity rank is silently off ~67%. Closes a real drift between assumption and measured behavior.
 
-### ⬜ #13 — Buy-limit-aware ROI%/capital-efficiency ranking for GE flips  [high/medium, feature]
+### ✅ DONE #13 — Buy-limit-aware ROI%/capital-efficiency ranking for GE flips  [high/medium, feature]
 **File:** Salehman AI/StockSage/StockSageGEFlip.swift
 **What:** Add GEFlipMetric{gpPerHour,roiPercent,gpPerHourPerCapital}, roiPercent(buy:sell:rate:), gpPerHourPerCapital(=profitPerItem/buyPrice), and bestFlipsForBudgetByROI(budget:). Make fastestFlipsStrip sort toggle (default gp/hour). Tests for roiPercent + ROI-sorted budget.
 **Why:** For a fixed account capital is the bottleneck; pure gp/hour picks capital-hungry flips with worse efficiency. Surfaces fast-recycling flips. Caveat: assumes 4h tie-up.
