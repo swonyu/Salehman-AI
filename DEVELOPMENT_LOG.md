@@ -6866,6 +6866,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Fix — SplitMix64 MainActor isolation (c6135bb did not compile)
+**Files:** `StockSage/StockSageMonteCarloRuin.swift`.
+**What:** c6135bb shipped the Monte-Carlo ruin engine but SplitMix64.init/next were MainActor-isolated by default (SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor) and called from the nonisolated simulate() → 2 isolation errors. Marked `nonisolated struct SplitMix64`. Root cause of the bad push: I piped typecheck through grep in an && chain, which masked the non-zero exit — broken code slipped the gate. Going forward: run typecheck to a logfile and check $? explicitly before committing.
+**Verify:** `bash tools/typecheck.sh` EXIT=0, clean. The ruin test stands.
+**Result:** green again; verification gate hardened. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

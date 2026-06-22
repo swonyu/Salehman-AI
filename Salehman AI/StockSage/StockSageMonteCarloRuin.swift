@@ -3,7 +3,7 @@ import Foundation
 /// A deterministic 64-bit PRNG (SplitMix64) so the ruin simulation is reproducible — the same seed
 /// yields a byte-identical result. The app had no seedable RNG; this keeps the Monte-Carlo honest
 /// and unit-testable (a simulation you cannot reproduce is a number you cannot trust).
-struct SplitMix64: RandomNumberGenerator {
+nonisolated struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
     init(seed: UInt64) { state = seed }
     mutating func next() -> UInt64 {
