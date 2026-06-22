@@ -6694,6 +6694,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ALLOC #1 — StockSageCapitalAllocator (half-Kelly, edge-weighted, heat-capped)
+**Files:** NEW `StockSage/StockSageCapitalAllocator.swift`, NEW `Salehman AITests/StockSageCapitalAllocatorTests.swift` (+4 tests). Re-verified Kelly/PositionSizer/EV signatures vs source first.
+**What:** `allocate(ideas:account:maxHeat:0.08) -> CapitalAllocation` turns a board of ranked ideas into a concrete per-position plan. Composes three already-tested engines, zero new math: ExpectedValue.ev (fund only buy-family + positive-EV), Kelly.compute (per-idea weight = halfKelly, which IS a fraction in [0,0.5] AND already encodes the edge — no divide-by-account, no separate EV multiplier), PositionSizer.size (whole-share floor). Σ raw half-Kelly scaled uniformly so heat ≤ maxHeat; the share floor keeps REALIZED heat ≤ the cap. Deterministic order (desc riskFraction, tie-break symbol). Caveated (half-Kelly off ESTIMATED edges; a correlated gap loses more).
+**Verify:** typecheck clean; python-verified pins — conviction 0.5 / 100-90-130 → halfKelly 0.14333, 143 shares, $1430 at risk, scaleApplied 1 under the cap; three 6:1 buys at maxHeat 0.08 → scaleApplied<1, totalHeat 0.07985 ≤ 0.08; weak edge below cap → riskFraction==halfKelly; sell / EV≤0 / account≤0 / empty → empty plan.
+**Result:** the money engine can now allocate capital across the whole board at once, edge-weighted and hard-heat-capped — not one idea at a time. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -1,0 +1,89 @@
+import Foundation
+
+// MARK: - Capital allocator (half-Kelly, edge-weighted, heat-capped)
+//
+// Turns a board of ranked ideas into a concrete "how much in each" plan by COMPOSING three
+// already-tested engines — StockSageExpectedValue (fundability + edge), StockSageKelly (the
+// per-idea fraction), and StockSagePositionSizer (whole shares). No new financial math.
+// Total open heat is HARD-CAPPED: the edge-weighted half-Kelly fractions are scaled down
+// uniformly so Σ risk ≤ maxHeat, and the whole-share floor keeps REALIZED heat ≤ the cap.
+// Pure + deterministic. Honest: half-Kelly off ESTIMATED edges (conviction is NOT a
+// probability); the per-position risk is the loss at the stop — a correlated gap can lose more.
+
+struct AllocatedPosition: Sendable, Equatable, Identifiable {
+    let symbol: String
+    let riskFraction: Double   // account fraction at risk after heat-scaling
+    let shares: Int            // whole shares (floored — never over-risk)
+    let dollarsAtRisk: Double  // shares × |entry − stop|
+    let notional: Double       // shares × entry
+    let halfKelly: Double      // raw half-Kelly fraction pre-scale (transparency)
+    let evR: Double            // the expected value in R that earned the weight
+    var id: String { symbol }
+}
+
+struct CapitalAllocation: Sendable, Equatable {
+    let positions: [AllocatedPosition]   // desc by riskFraction, tie-break asc symbol
+    let totalHeat: Double                // Σ dollarsAtRisk ÷ account — ≤ maxHeat
+    let requestedHeat: Double            // Σ raw half-Kelly of fundable ideas (pre-scale)
+    let scaleApplied: Double             // ≤1 when the cap bound; 1 otherwise
+    let account: Double
+    let maxHeat: Double
+    let caveat: String
+}
+
+enum StockSageCapitalAllocator {
+    nonisolated static let caveat = "Allocations are HALF-Kelly off ESTIMATED edges (conviction is not a probability); total open heat is hard-capped and whole shares floor each position, so realized heat stays ≤ the cap. Each line sizes the loss at its stop — a correlated gap can lose more."
+
+    /// Deploy capital across the buy-family, positive-EV ideas: weight by half-Kelly (which
+    /// already encodes the edge — bigger win·payoff ⇒ bigger fraction), scale uniformly so the
+    /// summed risk fits `maxHeat`, then floor to whole shares. Empty plan on invalid inputs or
+    /// when nothing is fundable.
+    nonisolated static func allocate(ideas: [StockSageIdea], account: Double, maxHeat: Double = 0.08) -> CapitalAllocation {
+        let cap = Swift.min(Swift.max(0, maxHeat), 1)
+        func empty() -> CapitalAllocation {
+            CapitalAllocation(positions: [], totalHeat: 0, requestedHeat: 0, scaleApplied: 1,
+                              account: account, maxHeat: cap, caveat: caveat)
+        }
+        guard account > 0, cap > 0 else { return empty() }
+
+        // Step 1+2: fund only buy-family ideas with a defined R and positive EV; the raw weight
+        // IS half-Kelly (already a FRACTION in [0,0.5] — do NOT divide by account; it also
+        // already encodes the edge, so no separate EV multiplier — that would double-count).
+        struct Fundable { let symbol: String; let entry: Double; let stop: Double; let raw: Double; let evR: Double }
+        var fundable: [Fundable] = []
+        for idea in ideas {
+            let a = idea.advice
+            guard a.action == .buy || a.action == .strongBuy,
+                  let stop = a.stopPrice, let target = a.targetPrice, idea.price > 0,
+                  let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target),
+                  ev.evR > 0 else { continue }
+            let k = StockSageKelly.compute(winRate: ev.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account)
+            guard k.halfKelly > 0 else { continue }
+            fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop, raw: k.halfKelly, evR: ev.evR))
+        }
+        guard !fundable.isEmpty else { return empty() }
+
+        // Step 3: uniform proportional scaling pins Σ pre-floor heat to min(requested, cap) and
+        // preserves the edge ranking.
+        let requestedHeat = fundable.reduce(0) { $0 + $1.raw }
+        let scaleApplied = requestedHeat > cap ? cap / requestedHeat : 1
+
+        // Step 4: the sizer is the ONLY place dollars/shares are produced; it floors shares DOWN,
+        // so realized dollarsAtRisk ≤ scaledFraction·account ⇒ summed realized heat ≤ the cap.
+        var positions: [AllocatedPosition] = []
+        for f in fundable {
+            let scaled = f.raw * scaleApplied
+            guard let ps = StockSagePositionSizer.size(account: account, riskFraction: scaled, entry: f.entry, stop: f.stop),
+                  ps.shares > 0 else { continue }
+            positions.append(AllocatedPosition(symbol: f.symbol, riskFraction: scaled, shares: ps.shares,
+                                               dollarsAtRisk: ps.dollarsAtRisk, notional: ps.notional,
+                                               halfKelly: f.raw, evR: f.evR))
+        }
+
+        // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).
+        let totalHeat = positions.reduce(0) { $0 + $1.dollarsAtRisk } / account
+        let sorted = positions.sorted { $0.riskFraction != $1.riskFraction ? $0.riskFraction > $1.riskFraction : $0.symbol < $1.symbol }
+        return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
+                                 scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: caveat)
+    }
+}

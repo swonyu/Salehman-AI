@@ -2,7 +2,7 @@
 
 3 vetted items (survived rate-limiting). RE-VERIFY each claim vs REAL source; engine-first + python-verified test.
 
-### ⬜ #1 — StockSageCapitalAllocator — half-Kelly, edge-weighted, heat-capped allocation across a board of ideas
+### ✅ DONE #1 — StockSageCapitalAllocator — half-Kelly, edge-weighted, heat-capped allocation across a board of ideas
 **signature:** NEW FILE: `/Users/saleh/Desktop/Salehman AI/Salehman AI/StockSage/StockSageCapitalAllocator.swift` (auto-compiles under Salehman AI/StockSage/ — no project.pbxproj edit; verified no existing file with this name). Pure, deterministic, `nonisolated`, Chat A (Markets/StockSage) lane.
 
 ```swift
