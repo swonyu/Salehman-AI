@@ -7023,6 +7023,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ALPHA + REGRESSION FIX — oversold bounce now requires an intact uptrend (no falling-knife buys)
+**Files:** `StockSage/StockSageAdvisor.swift` (oversoldBounceIsBuyable + gated branch), `Salehman AITests/StockSageAdvisorTests.swift` (+test). Persisted ALPHA_EDGE_SWEEP.md.
+**What (alpha-edge sweep wbzkz8s8o #1 — and a real gap in MY range-gate):** advise() credited any RSI<30-in-range a +0.25 oversold bounce + set rangeOversoldBounce=true BEFORE the 12-1 veto (which only −0.20, too late) — so a name making fresh lower lows could keep the flag and pass my range gate, producing a BUY into a downtrend (the canonical mean-reversion-against-trend negative-expectancy trap). Fix: gate the bounce on `oversoldBounceIsBuyable(closes) = trendOK(closes) ?? true` — intact 12-1 uptrend → buy-the-dip (unchanged); 12-1 downtrend → no credit + honest "knife, not a dip" rationale; <253 bars → trendOK nil → true (legacy byte-stable).
+**Verify:** typecheck EXIT=0. RE-TRACED advisor tests: existing tests use clean trends (trending → never hit the \!trending oversold branch) or the high-tail range series (rsi not <30) → none break. +test: uptrend→buyable, downtrend→knife (false), <253→legacy true.
+**Result:** the advisor no longer buys an oversold name that is structurally breaking down — selectivity that raises realized per-trade R. Hardens the rangeOversoldBounce flag from my earlier range-gate. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

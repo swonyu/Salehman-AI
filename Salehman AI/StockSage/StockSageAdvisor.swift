@@ -128,7 +128,17 @@ enum StockSageAdvisor {
         let trending = er >= 0.30
         var rangeOversoldBounce = false   // a legit mean-reversion buy in a range (vs a trend-follow trap)
         if !trending {
-            if rsi < 30 { score += 0.25; rangeOversoldBounce = true; rationale.append(String(format: "RSI %.0f oversold in a range — bounce setup", rsi)) }
+            if rsi < 30 {
+                // Buy the DIP only in an intact 12-1 uptrend. An oversold name making fresh lower
+                // lows is a falling knife, not a bounce — crediting it averages into a structural
+                // decline (negative expectancy). trendOK nil (<253 bars) → preserve legacy behavior.
+                if Self.oversoldBounceIsBuyable(closes) {
+                    score += 0.25; rangeOversoldBounce = true
+                    rationale.append(String(format: "RSI %.0f oversold in an intact uptrend — buy-the-dip", rsi))
+                } else {
+                    rationale.append(String(format: "RSI %.0f oversold but in a 12-1 downtrend — knife, not a dip (no credit)", rsi))
+                }
+            }
             else if rsi > 70 { score -= 0.25; rationale.append(String(format: "RSI %.0f overbought in a range — fade setup", rsi)) }
         } else {
             if rsi > 80 { score -= 0.10; rationale.append("RSI > 80 — extended; trail stops") }
@@ -241,6 +251,13 @@ enum StockSageAdvisor {
     nonisolated static func stopMultiple(forVol realizedVol: Double?) -> Double {
         guard let v = realizedVol else { return 2.0 }
         if v >= 0.70 { return 2.5 } else if v >= 0.40 { return 2.0 } else { return 1.5 }
+    }
+
+    /// Is an oversold-in-range bounce actually buyable? Only when the name's own 12-1 trend is
+    /// intact (buy-the-dip); an oversold name making fresh lower lows is a falling knife. Trend
+    /// undefined (<253 closes) → true, preserving short-history behavior byte-for-byte.
+    nonisolated static func oversoldBounceIsBuyable(_ closes: [Double]) -> Bool {
+        StockSageIndicators.trendOK(closes) ?? true
     }
 
     nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?,

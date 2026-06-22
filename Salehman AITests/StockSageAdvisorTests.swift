@@ -38,6 +38,13 @@ struct StockSageAdvisorStopTargetTests {
         #expect(!StockSageAdvisor.advise(closes: up).rationale.contains { $0.contains("12-1 downtrend") })
     }
 
+    @Test func oversoldBounceRequiresAnIntactUptrend() {
+        // Buy the dip only in an intact 12-1 uptrend; an oversold name in a downtrend is a knife.
+        #expect(StockSageAdvisor.oversoldBounceIsBuyable((1...260).map(Double.init)))               // uptrend → buyable
+        #expect(!StockSageAdvisor.oversoldBounceIsBuyable((1...260).reversed().map(Double.init)))    // downtrend → knife
+        #expect(StockSageAdvisor.oversoldBounceIsBuyable((1...60).map(Double.init)))                 // <253 bars → legacy true
+    }
+
     @Test func stopWidthScalesWithRealizedVolatility() {
         // realizedVol nil → byte-identical to the 2-ATR / 8% behavior.
         #expect(A.stopTarget(action: .buy, price: 100, atr: 5).stop == 90)
