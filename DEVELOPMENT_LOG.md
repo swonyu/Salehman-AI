@@ -6528,6 +6528,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Ranking flips only by gp/hour or raw margin favors expensive items and hides what compounds a SMALL bankroll fastest. `GEFlip.roiPct` = profitPerItem (already net of the 2% GE tax) ÷ buyPrice; `bestFlipsByROI` sorts desc (filters non-positive profit / zero buy). The fastest-flips strip now adds "Best ROI/cycle: <item> +8.0% on <buy>/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated)." 1 test, PYTHON-VERIFIED: buy 100/profit 8 → 8%, 1000/50 → 5%, 10000/50 → 0.5%, ranked [cheap, mid, pricey], loss filtered. ✅ typecheck clean.
 **Result:** Hardening 1-10, 13, 15 done. NEXT: #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
 
+## 2026-06-22 · Hardening #16: Tax-aware NET margin in the OSRS listing rows
+**Files:** `Views/RuneScapeMarketView.swift` (margin chip + a11y label).
+**What & why:** The flip-margin chip showed the RAW (buy−sell) margin labeled "pre-tax" — but the number you keep is after the 2% GE sell tax on the sale price (`high`). Now the chip displays the NET margin (`margin − sellTax(high)`), and its color (green/red) reflects net (a thin margin that's positive pre-tax can go negative after tax). The tooltip shows the breakdown "raw X − tax Y = Z (tax live since 2025-05-29)" and the VoiceOver label reads "net margin Z after tax". Reuses `StockSageGEFlip.sellTax` (2%, cap 5M, exempt <50gp). The displayed edge now matches reality. ✅ typecheck clean.
+**Result:** Hardening 1-10, 13, 15, 16 done. NEXT: #17 compounding wipeout label, #18 new-listing flag, #20 dropped-trade count, #11 caveat regression test. Loop continues.
+
 ---
 
 ## Standing notes / known issues

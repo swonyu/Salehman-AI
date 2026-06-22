@@ -88,7 +88,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** struct ProfitLadder/ProfitLevel; StockSageProfitLadder.suggest(entry:stop:target:accountRisk:) returning rungs (e.g. 33% at +1R/+2R/+3R) with caveat "reduces variance, sacrifices extreme winners." Wire into trade-plan export + journal (planned vs actual rungs). Dedup: merges the honesty-gap + feature entries.
 **Why:** Without a ladder the UI silently nudges binary all-or-nothing exits; scale-out enforces discipline. Caveat is load-bearing.
 
-### ⬜ #16 — Tax-aware NET margin chip everywhere in the OSRS UI  [medium/small, feature]
+### ✅ DONE #16 — Tax-aware NET margin chip everywhere in the OSRS UI  [medium/small, feature]
 **File:** Salehman AI/Views/RuneScapeMarketView.swift
 **What:** listingRow shows gross margin (high-low) with a pre-tax tooltip but the number itself is gross. Add a second "(net: +Xk)" chip = margin-2% tax, color green if margin>tax, yellow if <2×tax, red at breakeven. Test netMarginAfterTax.
 **Why:** Casual players read 100k margin as 100k profit, not 98k. Concrete honesty improvement, small.

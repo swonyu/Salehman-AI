@@ -305,16 +305,18 @@ struct RuneScapeMarketView: View {
             priceColumn("Buy", price.high, color: DS.Palette.successSoft)
             priceColumn("Sell", price.low, color: DS.Palette.danger)
 
-            // Flip margin chip.
-            if let margin = price.margin {
-                let up = margin >= 0
-                Text((up ? "+" : "") + RSFormat.gp(margin))
+            // Flip margin chip — NET of the 2% GE sell tax, so the edge shown is what you keep.
+            if let margin = price.margin, let high = price.high {
+                let tax = StockSageGEFlip.sellTax(high)
+                let net = margin - tax
+                let up = net >= 0
+                Text((up ? "+" : "") + RSFormat.gp(net))
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(up ? Color(white: 0.06) : .white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(up ? DS.Palette.successSoft : DS.Palette.danger, in: Capsule())
                     .frame(width: 70, alignment: .trailing)
-                    .help("Flip margin (buy − sell), pre-tax — before the 2% GE sell tax (live since 2025-05-29)")
+                    .help("NET flip margin after the 2% GE sell tax: raw \(RSFormat.gp(margin)) − tax \(RSFormat.gp(tax)) = \(RSFormat.gp(net)) (tax live since 2025-05-29)")
             } else {
                 Color.clear.frame(width: 70, height: 1)
             }
@@ -331,7 +333,10 @@ struct RuneScapeMarketView: View {
         .help(listing.item.examine)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")"
-            + (price.margin.map { ", margin \(RSFormat.gp($0))" } ?? "")
+            + ({ () -> String in
+                guard let m = price.margin, let h = price.high else { return "" }
+                return ", net margin \(RSFormat.gp(m - StockSageGEFlip.sellTax(h))) after tax"
+            }())
             + ({ () -> String in
                 guard let b = price.low, let s = price.high, let lim = listing.item.buyLimit,
                       let gph = StockSageGEFlip.gpPerHour(buy: b, sell: s, buyLimit: lim) else { return "" }

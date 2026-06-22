@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:27 +03 · Swift files: 245 · Swift LOC: 45505_
+_Generated: 2026-06-22 13:34 +03 · Swift files: 245 · Swift LOC: 45510_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -30755,7 +30755,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (415 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (420 lines) =====
 ```swift
 import SwiftUI
 
@@ -31064,16 +31064,18 @@ struct RuneScapeMarketView: View {
             priceColumn("Buy", price.high, color: DS.Palette.successSoft)
             priceColumn("Sell", price.low, color: DS.Palette.danger)
 
-            // Flip margin chip.
-            if let margin = price.margin {
-                let up = margin >= 0
-                Text((up ? "+" : "") + RSFormat.gp(margin))
+            // Flip margin chip — NET of the 2% GE sell tax, so the edge shown is what you keep.
+            if let margin = price.margin, let high = price.high {
+                let tax = StockSageGEFlip.sellTax(high)
+                let net = margin - tax
+                let up = net >= 0
+                Text((up ? "+" : "") + RSFormat.gp(net))
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(up ? Color(white: 0.06) : .white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(up ? DS.Palette.successSoft : DS.Palette.danger, in: Capsule())
                     .frame(width: 70, alignment: .trailing)
-                    .help("Flip margin (buy − sell), pre-tax — before the 2% GE sell tax (live since 2025-05-29)")
+                    .help("NET flip margin after the 2% GE sell tax: raw \(RSFormat.gp(margin)) − tax \(RSFormat.gp(tax)) = \(RSFormat.gp(net)) (tax live since 2025-05-29)")
             } else {
                 Color.clear.frame(width: 70, height: 1)
             }
@@ -31090,7 +31092,10 @@ struct RuneScapeMarketView: View {
         .help(listing.item.examine)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(listing.item.name), buy \(price.high.map(RSFormat.gp) ?? "unknown"), sell \(price.low.map(RSFormat.gp) ?? "unknown")"
-            + (price.margin.map { ", margin \(RSFormat.gp($0))" } ?? "")
+            + ({ () -> String in
+                guard let m = price.margin, let h = price.high else { return "" }
+                return ", net margin \(RSFormat.gp(m - StockSageGEFlip.sellTax(h))) after tax"
+            }())
             + ({ () -> String in
                 guard let b = price.low, let s = price.high, let lim = listing.item.buyLimit,
                       let gph = StockSageGEFlip.gpPerHour(buy: b, sell: s, buyLimit: lim) else { return "" }
@@ -48544,7 +48549,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7645 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7650 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55075,6 +55080,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Ranking flips only by gp/hour or raw margin favors expensive items and hides what compounds a SMALL bankroll fastest. `GEFlip.roiPct` = profitPerItem (already net of the 2% GE tax) ÷ buyPrice; `bestFlipsByROI` sorts desc (filters non-positive profit / zero buy). The fastest-flips strip now adds "Best ROI/cycle: <item> +8.0% on <buy>/ea — most capital-efficient for a small bankroll (net of tax; fills are volume-gated)." 1 test, PYTHON-VERIFIED: buy 100/profit 8 → 8%, 1000/50 → 5%, 10000/50 → 0.5%, ranked [cheap, mid, pricey], loss filtered. ✅ typecheck clean.
 **Result:** Hardening 1-10, 13, 15 done. NEXT: #16 tax-aware net margin chip, #17/#18/#20 small bugs. Loop continues.
 
+## 2026-06-22 · Hardening #16: Tax-aware NET margin in the OSRS listing rows
+**Files:** `Views/RuneScapeMarketView.swift` (margin chip + a11y label).
+**What & why:** The flip-margin chip showed the RAW (buy−sell) margin labeled "pre-tax" — but the number you keep is after the 2% GE sell tax on the sale price (`high`). Now the chip displays the NET margin (`margin − sellTax(high)`), and its color (green/red) reflects net (a thin margin that's positive pre-tax can go negative after tax). The tooltip shows the breakdown "raw X − tax Y = Z (tax live since 2025-05-29)" and the VoiceOver label reads "net margin Z after tax". Reuses `StockSageGEFlip.sellTax` (2%, cap 5M, exempt <50gp). The displayed edge now matches reality. ✅ typecheck clean.
+**Result:** Hardening 1-10, 13, 15, 16 done. NEXT: #17 compounding wipeout label, #18 new-listing flag, #20 dropped-trade count, #11 caveat regression test. Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58446,7 +58456,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** struct ProfitLadder/ProfitLevel; StockSageProfitLadder.suggest(entry:stop:target:accountRisk:) returning rungs (e.g. 33% at +1R/+2R/+3R) with caveat "reduces variance, sacrifices extreme winners." Wire into trade-plan export + journal (planned vs actual rungs). Dedup: merges the honesty-gap + feature entries.
 **Why:** Without a ladder the UI silently nudges binary all-or-nothing exits; scale-out enforces discipline. Caveat is load-bearing.
 
-### ⬜ #16 — Tax-aware NET margin chip everywhere in the OSRS UI  [medium/small, feature]
+### ✅ DONE #16 — Tax-aware NET margin chip everywhere in the OSRS UI  [medium/small, feature]
 **File:** Salehman AI/Views/RuneScapeMarketView.swift
 **What:** listingRow shows gross margin (high-low) with a pre-tax tooltip but the number itself is gross. Add a second "(net: +Xk)" chip = margin-2% tax, color green if margin>tax, yellow if <2×tax, red at breakeven. Test netMarginAfterTax.
 **Why:** Casual players read 100k margin as 100k profit, not 98k. Concrete honesty improvement, small.
